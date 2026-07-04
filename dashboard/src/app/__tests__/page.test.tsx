@@ -11,7 +11,7 @@
  *   - pane focus responds to number-key shortcuts (0-6)
  */
 
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
 
@@ -34,6 +34,19 @@ function mockFetchRoutes(routes: Record<string, () => Response>) {
     }
     return jsonResponse({}, 404);
   }) as unknown as typeof fetch;
+}
+
+/** Sets a controlled <input>'s value via the native setter (so React's
+ *  onChange fires) then dispatches "input" — plain `.value =` + a synthetic
+ *  Event bypasses React's value tracker and the component's state never
+ *  updates, silently no-opping the "type + submit" flow in tests. */
+function typeIntoInput(input: HTMLInputElement, value: string) {
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  )!.set!;
+  nativeInputValueSetter.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 const HEALTHY_ROUTES: Record<string, () => Response> = {
@@ -630,5 +643,191 @@ describe("<HomePage/> — Terminal deck", () => {
 
     const workersPane = screen.getByRole("region", { name: "workers" });
     expect(workersPane.textContent).toMatch(/ready to promote/i);
+  });
+
+  // --------------------------------------------------------------------
+  // 7:copilot — Tier 1 lever-action chat pane.
+  // --------------------------------------------------------------------
+
+  it("renders the copilot pane with an empty-state hint", async () => {
+    mockFetchRoutes(HEALTHY_ROUTES);
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(screen.getByText(/ask or act: pause · run · why did X halt/)).toBeTruthy();
+  });
+
+  it("sends a message, shows the bot reply, and proposes a pause action card", async () => {
+    const copilotMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        reply: 'Review the card below to disable "daily-brief".',
+        action: { kind: "pause_recipe", recipeName: "daily-brief" },
+      }),
+    );
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/copilot/message")) return copilotMock(init);
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      input.dispatchEvent(new Event("focus"));
+      typeIntoInput(input as HTMLInputElement, "pause daily-brief");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    expect(copilotMock).toHaveBeenCalledTimes(1);
+    const sentBody = JSON.parse((copilotMock.mock.calls[0]?.[0] as RequestInit)?.body as string);
+    expect(sentBody).toEqual({ text: "pause daily-brief" });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Review the card below to disable/)).toBeTruthy();
+    });
+    expect(screen.getByText("Confirm")).toBeTruthy();
+  });
+
+  it("clicking Confirm on a pause_recipe card calls the SAME PATCH endpoint the recipes page uses, and marks the card done", async () => {
+    const patchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/bridge/copilot/message")) {
+        return jsonResponse({
+          reply: 'Review the card below to disable "daily-brief".',
+          action: { kind: "pause_recipe", recipeName: "daily-brief" },
+        });
+      }
+      if (method === "PATCH" && url.includes("/api/bridge/recipes/daily-brief")) {
+        return patchMock(init);
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      typeIntoInput(input as HTMLInputElement, "pause daily-brief");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const confirmBtn = await screen.findByText("Confirm");
+    await act(async () => {
+      confirmBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    await waitFor(() => {
+      expect(patchMock).toHaveBeenCalledTimes(1);
+    });
+    // Same shape useToggleRecipeEnabled sends — a raw endpoint bypass
+    // would use a different method/body shape than this.
+    const patchInit = patchMock.mock.calls[0]?.[0] as RequestInit;
+    expect(patchInit.method).toBe("PATCH");
+    expect(JSON.parse(patchInit.body as string)).toEqual({ enabled: false });
+
+    await waitFor(() => {
+      expect(screen.getByText("✓ done")).toBeTruthy();
+    });
+  });
+
+  it("Dismiss removes the action card without calling any endpoint", async () => {
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/copilot/message")) {
+        return jsonResponse({
+          reply: 'Review the card below to run "daily-brief".',
+          action: { kind: "run_recipe", recipeName: "daily-brief" },
+        });
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      typeIntoInput(input as HTMLInputElement, "run daily-brief");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const copilotPane = document.querySelector(".td-copilot") as HTMLElement;
+    const dismissBtn = await within(copilotPane).findByRole("button", { name: "Dismiss" });
+    await act(async () => {
+      dismissBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(within(copilotPane).queryByRole("button", { name: "Confirm" })).toBeNull();
+      expect(within(copilotPane).queryByRole("button", { name: "Dismiss" })).toBeNull();
+    });
+  });
+
+  it("shows a fallback message and does not crash when the copilot endpoint is unreachable", async () => {
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/copilot/message")) {
+        return jsonResponse({ error: "boom" }, 500);
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      typeIntoInput(input as HTMLInputElement, "pause daily-brief");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn't reach the copilot endpoint/)).toBeTruthy();
+    });
   });
 });

@@ -25,6 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
+- 2026-07-04 `feat/copilot-tier1-lever-actions` — Tier 1 copilot pane (Overview deck's 7:copilot): deterministic lever intents (pause/enable/run a recipe by name, explain a recent halt), no LLM. Recipe/worker AI-creation (mockup tiers 2/3) explicitly deferred.
 - 2026-07-04 `feat/deck-phase4-halt-age-mute-footer` (#1113) — Terminal deck v2 Phase 4 (the item #1103 explicitly deferred): halt-age escalation (1h/6h tiers, inside the pane's existing 24h data window), mute-24h fingerprinting fix (a new/different halt now bypasses an active mute instead of being hidden for the rest of the window), footer keyboard-shortcut hint, and a stale "Terminal+Copilot" doc-comment cleanup (no Copilot pane/component ever existed to clean up beyond that one comment). 6 new tests. — awaiting CI
 
 ## Recently closed (informal log, prune periodically)

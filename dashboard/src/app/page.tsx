@@ -10,6 +10,7 @@ import { isHaltStatus } from "@/lib/runStatus";
 import { canonicalRecipeKey } from "@/lib/entityKey";
 import type { LiveRun } from "@/components/LiveRunsStrip";
 import { useRunRecipe } from "@/hooks/useRunRecipe";
+import { useToggleRecipeEnabled } from "@/hooks/useToggleRecipeEnabled";
 import {
   useManualPollStaleness,
   getStaleFetchSummary,
@@ -101,6 +102,22 @@ interface InboxItem {
   modifiedAt: string;
   preview: string;
   provenance?: { recipe?: string };
+}
+
+// 7:copilot — Tier 1 lever-action chat. `CopilotAction` mirrors the
+// bridge's `/copilot/message` response shape (src/copilot/parseIntent.ts);
+// `status` is client-side only, added once the card renders.
+type CopilotActionStatus = "pending" | "running" | "done";
+interface CopilotAction {
+  kind: "pause_recipe" | "enable_recipe" | "run_recipe";
+  recipeName: string;
+  status: CopilotActionStatus;
+}
+interface CopilotMessage {
+  id: number;
+  role: "user" | "bot";
+  text: string;
+  action?: CopilotAction;
 }
 
 // A worker-filed issue awaiting the operator's confirm/reject verdict —
@@ -422,6 +439,7 @@ function Pane({
 export default function HomePage() {
   const bridgeStatus = useBridgeStatus();
   const { run: runRecipe, pending: runPending } = useRunRecipe();
+  const { toggle: toggleRecipeEnabled } = useToggleRecipeEnabled();
   const { data: health } = useBridgeFetch<BridgeHealth>(
     "/api/bridge/health",
     { intervalMs: 5000 },
@@ -847,6 +865,94 @@ export default function HomePage() {
   );
 
   const killSwitchLabel = bridgeStatus.killSwitch?.engaged ? "engaged" : "released";
+
+  // ---- 7:copilot -----------------------------------------------------------
+  // Tier 1 lever-action chat (docs/plans/dashboard-terminal-copilot-plan-
+  // 2026-07-03.md). Message history is client-side only, not persisted —
+  // matches the mockup (a fresh session starts with an empty transcript).
+  // "Chat proposes, buttons dispose": /copilot/message NEVER executes
+  // anything, it only returns {reply, action?}; the Confirm button below
+  // calls the SAME gated hooks (`toggleRecipeEnabled`, `runRecipe`) every
+  // other pane already uses — never a raw endpoint call.
+  const [copilotMessages, setCopilotMessages] = useState<CopilotMessage[]>([]);
+  const [copilotInput, setCopilotInput] = useState("");
+  const [copilotSending, setCopilotSending] = useState(false);
+  const copilotMsgSeq = useRef(0);
+
+  async function sendCopilotMessage() {
+    const text = copilotInput.trim();
+    if (!text || copilotSending) return;
+    setCopilotInput("");
+    const userMsg: CopilotMessage = {
+      id: ++copilotMsgSeq.current,
+      role: "user",
+      text,
+    };
+    setCopilotMessages((prev) => [...prev, userMsg]);
+    setCopilotSending(true);
+    try {
+      const res = await fetch(apiPath("/api/bridge/copilot/message"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        reply?: string;
+        action?: CopilotAction;
+      };
+      const botMsg: CopilotMessage = {
+        id: ++copilotMsgSeq.current,
+        role: "bot",
+        text: res.ok ? (data.reply ?? "(no reply)") : "Couldn't reach the copilot endpoint.",
+        action: res.ok && data.action ? { ...data.action, status: "pending" } : undefined,
+      };
+      setCopilotMessages((prev) => [...prev, botMsg]);
+    } catch (e) {
+      setCopilotMessages((prev) => [
+        ...prev,
+        {
+          id: ++copilotMsgSeq.current,
+          role: "bot",
+          text: `Couldn't reach the copilot endpoint: ${e instanceof Error ? e.message : String(e)}`,
+        },
+      ]);
+    } finally {
+      setCopilotSending(false);
+    }
+  }
+
+  function setCopilotActionStatus(msgId: number, status: CopilotActionStatus) {
+    setCopilotMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId && m.action ? { ...m, action: { ...m.action, status } } : m,
+      ),
+    );
+  }
+
+  async function confirmCopilotAction(msg: CopilotMessage) {
+    const action = msg.action;
+    if (!action || action.status !== "pending") return;
+    setCopilotActionStatus(msg.id, "running");
+    if (action.kind === "run_recipe") {
+      const result = await runRecipe(action.recipeName);
+      setCopilotActionStatus(msg.id, result.ok ? "done" : "pending");
+      return;
+    }
+    // pause_recipe / enable_recipe — same gated hook the recipes page uses,
+    // including its confirm() gate before disabling an autonomous trigger.
+    const recipe = recipes.find((r) => r.name === action.recipeName);
+    if (!recipe) {
+      setCopilotActionStatus(msg.id, "pending");
+      return;
+    }
+    const trigger =
+      typeof recipe.trigger === "string" ? recipe.trigger : recipe.trigger?.type;
+    const result = await toggleRecipeEnabled(
+      { name: recipe.name, enabled: recipe.enabled, trigger },
+      {},
+    );
+    setCopilotActionStatus(msg.id, result.ok ? "done" : "pending");
+  }
 
   return (
     <section className="td-root">
@@ -1550,11 +1656,100 @@ export default function HomePage() {
         </Pane>
       </div>
 
+      {/* 7:copilot — chat proposes, buttons dispose. Every action card
+          calls the same gated hook the rest of the deck already uses
+          (toggleRecipeEnabled / runRecipe) — never a raw endpoint POST. */}
+      <div className="td-copilot">
+        <div className="td-copilot-head">
+          <span className="td-pane-tag">7:copilot</span>
+          <span className="td-muted">
+            · chat proposes, buttons dispose — every action hits the same gate as cron
+          </span>
+        </div>
+        <div className="td-copilot-msgs">
+          {copilotMessages.length === 0 && (
+            <div className="td-copilot-empty">
+              ask or act: pause · run · why did X halt…
+            </div>
+          )}
+          {copilotMessages.map((m) => (
+            <div
+              key={m.id}
+              className={`td-copilot-msg ${m.role === "user" ? "td-copilot-msg-user" : "td-copilot-msg-bot"}`}
+            >
+              {m.role === "bot" && <span className="td-copilot-who">◆ copilot</span>}
+              {m.text}
+              {m.action && (
+                <div
+                  className={`td-copilot-act${m.action.status === "done" ? " done" : ""}`}
+                >
+                  <div className="td-copilot-act-head">
+                    <span className="td-pill">
+                      {m.action.kind === "run_recipe" ? "run" : "lever"}
+                    </span>
+                    <strong>{recipeDisplayName(m.action.recipeName)}</strong>
+                    {m.action.status === "done" && (
+                      <span className="td-pill td-pill-ok">✓ done</span>
+                    )}
+                  </div>
+                  {m.action.status !== "done" && (
+                    <div className="td-copilot-act-actions">
+                      <button
+                        type="button"
+                        className="btn sm primary"
+                        disabled={m.action.status === "running"}
+                        onClick={() => void confirmCopilotAction(m)}
+                      >
+                        {m.action.status === "running" ? "working…" : "Confirm"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn sm ghost"
+                        disabled={m.action.status === "running"}
+                        onClick={() =>
+                          setCopilotMessages((prev) =>
+                            prev.map((pm) =>
+                              pm.id === m.id ? { ...pm, action: undefined } : pm,
+                            ),
+                          )
+                        }
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <form
+          className="td-copilot-in"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void sendCopilotMessage();
+          }}
+        >
+          <span className="td-copilot-prompt" aria-hidden="true">❯</span>
+          <input
+            type="text"
+            value={copilotInput}
+            onChange={(e) => setCopilotInput(e.target.value)}
+            placeholder="ask or act: pause · run · why did X halt…"
+            aria-label="Copilot chat input"
+            disabled={copilotSending}
+          />
+          <button type="submit" className="td-copilot-send" disabled={copilotSending || !copilotInput.trim()}>
+            ↵
+          </button>
+        </form>
+      </div>
+
       {/* Phase 4: footer hint — usePaneShortcut (0-6 focus, Enter open)
           had zero on-screen discoverability; a keyboard-only feature with
           no visible hint is undiscoverable UI. */}
       <div className="td-footer" aria-hidden="true">
-        <span className="td-muted">0–6 focus a pane · Enter open it</span>
+        <span className="td-muted">0–6 focus a pane · Enter open it · copilot proposes, buttons dispose</span>
       </div>
 
       <CancelRunDialog

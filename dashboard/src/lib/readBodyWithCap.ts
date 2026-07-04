@@ -34,6 +34,8 @@ export const BRIDGE_BODY_CAPS = {
   install: 8 * 1024,
   /** /recipes/generate — NL prompt. Bridge cap 4 KB. */
   generate: 8 * 1024,
+  /** /copilot/message — `{ text: string }`. Bridge cap 4 KB. */
+  copilotMessage: 8 * 1024,
   /** /recipes/:name/run — vars envelope. Bridge cap 32 KB. */
   run: 64 * 1024,
   /** /recipes/:name PUT/PATCH, /recipes POST, /recipes/lint — yaml. Bridge cap 256 KB. */

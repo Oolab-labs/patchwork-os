@@ -12,6 +12,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { useActiveRuns } from "@/hooks/LiveRunsContext";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
+import { useToggleRecipeEnabled } from "@/hooks/useToggleRecipeEnabled";
 import type { ActiveRunState } from "@/hooks/useRecipeRunStream";
 import { RecipeRunInline } from "./_components/RecipeRunInline";
 import {
@@ -359,6 +360,7 @@ export default function RecipesPage() {
   const [triggerFilter, setTriggerFilter] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const toast = useToast();
+  const { toggle: toggleRecipeEnabled } = useToggleRecipeEnabled();
 
   // "/" hotkey focuses the search input (GitHub-style). Ignored while
   // typing in another input/textarea/contenteditable so it doesn't
@@ -592,51 +594,36 @@ export default function RecipesPage() {
   }
 
   async function handleToggleEnabled(recipe: Recipe) {
-    const target = recipe.enabled === false;
-    // Disabling a non-manual trigger (cron/webhook/event) silently stops a
-    // recurring job — confirm before the optimistic flip so the operator
-    // doesn't kill a production schedule with a stray click.
-    const trigger = recipe.trigger ?? "manual";
-    const isAutonomous = trigger !== "manual";
-    if (!target && isAutonomous) {
-      const proceed = window.confirm(
-        `Disable "${recipe.name}"? Trigger "${trigger}" will stop firing until you re-enable.`,
-      );
-      if (!proceed) return;
-    }
-    // Optimistic flip — the toggle was tap-then-wait-2s before, which felt
-    // unresponsive. Roll back to the previous state if the PATCH fails.
-    setRecipes((prev) =>
-      prev
-        ? prev.map((r) =>
-            r.name === recipe.name ? { ...r, enabled: target } : r,
-          )
-        : prev,
-    );
-    try {
-      const res = await fetch(
-        apiPath(`/api/bridge/recipes/${encodeURIComponent(recipe.name)}`),
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled: target }),
-        },
-      );
-      if (!res.ok) throw new Error(`/recipes/${recipe.name} ${res.status}`);
-      // Re-sync once on success so any server-side derived fields stay
-      // current (lastRun, etc.).
-      void load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-      // Roll back the optimistic flip.
-      setRecipes((prev) =>
-        prev
-          ? prev.map((r) =>
-              r.name === recipe.name ? { ...r, enabled: !target } : r,
-            )
-          : prev,
-      );
-    }
+    // Delegates the confirm-gate + PATCH to the shared useToggleRecipeEnabled
+    // hook (also used by the Overview deck's copilot pane) so both call
+    // sites go through the identical safety gate. Optimistic-flip/rollback/
+    // re-sync stay page-local since they touch this page's own `recipes`
+    // list state.
+    await toggleRecipeEnabled(recipe, {
+      onOptimistic: (nextEnabled) => {
+        setRecipes((prev) =>
+          prev
+            ? prev.map((r) =>
+                r.name === recipe.name ? { ...r, enabled: nextEnabled } : r,
+              )
+            : prev,
+        );
+      },
+      onSuccess: () => {
+        // Re-sync once on success so any server-side derived fields stay
+        // current (lastRun, etc.).
+        void load();
+      },
+      onRollback: (previousEnabled) => {
+        setRecipes((prev) =>
+          prev
+            ? prev.map((r) =>
+                r.name === recipe.name ? { ...r, enabled: previousEnabled } : r,
+              )
+            : prev,
+        );
+      },
+    });
   }
 
   async function handleModalConfirm(vars: Record<string, string>) {
