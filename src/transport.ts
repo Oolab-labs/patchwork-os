@@ -288,6 +288,24 @@ export class McpTransport {
     if (this.toolBucket.tokens >= 1) this.toolBucket.tokens -= 1;
   }
 
+  /** Read-only snapshot of the tool-call rate-limit bucket for status/UI
+   *  surfaces (e.g. the dashboard vitals pane). Computes the same on-the-fly
+   *  refill as peekToolRateLimit() but does not mutate toolBucket — a pure
+   *  query, safe to call from a status endpoint at any cadence. Returns
+   *  null when rate limiting is disabled (toolRateLimit <= 0). */
+  getToolRateLimitState(): { limit: number; remaining: number } | null {
+    if (this.toolRateLimit <= 0) return null;
+    const elapsed = Math.max(0, Date.now() - this.toolBucket.lastRefill);
+    const refilled = Math.min(
+      this.toolRateLimit,
+      Math.max(
+        0,
+        this.toolBucket.tokens + (elapsed / 60_000) * this.toolRateLimit,
+      ),
+    );
+    return { limit: this.toolRateLimit, remaining: Math.floor(refilled) };
+  }
+
   private getValidator(toolName: string): ValidateFunction | null {
     return this.schemaValidators.get(toolName) ?? null;
   }
