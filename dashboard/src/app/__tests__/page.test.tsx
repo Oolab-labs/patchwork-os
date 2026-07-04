@@ -130,6 +130,48 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(screen.getByText(/patchwork · local:/)).toBeTruthy();
   });
 
+  it("2:fleet shows an avg-duration + last-run-relative-time metadata line under a recipe with run history", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/runs": () =>
+        jsonResponse({
+          runs: [
+            {
+              seq: 1,
+              recipe: "daily-brief",
+              recipeName: "daily-brief",
+              startedAt: Date.now() - 5 * 60_000,
+              doneAt: Date.now() - 5 * 60_000 + 30_000,
+              durationMs: 30_000,
+              status: "done",
+            },
+            {
+              seq: 2,
+              recipe: "daily-brief",
+              recipeName: "daily-brief",
+              startedAt: Date.now() - 65 * 60_000,
+              doneAt: Date.now() - 65 * 60_000 + 90_000,
+              durationMs: 90_000,
+              status: "done",
+            },
+          ],
+        }),
+    });
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const rows = Array.from(container.querySelectorAll(".td-fleet-row"));
+    const row = rows.find((r) => r.textContent?.includes("Daily Brief"));
+    expect(row).toBeTruthy();
+    const meta = row?.querySelector(".td-fleet-meta");
+    expect(meta).toBeTruthy();
+    // avg of 30s and 90s = 60s.
+    expect(meta?.textContent).toMatch(/avg 1m 0s/);
+    expect(meta?.textContent).toMatch(/5m/);
+  });
+
   it("fails soft: one endpoint 500ing still lets the rest of the deck render", async () => {
     mockFetchRoutes({
       ...HEALTHY_ROUTES,
@@ -337,6 +379,60 @@ describe("<HomePage/> — Terminal deck", () => {
     await waitFor(() => {
       expect(within(attentionPane).queryByTitle("Stop this run of daily-brief")).toBeNull();
     });
+  });
+
+  it("0:attention shows the worst-blast-tier pending approval with a blast badge, sorted first, and Approve/Deny wired to the same endpoint as /approvals", async () => {
+    const approveMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/approvals/approve/")) return approveMock(init);
+      for (const [key, make] of Object.entries({
+        ...HEALTHY_ROUTES,
+        "/api/bridge/approvals": () =>
+          jsonResponse([
+            {
+              callId: "call-low",
+              toolName: "readFile",
+              tier: "low",
+              requestedAt: Date.now(),
+              summary: "read a config file",
+            },
+            {
+              callId: "call-high",
+              toolName: "runCommand",
+              tier: "high",
+              requestedAt: Date.now(),
+              summary: "rm -rf /tmp/x",
+            },
+          ]),
+      })) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const attentionPane = screen.getByRole("region", { name: "attention" });
+    // The higher-blast-tier request (runCommand, tier high → classified
+    // irreversible) is shown, not the low-tier readFile — worst first.
+    expect(attentionPane.textContent).toMatch(/runCommand/);
+    expect(attentionPane.textContent).toMatch(/rm -rf \/tmp\/x/);
+
+    const approveBtn = within(attentionPane).getByText("Approve");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await act(async () => {
+      approveBtn.click();
+    });
+
+    expect(confirmSpy).toHaveBeenCalled(); // high-tier safety gate fired
+    await waitFor(() => {
+      expect(approveMock).toHaveBeenCalledTimes(1);
+    });
+    confirmSpy.mockRestore();
   });
 
   it("1:tail shows a Stop control on the row for an in-progress run matched by recipeName", async () => {

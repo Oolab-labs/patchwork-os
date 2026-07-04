@@ -9910,7 +9910,11 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 }
 
 /* Pane 2: fleet */
-.td-fleet-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
+.td-fleet-row { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); padding: 2px 0; }
+.td-fleet-row-top { display: flex; align-items: center; gap: 8px; }
+/* Mockup's R-A ".ra-meta" row — avg duration + last-run-relative-time,
+   indented under the glyph column so it reads as this row's detail. */
+.td-fleet-meta { padding-left: calc(1em + 8px); }
 .td-fleet-glyph { width: 1em; text-align: center; }
 /* Data-backed pulse for a recipe with a run in progress right now (not
    decorative) — mirrors the mockup's .he-pulse ring convention, adapted
