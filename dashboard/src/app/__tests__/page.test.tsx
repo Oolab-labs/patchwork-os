@@ -274,6 +274,39 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(workersPane.textContent).toMatch(/71% over 14 tries/);
   });
 
+  it("5:vitals shows a session-count delta when the active-session count changes between polls, not on the very first load", async () => {
+    let statusCalls = 0;
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/status")) {
+        statusCalls += 1;
+        // First poll: 2 sessions. Second poll (5s later): 3 sessions.
+        return jsonResponse({ ok: true, port: 3101, uptimeMs: 60_000, activeSessions: statusCalls === 1 ? 2 : 3 });
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const vitalsPane = screen.getByRole("region", { name: "vitals" });
+    // No prior poll to compare against yet — no delta on first load.
+    expect(vitalsPane.querySelector(".td-kv-delta")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    const delta = vitalsPane.querySelector(".td-kv-delta");
+    expect(delta).toBeTruthy();
+    expect(delta?.textContent).toMatch(/↑1/);
+  });
+
   it("fails soft: one endpoint 500ing still lets the rest of the deck render", async () => {
     mockFetchRoutes({
       ...HEALTHY_ROUTES,
