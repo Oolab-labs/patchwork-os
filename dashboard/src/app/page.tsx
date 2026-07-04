@@ -724,19 +724,22 @@ export default function HomePage() {
         </span>
         <span className={`td-seg${bridgeStatus.ok ? " td-ok" : " td-err"}`}>
           {bridgeStatus.ok
-            ? `up ${typeof bridgeStatus.uptimeMs === "number" ? formatUptime(bridgeStatus.uptimeMs) : "—"}`
-            : "offline"}
+            ? `● bridge ${typeof bridgeStatus.uptimeMs === "number" ? formatUptime(bridgeStatus.uptimeMs) : "—"}`
+            : "● offline"}
         </span>
         <span className="td-seg">
-          runs 24h {okCount24h}ok/{errCount24h}err
+          runs 24h: <span className="td-ok">{okCount24h} ok</span> ·{" "}
+          <span className={errCount24h > 0 ? "td-err" : undefined}>{errCount24h} err</span>
         </span>
         <span className={`td-seg${pendingCount > 0 ? " td-warn" : ""}`}>
-          {pendingCount} approvals
+          approvals: {pendingCount}
         </span>
         <span className={`td-seg${haltCount24h > 0 ? " td-err" : ""}`}>
-          {haltCount24h} halts
+          halts: {haltCount24h}
         </span>
-        <span className="td-seg">kill-switch {killSwitchLabel}</span>
+        <span className="td-seg">
+          ks: <span className={bridgeStatus.killSwitch?.engaged ? "td-err" : "td-ok"}>{killSwitchLabel}</span>
+        </span>
         <span className="td-sp" />
         {deckStaleness.anyStale ? (
           <span className="td-seg td-clock td-warn" suppressHydrationWarning>
@@ -762,6 +765,18 @@ export default function HomePage() {
           activePane={activePane}
           setActivePane={setActivePane}
           href="/runs?halt=1"
+          headerExtra={
+            attentionCount > 0 ? (
+              <>
+                <span className="td-muted">· {attentionCount} item{attentionCount === 1 ? "" : "s"}</span>
+                {topAttentionRun && (
+                  <span className="td-muted td-pane-sp" style={{ textAlign: "right" }}>
+                    halted {formatAgo(nowMs - topAttentionRun.startedAt)}
+                  </span>
+                )}
+              </>
+            ) : null
+          }
         >
           {!bridgeStatus.ok ? (
             <div className="td-error-row">bridge offline — can&apos;t reach attention data</div>
@@ -889,6 +904,7 @@ export default function HomePage() {
           href="/activity"
           headerExtra={
             <>
+              <span className="td-muted mono">· ~/.patchwork/activity</span>
               <button
                 type="button"
                 className="td-link-btn td-plumbing-toggle"
@@ -976,7 +992,19 @@ export default function HomePage() {
         </Pane>
 
         {/* 2: fleet */}
-        <Pane index={2} id="fleet" title="fleet" activePane={activePane} setActivePane={setActivePane} href="/recipes">
+        <Pane
+          index={2}
+          id="fleet"
+          title="fleet"
+          activePane={activePane}
+          setActivePane={setActivePane}
+          href="/recipes"
+          headerExtra={
+            <span className="td-muted">
+              · {enabledRecipesCount}/{recipes.length} on
+            </span>
+          }
+        >
           {fetchErrors.recipes ? (
             <div className="td-error-row">recipe list unavailable</div>
           ) : fleetRows.length === 0 ? (
@@ -1173,6 +1201,12 @@ export default function HomePage() {
             <span className="td-muted">kill switch</span>
             <strong className={bridgeStatus.killSwitch?.engaged ? "td-err" : "td-ok"}>
               {killSwitchLabel}
+            </strong>
+          </div>
+          <div className="td-kv-row">
+            <span className="td-muted">approvals</span>
+            <strong className={pendingCount > 0 ? "td-warn" : undefined}>
+              {pendingCount} pending
             </strong>
           </div>
           <div className="td-kv-row">
