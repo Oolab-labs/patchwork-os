@@ -646,6 +646,145 @@ describe("<HomePage/> — Terminal deck", () => {
   });
 
   // --------------------------------------------------------------------
+  // "Unified morning" section — restored /today content, between the
+  // statusline and the pane grid.
+  // --------------------------------------------------------------------
+
+  it("shows the collapsed 'You're clear' banner when nothing is waiting", async () => {
+    mockFetchRoutes(HEALTHY_ROUTES);
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    // HEALTHY_ROUTES has no approvals, no pending outcomes, no workers, no
+    // inbox items — all 3 sections read as done.
+    const done = container.querySelector(".td-today-done");
+    expect(done).toBeTruthy();
+    expect(done?.textContent).toMatch(/You're clear/);
+    expect(container.querySelector(".td-today")).toBeNull();
+    // Placed between the statusline and the grid, not inside either.
+    expect(done?.previousElementSibling).toHaveClass("td-statusline");
+    expect(done?.nextElementSibling).toHaveClass("td-grid");
+  });
+
+  it("section 2 lists a pending approval with a blast badge and Approve/Deny wired to the same endpoint as /approvals", async () => {
+    const approveMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/approvals/approve/")) return approveMock(init);
+      for (const [key, make] of Object.entries({
+        ...HEALTHY_ROUTES,
+        "/api/bridge/approvals": () =>
+          jsonResponse([
+            {
+              callId: "call-1",
+              toolName: "gitPush",
+              tier: "medium",
+              requestedAt: Date.now(),
+              summary: "push to main",
+            },
+          ]),
+      })) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const section = container.querySelector(".td-today");
+    expect(section).toBeTruthy();
+    expect(section?.textContent).toMatch(/gitPush/);
+    expect(section?.textContent).toMatch(/push to main/);
+
+    const approveBtn = within(section as HTMLElement).getByText("Approve");
+    await act(async () => {
+      approveBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(approveMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("section 2's high-tier approve asks for confirmation, same safety gate as /approvals", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/approvals": () =>
+        jsonResponse([
+          {
+            callId: "call-2",
+            toolName: "runCommand",
+            tier: "high",
+            requestedAt: Date.now(),
+            summary: "rm -rf /tmp/x",
+          },
+        ]),
+    });
+
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const section = container.querySelector(".td-today") as HTMLElement;
+    const approveBtn = within(section).getByText("Approve");
+    await act(async () => {
+      approveBtn.click();
+    });
+
+    expect(confirmSpy).toHaveBeenCalled();
+    // User declined the confirm — the row must still be there, not silently approved.
+    expect(section.textContent).toMatch(/runCommand/);
+    confirmSpy.mockRestore();
+  });
+
+  it("section 3 lists the promotable/demoted workers by name with trust percentages", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/workers/shadow": () =>
+        jsonResponse({
+          workers: [
+            {
+              workerId: "w1",
+              name: "Dependency Bump",
+              autonomyCeiling: 1,
+              board: [
+                {
+                  classKey: "vcs-remote:compensable:medium",
+                  level: 3,
+                  observations: 20,
+                  mean: 0.95,
+                  owned: true,
+                },
+              ],
+              events: [],
+              compared: 10,
+              agreed: 9,
+              divergences: [],
+            },
+          ],
+          runsScanned: 0,
+          decisionsScanned: 0,
+        }),
+    });
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const section = container.querySelector(".td-today") as HTMLElement;
+    expect(section.textContent).toMatch(/Dependency Bump/);
+    expect(section.textContent).toMatch(/ready for a promotion/);
+    expect(section.textContent).toMatch(/90% over 10 tries/);
+  });
+
+  // --------------------------------------------------------------------
   // 7:copilot — Tier 1 lever-action chat pane.
   // --------------------------------------------------------------------
 
