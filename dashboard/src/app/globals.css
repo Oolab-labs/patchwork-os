@@ -9695,8 +9695,16 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 }
 .td-grid > * { grid-column: span 6; }
 @media (min-width: 860px) {
-  .td-grid > * { grid-column: span 3; }
-  .td-grid > *:nth-child(1) { grid-column: span 6; } /* 0:attention — full width, top priority */
+  /* Matches the mockup's actual .hd-panes geometry exactly (verified
+     against its raw HTML: panes 0/1/5/6 have no "w2" class → span 3
+     half-width; panes 2/3/4 have "w2" → span 2 third-width). An earlier
+     pass deliberately deviated from this (0:attention full-width alone)
+     as a "legitimate design choice" — reverted after repeated user
+     feedback that the pane layout still didn't match the mockup. */
+  .td-grid > * { grid-column: span 3; } /* 0:attention, 1:tail, 5:vitals, 6:inbox */
+  .td-grid > *:nth-child(3),
+  .td-grid > *:nth-child(4),
+  .td-grid > *:nth-child(5) { grid-column: span 2; } /* 2:fleet, 3:next, 4:workers */
 }
 
 .td-pane {
