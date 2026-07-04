@@ -10129,6 +10129,28 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-bar2 span { position: absolute; inset: 0 auto 0 0; height: 100%; border-radius: 3px; background: rgba(91, 138, 79, 0.7); }
 [data-theme="paper"] .td-bar2 span { background: var(--ok); }
 
+/* Mockup's H-C ".hc-heat" 24h activity grid — one cell per hour, oldest
+   on the left, colored by event density/errors. */
+.td-heatmap {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-1);
+}
+.td-heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 1px;
+  background: var(--recess);
+}
+.td-heatmap-l1 { background: rgba(127, 191, 111, 0.3); }
+.td-heatmap-l2 { background: rgba(127, 191, 111, 0.6); }
+.td-heatmap-l3 { background: #7fbf6f; }
+.td-heatmap-er { background: #e0847e; }
+[data-theme="paper"] .td-heatmap-l3 { background: var(--ok); }
+[data-theme="paper"] .td-heatmap-er { background: var(--err); }
+
 /* Pane 6: inbox */
 .td-inbox-row {
   display: flex;
