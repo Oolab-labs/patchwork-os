@@ -34,6 +34,11 @@ import {
   computeSummary as computeActivationSummary,
   loadMetrics as loadActivationMetrics,
 } from "./activationMetrics.js";
+import {
+  buildCopilotReply,
+  type CopilotRecipeRef,
+  parseCopilotIntent,
+} from "./copilot/parseIntent.js";
 import { isWriteKillSwitchActive } from "./featureFlags.js";
 import {
   consumeToken,
@@ -319,6 +324,11 @@ export const RECIPE_ROUTE_BODY_CAPS = {
    * headroom, matching the shape of the ctxSaveTrace MCP tool's inputs.
    */
   decisionTrace: 8 * 1024,
+  /**
+   * POST /copilot/message — `{ text: string }`, a single chat-input line.
+   * 4 KB is generous for free text while blocking a pathological paste.
+   */
+  copilotMessage: 4 * 1024,
 } as const;
 
 /**
@@ -2200,6 +2210,64 @@ export function tryHandleRecipeRoute(
     } catch (err) {
       respond500(res, err);
     }
+    return true;
+  }
+
+  // POST /copilot/message — Tier 1 lever-action copilot (Overview deck's
+  // 7:copilot pane). Deterministic intent matching only, NEVER an LLM
+  // call and NEVER an executed action — this route only proposes
+  // {reply, action?}; the dashboard's action-card Confirm button is what
+  // actually calls the (separately gated) pause/enable/run endpoints.
+  // "Chat proposes, buttons dispose" — see parseIntent.ts's module doc.
+  if (parsedUrl.pathname === "/copilot/message" && req.method === "POST") {
+    void (async () => {
+      const parsedBody = await readJsonBody<{ text?: string }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.copilotMessage,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.copilotMessage);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
+      try {
+        const parsed = parsedBody.value ?? {};
+        if (respondIfUnknownBodyKeys(res, parsed, ["text"])) return;
+        const text = typeof parsed.text === "string" ? parsed.text : "";
+
+        const recipesData = deps.recipesFn?.() ?? { recipes: [] };
+        const recipeList = Array.isArray(
+          (recipesData as { recipes?: unknown }).recipes,
+        )
+          ? (recipesData as { recipes: CopilotRecipeRef[] }).recipes
+          : [];
+
+        const intent = parseCopilotIntent(text, recipeList);
+
+        let haltReason: string | null = null;
+        if (intent.kind === "explain_halt") {
+          const runs =
+            deps.runsFn?.({
+              recipe: intent.recipe?.name,
+              limit: 20,
+            }) ?? [];
+          const lastHalt = runs.find(
+            (r) =>
+              typeof (r as { haltReason?: unknown }).haltReason === "string",
+          ) as { haltReason?: string } | undefined;
+          haltReason = lastHalt?.haltReason ?? null;
+        }
+
+        const result = buildCopilotReply(intent, { haltReason });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
     return true;
   }
 
