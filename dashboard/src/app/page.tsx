@@ -630,7 +630,11 @@ export default function HomePage() {
       // artifact with a pile of manual test runs could still outrank a
       // real cron recipe that simply runs less often.
       const bucket = !enabled ? 2 : hasRecentRun ? 0 : 1;
-      return { recipe: r, key, runList, pct, trigger, enabled, bucket };
+      // runList is sorted most-recent-first (allRunsMap above) — a
+      // data-backed pulse on the ▶ glyph for a recipe with a run in
+      // progress right now, not decorative motion.
+      const isLive = runList[0]?.status === "running";
+      return { recipe: r, key, runList, pct, trigger, enabled, bucket, isLive };
     });
   }, [recipes, allRunsMap]);
 
@@ -700,7 +704,9 @@ export default function HomePage() {
       /* ignore */
     }
   }, []);
-  const inboxItems = (inboxData?.items ?? []).slice(0, 3);
+  const inboxAllItems = inboxData?.items ?? [];
+  const inboxItems = inboxAllItems.slice(0, 3);
+  const inboxUnreadCount = inboxAllItems.filter((item) => !inboxSeen.has(item.name)).length;
 
   // Pane focus / keyboard nav (usePaneShortcuts, PR #1092).
   const [activePane, setActivePane] = useState(0);
@@ -1032,7 +1038,7 @@ export default function HomePage() {
             <div className="td-empty-line">no recipes installed</div>
           ) : (
             <>
-              {fleetRows.map(({ recipe, runList, pct, trigger, enabled }) => {
+              {fleetRows.map(({ recipe, runList, pct, trigger, enabled, isLive }) => {
                 const hasHistory = runList.length > 0;
                 // Continuous proportional fill bar (mockup's .hd-ascii block
                 // sparkline) — was previously 6 discrete per-run history
@@ -1043,7 +1049,12 @@ export default function HomePage() {
                 const filled = pct == null ? 0 : Math.round((pct / 100) * BAR_WIDTH);
                 return (
                   <div className="td-fleet-row" key={recipe.name}>
-                    <span className="td-fleet-glyph">{enabled ? "▶" : "⏸"}</span>
+                    <span
+                      className={`td-fleet-glyph${isLive ? " td-fleet-glyph-live" : ""}`}
+                      title={isLive ? "running now" : enabled ? "enabled" : "paused"}
+                    >
+                      {enabled ? "▶" : "⏸"}
+                    </span>
                     <strong className="mono td-fleet-name">{recipeDisplayName(recipe.name)}</strong>
                     <span className="td-muted td-fleet-trigger">{triggerLabel(trigger)}</span>
                     {!enabled ? (
@@ -1051,7 +1062,11 @@ export default function HomePage() {
                         {"─".repeat(BAR_WIDTH)}
                       </span>
                     ) : (
-                      <span className="td-fleet-bar" aria-hidden="true">
+                      // Keyed by `filled` so the whole bar remounts (and
+                      // replays its fade-in) when the success rate changes
+                      // between polls — reuses the tail pane's existing
+                      // .td-tail-enter convention rather than a new one.
+                      <span className="td-fleet-bar td-tail-enter" key={filled} aria-hidden="true">
                         {Array.from({ length: BAR_WIDTH }, (_, i) =>
                           i < filled ? (
                             <span key={i} className="td-blk-ok">
@@ -1138,27 +1153,55 @@ export default function HomePage() {
               // meaningless there since reversible actions bypass the
               // gate unconditionally regardless of ceiling.
               const filled = status === "reversible" ? 0 : Math.min(dialLen, Math.max(0, w.autonomyCeiling));
+              const dialTitle =
+                status === "reversible"
+                  ? "reversible-only — no autonomy ceiling applies"
+                  : `trust level ${filled} of ${dialLen} (ceiling L${w.autonomyCeiling})${demoted ? " — recently demoted" : ""}`;
               return (
                 <div className="td-worker-row" key={w.workerId}>
                   <strong className="mono td-worker-name">{w.name}</strong>
-                  <span className="td-worker-bar" aria-hidden="true">
+                  {/* Keyed by filled+demoted so the dial remounts (replays
+                      the fade-in) when a worker's trust level actually
+                      changes between polls — same convention as the tail
+                      pane's .td-tail-enter and the fleet bar above. */}
+                  <span
+                    className="td-worker-bar td-tail-enter"
+                    key={`${filled}-${demoted ? 1 : 0}`}
+                    title={dialTitle}
+                  >
                     {/* Label comes BEFORE the dial (mockup: "L3 ▰▰▰▱"),
                         not after — a real ordering mismatch caught after
                         comparing pixel-for-pixel against the mockup
                         screenshot rather than just the markup. "—" (not
                         "L0") for reversible-only workers, matching the
                         mockup's inbox-summ. row. */}
-                    <span className="td-muted">{status === "reversible" ? "—" : `L${w.autonomyCeiling}`}</span>
+                    <span className="td-muted" aria-hidden="true">
+                      {status === "reversible" ? "—" : `L${w.autonomyCeiling}`}
+                    </span>
                     {Array.from({ length: dialLen }, (_, i) => (
-                      <span key={i} className={i < filled ? (demoted ? "td-blk-err" : "td-blk-ok") : "td-blk-empty"}>
+                      <span
+                        key={i}
+                        aria-hidden="true"
+                        className={i < filled ? (demoted ? "td-blk-err" : "td-blk-ok") : "td-blk-empty"}
+                      >
                         {i < filled ? "▰" : "▱"}
                       </span>
                     ))}
                   </span>
                   <span className={`td-worker-status td-worker-status-${status}`}>
-                    {status === "ready" && promo ? `⚑L${promo.level} ` : ""}
+                    {status === "ready" && promo ? (
+                      <span title={`ready to promote to L${promo.level} on ${taskName(promo.classKey)}`}>
+                        ⚑L{promo.level}{" "}
+                      </span>
+                    ) : (
+                      ""
+                    )}
                     {status}
-                    {demoted ? " ▼" : ""}
+                    {demoted ? (
+                      <span title="recently demoted"> ▼</span>
+                    ) : (
+                      ""
+                    )}
                     {status === "ready" && promo ? ` ↑ ${taskName(promo.classKey)}` : ""}
                   </span>
                 </div>
@@ -1274,7 +1317,19 @@ export default function HomePage() {
         </Pane>
 
         {/* 6: inbox */}
-        <Pane index={6} id="inbox" title="inbox" activePane={activePane} setActivePane={setActivePane} href="/inbox">
+        <Pane
+          index={6}
+          id="inbox"
+          title="inbox"
+          activePane={activePane}
+          setActivePane={setActivePane}
+          href="/inbox"
+          headerExtra={
+            inboxUnreadCount > 0 ? (
+              <span className="td-muted">· {inboxUnreadCount} unread</span>
+            ) : null
+          }
+        >
           {inboxError ? (
             <div className="td-error-row">inbox unavailable</div>
           ) : inboxItems.length === 0 ? (
@@ -1300,7 +1355,11 @@ export default function HomePage() {
                     });
                   }}
                 >
-                  {isNew && <span className="td-pill td-pill-warn">NEW</span>}
+                  {isNew ? (
+                    <span className="td-pill td-pill-warn">NEW</span>
+                  ) : (
+                    <span className="td-muted td-inbox-read">read</span>
+                  )}
                   <span className="td-inbox-preview">
                     {previewText(item.preview, 60) || item.name}
                   </span>
