@@ -141,4 +141,17 @@ describe("outcomes.classify_issues", () => {
     const parsed = JSON.parse(out ?? "{}");
     expect(parsed).toEqual({ count: 0, confirmed: 0, junk: 0, unknown: 0 });
   });
+
+  it("is risk-tier 'high' — it mutates the worker trust ledger from unverified caller-supplied data (security delta sweep 2026-07-06)", () => {
+    // The `issues` param is a caller-supplied JSON string with no re-fetch or
+    // verification against real GitHub state — a recipe step (or an earlier
+    // LLM agent step in the same recipe) can fabricate a "closed/completed"
+    // issue payload and this tool will persist a "confirmed" disposition that
+    // directly feeds WorkerShadowObserver.ingestRun's trust-replay. The HTTP
+    // route POST /outcomes has an explicit self-confirm prohibition for this
+    // exact reason; this tool must be gated at least as strictly under
+    // approvalGate:"high" so it isn't fully autonomous by default.
+    const tool = getTool("outcomes.classify_issues");
+    expect(tool?.riskDefault).toBe("high");
+  });
 });
