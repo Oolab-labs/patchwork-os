@@ -63,7 +63,13 @@ registerTool({
       error: { type: "string" },
     },
   },
-  riskDefault: "medium",
+  // "high", not "medium": this tool mutates the worker trust ledger from a
+  // caller-supplied `issues` blob with no re-fetch/verification against real
+  // GitHub state. POST /outcomes explicitly forbids self-confirmation for
+  // the same reason (see recipeRoutes.ts) — this tool must be gated at least
+  // as strictly, not run fully autonomously under the default approval
+  // posture (security delta sweep 2026-07-06).
+  riskDefault: "high",
   isWrite: true,
   execute: async ({ params }) => {
     assertWriteAllowed("outcomes.classify_issues");
