@@ -269,7 +269,7 @@ The `src/workers/` subsystem implements a trust-ramp-aware autonomy gate for rec
 - New tools: unit tests in `src/tools/__tests__/`
 - New extension handlers: tests in `vscode-extension/src/__tests__/handlers/`
 - Use vitest for both bridge and extension tests
-- Coverage gates: 75% lines, 70% branches, 75% functions
+- Coverage gates: 71% lines, 62% branches, 70% functions (see `vitest.config.ts`'s inline comment — re-baselined down from 75/70/75 for vitest 4's stricter AST-aware coverage counting; actual test coverage did not regress, only the measurement got stricter. Ratchet plan: nudge back up as margin allows — Windows/ubuntu CI currently clear ~72/63/71, so there's roughly 1pt of headroom already banked)
 - Test circuit breaker and reconnect behavior for connection-related changes
 - **outputSchema is mandatory** for all tools. `scripts/audit-lsp-tools.mjs` enforces per-schema-block (not per-file) — multi-tool files can't mask gaps. Exceptions go in `scripts/audit-output-schema-allowlist.json` with a reason; ratchet gate rejects new entries and stale ones.
 

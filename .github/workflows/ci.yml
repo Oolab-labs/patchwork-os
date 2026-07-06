@@ -59,7 +59,7 @@ jobs:
         # mid-run. Not a hang; confirmed via a full local `vitest run`
         # completing clean (8759 passed).
         timeout-minutes: 10
-      - name: Coverage (enforce 75% lines / 70% branches / 75% functions)
+      - name: Coverage (enforce 71% lines / 62% branches / 70% functions)
         run: npm run test:coverage -- --reporter=dot --reporter=github-actions
         timeout-minutes: 8
 
@@ -105,6 +105,8 @@ jobs:
         run: node scripts/audit-parity-xfails.mjs
       - name: Audit docs⇒wired parity (#850)
         run: node scripts/audit-docs-wired.mjs
+      - name: Audit docs drift (advisory, tool-count/coverage claims)
+        run: node scripts/audit-docs-drift.mjs
 
   plugin-validate:
     name: Validate plugin manifest
