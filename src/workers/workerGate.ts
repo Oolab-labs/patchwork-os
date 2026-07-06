@@ -102,6 +102,25 @@ export function flowsUngated(ac: ActionClass): boolean {
   return ac.reversibility === "reversible";
 }
 
+/**
+ * The single decision point for the worker-autonomy gate: allow or gate one
+ * tool call for one worker.
+ *
+ * Contract: `effectiveLevel = min(earnedLevel, worker.autonomyCeiling, contextCeiling)`,
+ * where `contextCeiling` is computed from `opts.contextRisk` (undefined ⇒ no-op,
+ * never widens). `contextCeiling` is **descending-only** — a live signal (red CI,
+ * huge diff, hotspot file) may only lower the effective level below what earned
+ * trust + the static ceiling would allow; it can never raise it above them. The
+ * `min()` composition means every one of the three inputs acts strictly as a
+ * ceiling, not a floor.
+ *
+ * Returns a `WorkerGateDecision` with `action: "allow" | "gate"` plus a
+ * human-readable `reason` (and the classification/level fields from `base`)
+ * explaining which constraint was binding. See
+ * docs/worker-autonomy-policy-gate.md and `GATE_POLICY_VERSION` for the full
+ * policy (thresholds, reversibility→level mapping) — this comment documents
+ * the code contract only, not the policy rationale.
+ */
 export function decideWorkerAction(
   worker: WorkerManifest,
   toolName: string,

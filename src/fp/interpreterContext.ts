@@ -54,6 +54,20 @@ export interface BackendFireRecipeOpts {
   triggerSource: string;
 }
 
+/**
+ * The complete set of side-effecting operations the automation interpreter
+ * (`src/fp/automationInterpreter.ts`) needs to carry out a policy. Every
+ * operation that touches the outside world — spawning tasks, firing
+ * recipes, scheduling timers, logging, calling out over HTTP — must be a
+ * method here, and `automationInterpreter.ts` must call it only through
+ * this interface, never directly against VS Code APIs, Node timers, or
+ * `fetch`.
+ *
+ * This is the seam that keeps the interpreter pure and deterministic: swap
+ * in `VsCodeBackend` for production and `TestBackend` for tests, and the
+ * exact same interpreter code runs against both. Tests assert on what
+ * `TestBackend` recorded instead of mocking VS Code or the network.
+ */
 export interface Backend {
   /** Enqueue a task and return the task ID. */
   enqueueTask(opts: BackendEnqueueOpts): Promise<string>;
@@ -145,6 +159,7 @@ export interface InterpreterResult {
  */
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
+/** Production `Backend`: routes side effects to the real orchestrator, logger, and network. */
 export class VsCodeBackend implements Backend {
   constructor(
     private readonly orchestrator: ClaudeOrchestrator,
@@ -310,6 +325,12 @@ export interface TestBackendCollector {
   webhookCalls: BackendWebhookOpts[];
 }
 
+/**
+ * Test `Backend`: a collector, not a mock. Every call is pushed onto
+ * `collector` (enqueuedTasks, firedRecipes, scheduledRetries, notifications,
+ * webhookCalls) instead of touching the real world, so tests assert against
+ * recorded calls rather than mocking VS Code / orchestrator / network APIs.
+ */
 export class TestBackend implements Backend {
   readonly collector: TestBackendCollector = {
     enqueuedTasks: [],
@@ -350,6 +371,11 @@ export class TestBackend implements Backend {
     return this.webhookResponse;
   }
 
+  /**
+   * Clear the collector between tests so assertions in one test can't leak
+   * into the next. Call in `beforeEach`/`afterEach` instead of constructing
+   * a fresh `TestBackend` each time.
+   */
   reset(): void {
     this.collector.enqueuedTasks = [];
     this.collector.firedRecipes = [];
