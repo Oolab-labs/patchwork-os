@@ -6,6 +6,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0-beta.1] — 2026-07-06
+
+Worker-autonomy policy gate (keystone feature) · dashboard "Terminal deck" rewrite + copilot pane · Decision Record legibility layer · 123 commits since beta.13 (#1004–#1130). Minor/major version jump reflects the scale of this cycle, not a breaking API change — see below.
+
+### Added
+
+- **Worker-autonomy policy gate** — the headline feature of this cycle. Bayesian (worker × action-class) trust ramp with a descending-only context-risk dial; `effectiveLevel = min(earned, autonomyCeiling, contextCeiling)`. Reversible actions bypass the gate unconditionally; compensable unlocks at L2; irreversible requires L4. Feature-flagged off by default (`PATCHWORK_FLAG_WORKER_AUTONOMY`). Ships with 3 dogfood worker templates (release-notes, dependency-bump, triage-failing-tests), a Decision Record (`~/.patchwork/worker_gate_decisions.jsonl`) with plain-English lookup (`gate explain`, `--diff`), operator confirm/reject verbs (`outcomes confirm|reject|list`), cold-start calibration (`workers backtest`), and live shadow monitoring (`workers shadow`) (#1021–#1066 and onward).
+- **Dashboard "Terminal deck"** — full rewrite of the Overview page as a dark, tmux-flavored 7-pane grid (attention/tail/fleet/next/workers/vitals/inbox) plus a Tier-1 deterministic (no-LLM) copilot chat pane. Copilot only ever proposes `{reply, action?}` — execution always routes through the same gated hooks the rest of the dashboard uses, never a raw endpoint bypass (#1095–#1118).
+- **"Unified morning" section + 6-PR mockup-mining follow-up** — restored a richer numbered-section morning-habit view (brief/decisions/team) on Overview, plus a batch of further mockup-derived improvements: worst-blast-tier approval surfaced inline with Approve/Deny, a per-worker collapsible gate-activity accordion, a 24h activity heatmap (GitHub-contribution-graph styled), fleet run metadata, and more (#1123–#1129).
+- **Decision Record legibility layer** — `gate explain`, `gate explain --diff`, `patchwork halts`/`judgments` morning-summary CLIs, dashboard surfacing of the same data.
+- Dashboard: connector token-expiry indicators, run-cancel UI, staleness indicators, self-correction judge/refine loop toggle, actionable failure alerts to phone with halt-category + fix hints.
+- Recipes: external cancellation for the flat runner (closing the last flat/chained parity xfail), `github.create_issue` tool + opt-in autofile recipe, opt-in agent-step tool sandbox, `on_file_save`/`on_test_run` triggers auto-enabled when a driver is active.
+
+### Fixed
+
+- **Dashboard production build was silently broken since #990** — Next.js requires literal syntax in `middleware.ts`'s `config.matcher`; an identifier reference passed `next dev`/vitest (never exercised by CI) but failed `next build`. Found during this release's pre-flight sweep, not by any test (#1130).
+- Chained-recipe cancellation/budget parity, `/runs` duplicate-key crash, `/traces`+`/analytics` accuracy, tool-call telemetry (carried over from beta.13's tail, closed early this cycle).
+- HTTP tool-timeout ceiling vs. the CC 5-minute abort window; content-aware in-process approval gate with real severity escalation; shadow-divergence inflation from Claude-session approvals; several worker-ramp fast-follow review findings (L1–L5).
+
+### Security
+
+- Destructive-command + data-exfiltration action classes escalated to mandatory approval (P1-3, P1-7).
+
+### Changed
+
+- Extension: **no version bump this cycle** — confirmed zero commits touched `vscode-extension/` since 1.4.23 (#1011).
+- Versioning: this project moves to `1.1.0-beta.N` going forward, incrementing `N` sequentially for each beta cut in this line (see CLAUDE.md).
+
+---
+
 ## [0.2.0-beta.13] — 2026-06-25
 
 Two security-audit waves · npm-package leak closed · recipe runner-parity (budget + cancellation) · dashboard data-accuracy fixes. Rolls up the previously un-noted beta.12 (#966–#972).
