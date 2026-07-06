@@ -30,6 +30,17 @@ export function hasNestedQuantifier(pattern: string): boolean {
   );
 }
 
+/**
+ * Extract `args[key]` as a string, enforcing a max length.
+ *
+ * Contract: throws (never returns `undefined`) when the key is missing, is
+ * not a string, or exceeds `maxLength`. Used by virtually every tool factory
+ * to validate required string arguments before doing real work — callers can
+ * rely on a successful return being a well-formed string with no further
+ * type-narrowing needed.
+ *
+ * @throws {Error} if `args[key]` is not a string, or exceeds `maxLength`.
+ */
 export function requireString(
   args: Record<string, unknown>,
   key: string,
@@ -45,6 +56,16 @@ export function requireString(
   return value;
 }
 
+/**
+ * Extract `args[key]` as a string when present, tolerating absence.
+ *
+ * Contract: returns `undefined` only for `undefined`/`null` input — any other
+ * non-string value (wrong type) or an over-length string still throws, it is
+ * NOT silently coerced to `undefined`. Callers must not treat a caught error
+ * here the same as "field omitted".
+ *
+ * @throws {Error} if `args[key]` is present but not a string, or exceeds `maxLength`.
+ */
 export function optionalString(
   args: Record<string, unknown>,
   key: string,
@@ -133,6 +154,31 @@ function cachedRealpathSync(p: string): string {
   return resolved;
 }
 
+/**
+ * The path-traversal jail every file-touching tool routes through.
+ *
+ * Guards against: null bytes in `filePath`; lexical escapes above the
+ * workspace root (case-insensitive on win32); symlink escapes, including a
+ * symlinked ancestor of a not-yet-existing path (walks up to the nearest
+ * real ancestor and rejects if the reconstructed real path falls outside the
+ * workspace); and, on `opts.write`, hardlinks into the workspace that alias
+ * an inode living outside it.
+ *
+ * Fails closed: any unexpected error resolving symlinks (ELOOP, EACCES, a
+ * missing real ancestor anywhere up to the filesystem root) is treated as a
+ * violation, not passed through as `resolved`.
+ *
+ * Known trade-off: the workspace-root realpath is cached for 30 s
+ * (`_REALPATH_TTL_MS`) to avoid a `realpathSync` syscall on every one of the
+ * ~145 call sites. This bounds — but does not eliminate — a TOCTOU window
+ * where a symlink swap at the workspace root could briefly be missed; the
+ * accepted risk is that an attacker with that level of fs write access could
+ * already write files directly.
+ *
+ * @throws {Error} (`code: "workspace_escape"` where applicable) for null
+ *   bytes, lexical/symlink/hardlink escapes, or unresolvable ancestors.
+ * @returns the resolved absolute path, branded as `AbsPath`.
+ */
 export function resolveFilePath(
   filePath: string,
   workspace: string,

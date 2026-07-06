@@ -857,7 +857,6 @@ export class ExtensionClient {
   }
 
   /**
-  /**
    * Detect an extension error-object response. Extension handlers by convention
    * return `{ error: string }` (sometimes with `success: false`) on failure
    * instead of throwing. This predicate identifies that shape so tryRequest
@@ -872,11 +871,23 @@ export class ExtensionClient {
   }
 
   /**
-   * Safer shorthand for requestOrNull — converts extension error-object responses
-   * (see isErrorResponse) to null so consumers can distinguish "no result" from
-   * "corrupt data". Use this for any handler whose success and failure paths
-   * return different shapes. Does NOT guarantee the happy-path shape matches T;
-   * for that, do a runtime shape check in the client method.
+   * Auto-unwrapping request helper: converts extension error-object responses
+   * (`{ error }` or `{ success: false, error }`, see {@link isErrorResponse}) to
+   * `null`, same as a genuine "no result". Does NOT validate the success-path
+   * shape — the return value is a blind `as T` cast.
+   *
+   * **When to use**: the success path is a single, simple `T` shape and the
+   * caller doesn't need to distinguish "extension errored" from "no result
+   * found" from "extension disconnected" — all three collapse to `null`.
+   * If the success shape is an object with specific required fields (e.g. a
+   * `{items, count}` wrapper), use {@link validatedRequest} instead so a
+   * shape-wrap mismatch fails loud instead of silently returning malformed data.
+   *
+   * @param method extension JSON-RPC method name (e.g. `"extension/getDiagnostics"`)
+   * @param params request params forwarded verbatim to the extension
+   * @param timeout override for the default request timeout (ms)
+   * @param signal optional AbortSignal to cancel the in-flight request
+   * @returns the raw response cast to `T`, or `null` on error/no-result/disconnect
    */
   private async tryRequest<T>(
     method: string,
@@ -917,16 +928,27 @@ export class ExtensionClient {
   }
 
   /**
-   * Shape-validated request — handles shape-wrap bugs where the extension
-   * handler returns a different structural shape than the client expects
-   * (e.g. `{ folders, count }` vs `WorkspaceFolder[]`).
+   * Shape-validated request helper: takes a runtime shape predicate (`validate`)
+   * that inspects the raw response and returns `T` on match or `null` on
+   * mismatch. Combines {@link isErrorResponse} error-object detection with
+   * that validator, so a shape-wrap bug (e.g. extension returns
+   * `{ folders, count }` when the client expects `WorkspaceFolder[]`) fails
+   * loud as `null` instead of corrupting downstream data with a blind cast.
    *
-   * Combines error-object detection from tryRequest with a runtime validator.
-   * If `validate` returns null, the response shape did not match and the
-   * client should return null — preventing silent data corruption downstream.
+   * **When to use**: the success path is an object with specific required
+   * fields (e.g. `{items, count}`, `{success: boolean, ...}`). This is the
+   * default choice for new extension-client methods — see CLAUDE.md
+   * Architecture Rules: `proxy<T>()` is a blind cast with no runtime
+   * validation and caused 8 latent shape-mismatch bugs (v2.25.18-v2.25.24);
+   * do not reintroduce that pattern. Use {@link tryRequest} only when the
+   * success path is a single simple `T` with no fields worth checking.
    *
-   * Use for any handler whose success shape is non-trivial. Prefer over
-   * proxy<T> when the response is an object with specific required fields.
+   * @param method extension JSON-RPC method name
+   * @param params request params forwarded verbatim to the extension
+   * @param validate runtime predicate: return `T` if `raw` matches the expected shape, else `null`
+   * @param timeout override for the default request timeout (ms)
+   * @param signal optional AbortSignal to cancel the in-flight request
+   * @returns validated `T`, or `null` on error/no-result/shape-mismatch/disconnect
    */
   private async validatedRequest<T>(
     method: string,

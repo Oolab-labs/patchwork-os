@@ -14,6 +14,12 @@ import { registerTierResolver } from "../riskTier.js";
 import { deriveIdempotencyKey } from "./idempotencyKey.js";
 import type { RunContext, StepDeps } from "./yamlRunner.js";
 
+/**
+ * Static metadata describing a recipe-callable tool: identity, schemas, and
+ * the risk/write flags that feed the approval-gate and kill-switch systems.
+ * All fields except `isConnector` are required — there is no partial
+ * registration path.
+ */
 export interface ToolMetadata {
   /** Unique tool identifier: "namespace.action" */
   id: string;
@@ -23,11 +29,31 @@ export interface ToolMetadata {
   description: string;
   /** JSON Schema for input parameters */
   paramsSchema: unknown;
-  /** JSON Schema for output (enables template linting) */
+  /**
+   * JSON Schema for output (enables template linting, e.g. `{{steps.x.foo}}`
+   * autocomplete/validation). Mandatory per CLAUDE.md's "Testing Requirements"
+   * section — `scripts/audit-lsp-tools.mjs` enforces this per-schema-block;
+   * see `scripts/audit-output-schema-allowlist.json` for the narrow exception
+   * path.
+   */
   outputSchema: unknown;
-  /** Default risk tier for approval gate decisions */
+  /**
+   * Default risk tier consumed by `classifyTool` (via `registerTierResolver`
+   * below) to decide approval-gate behavior: `"low"` tools may run
+   * autonomously, `"medium"`/`"high"` tools are queued for human confirmation
+   * unless the operator's approval-gate policy explicitly allows them. This
+   * is the primary security-relevant field on this interface — get it wrong
+   * and a mutating tool executes without oversight.
+   */
   riskDefault: "low" | "medium" | "high";
-  /** Whether this tool performs a write/mutation (affects mock behavior and approval) */
+  /**
+   * Whether this tool performs a write/mutation. Security-relevant on two
+   * axes: (1) gates the tool behind `assertWriteAllowed` in `executeTool`
+   * below, so it is refused outright when the global write kill-switch is
+   * engaged (read-tier tools are never affected); (2) routes execution
+   * through the idempotency ledger so a single write executes at most once
+   * per recipe run even if re-dispatched by a parallel branch or retry.
+   */
   isWrite: boolean;
   /**
    * Whether this tool calls an external SaaS connector (vs a local/built-in tool).
@@ -63,7 +89,23 @@ const registry = new Map<string, RegisteredTool>();
 registerTierResolver((id) => registry.get(id)?.riskDefault);
 
 /**
- * Register a tool. Duplicate IDs throw.
+ * Register a tool into the recipe-callable registry.
+ *
+ * @param tool - Full metadata + `execute` implementation. All `ToolMetadata`
+ *   fields are required (only `isConnector` is optional) — there is no
+ *   partial/lazy registration.
+ * @throws {Error} If `tool.id` is already registered. Registration is
+ *   register-once: there is no update-in-place or override path, so
+ *   re-registering the same id (e.g. a plugin reload) must go through
+ *   `clearRegistry()` first or be guarded by a `hasTool()` check
+ *   (see `registerPluginTools`, which skips instead of throwing).
+ *
+ * `tool.riskDefault` and `tool.isWrite` are the security-relevant fields:
+ * `riskDefault` feeds `classifyTool` (via the `registerTierResolver` call
+ * below) to decide whether the approval gate lets the tool run autonomously
+ * (`"low"`) or queues it for human confirmation (`"medium"`/`"high"`).
+ * `isWrite` independently subjects the tool to the write kill-switch and
+ * the idempotency-dedup ledger in `executeTool`, regardless of risk tier.
  */
 export function registerTool(tool: RegisteredTool): void {
   if (registry.has(tool.id)) {
@@ -73,7 +115,13 @@ export function registerTool(tool: RegisteredTool): void {
 }
 
 /**
- * Get a tool by ID. Returns undefined if not found.
+ * Look up a registered tool by id.
+ *
+ * @param id - Tool id in `"namespace.action"` form.
+ * @returns The `RegisteredTool`, or `undefined` if no tool with that id has
+ *   been registered — this function never throws on a miss. Callers that
+ *   need throw-on-miss semantics (e.g. `executeTool`) check the result
+ *   themselves and raise their own error.
  */
 export function getTool(id: string): RegisteredTool | undefined {
   return registry.get(id);
