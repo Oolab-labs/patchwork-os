@@ -11,6 +11,20 @@
  *
  * All new connectors (Jira, Notion, PagerDuty, Drive, etc.) extend this base.
  * Extracted to prevent "each connector reinvents auth" anti-pattern.
+ *
+ * Contract for subclasses:
+ *   - MUST implement: `providerName`, `getOAuthConfig()`, `authenticate()`,
+ *     `healthCheck()`, `normalizeError()`, `getStatus()`.
+ *   - Free for the taking (do not reimplement): token refresh + dedup
+ *     (`refreshToken`/`refreshTokenDeduped`), expiry checking
+ *     (`isTokenExpired`), secure token persistence (`loadStoredTokens`/
+ *     `saveTokens`/`clearTokens`), and the retry+backoff request wrapper
+ *     (`apiCall`) — subclasses should route all provider calls through
+ *     `apiCall()` rather than calling `fetch`/SDK methods directly, so they
+ *     get refresh-on-401 and rate-limit backoff automatically.
+ *   - PAT/API-token connectors (Jira, Notion, etc., see `ConnectorStatus.
+ *     tokenExpiresAt`) can leave `getOAuthConfig()` returning `null`; refresh
+ *     then no-ops and `authenticate()` becomes the sole auth path.
  */
 
 export interface ConnectorStatus {
@@ -97,8 +111,16 @@ export abstract class BaseConnector {
   protected abstract getOAuthConfig(): OAuthConfig | null;
 
   /**
-   * Authenticate with the provider. Implemented by subclass.
-   * Base class handles token refresh on expiry and secure storage.
+   * Perform a full (re-)authentication with the provider — subclass-specific
+   * (OAuth authorize-code exchange, PAT validation, etc.). Called by the base
+   * class only as a fallback: when there's no refresh token, or when
+   * `refreshTokenDeduped()` returns `null` (refresh failed/unavailable).
+   * Expiry-driven refresh itself is handled for you by `refreshToken()` /
+   * `refreshTokenDeduped()` — do not reimplement refresh here.
+   *
+   * @returns a fresh `AuthContext`. Implementations should throw (not return
+   *   a partial/invalid context) on failure — callers in `apiCall()` catch
+   *   and route the exception through `normalizeError()`.
    */
   abstract authenticate(): Promise<AuthContext>;
 
@@ -298,14 +320,23 @@ export abstract class BaseConnector {
   }
 
   /**
-   * Health check — validates token is valid without side effects.
-   * Default implementation: make lightweight API call (e.g., /me or /user).
+   * Validate that the current credentials are actually usable against the
+   * live provider, typically via one lightweight, read-only call (e.g.
+   * `/me`, `/user`). Contract: MUST NOT throw — implementations should catch
+   * failures internally (routing them through `normalizeError()`) and always
+   * resolve to a status object, so dashboard/CLI callers can render a result
+   * without a try/catch of their own.
    */
   abstract healthCheck(): Promise<{ ok: boolean; error?: ConnectorError }>;
 
   /**
-   * Normalize provider-specific errors to ConnectorError.
-   * Each subclass implements provider-specific error mapping.
+   * Map a provider-specific error (raw HTTP error, SDK exception, thrown
+   * string — whatever the vendor client surfaces) onto the single shared
+   * `ConnectorError` shape. This is what lets 46 wildly different vendor
+   * APIs (REST, GraphQL, SDK-wrapped, PAT vs OAuth) present one consistent
+   * error contract to `apiCall()`, the dashboard, and recipe step failures —
+   * in particular, correctly classifying `code: "auth_expired"` here is what
+   * drives the refresh-then-retry path in `apiCall()`.
    */
   abstract normalizeError(error: unknown): ConnectorError;
 
@@ -315,8 +346,19 @@ export abstract class BaseConnector {
   abstract getStatus(): ConnectorStatus;
 
   /**
-   * Execute an authenticated API call with automatic token refresh
-   * and rate limit backoff.
+   * Execute an authenticated API call with automatic token refresh and
+   * rate-limit backoff, retrying up to `options.retries` times (default 2).
+   *
+   * On a retryable `auth_expired` failure mid-loop, the exponential backoff
+   * sleep runs BEFORE the token refresh attempt (see the retry loop below) —
+   * this is intentional ordering, not a bug: it keeps the retry path uniform
+   * across all error codes (backoff always happens first) at the cost of a
+   * few hundred ms of avoidable latency on the auth_expired case specifically,
+   * since refreshing first would let that retry skip the wait entirely.
+   *
+   * Never throws — returns `{ data }` on success or `{ error: ConnectorError }`
+   * (already passed through `normalizeError`) on failure, including when
+   * initial auth resolution itself fails.
    */
   protected async apiCall<T>(
     fn: (token: string) => Promise<T>,

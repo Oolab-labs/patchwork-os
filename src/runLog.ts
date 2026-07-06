@@ -21,6 +21,19 @@ import type { Logger } from "./logger.js";
  *
  * Schema is deliberately minimal + additive: extra fields go in without a
  * migration. Consumers must tolerate unknown keys.
+ *
+ * **Two consumers, not one.** `runs.jsonl` is read by (1) the dashboard/CLI
+ * for run history + cost reporting, and (2) the worker-autonomy trust-replay
+ * system (`src/workers/`), which treats this log as its de-facto outcome
+ * corpus for computing per-worker × action-class trust levels. A schema
+ * change or field drop here silently affects both — always check both call
+ * sites before changing what gets persisted.
+ *
+ * Disk rotation (see `rotateDisk`) trims `runs.jsonl` at a 1 MB / 10k-line
+ * threshold. Rotation and append both happen under the same advisory file
+ * lock (`withFileLockSync`) so a concurrent bridge process can't append
+ * between the rotation's temp-write and rename and have that row silently
+ * dropped — see the `append()` implementation for the exact ordering.
  */
 
 export type RunTrigger = "cron" | "webhook" | "recipe";
@@ -481,7 +494,23 @@ export class RecipeRunLog {
   /**
    * Finalize a running entry: update status + duration, append step results,
    * and persist the row to JSONL. No-op if the seq is unknown (e.g. the run
-   * was started in a previous process before a restart).
+   * was started in a previous process before a restart) or already terminal.
+   *
+   * `opts.tokenTotals` / `opts.budgetTotals` MUST be threaded through
+   * explicitly from the caller — do not drop them in a refactor. This file
+   * has **two independent consumers**: the dashboard/CLI (cost reporting)
+   * and the worker-autonomy trust-replay system (`src/workers/`), which
+   * reads `runs.jsonl` as its outcome corpus. Audit 2026-06-09 (data-loss-1)
+   * found these two fields silently missing from the `completeRun` opts
+   * type, so runs persisted with no cost/budget data even though both were
+   * computed upstream. Fixed, but a future signature change here can
+   * reintroduce the same silent gap for both consumers at once.
+   *
+   * @param seq - The run's monotonic sequence id, from `startRun`.
+   * @param opts.tokenTotals - Run-level token/cost aggregate; omit only when
+   *   no step reported usage. See `RecipeRun.tokenTotals`.
+   * @param opts.budgetTotals - `RunBudget.totals()` snapshot; omit only when
+   *   no budget was configured for the run. See `RecipeRun.budgetTotals`.
    */
   completeRun(
     seq: number,
