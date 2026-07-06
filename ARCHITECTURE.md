@@ -1,6 +1,6 @@
 # Claude IDE Bridge — Architecture
 
-Version 0.2.0-beta.13 · Node.js ≥ 20 · TypeScript
+Version 1.1.0-beta.1 · Node.js ≥ 20 · TypeScript
 
 ---
 
