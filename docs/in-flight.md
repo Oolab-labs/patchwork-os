@@ -26,7 +26,8 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 ## Active
 
 - 2026-07-04 `fix/dashboard-build-middleware-matcher` (#1130) — Found during a final pre-release sweep: `npm run build` (dashboard) has been failing since #990 with "Unknown identifier SESSION_GATE_MATCHER at config.matcher[1]" — undetected because CI never runs a production build, only dev/vitest. Next.js statically parses `config` in middleware.ts, so `config.matcher` entries must be literal syntax, not identifier references. Inlined the literal; `SESSION_GATE_MATCHER` (used by middleware.test.ts) now derives from `config.matcher[1]` at runtime instead. Confirmed real by stashing the fix and reproducing the build failure. — awaiting CI
-- 2026-07-06 `docs/subsystem-readmes` (#1134) — Resultmaxxing Track B1: 8 subsystem READMEs (src/workers/, src/recipes/, src/connectors/, src/fp/, src/tools/, dashboard/src/, vscode-extension/src/, services/push-relay/), each ≤80 lines. Side finding: independently reconfirmed the register's two UNVERIFIABLE TA-desk items (H8, H9) are both FIXED — needs folding back into docs/security/register.md. — CI green, awaiting merge
+- 2026-07-07 `test/haltpushdispatch-approvalinsights-coverage` (#1137) — Resultmaxxing Track D1: real behavioral tests for haltPushDispatch.ts (0%→100% lines) and approvalInsights.ts (0%→100% lines/functions, 93% branches). — awaiting review
+- 2026-07-07 `test/shadowscan-replayrun-coverage` — Resultmaxxing Track D1 continued: shadowScan.ts (39%→95% lines, covering runShadowScanCli's path resolution/size-limit/exit-code behavior) and replayRun.ts (54%→96% lines, covering replayMockedRun's entrypoint — taskId tagging, unmocked-step reporting, error handling, the env-allowlist enforcement). Both files previously had partial test coverage on their pure helper functions only, leaving the actual entrypoints untested. — in progress
 
 ## Recently closed (informal log, prune periodically)
 
