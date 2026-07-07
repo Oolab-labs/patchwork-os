@@ -96,6 +96,7 @@ function fallbackToVitest() {
   const args = process.argv.slice(2);
   const result = spawnSync("npx", ["vitest", "run", ...args], {
     stdio: "inherit",
+    shell: process.platform === "win32",
   });
   process.exit(result.status ?? 1);
 }
