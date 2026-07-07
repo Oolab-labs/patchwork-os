@@ -116,11 +116,11 @@ describe("<HomePage/> — Terminal deck", () => {
     });
 
     for (const label of [
-      "attention",
-      "tail",
-      "fleet",
-      "next",
-      "workers",
+      "Needs your attention",
+      "Live activity",
+      "Your automations",
+      "Coming up",
+      "Your AI team",
       "vitals",
       "inbox",
     ]) {
@@ -270,7 +270,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const workersPane = screen.getByRole("region", { name: "workers" });
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/71% over 14 tries/);
   });
 
@@ -351,11 +351,11 @@ describe("<HomePage/> — Terminal deck", () => {
     });
 
     // Workers pane shows an inline error, not a crash.
-    const workersPane = screen.getByRole("region", { name: "workers" });
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/unavailable/i);
 
     // Other panes still rendered fine.
-    expect(screen.getByRole("region", { name: "fleet" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Your automations" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "vitals" })).toBeTruthy();
   });
 
@@ -385,7 +385,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const fleetPane = screen.getByRole("region", { name: "fleet" });
+    const fleetPane = screen.getByRole("region", { name: "Your automations" });
     expect(fleetPane.className).not.toMatch(/td-pane-active/);
 
     await act(async () => {
@@ -409,7 +409,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const workersPane = screen.getByRole("region", { name: "workers" });
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/GATE/);
     expect(workersPane.textContent).toMatch(/test-guardian/);
     expect(workersPane.textContent).toMatch(/issue:compensable:high/);
@@ -437,7 +437,7 @@ describe("<HomePage/> — Terminal deck", () => {
     await waitFor(() => {
       expect(row.getAttribute("aria-expanded")).toBe("true");
     });
-    const workersPane = screen.getByRole("region", { name: "workers" });
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/earned L1/);
     expect(workersPane.textContent).toMatch(/autonomy ceiling L3/);
     expect(workersPane.textContent).toMatch(
@@ -462,7 +462,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const workersPane = screen.getByRole("region", { name: "workers" });
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
     // Collapsed by default — worker names visible, decision detail is not.
     expect(workersPane.textContent).toMatch(/dependency-bump-worker/);
     expect(workersPane.textContent).toMatch(/test-guardian/);
@@ -495,7 +495,7 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(container.querySelector(".td-gate-worker-group")).toBeNull();
     // The flat row already shows the class key inline, unlike the
     // grouped accordion which hides it behind a collapsed toggle.
-    const workersPane = screen.getByRole("region", { name: "workers" });
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/issue:compensable:high/);
   });
 
@@ -577,7 +577,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const attentionPane = screen.getByRole("region", { name: "attention" });
+    const attentionPane = screen.getByRole("region", { name: "Needs your attention" });
     expect(attentionPane.textContent).toMatch(/running/i);
     expect(attentionPane.textContent).toMatch(/daily brief/i);
 
@@ -637,7 +637,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const attentionPane = screen.getByRole("region", { name: "attention" });
+    const attentionPane = screen.getByRole("region", { name: "Needs your attention" });
     // The higher-blast-tier request (runCommand, tier high → classified
     // irreversible) is shown, not the low-tier readFile — worst first.
     expect(attentionPane.textContent).toMatch(/runCommand/);
@@ -699,7 +699,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const tailPane = screen.getByRole("region", { name: "tail" });
+    const tailPane = screen.getByRole("region", { name: "Live activity" });
     const stopBtn = within(tailPane).getByTitle("Stop this run of morning-brief");
     await act(async () => {
       stopBtn.click();
@@ -724,7 +724,7 @@ describe("<HomePage/> — Terminal deck", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50);
     });
-    let workersPane = screen.getByRole("region", { name: "workers" });
+    let workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/no gate decisions yet/i);
     unmount();
 
@@ -736,7 +736,7 @@ describe("<HomePage/> — Terminal deck", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50);
     });
-    workersPane = screen.getByRole("region", { name: "workers" });
+    workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/gate activity unavailable/i);
     // Rest of the pane (worker trust rows) still renders — fail-soft.
     expect(workersPane.textContent).toMatch(/no worker activity yet/i);
@@ -769,7 +769,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const attentionPane = screen.getByRole("region", { name: "attention" });
+    const attentionPane = screen.getByRole("region", { name: "Needs your attention" });
     expect(attentionPane.textContent).toMatch(/needs attention/i);
     expect(attentionPane.querySelector(".td-pill-critical")).toBeTruthy();
   });
@@ -796,7 +796,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const attentionPane = screen.getByRole("region", { name: "attention" });
+    const attentionPane = screen.getByRole("region", { name: "Needs your attention" });
     expect(attentionPane.textContent).not.toMatch(/needs attention/i);
     expect(attentionPane.querySelector(".td-pill-critical")).toBeNull();
   });
@@ -824,7 +824,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const attentionPane = screen.getByRole("region", { name: "attention" });
+    const attentionPane = screen.getByRole("region", { name: "Needs your attention" });
     const muteBtn = within(attentionPane).getByText("Mute 24h");
     await act(async () => {
       muteBtn.click();
@@ -905,7 +905,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const attentionPane = screen.getByRole("region", { name: "attention" });
+    const attentionPane = screen.getByRole("region", { name: "Needs your attention" });
     expect(attentionPane.textContent).toMatch(/worker verdict/i);
     expect(attentionPane.textContent).toMatch(/Login test failing on main/);
 
@@ -958,7 +958,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const workersPane = screen.getByRole("region", { name: "workers" });
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/ready to promote/i);
   });
 
@@ -996,7 +996,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const workersPane = screen.getByRole("region", { name: "workers" });
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/review needed/i);
     expect(workersPane.textContent).toMatch(/Flaky reconnect test/);
     expect(workersPane.textContent).toMatch(/issue:compensable:high/);

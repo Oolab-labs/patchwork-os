@@ -2248,6 +2248,26 @@ a.btn { text-decoration: none; }
   box-shadow: var(--shadow-s);
 }
 .theme-toggle:hover { background: var(--recess); color: var(--ink-0); border-color: var(--line-2); }
+.nav-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-m);
+  border: 1px solid var(--line-1);
+  background: var(--surface);
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-family: var(--font-sans);
+  transition: background 120ms, color 120ms, border-color 120ms;
+  box-shadow: var(--shadow-s);
+}
+.nav-mode-toggle:hover { background: var(--recess); color: var(--ink-0); border-color: var(--line-2); }
+@media (max-width: 860px) {
+  .nav-mode-toggle { display: none; }
+}
 
 /* ---- Animations ---- */
 
@@ -4100,6 +4120,19 @@ a.btn { text-decoration: none; }
 }
 .rgc-name:hover {
   text-decoration: underline;
+}
+.rgc-name-slug {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--ink-3, var(--ink-2));
+}
+.rgc-sparkline-empty {
+  font-size: var(--fs-xs);
+  color: var(--ink-3, var(--ink-2));
+  height: 26px;
+  display: flex;
+  align-items: center;
 }
 
 .rgc-run {
@@ -9847,7 +9880,19 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 [data-theme="paper"] .td-pane-head { background: var(--recess); }
 .td-pane-tag { color: var(--terminal-prompt); font-weight: 700; }
 [data-theme="paper"] .td-pane-tag { color: var(--accent); }
-.td-pane-title { text-transform: uppercase; letter-spacing: 0.08em; font-size: var(--fs-xs); color: var(--terminal-comment); }
+.td-pane-title {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--fs-xs);
+  color: var(--terminal-comment);
+  /* Plain-English titles ("Needs your attention") run longer than the old
+     single-word codes ("attention") — truncate rather than wrap/overflow
+     the pane header row. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 [data-theme="paper"] .td-pane-title { color: var(--ink-3); }
 .td-pane-sp { flex: 1; }
 /* Alias: several call sites (the "Unified morning" section's action
@@ -9944,8 +9989,13 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 /* Pane 0: attention */
 .td-attention-item { display: flex; flex-direction: column; gap: 6px; }
 .td-attention-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.td-attention-reason { color: var(--terminal-comment); font-size: var(--fs-xs); }
+.td-attention-reason { color: var(--terminal-comment); font-size: var(--fs-xs); font-family: var(--font-sans, inherit); }
 [data-theme="paper"] .td-attention-reason { color: var(--ink-3); }
+.td-attention-fix-hint { color: var(--ink-2); }
+.td-attention-raw { margin-top: 2px; }
+.td-attention-raw summary { cursor: pointer; font-size: var(--fs-2xs); color: var(--terminal-comment); }
+[data-theme="paper"] .td-attention-raw summary { color: var(--ink-3); }
+.td-attention-raw code { display: block; margin-top: 2px; font-size: var(--fs-2xs); white-space: pre-wrap; word-break: break-word; }
 .td-attention-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .td-attention-foot { margin-top: 8px; font-size: var(--fs-xs); }
 .td-attention-foot a { color: inherit; }
