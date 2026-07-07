@@ -80,7 +80,9 @@ describe("Recipes gallery — card grid + filter chips", () => {
     });
 
     // Click the "cron" trigger chip → only the two cron recipes remain.
-    const cronChip = await findByText(/^cron \(2\)$/);
+    // Chip text is now the humanized filter phrase (triggerFilterLabel),
+    // not the raw "cron" trigger-type string.
+    const cronChip = await findByText(/^On a schedule \(2\)$/);
     fireEvent.click(cronChip);
     await waitFor(() => {
       const cards = container.querySelectorAll(".recipes-gallery-card[data-recipe-row]");

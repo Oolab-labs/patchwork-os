@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { triggerLabel } from "@/lib/triggerLabel";
+import { triggerFilterLabel, triggerLabel } from "@/lib/triggerLabel";
 
 describe("triggerLabel", () => {
   it("maps cron-family triggers to 'cron'", () => {
@@ -28,5 +28,37 @@ describe("triggerLabel", () => {
 
   it("falls back to an 8-char slice for unknown trigger strings", () => {
     expect(triggerLabel("some_unmapped_trigger")).toBe("some_unm");
+  });
+});
+
+describe("triggerFilterLabel", () => {
+  it("gives the full plain-English phrase for cron-family triggers", () => {
+    expect(triggerFilterLabel("cron")).toBe("On a schedule");
+    expect(triggerFilterLabel("schedule")).toBe("On a schedule");
+    expect(triggerFilterLabel("scheduled")).toBe("On a schedule");
+  });
+
+  it("gives the full phrase for file-watch, git, webhook, test, and event triggers", () => {
+    expect(triggerFilterLabel("on_file_save")).toBe("When a file is saved");
+    expect(triggerFilterLabel("git_hook")).toBe("When you commit");
+    expect(triggerFilterLabel("webhook")).toBe("When triggered by a webhook");
+    expect(triggerFilterLabel("on_test_run")).toBe("When tests run");
+    expect(triggerFilterLabel("event")).toBe("When an event happens");
+  });
+
+  it("defaults to 'Run manually' for undefined/null/manual", () => {
+    expect(triggerFilterLabel(undefined)).toBe("Run manually");
+    expect(triggerFilterLabel(null)).toBe("Run manually");
+    expect(triggerFilterLabel("manual")).toBe("Run manually");
+  });
+
+  it("title-cases unrecognized trigger strings instead of showing the raw slug", () => {
+    expect(triggerFilterLabel("some_unmapped_trigger")).toBe(
+      "Some Unmapped Trigger",
+    );
+  });
+
+  it("does not affect the existing short triggerLabel mapping", () => {
+    expect(triggerLabel("cron")).toBe("cron");
   });
 });

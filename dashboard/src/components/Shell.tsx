@@ -8,7 +8,8 @@ import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { subscribeStreamLiveness } from "@/lib/streamLiveness";
 import { getHaltsLookbackMs, subscribeHaltsSeen } from "@/lib/haltsSeen";
-import { NAV_SECTIONS } from "@/lib/navRoutes";
+import { NAV_SECTIONS, SIMPLE_NAV_SECTIONS } from "@/lib/navRoutes";
+import { useNavMode } from "@/hooks/useNavMode";
 import { ActivityTicker } from "./ActivityTicker";
 import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
 import { StalenessStrip } from "./StalenessStrip";
@@ -93,15 +94,22 @@ type NavItem = {
   badge?: "approvals" | "halts" | "runs";
 };
 
-const SECTIONS: { title: string; items: NavItem[] }[] = NAV_SECTIONS.map((s) => ({
-  title: s.title,
-  items: s.routes.map((r) => ({
-    href: r.href,
-    label: r.label,
-    icon: r.icon ?? "home",
-    badge: r.badge,
-  })),
-}));
+function toSections(
+  sections: typeof NAV_SECTIONS,
+): { title: string; items: NavItem[] }[] {
+  return sections.map((s) => ({
+    title: s.title,
+    items: s.routes.map((r) => ({
+      href: r.href,
+      label: r.label,
+      icon: r.icon ?? "home",
+      badge: r.badge,
+    })),
+  }));
+}
+
+const SECTIONS = toSections(NAV_SECTIONS);
+const SIMPLE_SECTIONS = toSections(SIMPLE_NAV_SECTIONS);
 
 // ------------------------------------------------------------------ approval count
 
@@ -354,6 +362,7 @@ function AppShell({ children }: { children: ReactNode }) {
   const haltCount = useHaltCount();
   const runCount = useActiveRunCount();
   const { active, toggle } = useTheme();
+  const [navMode, setNavMode] = useNavMode();
   const identity = useIdentity(status);
   const [mobileOpen, setMobileOpen] = useState(false);
   // Demo: replace with real notification count when available
@@ -389,9 +398,10 @@ function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const activeSections = navMode === "simple" ? SIMPLE_SECTIONS : SECTIONS;
   const navMarkup = useMemo(
     () =>
-      SECTIONS.map((section) => (
+      activeSections.map((section) => (
         <div key={section.title}>
           <div className="app-nav-section-label">{section.title}</div>
           {section.items.map((item) => {
@@ -438,7 +448,7 @@ function AppShell({ children }: { children: ReactNode }) {
           })}
         </div>
       )),
-    [pathname, approvalCount, haltCount, runCount],
+    [activeSections, pathname, approvalCount, haltCount, runCount],
   );
 
   return (
@@ -502,6 +512,19 @@ function AppShell({ children }: { children: ReactNode }) {
         <ActivityTicker />
         <div className="app-header-actions">
           <IdentityPill ok={status.ok} host={identity.host} port={identity.port} />
+          <button
+            type="button"
+            className="nav-mode-toggle"
+            onClick={() => setNavMode(navMode === "simple" ? "advanced" : "simple")}
+            title={
+              navMode === "simple"
+                ? "Simple mode — showing the essentials. Click for the full menu."
+                : "Advanced mode — showing everything. Click for a shorter, simpler menu."
+            }
+            aria-label={`Switch to ${navMode === "simple" ? "Advanced" : "Simple"} navigation`}
+          >
+            {navMode === "simple" ? "Simple" : "Advanced"}
+          </button>
           <button
             className="theme-toggle"
             onClick={toggle}
@@ -605,6 +628,11 @@ function IdentityPill({ ok, host, port }: { ok: boolean; host: string; port?: nu
   // which the ActivityTicker tracks separately. Label this pill
   // "reachable/unreachable" — describing the bridge PROCESS — so it can
   // never read as a contradiction of the ticker's "Live stream" state.
+  //
+  // Visible text used to be the raw `${user}@${workspace} · 127.0.0.1:${port}`
+  // identity string — meaningless to a non-technical user. Plain-English
+  // status is now the default-visible text; the raw address moves to the
+  // hover title (still one hover away for anyone who wants it).
   return (
     <span
       className={`identity-pill${ok ? "" : " is-offline"}`}
@@ -612,9 +640,9 @@ function IdentityPill({ ok, host, port }: { ok: boolean; host: string; port?: nu
     >
       <span className={`identity-pill-dot${ok ? " online" : ""}`} aria-hidden="true" />
       <span className="sr-only">Bridge {ok ? "reachable" : "unreachable"}.</span>
-      <span className="identity-pill-host">{host}</span>
+      <span className="identity-pill-host">{ok ? "Connected" : "Disconnected"}</span>
       <span className="identity-pill-sep" aria-hidden="true">·</span>
-      <span className="identity-pill-port">{portText}</span>
+      <span className="identity-pill-port">this Mac</span>
     </span>
   );
 }

@@ -14,6 +14,8 @@ import { useActiveRuns } from "@/hooks/LiveRunsContext";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 import { useToggleRecipeEnabled } from "@/hooks/useToggleRecipeEnabled";
 import type { ActiveRunState } from "@/hooks/useRecipeRunStream";
+import { recipeDisplayName } from "@/lib/recipeDisplay";
+import { triggerFilterLabel } from "@/lib/triggerLabel";
 import { RecipeRunInline } from "./_components/RecipeRunInline";
 import {
   EmptyState,
@@ -649,7 +651,7 @@ export default function RecipesPage() {
   const connectorFilter = searchParams.get("connector");
 
   const filteredRecipes = useMemo(() => {
-    return (recipes ?? []).filter((r) => {
+    const list = (recipes ?? []).filter((r) => {
       if (statusFilter === "enabled" && r.enabled === false) return false;
       if (statusFilter === "paused" && r.enabled !== false) return false;
       if (triggerFilter && (r.trigger ?? "manual") !== triggerFilter) return false;
@@ -662,6 +664,15 @@ export default function RecipesPage() {
         r.name.toLowerCase().includes(q) ||
         (r.description ?? "").toLowerCase().includes(q)
       );
+    });
+    // Stable partition: enabled recipes before paused/disabled ones, without
+    // reordering within either group (Array.prototype.sort in modern JS
+    // engines is stable, so a 0/1 comparator preserves original relative
+    // order inside each partition).
+    return [...list].sort((a, b) => {
+      const aOff = a.enabled === false ? 1 : 0;
+      const bOff = b.enabled === false ? 1 : 0;
+      return aOff - bOff;
     });
   }, [recipes, statusFilter, triggerFilter, search, connectorFilter]);
 
@@ -753,16 +764,18 @@ export default function RecipesPage() {
         <div>
           <div className="page-head-title-row">
             <h1 className="editorial-h1">
-              Recipes — <span className="accent">YAML, declarative, yours.</span>
+              Recipes — <span className="accent">your automations</span>
             </h1>
             <HintCard.Toggle id="recipes" />
           </div>
           <div className="editorial-sub">
             {recipes ? (
               <>
-                <code className="mono-path">~/.patchwork/recipes</code>
-                <span aria-hidden="true" className="sep-muted">·</span>
                 {installedCount} installed
+                <span aria-hidden="true" className="sep-muted">·</span>
+                <span className="mono-path" title="~/.patchwork/recipes">
+                  recipes folder
+                </span>
               </>
             ) : (
               "Loading…"
@@ -872,7 +885,7 @@ export default function RecipesPage() {
               data-trigger-filter={trigger}
               onClick={() => setTriggerFilter(triggerFilter === trigger ? null : trigger)}
             >
-              {trigger} ({count})
+              {triggerFilterLabel(trigger)} ({count})
             </button>
           ))}
         </div>
@@ -995,10 +1008,11 @@ export default function RecipesPage() {
                     <Link
                       href={`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="rgc-name mono"
-                      title={r.description ?? r.name}
+                      className="rgc-name"
+                      title={r.name}
                     >
-                      {r.name}
+                      {recipeDisplayName(r.name)}
+                      <span className="rgc-name-slug mono muted">{r.name}</span>
                     </Link>
                     <StatusPill tone={triggerTone(r.trigger)}>
                       {r.trigger ?? "manual"}
@@ -1048,12 +1062,16 @@ export default function RecipesPage() {
 
                 {r.description && <div className="rgc-desc">{r.description}</div>}
 
-                <RunSparkBars
-                  runs={(allRunsMap.get(r.name) ?? []).slice(0, 14)}
-                  slots={14}
-                  width={260}
-                  height={26}
-                />
+                {(allRunsMap.get(r.name) ?? []).length > 0 ? (
+                  <RunSparkBars
+                    runs={(allRunsMap.get(r.name) ?? []).slice(0, 14)}
+                    slots={14}
+                    width={260}
+                    height={26}
+                  />
+                ) : (
+                  <div className="rgc-sparkline-empty muted">no runs yet</div>
+                )}
 
                 <div className="rgc-meta">
                   <span className="rgc-meta-item">

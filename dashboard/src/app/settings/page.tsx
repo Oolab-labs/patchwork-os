@@ -620,9 +620,11 @@ export default function SettingsPage() {
       <div className="page-head stg-page-head">
         <div>
           <h1 className="editorial-h1">
-            Settings — <span className="accent">config that lives in plaintext.</span>
+            Settings — <span className="accent">how Patchwork runs</span>
           </h1>
-          <div className="editorial-sub">{configPath} · changes hot-reload</div>
+          <div className="editorial-sub">
+            <span title={configPath}>settings file</span> · changes apply automatically
+          </div>
         </div>
         <div
           aria-live="polite"
@@ -740,8 +742,34 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                <div className="stg-readonly-note">
-                  Read-only — edit the config file directly and restart the bridge.
+                <div
+                  className="stg-readonly-note"
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                >
+                  <span>Read-only — changes here need a restart.</span>
+                  <button
+                    type="button"
+                    className="stg-action-btn"
+                    title={configPath}
+                    onClick={() => {
+                      let opened = false;
+                      try {
+                        const win = window.open(`file://${configPath}`, "_blank");
+                        opened = !!win;
+                      } catch {
+                        opened = false;
+                      }
+                      if (!opened && navigator.clipboard?.writeText) {
+                        navigator.clipboard
+                          .writeText(configPath)
+                          .catch(() => {
+                            /* clipboard unavailable — title attr still shows the path */
+                          });
+                      }
+                    }}
+                  >
+                    Open config file
+                  </button>
                 </div>
               </div>
 

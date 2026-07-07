@@ -150,6 +150,51 @@ export const NAV_SECTIONS: NavSection[] = [
 ];
 
 /**
+ * Reduced sidebar for the "Simple" nav mode (Shell's Simple/Advanced
+ * toggle, persisted via useNavMode). Non-technical users get 5 sections
+ * instead of 6, and each label reads as a plain destination rather than
+ * a developer-facing noun (Recipes -> Automations). Reuses the same
+ * hrefs/icons as NAV_SECTIONS — only the label text and which routes
+ * are surfaced differ, so a route's page itself never has to know
+ * which nav mode linked to it.
+ */
+export const SIMPLE_NAV_SECTIONS: NavSection[] = [
+  {
+    title: "Home",
+    routes: [
+      { href: "/", label: "Overview", icon: "home" },
+      { href: "/inbox", label: "Inbox", icon: "inbox" },
+    ],
+  },
+  {
+    title: "Automations",
+    routes: [
+      { href: "/recipes", label: "Automations", icon: "book" },
+      { href: "/marketplace", label: "Browse & install", icon: "store" },
+    ],
+  },
+  {
+    title: "Review",
+    routes: [
+      { href: "/approvals", label: "Approvals", icon: "check", badge: "approvals" },
+    ],
+  },
+  {
+    title: "Activity",
+    routes: [
+      { href: "/activity", label: "Activity", icon: "activity", badge: "halts" },
+    ],
+  },
+  {
+    title: "Setup",
+    routes: [
+      { href: "/connections", label: "Connections", icon: "plug" },
+      { href: "/settings", label: "Settings", icon: "settings" },
+    ],
+  },
+];
+
+/**
  * Mobile bottom-tab order: the 4 most-likely-destinations on a phone,
  * plus a "More" sheet exposing everything else.
  *

@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StatCard } from "@/components/StatCard";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -207,6 +208,13 @@ export default function AnalyticsPage() {
 
       {(!error || data) && (
         <>
+          {!loading && totalCalls === 0 && (
+            <div className="alert-info" role="status">
+              Nothing to show yet — this fills in once your automations start
+              running. <Link href="/recipes">Install or run a recipe</Link> to
+              see activity here.
+            </div>
+          )}
           <div className="stat-grid">
             <StatCard
               label="Total tool calls"
