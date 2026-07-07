@@ -127,6 +127,45 @@ const CONNECTOR_SCOPES: Record<string, string[]> = {
   telegram:         ["send_messages", "read_chats"],
 };
 
+// ------------------------------------------------------------------ plain-English translations for raw OAuth scope strings (chip labels)
+
+const SCOPE_TRANSLATIONS: Record<string, string> = {
+  "channels:read": "See channels",
+  "chat:write": "Send messages",
+  "users:read": "See user info",
+  "read:jira": "Read Jira issues",
+  "write:jira": "Write Jira issues",
+  "read:confluence": "Read Confluence pages",
+  "write:confluence": "Write Confluence pages",
+  "repo:read": "Read code & issues",
+  "issues:read": "Read issues",
+  "pulls:read": "Read pull requests",
+  "read_api": "Read repository data",
+  "read_repository": "Read repository data",
+  "read": "Read your data",
+  "write": "Write your data",
+  "tasks:read": "Read tasks",
+  "projects:read": "Read projects",
+  "read_content": "Read pages",
+  "update_content": "Edit pages",
+  "messages.read": "Read messages",
+  "guilds.read": "See servers",
+  "tickets:read": "Read tickets",
+  "conversations:read": "Read conversations",
+  "contacts:read": "Read contacts",
+  "deals:read": "Read deals",
+  "incidents:read": "Read incidents",
+  "services:read": "Read services",
+  "monitors_read": "Read monitors",
+  "events_read": "Read events",
+  "read_only": "Read-only access",
+  "event:read": "Read error events",
+  "project:read": "Read project info",
+  "gmail.readonly": "Read email",
+  "calendar.readonly": "Read calendar",
+  "drive.readonly": "Read files",
+};
+
 // ------------------------------------------------------------------ icon SVG components (kept for modals)
 
 function IconEnvelope() {
@@ -1235,7 +1274,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
           {(isConnected || isDegraded) && CONNECTOR_SCOPES[def.id] ? (
             <div className="cgc-scopes">
               {CONNECTOR_SCOPES[def.id].map((s) => (
-                <span key={s} className="cgc-scope-chip">{s}</span>
+                <span key={s} className="cgc-scope-chip" title={s}>{SCOPE_TRANSLATIONS[s] ?? s}</span>
               ))}
             </div>
           ) : (
@@ -1803,12 +1842,12 @@ export default function ConnectionsPage() {
         <div>
           <div className="page-head-title-row">
             <h1 className="editorial-h1">
-              Connections — <span className="accent">writes are gated. Reads are not.</span>
+              Connections — <span className="accent">the accounts Patchwork can use</span>
             </h1>
             <HintCard.Toggle id="connections" />
           </div>
           <div className="editorial-sub">
-            oauth · scoped to your machine · tokens in ~/.patchwork/secrets
+            Connect the tools your automations use
           </div>
           <RelationStrip
             items={[

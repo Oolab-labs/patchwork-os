@@ -1150,7 +1150,7 @@ export default function MarketplacePage() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <h2 className="mono" style={{ margin: 0 }}>
-              Marketplace — <em>open-source YAML, curated</em>
+              Marketplace — <em>ready-made automations you can install</em>
             </h2>
             <HintCard.Toggle id="marketplace" />
           </div>

@@ -294,6 +294,36 @@ function haltAgeTier(ageMs: number): HaltAgeTier {
   return "fresh";
 }
 
+/**
+ * Plain-English summary for a raw halt-reason string shown in the
+ * attention panel (e.g. "[agent step skipped: ANTHROPIC_API_KEY not
+ * set]"). Non-technical users shouldn't have to parse bracket-wrapped
+ * internals to know what to do — the raw text is always still available
+ * behind a details expander, this just supplies the friendly headline.
+ */
+function friendlyHaltSummary(raw: string): { text: string; fixHint?: string } {
+  const r = raw.toLowerCase();
+  if (r.includes("api_key") && (r.includes("not set") || r.includes("missing"))) {
+    return {
+      text: "This automation needs an API key set up before it can run.",
+      fixHint: "Add it in Settings, then re-run this automation.",
+    };
+  }
+  if (r.includes("not set") || r.includes("missing")) {
+    return {
+      text: "This automation is missing a setting it needs to run.",
+      fixHint: "Check Settings, then re-run this automation.",
+    };
+  }
+  if (r.includes("timeout") || r.includes("timed out")) {
+    return { text: "This automation took too long and was stopped." };
+  }
+  if (r.includes("rate limit") || r.includes("rate-limit")) {
+    return { text: "An external service is rate-limiting this automation right now." };
+  }
+  return { text: "Something went wrong while running this automation." };
+}
+
 /** agreed/compared as a 0-100 trust percentage, or null if there's no
  *  comparison history yet (never fabricate a rate from zero data) — the
  *  mockup's W-A "ready for more independence — 92% over 38 tries" copy,
@@ -1625,7 +1655,7 @@ export default function HomePage() {
         <Pane
           index={0}
           id="attention"
-          title="attention"
+          title="Needs your attention"
           activePane={activePane}
           setActivePane={setActivePane}
           href="/runs?halt=1"
@@ -1717,9 +1747,19 @@ export default function HomePage() {
                         {ageTier === "critical" ? " — needs attention" : ageTier === "stale" ? " — unaddressed" : ""}
                       </span>
                     </div>
-                    {topAttentionRun.haltReason && (
-                      <div className="td-attention-reason">└ {topAttentionRun.haltReason}</div>
-                    )}
+                    {topAttentionRun.haltReason && (() => {
+                      const { text, fixHint } = friendlyHaltSummary(topAttentionRun.haltReason);
+                      return (
+                        <div className="td-attention-reason">
+                          └ {text}
+                          {fixHint && <span className="td-attention-fix-hint"> {fixHint}</span>}
+                          <details className="td-attention-raw">
+                            <summary>Show technical details</summary>
+                            <code className="mono">{topAttentionRun.haltReason}</code>
+                          </details>
+                        </div>
+                      );
+                    })()}
                     <div className="td-attention-actions">
                       <button
                         type="button"
@@ -1851,7 +1891,7 @@ export default function HomePage() {
         <Pane
           index={1}
           id="tail"
-          title="tail"
+          title="Live activity"
           activePane={activePane}
           setActivePane={setActivePane}
           href="/activity"
@@ -1953,7 +1993,7 @@ export default function HomePage() {
         <Pane
           index={2}
           id="fleet"
-          title="fleet"
+          title="Your automations"
           activePane={activePane}
           setActivePane={setActivePane}
           href="/recipes"
@@ -2050,7 +2090,7 @@ export default function HomePage() {
         <Pane
           index={3}
           id="next"
-          title="next"
+          title="Coming up"
           activePane={activePane}
           setActivePane={setActivePane}
           href="/recipes"
@@ -2097,7 +2137,7 @@ export default function HomePage() {
         <Pane
           index={4}
           id="workers"
-          title="workers"
+          title="Your AI team"
           activePane={activePane}
           setActivePane={setActivePane}
           href="/workers"
