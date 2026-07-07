@@ -98,6 +98,7 @@ const CATALOG: ConnectorDef[] = [
   { id: "circleci",         name: "CircleCI",         initials: "CI", category: "Dev",        wave: 4, tools: 13, bg: "#161616" },
   { id: "woocommerce",      name: "WooCommerce",      initials: "WC", category: "Commerce",   wave: 4, tools: 13, bg: "#7F54B3" },
   { id: "supabase",         name: "Supabase",         initials: "SB", category: "Data",       wave: 4, tools: 12, bg: "#1C1C1C" },
+  { id: "telegram",         name: "Telegram",         initials: "TG", category: "Comms",      wave: 4, tools: 3,  bg: "#26A5E4" },
 ];
 
 
@@ -123,6 +124,7 @@ const CONNECTOR_SCOPES: Record<string, string[]> = {
   gmail:            ["gmail.readonly"],
   "google-calendar":["calendar.readonly"],
   "google-drive":   ["drive.readonly"],
+  telegram:         ["send_messages", "read_chats"],
 };
 
 // ------------------------------------------------------------------ plain-English translations for raw OAuth scope strings (chip labels)
@@ -297,6 +299,15 @@ function IconPagerduty() {
   );
 }
 
+function IconTelegram() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
+      <path d="M17.5 3l-15 5.8c-.7.3-.7 1.3.1 1.5l3.8 1.2 1.5 4.7c.2.6 1 .8 1.4.3l2.1-2.3 3.9 2.9c.6.4 1.4.1 1.6-.6L19 3.8c.2-.7-.6-1.3-1.5-.8z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M8.4 11.6l7.8-5.7-6.5 6.8" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IconIntercom() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
@@ -408,6 +419,7 @@ const SUPPORTED_CONNECTORS = new Set([
   "circleci",
   "woocommerce",
   "supabase",
+  "telegram",
 ]);
 
 const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
@@ -506,6 +518,23 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
       </>
     ),
     placeholder: "PagerDuty API key",
+    tokenKey: "token",
+  },
+  telegram: {
+    name: "Telegram",
+    icon: <IconTelegram />,
+    instructions: (
+      <>
+        Message{" "}
+        <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="conn-modal-link">
+          @BotFather
+        </a>{" "}
+        on Telegram, send <code>/newbot</code>, and follow the prompts. BotFather
+        replies with a bot token — paste it below. Your bot can only message chats
+        it has been added to or that have started a conversation with it.
+      </>
+    ),
+    placeholder: "Telegram bot token (e.g. 123456:ABC-DEF...)",
     tokenKey: "token",
   },
   stripe: {
@@ -984,6 +1013,7 @@ const PROVIDERS: {
   { id: "intercom",        name: "Intercom",        description: "Read conversations and customer data.",                                                             icon: IconIntercom },
   { id: "jira",            name: "Jira",            description: "Read and create Jira issues across projects.",                                                       icon: IconJira },
   { id: "pagerduty",       name: "PagerDuty",       description: "Read incidents, services, and on-call rotations.",                                                  icon: IconPagerduty },
+  { id: "telegram",        name: "Telegram",        description: "Send messages and read chats via a Telegram bot.",                                                  icon: IconTelegram },
   { id: "stripe",          name: "Stripe",          description: "Read payment events, customers, and subscriptions.",                                               icon: IconStripe },
   { id: "zendesk",         name: "Zendesk",         description: "Read support tickets and customer context.",                                                        icon: IconZendesk },
   { id: "google-calendar", name: "Google Calendar", description: "View your schedule.",                                                                              icon: IconCalendar },
@@ -1004,6 +1034,7 @@ function logoUrl(id: string): string | null {
     jira:             `${SI_CDN}/jira/ffffff`,
     notion:           `${SI_CDN}/notion/ffffff`,
     pagerduty:        `${SI_CDN}/pagerduty/ffffff`,
+    telegram:         `${SI_CDN}/telegram/ffffff`,
     drive:            `${SI_CDN}/googledrive/ffffff`,
     docs:             `${SI_CDN}/googledocs/ffffff`,
     confluence:       `${SI_CDN}/confluence/ffffff`,
@@ -1497,6 +1528,7 @@ export default function ConnectionsPage() {
       discord: "discord",
       confluence: "confluence",
       pagerduty: "pagerduty",
+      telegram: "telegram",
       zendesk: "zendesk",
       asana: "asana",
       gitlab: "gitlab",

@@ -102,6 +102,7 @@ const CONNECTOR_KEYWORD_BY_ID: Record<string, string[]> = {
   discord: ["discord"],
   confluence: ["confluence"],
   pagerduty: ["pagerduty"],
+  telegram: ["telegram"],
   zendesk: ["zendesk"],
   asana: ["asana"],
   gitlab: ["gitlab"],

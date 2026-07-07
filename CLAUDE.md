@@ -133,6 +133,7 @@ Per-connector env override for OAuth client credentials (when self-hosting OAuth
 | `PAGERDUTY_TOKEN` / `PAGERDUTY_FROM_EMAIL` | PagerDuty | PAT-style token |
 | `ZENDESK_API_TOKEN` / `ZENDESK_EMAIL` / `ZENDESK_SUBDOMAIN` | Zendesk | PAT-style token |
 | `SENTRY_AUTH_TOKEN` | Sentry (non-MCP fallback) | PAT-style token |
+| `TELEGRAM_BOT_TOKEN` | Telegram | Bot-token PAT (from @BotFather) |
 
 ##### Dashboard env vars (Next.js side)
 

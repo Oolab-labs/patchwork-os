@@ -336,6 +336,7 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     hubspot: () => import("./hubspot.js"),
     intercom: () => import("./intercom.js"),
     pagerduty: () => import("./pagerduty.js"),
+    telegram: () => import("./telegram.js"),
     stripe: () => import("./stripe.js"),
     zendesk: () => import("./zendesk.js"),
     jira: () => import("./jira.js"),

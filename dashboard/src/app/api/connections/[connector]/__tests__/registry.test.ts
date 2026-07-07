@@ -43,6 +43,8 @@ const EXPECTED_CONNECT = new Set([
   "supabase",
   // Jira (PAT) — bridge routes wired in src/connectorRoutes.ts.
   "jira",
+  // Telegram (bot-token PAT) — bridge routes wired in src/connectorRoutes.ts.
+  "telegram",
 ]);
 const EXPECTED_TEST = new Set([
   "gmail", "github", "linear", "sentry", "google-calendar", "google-drive",
@@ -65,6 +67,8 @@ const EXPECTED_TEST = new Set([
   "supabase",
   // Jira (PAT) — bridge routes wired in src/connectorRoutes.ts.
   "jira",
+  // Telegram (bot-token PAT) — bridge routes wired in src/connectorRoutes.ts.
+  "telegram",
 ]);
 const EXPECTED_DELETE = EXPECTED_TEST;
 

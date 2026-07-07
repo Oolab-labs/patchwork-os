@@ -1401,6 +1401,56 @@ export function tryHandleConnectorRoute(
     return true;
   }
 
+  // ── Telegram routes ────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/telegram/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/telegram.js");
+      return m.handleTelegramConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/telegram/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleTelegramTest } = await import("./connectors/telegram.js");
+        const result = await handleTelegramTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/telegram" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleTelegramDisconnect } = await import(
+          "./connectors/telegram.js"
+        );
+        const result = handleTelegramDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
   // ── Stripe routes ───────────────────────────────────────────────
   if (
     parsedUrl.pathname === "/connections/stripe/connect" &&

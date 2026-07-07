@@ -31,6 +31,7 @@ import "./discord.js";
 import "./jira.js";
 import "./pagerduty.js";
 import "./sentry.js";
+import "./telegram.js";
 import "./stripe.js";
 import "./docs.js";
 import "./monday.js";

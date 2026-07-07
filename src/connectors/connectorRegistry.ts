@@ -167,6 +167,13 @@ export const CONNECTORS: readonly ConnectorDescriptor[] = [
     authKind: "pat",
     supports: { connect: true, test: true, delete: true },
   },
+  // telegram: bot-token PAT (from @BotFather) — no OAuth redirect.
+  {
+    id: "telegram",
+    label: "Telegram",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
   // postgres: PAT (connection string / discrete fields). Not in the legacy
   // `auth` allowlist because there is no OAuth redirect to start.
   {

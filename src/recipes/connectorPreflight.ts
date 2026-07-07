@@ -57,6 +57,7 @@ export const TOOL_NAMESPACE_TO_CONNECTOR: Record<string, string> = {
   discord: "discord",
   gitlab: "gitlab",
   pagerduty: "pagerduty",
+  telegram: "telegram",
   // Wave-2 backfill (audit 2026-06-05): the map previously covered only ~19
   // of the ~45 connector-backed recipe-step namespaces, so recipes using any
   // of the below got NO install-time missing-auth warning and hard-threw on

@@ -19,7 +19,7 @@ const KNOWN_CONNECTOR_IDS = new Set([
   // Wave 3
   "resend", "obsidian", "todoist", "vercel", "paystack", "pipedrive",
   "caldiy", "grafana", "posthog", "cloudflare", "circleci", "woocommerce",
-  "supabase",
+  "supabase", "telegram",
 ]);
 
 function namespaceToConnector(ns: string): string | null {
