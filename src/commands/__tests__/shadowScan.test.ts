@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { parseRunsFile, parseSinceDuration } from "../shadowScan.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  parseRunsFile,
+  parseSinceDuration,
+  runShadowScanCli,
+} from "../shadowScan.js";
 
 // ---------------------------------------------------------------------------
 // parseSinceDuration
@@ -166,5 +173,175 @@ describe("parseRunsFile", () => {
     };
     const result = parseRunsFile(`${JSON.stringify(record)}\n`);
     expect(result[0]).toMatchObject(record);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runShadowScanCli — the CLI entrypoint (buildLoadPastRuns, path resolution,
+// printHumanReadable, exit-code signaling) had zero coverage: the tests above
+// only exercised the two exported pure helpers directly.
+// ---------------------------------------------------------------------------
+
+describe("runShadowScanCli", () => {
+  let workdir: string;
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  let origExitCode: typeof process.exitCode;
+
+  beforeEach(() => {
+    workdir = mkdtempSync(join(tmpdir(), "shadow-scan-cli-test-"));
+    stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    origExitCode = process.exitCode;
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(workdir, { recursive: true, force: true });
+    process.exitCode = origExitCode;
+  });
+
+  function stdout(): string {
+    return stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+  }
+
+  it("reads a workspace-scoped --runs-file, reports scanned/reclassified counts in human-readable form, and sets exitCode 1 when any run is reclassified", async () => {
+    const runsFile = join(workdir, "runs.jsonl");
+    writeFileSync(
+      runsFile,
+      [
+        JSON.stringify({
+          id: "r1",
+          recipeName: "daily",
+          toolName: "deleteFile",
+          timestamp: new Date().toISOString(),
+        }),
+        JSON.stringify({
+          id: "r2",
+          recipeName: "daily",
+          toolName: "getGitStatus",
+          timestamp: new Date().toISOString(),
+        }),
+      ].join("\n"),
+    );
+
+    await runShadowScanCli({
+      runsFile: "runs.jsonl",
+      workspace: workdir,
+      since: "30d",
+    });
+
+    expect(stdout()).toContain("Scanned: 2");
+    expect(stdout()).toContain("Reclassified: 1");
+    expect(stdout()).toContain("[REVIEW] daily / deleteFile");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("does not set exitCode and prints 'No runs would be reclassified' when nothing is destructive", async () => {
+    const runsFile = join(workdir, "runs.jsonl");
+    writeFileSync(
+      runsFile,
+      JSON.stringify({
+        id: "r1",
+        recipeName: "daily",
+        toolName: "getGitStatus",
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
+    await runShadowScanCli({
+      runsFile: "runs.jsonl",
+      workspace: workdir,
+      since: "30d",
+    });
+
+    expect(stdout()).toContain("No runs would be reclassified.");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("rejects a --runs-file that escapes the workspace via resolveFilePath's path-traversal guard", async () => {
+    await expect(
+      runShadowScanCli({
+        runsFile: "../../../etc/passwd",
+        workspace: workdir,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("returns an empty scan (not a throw) when the default runs path does not exist", async () => {
+    // No --runs-file supplied → defaultRunsPath() is used, which points at
+    // the real ~/.claude/ide/runs.jsonl. We can't control whether that file
+    // exists on the machine running this test, so instead verify the ENOENT
+    // branch directly through a workspace-scoped file we simply never create.
+    await runShadowScanCli({
+      runsFile: "does-not-exist.jsonl",
+      workspace: workdir,
+      since: "30d",
+    });
+    expect(stdout()).toContain("Scanned: 0");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("skips reading (and reports zero scanned) when the runs file exceeds the 1 MB size limit", async () => {
+    const runsFile = join(workdir, "big-runs.jsonl");
+    writeFileSync(runsFile, "x".repeat(1_048_577));
+
+    await runShadowScanCli({
+      runsFile: "big-runs.jsonl",
+      workspace: workdir,
+      since: "30d",
+    });
+
+    expect(
+      stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join(""),
+    ).toContain("> 1 MB limit");
+    expect(stdout()).toContain("Scanned: 0");
+  });
+
+  it("outputs JSON instead of human-readable text when options.json is set", async () => {
+    const runsFile = join(workdir, "runs.jsonl");
+    writeFileSync(
+      runsFile,
+      JSON.stringify({
+        id: "r1",
+        recipeName: "daily",
+        toolName: "deleteFile",
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
+    await runShadowScanCli({
+      runsFile: "runs.jsonl",
+      workspace: workdir,
+      since: "30d",
+      json: true,
+    });
+
+    const parsed = JSON.parse(stdout());
+    expect(parsed.scanned).toBe(1);
+    expect(parsed.reclassified).toBe(1);
+  });
+
+  it("defaults --since to the last 7 days when not supplied", async () => {
+    const runsFile = join(workdir, "runs.jsonl");
+    // A run from 30 days ago should be excluded by the default 7-day window.
+    writeFileSync(
+      runsFile,
+      JSON.stringify({
+        id: "r1",
+        recipeName: "daily",
+        toolName: "deleteFile",
+        timestamp: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+      }),
+    );
+
+    await runShadowScanCli({ runsFile: "runs.jsonl", workspace: workdir });
+
+    expect(stdout()).toContain("Scanned: 0");
   });
 });

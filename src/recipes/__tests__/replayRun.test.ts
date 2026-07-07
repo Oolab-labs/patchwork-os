@@ -9,7 +9,8 @@ import type {
   RunOptions,
 } from "../chainedRunner.js";
 import { runChainedRecipe } from "../chainedRunner.js";
-import { buildMockedOutputs } from "../replayRun.js";
+import { buildMockedOutputs, replayMockedRun } from "../replayRun.js";
+import type { RunnerDeps } from "../yamlRunner.js";
 
 let tmpDir: string;
 
@@ -262,5 +263,134 @@ describe("runChainedRecipe — mockedOutputs interception", () => {
     expect(result.success).toBe(true);
     expect(deps.executeAgent).not.toHaveBeenCalled();
     expect(result.context["agent-step"]).toBe("captured-agent-output");
+  });
+});
+
+// ── replayMockedRun — the actual entrypoint (was entirely uncovered; only
+// its two building blocks, buildMockedOutputs and runChainedRecipe's
+// mockedOutputs interception, were previously tested directly) ────────────
+
+describe("replayMockedRun", () => {
+  function recipe(): ChainedRecipe {
+    return {
+      name: "daily",
+      steps: [{ id: "s1", tool: "noop.tool" }],
+    } as ChainedRecipe;
+  }
+
+  function originalRun(overrides: Partial<RecipeRun> = {}): RecipeRun {
+    return {
+      seq: 1,
+      taskId: "t1",
+      recipeName: "daily",
+      trigger: { type: "manual" } as never,
+      status: "done",
+      createdAt: 1000,
+      doneAt: 2000,
+      durationMs: 1000,
+      stepResults: [{ id: "s1", status: "done", output: "captured-value" }],
+      ...overrides,
+    } as RecipeRun;
+  }
+
+  async function deps() {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const runLog = new RecipeRunLog({ dir: tmpDir });
+    const runnerDeps: RunnerDeps = { logDir: tmpDir, workdir: tmpDir };
+    return { runLog, activityLog: undefined, runnerDeps };
+  }
+
+  it("replays using captured step outputs and reports the new run's seq", async () => {
+    const replayDeps = await deps();
+    const result = await replayMockedRun({
+      originalRun: originalRun(),
+      recipe: recipe(),
+      deps: replayDeps,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.newSeq).toBeDefined();
+    expect(result.result?.context.s1).toBe("captured-value");
+    expect(result.unmockedSteps).toBeUndefined();
+  });
+
+  it("tags the new run's taskId with the replay:<originalSeq> prefix (BUG-4)", async () => {
+    const replayDeps = await deps();
+    await replayMockedRun({
+      originalRun: originalRun({ seq: 42 }),
+      recipe: recipe(),
+      deps: replayDeps,
+    });
+    const run = replayDeps.runLog.query()[0];
+    expect(run?.taskId).toMatch(/^replay:42:daily:\d+$/);
+  });
+
+  it("reports unmockedSteps when a step in the original run has no captured output", async () => {
+    const replayDeps = await deps();
+    const result = await replayMockedRun({
+      originalRun: originalRun({
+        stepResults: [{ id: "s1", status: "done" }], // no `output` field
+      }),
+      recipe: recipe(),
+      deps: replayDeps,
+    });
+    expect(result.unmockedSteps).toEqual(["s1"]);
+  });
+
+  it("passes sourcePath through to the run options when provided", async () => {
+    const replayDeps = await deps();
+    const result = await replayMockedRun({
+      originalRun: originalRun(),
+      recipe: recipe(),
+      sourcePath: "/recipes/daily.yaml",
+      deps: replayDeps,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns ok:false with the error message when runChainedRecipe throws", async () => {
+    const replayDeps = await deps();
+    const badRecipe = {
+      name: "daily",
+      // Malformed steps array triggers an exception inside the chained
+      // runner rather than a normal failed-step result.
+      steps: null,
+    } as unknown as ChainedRecipe;
+
+    const result = await replayMockedRun({
+      originalRun: originalRun(),
+      recipe: badRecipe,
+      deps: replayDeps,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+
+  it("enforces the declared-keys env allowlist rather than spreading process.env (audit 2026-06-08 recipe-support-3)", async () => {
+    const origSecret = process.env.SUPER_SECRET_TOKEN;
+    process.env.SUPER_SECRET_TOKEN = "leak-me-not";
+    try {
+      const replayDeps = await deps();
+      const result = await replayMockedRun({
+        originalRun: originalRun(),
+        recipe: {
+          name: "daily",
+          steps: [
+            {
+              id: "s1",
+              tool: "noop.tool",
+              transform: "{{ env.SUPER_SECRET_TOKEN }}",
+            },
+          ],
+        } as ChainedRecipe,
+        deps: replayDeps,
+      });
+      // No `context: [{type: "env", keys: [...]}]` was declared on the
+      // recipe, so declaredRecipeEnv() should yield an empty allowlist —
+      // the secret must not leak into the rendered transform.
+      expect(result.result?.context.s1).not.toContain("leak-me-not");
+    } finally {
+      if (origSecret === undefined) delete process.env.SUPER_SECRET_TOKEN;
+      else process.env.SUPER_SECRET_TOKEN = origSecret;
+    }
   });
 });
