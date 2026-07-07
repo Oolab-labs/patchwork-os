@@ -10162,21 +10162,36 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-gate-worker-toggle:hover { opacity: 0.85; }
 .td-gate-row {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 1px;
   font-size: var(--fs-xs);
   font-family: inherit;
   background: none;
   border: none;
-  padding: 2px 0;
+  padding: 3px 0;
   color: inherit;
   cursor: pointer;
   text-align: left;
   width: 100%;
 }
 .td-gate-row:hover { opacity: 0.85; }
-.td-gate-verb { color: #e0b054; }
+/* Verdict line: time + verb + result — the scannable part. classKey
+   (long, low-signal-per-character) sits on its own line below, truncated
+   with an ellipsis + title tooltip rather than competing for width here. */
+.td-gate-row-top { display: flex; align-items: center; gap: 6px; }
+.td-gate-time { flex: 0 0 auto; }
+.td-gate-result { font-weight: 600; }
+.td-gate-class {
+  padding-left: 2px;
+  font-size: 0.92em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.td-gate-verb { color: #e0b054; font-weight: 600; letter-spacing: 0.02em; }
 [data-theme="paper"] .td-gate-verb { color: var(--warn-text); }
+.td-gate-verb-allow { color: var(--ok-text); }
 .td-gate-arrow { opacity: 0.6; }
 .td-gate-explain {
   font-size: var(--fs-xs);

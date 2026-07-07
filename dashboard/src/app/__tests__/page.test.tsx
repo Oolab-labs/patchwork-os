@@ -518,6 +518,25 @@ describe("<HomePage/> — Terminal deck", () => {
     // grouped accordion which hides it behind a collapsed toggle.
     const workersPane = screen.getByRole("region", { name: "Your AI team" });
     expect(workersPane.textContent).toMatch(/issue:compensable:high/);
+    // Worker id is shown once in the section title rather than repeated
+    // on every row (layout polish: was a redundant flat-list column).
+    expect(workersPane.textContent).toMatch(/gate activity · test-guardian/);
+  });
+
+  it("labels a gate row ALLOW (not GATE) when the decision's action was allow", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/gate/decisions": () =>
+        jsonResponse({ decisions: [{ ...SAMPLE_GATE_DECISION, action: "allow" }] }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const workersPane = screen.getByRole("region", { name: "Your AI team" });
+    expect(workersPane.textContent).toMatch(/ALLOW/);
+    expect(workersPane.textContent).not.toMatch(/\bGATE\b/);
   });
 
   it("statusline clock flips to 'data as of … reconnecting' when the deck's own poll goes stale, and clears on recovery", async () => {

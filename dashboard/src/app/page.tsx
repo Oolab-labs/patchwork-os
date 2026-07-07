@@ -204,15 +204,21 @@ function GateRow({
     minute: "2-digit",
     hour12: false,
   });
+  const isAllow = d.action === "allow";
   return (
     <div className={`td-gate-row-wrap${indent ? " td-gate-row-indent" : ""}`}>
       <button type="button" className="td-gate-row" aria-expanded={isOpen} onClick={onToggle}>
-        <span className="mono td-muted">{hhmm}</span>
-        <span className="td-gate-verb">GATE</span>
-        {!indent && <span className="mono">{d.workerId}</span>}
-        <span className="td-muted mono">{d.classKey}</span>
-        <span className="td-gate-arrow">→</span>
-        <span>{gateLevelPhrase(d.effectiveLevel)}</span>
+        <span className="td-gate-row-top">
+          <span className="mono td-muted td-gate-time">{hhmm}</span>
+          <span className={`td-gate-verb${isAllow ? " td-gate-verb-allow" : ""}`}>
+            {isAllow ? "ALLOW" : "GATE"}
+          </span>
+          <span className="td-gate-arrow" aria-hidden="true">→</span>
+          <span className="td-gate-result">{gateLevelPhrase(d.effectiveLevel)}</span>
+        </span>
+        <span className="td-muted mono td-gate-class" title={d.classKey}>
+          {d.classKey}
+        </span>
       </button>
       {isOpen && (
         <div className="td-gate-explain">
@@ -2339,7 +2345,10 @@ export default function HomePage() {
               shows up in the feed — a single flat list mixing multiple
               workers' decisions together stops being readable fast. */}
           <div className="td-gate-activity">
-            <div className="td-gate-activity-title td-muted">gate activity</div>
+            <div className="td-gate-activity-title td-muted">
+              gate activity
+              {gateWorkerIds.length === 1 ? ` · ${gateWorkerIds[0]}` : ""}
+            </div>
             {gateDecisionsError ? (
               <div className="td-error-row">gate activity unavailable</div>
             ) : gateDecisions.length === 0 ? (
