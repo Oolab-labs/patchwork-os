@@ -121,8 +121,8 @@ describe("<HomePage/> — Terminal deck", () => {
       "Your automations",
       "Coming up",
       "Your AI team",
-      "vitals",
-      "inbox",
+      "System status",
+      "Inbox",
     ]) {
       expect(screen.getByRole("region", { name: label })).toBeTruthy();
     }
@@ -242,6 +242,27 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(row?.textContent).toMatch(/run #212/);
   });
 
+  it("6:inbox shows a '+N more' overflow link when there are more than 3 items, matching 2:fleet/3:next's overflow affordance", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/inbox": () =>
+        jsonResponse({
+          items: Array.from({ length: 5 }, (_, i) => ({
+            name: `note-${i}.md`,
+            modifiedAt: new Date().toISOString(),
+            preview: `Note ${i}`,
+          })),
+        }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const inboxPane = screen.getByRole("region", { name: "Inbox" });
+    expect(within(inboxPane).getByText("+2 more →")).toBeTruthy();
+  });
+
   it("4:workers shows the real trust percentage next to a demoted worker, not a fabricated one", async () => {
     mockFetchRoutes({
       ...HEALTHY_ROUTES,
@@ -294,7 +315,7 @@ describe("<HomePage/> — Terminal deck", () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    const vitalsPane = screen.getByRole("region", { name: "vitals" });
+    const vitalsPane = screen.getByRole("region", { name: "System status" });
     // No prior poll to compare against yet — no delta on first load.
     expect(vitalsPane.querySelector(".td-kv-delta")).toBeNull();
 
@@ -356,7 +377,7 @@ describe("<HomePage/> — Terminal deck", () => {
 
     // Other panes still rendered fine.
     expect(screen.getByRole("region", { name: "Your automations" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "vitals" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "System status" })).toBeTruthy();
   });
 
   it("renders the SSR clock placeholder then ticks after mount", async () => {
@@ -857,6 +878,61 @@ describe("<HomePage/> — Terminal deck", () => {
       expect(attentionPane.textContent).not.toMatch(/Muted until/);
       expect(attentionPane.textContent).toMatch(/Unrelated Thing/i);
     });
+  });
+
+  it("0:attention only shows the Connections action when the halt reason is actually connector/credential-shaped", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/runs": () =>
+        jsonResponse({
+          runs: [
+            {
+              seq: 920,
+              recipe: "slow-thing",
+              recipeName: "slow-thing",
+              startedAt: Date.now() - 10 * 60 * 1000,
+              status: "error",
+              haltReason: "request timed out after 30s",
+            },
+          ],
+        }),
+      "/api/bridge/runs/halt-summary": () => jsonResponse({ total: 1 }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const attentionPane = screen.getByRole("region", { name: "Needs your attention" });
+    expect(attentionPane.textContent).toMatch(/took too long/i);
+    expect(within(attentionPane).queryByText("Connections")).toBeNull();
+  });
+
+  it("0:attention shows the Connections action when the halt reason points at a missing credential", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/runs": () =>
+        jsonResponse({
+          runs: [
+            {
+              seq: 921,
+              recipe: "needs-key",
+              recipeName: "needs-key",
+              startedAt: Date.now() - 10 * 60 * 1000,
+              status: "error",
+              haltReason: "[agent step skipped: ANTHROPIC_API_KEY not set]",
+            },
+          ],
+        }),
+      "/api/bridge/runs/halt-summary": () => jsonResponse({ total: 1 }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const attentionPane = screen.getByRole("region", { name: "Needs your attention" });
+    expect(within(attentionPane).getByText("Connections")).toBeTruthy();
   });
 
   it("renders a footer hint for the pane keyboard shortcuts", async () => {
@@ -1582,5 +1658,89 @@ describe("<HomePage/> — Terminal deck", () => {
     await waitFor(() => {
       expect(screen.getByText(/Couldn't reach the copilot endpoint/)).toBeTruthy();
     });
+  });
+
+  // Bug fix: the "Morning." header used to only account for pending
+  // decisions + an unread brief when deciding what to say — a worker
+  // ready to promote (a §3 "Glance at the team" item) with zero pending
+  // decisions/briefs fell through to "Nothing waiting, and you're clear,"
+  // directly contradicting the team section rendered right below it.
+  it("the morning header mentions team updates instead of falsely claiming 'Nothing waiting'", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/workers/shadow": () =>
+        jsonResponse({
+          workers: [
+            {
+              workerId: "w1",
+              name: "Dependency Bump",
+              autonomyCeiling: 1,
+              board: [
+                {
+                  classKey: "vcs-remote:compensable:medium",
+                  level: 2,
+                  observations: 40,
+                  mean: 0.95,
+                  owned: true,
+                },
+              ],
+              events: [],
+              compared: 38,
+              agreed: 35,
+              divergences: [],
+            },
+          ],
+          runsScanned: 0,
+          decisionsScanned: 0,
+        }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    expect(screen.getByText(/1 team update/)).toBeTruthy();
+    const header = document.querySelector(".td-today-title");
+    expect(header?.textContent).not.toMatch(/Nothing waiting/);
+  });
+
+  // Bug fix: 1:tail renders newest-at-bottom, but `.td-pane-body` (the
+  // actual overflow-y:auto scroll container, not `.td-tail`) never had
+  // its scrollTop updated — once content overflowed the 260px cap, the
+  // pane stayed pinned to the oldest visible row and silently never
+  // followed new activity.
+  it("1:tail auto-scrolls its pane body to the bottom as new activity rows arrive", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/activity": () =>
+        jsonResponse({
+          events: Array.from({ length: 20 }, (_, i) => ({
+            kind: "tool",
+            tool: `tool-${i}`,
+            status: "success",
+            at: Date.now() - (20 - i) * 1000,
+          })),
+        }),
+    });
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const tailPaneBody = container.querySelector(
+      '.td-pane[data-pane-index="1"] .td-pane-body',
+    ) as HTMLDivElement;
+    expect(tailPaneBody).toBeTruthy();
+    // jsdom doesn't lay out real scroll heights, but the effect must at
+    // least attempt to pin scrollTop to scrollHeight rather than leaving
+    // it untouched with no reaction to new content.
+    Object.defineProperty(tailPaneBody, "scrollHeight", { value: 999, configurable: true });
+    tailPaneBody.scrollTop = 0;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(tailPaneBody.scrollTop).toBe(999);
   });
 });

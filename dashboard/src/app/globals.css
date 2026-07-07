@@ -10095,7 +10095,11 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-worker-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
 .td-worker-name { flex: 0 0 auto; max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-worker-bar { display: flex; align-items: center; gap: 4px; letter-spacing: 1px; }
-.td-worker-status { margin-left: auto; text-align: right; }
+/* min-width:0 lets this shrink instead of forcing the row wider than the
+   pane (a long "ready ⚑L2 ↑ some-long-task-name · 92% over 38 tries"
+   string previously had no shrink/wrap budget and could push the row into
+   horizontal overflow inside .td-pane-body's fixed-width column). */
+.td-worker-status { margin-left: auto; text-align: right; min-width: 0; overflow-wrap: break-word; }
 .td-worker-status-ready { color: #7fbf6f; }
 .td-worker-status-climbing { color: #e0b054; }
 .td-worker-status-reversible { color: var(--terminal-comment); }
