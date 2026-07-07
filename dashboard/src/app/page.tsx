@@ -204,15 +204,21 @@ function GateRow({
     minute: "2-digit",
     hour12: false,
   });
+  const isAllow = d.action === "allow";
   return (
     <div className={`td-gate-row-wrap${indent ? " td-gate-row-indent" : ""}`}>
       <button type="button" className="td-gate-row" aria-expanded={isOpen} onClick={onToggle}>
-        <span className="mono td-muted">{hhmm}</span>
-        <span className="td-gate-verb">GATE</span>
-        {!indent && <span className="mono">{d.workerId}</span>}
-        <span className="td-muted mono">{d.classKey}</span>
-        <span className="td-gate-arrow">→</span>
-        <span>{gateLevelPhrase(d.effectiveLevel)}</span>
+        <span className="td-gate-row-top">
+          <span className="mono td-muted td-gate-time">{hhmm}</span>
+          <span className={`td-gate-verb${isAllow ? " td-gate-verb-allow" : ""}`}>
+            {isAllow ? "ALLOW" : "GATE"}
+          </span>
+          <span className="td-gate-arrow" aria-hidden="true">→</span>
+          <span className="td-gate-result">{gateLevelPhrase(d.effectiveLevel)}</span>
+        </span>
+        <span className="td-muted mono td-gate-class" title={d.classKey}>
+          {d.classKey}
+        </span>
       </button>
       {isOpen && (
         <div className="td-gate-explain">
@@ -301,18 +307,29 @@ function haltAgeTier(ageMs: number): HaltAgeTier {
  * internals to know what to do — the raw text is always still available
  * behind a details expander, this just supplies the friendly headline.
  */
-function friendlyHaltSummary(raw: string): { text: string; fixHint?: string } {
+function friendlyHaltSummary(raw: string): {
+  text: string;
+  fixHint?: string;
+  /** True when the fix is plausibly "reconnect/re-auth a connector" — only
+   *  then does showing the attention row's "Connections" action make sense.
+   *  Previously that link rendered unconditionally for every halt (timeout,
+   *  rate-limit, generic error included), cluttering the action row with an
+   *  action unrelated to the actual problem. */
+  isConnectionIssue?: boolean;
+} {
   const r = raw.toLowerCase();
   if (r.includes("api_key") && (r.includes("not set") || r.includes("missing"))) {
     return {
       text: "This automation needs an API key set up before it can run.",
       fixHint: "Add it in Settings, then re-run this automation.",
+      isConnectionIssue: true,
     };
   }
   if (r.includes("not set") || r.includes("missing")) {
     return {
       text: "This automation is missing a setting it needs to run.",
       fixHint: "Check Settings, then re-run this automation.",
+      isConnectionIssue: true,
     };
   }
   if (r.includes("timeout") || r.includes("timed out")) {
@@ -320,6 +337,13 @@ function friendlyHaltSummary(raw: string): { text: string; fixHint?: string } {
   }
   if (r.includes("rate limit") || r.includes("rate-limit")) {
     return { text: "An external service is rate-limiting this automation right now." };
+  }
+  if (r.includes("auth") || r.includes("401") || r.includes("403") || r.includes("token")) {
+    return {
+      text: "A connected service rejected this automation's credentials.",
+      fixHint: "Reconnect it, then re-run this automation.",
+      isConnectionIssue: true,
+    };
   }
   return { text: "Something went wrong while running this automation." };
 }
@@ -401,6 +425,14 @@ function TodayMorningSection({
     );
   }
   if (!briefDone) titleParts.push("one brief");
+  if (!teamDone) {
+    const teamCount = promotableWorkers.length + demotedRecentWorkers.length;
+    titleParts.push(
+      <em key="team">
+        {teamCount} team update{teamCount === 1 ? "" : "s"}
+      </em>,
+    );
+  }
 
   return (
     <div className="td-today">
@@ -742,6 +774,13 @@ interface PaneProps {
   headerExtra?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /** Ref attached to the scrollable `.td-pane-body` element — used by
+   *  1:tail to auto-scroll to the newest (bottom) row as new events
+   *  arrive, since `.td-pane-body` (not `.td-tail`) is the actual
+   *  overflow-y:auto container (max-height: 260px). Without this, the
+   *  pane silently sits scrolled to the oldest row after the first
+   *  overflow and never follows new activity. */
+  bodyRef?: React.Ref<HTMLDivElement>;
 }
 
 function Pane({
@@ -754,6 +793,7 @@ function Pane({
   headerExtra,
   children,
   className,
+  bodyRef,
 }: PaneProps) {
   const active = activePane === index;
   return (
@@ -777,7 +817,7 @@ function Pane({
           </Link>
         )}
       </header>
-      <div className="td-pane-body">{children}</div>
+      <div className="td-pane-body" ref={bodyRef}>{children}</div>
     </section>
   );
 }
@@ -1161,6 +1201,17 @@ export default function HomePage() {
     () => (showPlumbing ? 0 : activityEvents.filter((e) => isNoiseEvent(e)).length),
     [activityEvents, showPlumbing],
   );
+  // Bug fix: `.td-pane-body` is the actual overflow-y:auto scroll
+  // container (max-height: 260px, see globals.css), not `.td-tail`. Rows
+  // render newest-at-bottom, but nothing ever scrolled the container as
+  // new events arrived — once content overflowed, the pane stayed pinned
+  // to the oldest visible row and never followed live activity. Auto-
+  // scroll to bottom whenever the visible row set changes.
+  const tailBodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = tailBodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [tailEvents]);
   const tailSummary =
     tailEvents.length > 0
       ? `Latest: ${eventLine(tailEvents[tailEvents.length - 1].event)}`
@@ -1613,7 +1664,7 @@ export default function HomePage() {
           halts: {haltCount24h}
         </span>
         <span className="td-seg">
-          ks: <span className={bridgeStatus.killSwitch?.engaged ? "td-err" : "td-ok"}>{killSwitchLabel}</span>
+          kill switch: <span className={bridgeStatus.killSwitch?.engaged ? "td-err" : "td-ok"}>{killSwitchLabel}</span>
         </span>
         <span className="td-sp" />
         {deckStaleness.anyStale ? (
@@ -1735,6 +1786,9 @@ export default function HomePage() {
                 const isQueueing = Boolean(runPending[key]);
                 const agoMs = nowMs - topAttentionRun.startedAt;
                 const ageTier = haltAgeTier(agoMs);
+                const haltSummary = topAttentionRun.haltReason
+                  ? friendlyHaltSummary(topAttentionRun.haltReason)
+                  : undefined;
                 return (
                   <div className={`td-attention-item${ageTier !== "fresh" ? ` td-attention-${ageTier}` : ""}`}>
                     <div className="td-attention-head">
@@ -1747,19 +1801,18 @@ export default function HomePage() {
                         {ageTier === "critical" ? " — needs attention" : ageTier === "stale" ? " — unaddressed" : ""}
                       </span>
                     </div>
-                    {topAttentionRun.haltReason && (() => {
-                      const { text, fixHint } = friendlyHaltSummary(topAttentionRun.haltReason);
-                      return (
-                        <div className="td-attention-reason">
-                          └ {text}
-                          {fixHint && <span className="td-attention-fix-hint"> {fixHint}</span>}
-                          <details className="td-attention-raw">
-                            <summary>Show technical details</summary>
-                            <code className="mono">{topAttentionRun.haltReason}</code>
-                          </details>
-                        </div>
-                      );
-                    })()}
+                    {haltSummary && (
+                      <div className="td-attention-reason">
+                        └ {haltSummary.text}
+                        {haltSummary.fixHint && (
+                          <span className="td-attention-fix-hint"> {haltSummary.fixHint}</span>
+                        )}
+                        <details className="td-attention-raw">
+                          <summary>Show technical details</summary>
+                          <code className="mono">{topAttentionRun.haltReason}</code>
+                        </details>
+                      </div>
+                    )}
                     <div className="td-attention-actions">
                       <button
                         type="button"
@@ -1775,9 +1828,16 @@ export default function HomePage() {
                       >
                         Doctor
                       </Link>
-                      <Link href="/connections" className="btn sm ghost">
-                        Connections
-                      </Link>
+                      {/* Only shown when the halt reason actually points at a
+                          missing/expired connector credential — previously
+                          rendered for every halt (timeout, rate-limit, generic
+                          error included) as an always-on, often-irrelevant
+                          action cluttering the row. */}
+                      {haltSummary?.isConnectionIssue && (
+                        <Link href="/connections" className="btn sm ghost">
+                          Connections
+                        </Link>
+                      )}
                       <button
                         type="button"
                         className="btn sm ghost"
@@ -1895,6 +1955,7 @@ export default function HomePage() {
           activePane={activePane}
           setActivePane={setActivePane}
           href="/activity"
+          bodyRef={tailBodyRef}
           headerExtra={
             <>
               <span className="td-muted mono">· ~/.patchwork/activity</span>
@@ -2284,7 +2345,10 @@ export default function HomePage() {
               shows up in the feed — a single flat list mixing multiple
               workers' decisions together stops being readable fast. */}
           <div className="td-gate-activity">
-            <div className="td-gate-activity-title td-muted">gate activity</div>
+            <div className="td-gate-activity-title td-muted">
+              gate activity
+              {gateWorkerIds.length === 1 ? ` · ${gateWorkerIds[0]}` : ""}
+            </div>
             {gateDecisionsError ? (
               <div className="td-error-row">gate activity unavailable</div>
             ) : gateDecisions.length === 0 ? (
@@ -2337,7 +2401,7 @@ export default function HomePage() {
         </Pane>
 
         {/* 5: vitals */}
-        <Pane index={5} id="vitals" title="vitals" activePane={activePane} setActivePane={setActivePane}>
+        <Pane index={5} id="vitals" title="System status" activePane={activePane} setActivePane={setActivePane}>
           <div className="td-kv-row">
             <span className="td-muted">sessions</span>
             <strong>
@@ -2448,7 +2512,7 @@ export default function HomePage() {
         <Pane
           index={6}
           id="inbox"
-          title="inbox"
+          title="Inbox"
           activePane={activePane}
           setActivePane={setActivePane}
           href="/inbox"
@@ -2491,6 +2555,15 @@ export default function HomePage() {
                 </Link>
               );
             })
+          )}
+          {/* Same "+N more" overflow affordance 2:fleet and 3:next already
+              have for their own capped lists (fleetOverflowCount /
+              pausedCronCount) — inbox previously just silently truncated
+              to 3 with no indication more items existed. */}
+          {inboxAllItems.length > inboxItems.length && (
+            <Link href="/inbox" className="td-more-link">
+              +{inboxAllItems.length - inboxItems.length} more →
+            </Link>
           )}
         </Pane>
       </div>
