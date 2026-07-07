@@ -99,3 +99,8 @@ intellij-plugin/.gradle/
 *-snapshot.md
 *.jpeg
 *.jpg
+
+# Personal/local working docs, not for version control
+/docs/audit-bridge-changelog-2026-06-25.md
+/docs/positioning-pricing-onepager.md
+/docs/roadmap-plan-2026-07-02.md
