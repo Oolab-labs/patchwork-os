@@ -26,6 +26,9 @@
 apiVersion: patchwork.sh/v1
 name: triage-failing-tests-autofile
 description: On a failing test run, write a triage note and FILE a GitHub issue (opt-in; gated by the worker trust ramp).
+allowWrites:
+  - file.write
+  - github.create_issue
 trigger:
   type: on_test_run
   filter: failure
