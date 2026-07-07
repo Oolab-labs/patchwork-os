@@ -210,6 +210,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   stripe: "#635BFF",
   sentry: "#362D59",
   pagerduty: "#06AC38",
+  telegram: "#26A5E4",
 };
 
 
