@@ -170,11 +170,14 @@ Restart the bridge (or re-fire) so the recipe/worker changes are picked up.
 
 > ⚠️ **The trigger only sees tests run *through the bridge*.** `on_test_run`
 > fires from the bridge's `runTests` tool (`src/tools/runTests.ts`) — i.e. when
-> an agent (or you) invokes `runTests`, or a VS Code task wired through it. A
-> bare `npm test` / `vitest` in a plain terminal is **invisible** to the worker;
-> it produces no `on_test_run` event and nothing fires. To exercise the loop,
-> run your suite via `runTests` (e.g. ask Claude to run the tests through the
-> bridge), not directly in a shell.
+> an agent (or you) invokes `runTests`, or a VS Code task wired through it.
+> `npm test` now routes through this automatically: `scripts/test-via-bridge.mjs`
+> checks for a live bridge lock and calls `runTests` over the `/mcp` HTTP
+> endpoint when one is running, so a plain `npm test` from a terminal fires
+> `on_test_run` just like an agent-invoked run. With no bridge running (CI,
+> or no session attached) it transparently falls back to `vitest run` — same
+> behavior as before, no event fires. Use `npm run test:raw` to force the
+> direct-vitest path even with a bridge attached.
 
 1. `runTests` fails → the `on_test_run` (filter: failure) trigger fires the
    recipe automatically.
