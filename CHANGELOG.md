@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0-beta.2] — 2026-07-08
+
+Small follow-up cycle from live dogfooding of the worker-autonomy gate.
+
+### Fixed
+
+- `templates/recipes/triage-failing-tests-autofile.yaml` was missing the `allowWrites: [file.write, github.create_issue]` block that the installed/dogfooded copy carried — a fresh install from the template would have hit a write-policy denial (#1144).
+- `npm test` now routes through the bridge's `runTests` tool when a bridge is live (`scripts/test-via-bridge.mjs`), so ordinary local test runs fire the worker-autonomy `on_test_run` trigger — previously only agent-invoked `runTests` calls did. Falls back to plain `vitest run` with no bridge attached (CI, unchanged). Windows fallback crash (missing `shell: true` on the `npx` spawn) fixed same-day (#1145).
+
+### Docs
+
+- Refreshed the README dashboard screenshot — the previous one predated the recent Overview-pane UI/UX passes (#1146).
+
 ## [1.1.0-beta.1] — 2026-07-06
 
 Worker-autonomy policy gate (keystone feature) · dashboard "Terminal deck" rewrite + copilot pane · Decision Record legibility layer · 123 commits since beta.13 (#1004–#1130). Minor/major version jump reflects the scale of this cycle, not a breaking API change — see below.
