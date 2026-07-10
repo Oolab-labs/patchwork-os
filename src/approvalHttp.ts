@@ -66,6 +66,15 @@ export interface ApprovalHttpDeps {
   /** Public base URL of this bridge (e.g. https://mybridge.example.com). Embedded in push payload as callback base. */
   pushServiceBaseUrl?: string;
   /**
+   * Skip the SSRF private/CGNAT-range block for `pushServiceUrl` specifically.
+   * Off by default — the guard treats a private-range push relay the same as
+   * any other SSRF target. Set when the operator has deliberately pointed
+   * `pushServiceUrl` at a private/CGNAT host they control (e.g. a Tailscale
+   * `*.ts.net` address, 100.64.0.0/10), mirroring
+   * `--automation-allow-private-webhooks` for the automation webhook fan-out.
+   */
+  pushServiceAllowPrivate?: boolean;
+  /**
    * ntfy.sh topic for direct phone-path approvals via action buttons. When set
    * AND `pushServiceBaseUrl` is set (so the action URLs can reach the bridge),
    * each queued approval is published to the topic with Approve / Reject HTTP
@@ -565,6 +574,7 @@ async function dispatchPushNotification(
     approvalToken: string;
     bridgeCallbackBase: string;
   },
+  allowPrivate: boolean = false,
 ): Promise<void> {
   if (!pushServiceUrl.startsWith("https://")) {
     console.warn(`[push] Rejected non-HTTPS push service URL`);
@@ -581,7 +591,8 @@ async function dispatchPushNotification(
     console.warn(`[push] Blocked loopback push service hostname`);
     return;
   }
-  if (await hostResolvesToBlockedIp(hostname, "push")) return;
+  if (!allowPrivate && (await hostResolvesToBlockedIp(hostname, "push")))
+    return;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
@@ -987,17 +998,22 @@ async function handleApprovalRequest(
 
   // Fire push notification in the background — phone path
   if (deps.pushServiceUrl && deps.pushServiceToken && approvalToken) {
-    dispatchPushNotification(deps.pushServiceUrl, deps.pushServiceToken, {
-      toolName,
-      tier,
-      callId,
-      requestedAt: now,
-      expiresAt: now + 5 * 60_000,
-      summary,
-      riskSignals,
-      approvalToken,
-      bridgeCallbackBase: deps.pushServiceBaseUrl ?? "",
-    }).catch(() => {});
+    dispatchPushNotification(
+      deps.pushServiceUrl,
+      deps.pushServiceToken,
+      {
+        toolName,
+        tier,
+        callId,
+        requestedAt: now,
+        expiresAt: now + 5 * 60_000,
+        summary,
+        riskSignals,
+        approvalToken,
+        bridgeCallbackBase: deps.pushServiceBaseUrl ?? "",
+      },
+      deps.pushServiceAllowPrivate ?? false,
+    ).catch(() => {});
   }
 
   // ntfy.sh phone path — independent of the FCM/APNS relay above. Action

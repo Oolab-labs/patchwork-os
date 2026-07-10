@@ -28,7 +28,11 @@ interface WireHaltPushDispatchDeps {
   /** Called per event — returns the current push relay config or null
    *  if push isn't configured. Reading from a getter rather than a
    *  captured value picks up runtime config changes. */
-  getPushConfig: () => { url: string; token: string } | null;
+  getPushConfig: () => {
+    url: string;
+    token: string;
+    allowPrivate?: boolean;
+  } | null;
   logger?: { warn?: (msg: string) => void };
   /** Override the dedup window. Default 60_000 ms. Tests pass a small
    *  value; production never sets it. */
@@ -95,16 +99,21 @@ export function wireHaltPushDispatch(
 
     // Best-effort: dispatchHaltPushNotification swallows errors, but
     // a synchronously-thrown URL parse error would still surface here.
-    dispatchHaltPushNotification(cfg.url, cfg.token, {
-      recipeName,
-      runSeq,
-      status: "error",
-      haltReason,
-      haltCategory,
-      actionHint,
-      errorMessage,
-      occurredAt: at,
-    }).catch((err) => {
+    dispatchHaltPushNotification(
+      cfg.url,
+      cfg.token,
+      {
+        recipeName,
+        runSeq,
+        status: "error",
+        haltReason,
+        haltCategory,
+        actionHint,
+        errorMessage,
+        occurredAt: at,
+      },
+      cfg.allowPrivate ?? false,
+    ).catch((err) => {
       deps.logger?.warn?.(
         `[halt-push] unexpected dispatcher error: ${err instanceof Error ? err.message : String(err)}`,
       );

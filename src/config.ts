@@ -68,6 +68,8 @@ export interface Config {
   pushServiceUrl: string | null;
   pushServiceToken: string | null;
   pushServiceBaseUrl: string | null;
+  /** Allow pushServiceUrl to target a private/CGNAT host (e.g. Tailscale *.ts.net, 100.64.0.0/10). Default false. */
+  pushServiceAllowPrivate: boolean;
   ntfyTopic: string | null;
   ntfyServer: string | null;
   watch: boolean;
@@ -571,6 +573,7 @@ export function parseConfig(argv: string[]): Config {
   let pushServiceUrl: string | null = null;
   let pushServiceToken: string | null = null;
   let pushServiceBaseUrl: string | null = null;
+  let pushServiceAllowPrivate = false;
   let ntfyTopic: string | null = null;
   let ntfyServer: string | null = null;
   const approvalWebhookUrl: string | null = (() => {
@@ -585,6 +588,7 @@ export function parseConfig(argv: string[]): Config {
       pushServiceUrl = pw.pushServiceUrl ?? null;
       pushServiceToken = pw.pushServiceToken ?? null;
       pushServiceBaseUrl = pw.pushServiceBaseUrl ?? null;
+      pushServiceAllowPrivate = pw.pushServiceAllowPrivate ?? false;
       ntfyTopic = pw.ntfyTopic ?? null;
       ntfyServer = pw.ntfyServer ?? null;
       // Seed driver from patchwork config if not already set by fileConfig or CLI
@@ -804,6 +808,9 @@ export function parseConfig(argv: string[]): Config {
       case "--automation-allow-private-webhooks":
         automationAllowPrivateWebhooks = true;
         break;
+      case "--push-service-allow-private":
+        pushServiceAllowPrivate = true;
+        break;
       case "--plugin": {
         const pluginPath = requireArg(args, ++i, "--plugin");
         if (pluginPath.length > 4096)
@@ -993,6 +1000,10 @@ Automation:
   --automation-allow-private-webhooks
                             Allow automation webhooks to target private/non-loopback hosts
                             (RFC1918, link-local, etc.). Default: loopback + public hosts only.
+  --push-service-allow-private
+                            Allow pushServiceUrl to target a private/CGNAT host (e.g. a
+                            Tailscale *.ts.net address, 100.64.0.0/10). Default: SSRF guard
+                            blocks private ranges.
 
 Plugins:
   --plugin <path-or-package>  Load a plugin (repeatable). Accepts a local path (./my-plugin) or
@@ -1186,6 +1197,7 @@ Environment Variables:
     pushServiceUrl,
     pushServiceToken,
     pushServiceBaseUrl,
+    pushServiceAllowPrivate,
     ntfyTopic,
     ntfyServer,
     toolRateLimit,

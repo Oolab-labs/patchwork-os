@@ -98,6 +98,13 @@ export interface PatchworkConfig {
    */
   pushServiceBaseUrl?: string;
   /**
+   * Allow `pushServiceUrl` to target a private/CGNAT host (e.g. a Tailscale
+   * `*.ts.net` address, 100.64.0.0/10). Default false — the SSRF guard
+   * treats a private-range push relay the same as any other SSRF target.
+   * Set with `--push-service-allow-private`.
+   */
+  pushServiceAllowPrivate?: boolean;
+  /**
    * Public-ntfy.sh push channel. Topic acts as a bearer; server defaults
    * to https://ntfy.sh and can be overridden for self-hosted instances.
    */

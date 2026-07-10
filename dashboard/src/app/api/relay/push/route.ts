@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import webpush from "web-push";
 import { verifyBearerToken } from "@/lib/constantTimeEqual";
+import { pushAgent } from "@/lib/pushAgent";
 import { getSubscriptionsFor, removeSubscription } from "@/lib/pushStore";
 import {
   DASHBOARD_API_BODY_CAPS,
@@ -158,7 +159,7 @@ export async function POST(req: Request) {
   webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
 
   const results = await Promise.allSettled(
-    subs.map((sub) => webpush.sendNotification(sub, payload)),
+    subs.map((sub) => webpush.sendNotification(sub, payload, { agent: pushAgent })),
   );
   const sent = results.filter((r) => r.status === "fulfilled").length;
 
