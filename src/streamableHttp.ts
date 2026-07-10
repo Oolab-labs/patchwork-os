@@ -258,9 +258,14 @@ class HttpAdapter extends EventEmitter {
     });
   }
 
-  /** Feed an incoming POST body to the McpTransport's message listener. */
-  receive(data: string): void {
-    this.emit("message", Buffer.from(data, "utf-8"));
+  /**
+   * Feed an incoming POST body to the McpTransport's message listener.
+   * `parsed`, when provided, is the object handlePost() already parsed from
+   * `data` for its own session/routing logic — passed through so
+   * McpTransport.attach()'s listener doesn't re-parse the identical bytes.
+   */
+  receive(data: string, parsed?: Record<string, unknown>): void {
+    this.emit("message", parsed ?? Buffer.from(data, "utf-8"));
   }
 
   /** Closes the adapter and any attached SSE stream. */
@@ -631,7 +636,7 @@ export class StreamableHttpHandler {
     // to prevent two null-id requests from colliding in the pendingSends Map.
     const isNotification = !Object.hasOwn(msg, "id") || msg.id === null;
     if (isNotification) {
-      session.adapter.receive(body);
+      session.adapter.receive(body, msg as unknown as Record<string, unknown>);
       res.writeHead(202);
       res.end();
       return;
@@ -672,7 +677,7 @@ export class StreamableHttpHandler {
       return;
     }
     session.inFlight++;
-    session.adapter.receive(body);
+    session.adapter.receive(body, msg as unknown as Record<string, unknown>);
 
     let responseData: string;
     try {
