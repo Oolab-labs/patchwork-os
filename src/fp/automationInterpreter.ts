@@ -5,7 +5,7 @@
  */
 
 import crypto from "node:crypto";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { getPrompt } from "../prompts.js";
 import type {
   AutomationProgram,
@@ -91,6 +91,26 @@ function emptyAcc(state: AutomationState): Acc {
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
+// onFileChanged fires near-keystroke rate, re-testing the same handful of
+// hook patterns against every event. minimatch() recompiles its pattern into
+// a Minimatch instance internally on every call; caching that instance per
+// (pattern, platform-normalisation) is a straight win with no behavior
+// change — patterns are static once a policy is parsed.
+const compiledGlobCache = new Map<string, Minimatch>();
+
+function compiledGlob(
+  pattern: string,
+  opts: { dot: boolean; nocase?: boolean },
+): Minimatch {
+  const cacheKey = `${opts.nocase ? "i:" : "s:"}${pattern}`;
+  let mm = compiledGlobCache.get(cacheKey);
+  if (!mm) {
+    mm = new Minimatch(pattern, opts);
+    compiledGlobCache.set(cacheKey, mm);
+  }
+  return mm;
+}
+
 /**
  * Returns true if `value` matches the condition pattern.
  * Negation via "!" prefix. Missing pattern → always true.
@@ -114,10 +134,10 @@ export function matchesCondition(
       const inner = isWin
         ? pattern.slice(1).replace(/\\/g, "/")
         : pattern.slice(1);
-      return !minimatch(normValue, inner, opts);
+      return !compiledGlob(inner, opts).match(normValue);
     }
     const normPattern = isWin ? pattern.replace(/\\/g, "/") : pattern;
-    return minimatch(normValue, normPattern, opts);
+    return compiledGlob(normPattern, opts).match(normValue);
   } catch {
     return false;
   }
