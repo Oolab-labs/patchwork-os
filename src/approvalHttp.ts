@@ -3,7 +3,11 @@ import {
   recordApprovalCompleted,
   recordApprovalPrompted,
 } from "./activationMetrics.js";
-import type { ApprovalQueue, RiskSignal } from "./approvalQueue.js";
+import type {
+  ApprovalDecision,
+  ApprovalQueue,
+  RiskSignal,
+} from "./approvalQueue.js";
 import { computePersonalSignals } from "./approvalSignals.js";
 import {
   evaluateRules,
@@ -12,6 +16,7 @@ import {
 } from "./ccPermissions.js";
 import { captureForRunlog } from "./recipes/stepObservation.js";
 import { computeRiskSignals } from "./riskSignals.js";
+import type { RiskTier } from "./riskTier.js";
 import { classifyTool } from "./riskTier.js";
 import { isPrivateHost } from "./ssrfGuard.js";
 
@@ -790,6 +795,111 @@ async function dispatchNtfyConfirmation(
   }
 }
 
+/** Notification-relevant subset of ApprovalDeps — the fields every approval
+ *  entry point (HTTP /approvals route, CLI PreToolUse gate) needs to fan out
+ *  webhook/push/ntfy dispatch identically. */
+export interface ApprovalNotifyDeps {
+  queue: ApprovalQueue;
+  webhookUrl?: string;
+  pushServiceUrl?: string;
+  pushServiceToken?: string;
+  pushServiceBaseUrl?: string;
+  pushServiceAllowPrivate?: boolean;
+  ntfyTopic?: string;
+  ntfyServer?: string;
+  ntfyHmacSecret?: string;
+}
+
+/**
+ * Queue an approval and fan out every configured notification channel
+ * (webhook, Web Push, ntfy) identically. Extracted so both the HTTP
+ * `/approvals` route (`handleApprovalRequest`) and the CLI PreToolUse gate
+ * (`transport.setApprovalGate` in bridge.ts) get the same phone-path
+ * notifications — before this extraction, CLI-originated approvals (the
+ * common case: `gitCommit`, `runInTerminal`, etc. from `claude` itself)
+ * silently enqueued with NO notification of any kind, since the CLI gate
+ * called `queue.request()` directly and never touched the dispatch* helpers
+ * below.
+ */
+export function enqueueApprovalWithDispatch(
+  deps: ApprovalNotifyDeps,
+  request: {
+    toolName: string;
+    params: Record<string, unknown>;
+    tier: RiskTier;
+    riskSignals: RiskSignal[];
+    summary?: string;
+    sessionId?: string;
+    personalSignals?: ReturnType<typeof computePersonalSignals>;
+  },
+): {
+  callId: string;
+  promise: Promise<ApprovalDecision>;
+} {
+  const { toolName, params, tier, riskSignals, summary, sessionId } = request;
+  const now = Date.now();
+  const { callId, approvalToken, promise } = deps.queue.request(
+    {
+      toolName,
+      params,
+      tier,
+      summary,
+      sessionId,
+      riskSignals,
+      ...(request.personalSignals !== undefined && {
+        personalSignals: request.personalSignals,
+      }),
+    },
+    { withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic },
+  );
+  recordApprovalPrompted();
+
+  if (deps.webhookUrl) {
+    dispatchApprovalWebhook(deps.webhookUrl, {
+      toolName,
+      tier,
+      callId,
+      requestedAt: now,
+      expiresAt: now + 5 * 60_000,
+      summary,
+    }).catch(() => {});
+  }
+
+  if (deps.pushServiceUrl && deps.pushServiceToken && approvalToken) {
+    dispatchPushNotification(
+      deps.pushServiceUrl,
+      deps.pushServiceToken,
+      {
+        toolName,
+        tier,
+        callId,
+        requestedAt: now,
+        expiresAt: now + 5 * 60_000,
+        summary,
+        riskSignals,
+        approvalToken,
+        bridgeCallbackBase: deps.pushServiceBaseUrl ?? "",
+      },
+      deps.pushServiceAllowPrivate ?? false,
+    ).catch(() => {});
+  }
+
+  if (deps.ntfyTopic && approvalToken && deps.pushServiceBaseUrl) {
+    dispatchNtfyApproval(deps.ntfyServer ?? "https://ntfy.sh", {
+      topic: deps.ntfyTopic,
+      toolName,
+      tier,
+      callId,
+      summary,
+      approvalToken,
+      bridgeCallbackBase: deps.pushServiceBaseUrl,
+      hmacSecret: deps.ntfyHmacSecret,
+    }).catch(() => {});
+  }
+
+  return { callId, promise };
+}
+
 async function handleApprovalRequest(
   req: HttpRequest,
   deps: ApprovalHttpDeps,
@@ -962,75 +1072,15 @@ async function handleApprovalRequest(
     : undefined;
 
   const now = Date.now();
-  const { callId, approvalToken, promise } = deps.queue.request(
-    {
-      toolName,
-      params,
-      tier,
-      summary,
-      sessionId,
-      riskSignals,
-      // Always include personalSignals when activityLog is wired, even
-      // if the array is empty. The presence of the key is the signal
-      // that the wire is live; conditionally omitting it made it
-      // impossible to distinguish "wire broken" from "no signals fired"
-      // during dogfooding (verified end-to-end on 2026-05-03 — first
-      // three test runs looked broken when they were just empty).
-      // When activityLog isn't wired (no signals computed at all), the
-      // field stays absent — that case still means "not configured."
-      ...(personalSignals !== undefined && { personalSignals }),
-    },
-    { withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic },
-  );
-  recordApprovalPrompted();
-
-  // Fire webhook notification in the background — never block approval flow
-  if (deps.webhookUrl) {
-    dispatchApprovalWebhook(deps.webhookUrl, {
-      toolName,
-      tier,
-      callId,
-      requestedAt: now,
-      expiresAt: now + 5 * 60_000,
-      summary,
-    }).catch(() => {});
-  }
-
-  // Fire push notification in the background — phone path
-  if (deps.pushServiceUrl && deps.pushServiceToken && approvalToken) {
-    dispatchPushNotification(
-      deps.pushServiceUrl,
-      deps.pushServiceToken,
-      {
-        toolName,
-        tier,
-        callId,
-        requestedAt: now,
-        expiresAt: now + 5 * 60_000,
-        summary,
-        riskSignals,
-        approvalToken,
-        bridgeCallbackBase: deps.pushServiceBaseUrl ?? "",
-      },
-      deps.pushServiceAllowPrivate ?? false,
-    ).catch(() => {});
-  }
-
-  // ntfy.sh phone path — independent of the FCM/APNS relay above. Action
-  // buttons in the notification POST back to /approve|/reject with the
-  // single-use token. Requires a public bridgeCallbackBase (HTTPS).
-  if (deps.ntfyTopic && approvalToken && deps.pushServiceBaseUrl) {
-    dispatchNtfyApproval(deps.ntfyServer ?? "https://ntfy.sh", {
-      topic: deps.ntfyTopic,
-      toolName,
-      tier,
-      callId,
-      summary,
-      approvalToken,
-      bridgeCallbackBase: deps.pushServiceBaseUrl,
-      hmacSecret: deps.ntfyHmacSecret,
-    }).catch(() => {});
-  }
+  const { callId, promise } = enqueueApprovalWithDispatch(deps, {
+    toolName,
+    params,
+    tier,
+    riskSignals,
+    summary,
+    sessionId,
+    personalSignals,
+  });
 
   const outcome = await promise;
   if (outcome !== "expired") {
