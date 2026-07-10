@@ -417,13 +417,16 @@ describe("runInTerminal - shell integration unavailable falls back to subprocess
         shellIntegrationUnavailable: true,
         error: "Shell Integration not available for this terminal.",
       }),
-      ["echo"],
+      ["git"],
     );
-    const result = (await tool.handler({ command: "echo hi" })) as any;
+    // `git` is a real standalone binary on both POSIX and Windows (unlike
+    // `echo`, which is a cmd.exe builtin with no echo.exe on Windows — the
+    // subprocess fallback spawns the binary directly, not through a shell).
+    const result = (await tool.handler({ command: "git --version" })) as any;
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(parseResult(result));
     expect(parsed.fallback).toBe("subprocess");
-    expect(parsed.stdout).toContain("hi");
+    expect(parsed.stdout).toContain("git version");
   });
 
   it("does NOT fall back for other success:false reasons (e.g. terminal not found)", async () => {
