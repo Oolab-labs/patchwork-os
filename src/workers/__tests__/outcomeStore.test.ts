@@ -201,4 +201,12 @@ describe("OutcomeStore", () => {
       "junk",
     );
   });
+
+  it("a write from one instance invalidates the shared cache for all instances", () => {
+    const a = new OutcomeStore(dir);
+    const b = new OutcomeStore(dir);
+    expect(b.getDisposition("https://x/issues/1")).toBeNull();
+    a.upsert(rec("https://x/issues/1", "confirmed"));
+    expect(b.getDisposition("https://x/issues/1")).toBe("confirmed");
+  });
 });
