@@ -198,12 +198,21 @@ export interface RecipeWorkerTrust {
 // activity. Cache the result per (recipeName, patchworkDir, workersDir) keyed
 // on runs.jsonl's mtime: unchanged mtime → the exact same replay would happen
 // again, so reuse it; a changed mtime (a run completed, appending new rows)
-// invalidates the entry. `now` isn't part of the key — the two calls a single
-// run makes happen milliseconds apart, well inside any durability-window
-// boundary, so reusing the first call's `now` for the second is a no-op
-// in practice.
+// invalidates the entry.
+//
+// `now` drives durable-outcome labelling (a recent non-reversible success is
+// WITHHELD until it survives a ~24h durability window — see shadowObserver),
+// so it must be part of the cache key: two calls with a genuinely different
+// `now` (e.g. a caller simulating the window elapsing) must NOT reuse each
+// other's replay. Bucketing to the minute — rather than keying on the exact
+// value — still lets the two real per-run calls (milliseconds apart,
+// default `now: Date.now()`) share a cache hit, while anything that crosses
+// a minute boundary (every test that injects a materially different `now`,
+// and any real gap that could matter) gets a fresh replay.
+const NOW_BUCKET_MS = 60_000;
 interface TrustCacheEntry {
   runsLogMtimeMs: number;
+  nowBucket: number;
   trust: RecipeWorkerTrust | null;
 }
 const trustCache = new Map<string, TrustCacheEntry>();
@@ -234,10 +243,15 @@ export function loadWorkerTrustForRecipe(
   const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
   const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
 
-  const cacheKey = `${patchworkDir} ${workersDir} ${recipeName}`;
+  const cacheKey = `${patchworkDir}|${workersDir}|${recipeName}`;
   const runsLogMtimeMs = statMtimeMs(path.join(patchworkDir, "runs.jsonl"));
+  const nowBucket = Math.floor((opts.now ?? Date.now()) / NOW_BUCKET_MS);
   const cached = trustCache.get(cacheKey);
-  if (cached && cached.runsLogMtimeMs === runsLogMtimeMs) {
+  if (
+    cached &&
+    cached.runsLogMtimeMs === runsLogMtimeMs &&
+    cached.nowBucket === nowBucket
+  ) {
     return cached.trust;
   }
 
@@ -268,7 +282,7 @@ export function loadWorkerTrustForRecipe(
     return { worker, store: observer.levelStore };
   })();
 
-  trustCache.set(cacheKey, { runsLogMtimeMs, trust });
+  trustCache.set(cacheKey, { runsLogMtimeMs, nowBucket, trust });
   return trust;
 }
 

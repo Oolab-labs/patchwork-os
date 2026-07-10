@@ -403,6 +403,50 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     });
     expect(third?.store).not.toBe(first?.store);
   });
+
+  it("does NOT reuse the cache across a materially different `now` even with an unchanged runs.jsonl (durability-window regression)", () => {
+    // Regression: the cache must not ignore `now`. A non-reversible success
+    // is WITHHELD until it survives the durability window (~24h); the same
+    // recipe/mtime queried once with real `now` and once with `now` pushed
+    // forward past that window must NOT share a cache entry, or the second
+    // call would wrongly return the first call's (pre-window) evidence.
+    const log = new RecipeRunLog({ dir });
+    log.appendDirect({
+      taskId: "t1",
+      recipeName: "dependency-bump",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+      stepResults: [
+        { id: "s1", tool: "githubCreatePR", status: "ok", durationMs: 1 },
+      ],
+    });
+
+    const fresh = loadWorkerTrustForRecipe("dependency-bump", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+      now: 1,
+    });
+    const freshBoard = fresh?.store.board("dependency-upkeep-worker") ?? [];
+    expect(
+      freshBoard.find((r) => r.classKey.includes("vcs-remote")),
+      "recent non-reversible success is withheld before the durability window",
+    ).toBeUndefined();
+
+    const TWENTY_FIVE_HOURS = 25 * 60 * 60 * 1000;
+    const durable = loadWorkerTrustForRecipe("dependency-bump", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+      now: 1 + TWENTY_FIVE_HOURS,
+    });
+    const durableBoard = durable?.store.board("dependency-upkeep-worker") ?? [];
+    expect(
+      durableBoard.find((r) => r.classKey.includes("vcs-remote")),
+      "same recipe/mtime but `now` past the window must recompute, not reuse the withheld cache entry",
+    ).toBeDefined();
+  });
 });
 
 describe("computePendingConfirmations (the confirm queue)", () => {
