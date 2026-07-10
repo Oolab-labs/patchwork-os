@@ -118,6 +118,16 @@ export function createRunVSCodeTaskTool(extensionClient: ExtensionClient) {
             "Extension did not respond — ensure the VS Code extension is running",
           );
         }
+        // handleRunTask (extension side) returns a non-null {success:false}
+        // object for task-not-found, executeTask() rejecting, and its own
+        // internal timeout — all real failures, distinct from a task that
+        // ran to completion with a nonzero exit code (success:true,
+        // exitCode!==0). Without this check every one of those was reported
+        // as an MCP tool success with the failure buried in the payload.
+        const r = result as { success?: boolean };
+        if (r.success === false) {
+          return error(result as Record<string, unknown>);
+        }
         return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
