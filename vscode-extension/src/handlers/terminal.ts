@@ -308,6 +308,13 @@ export async function handleWaitForTerminalOutput(
 
 const MAX_EXECUTE_OUTPUT_BYTES = 512 * 1024; // 500 KB cap
 
+// Post-execution-end output drain tuning (see the drain race below):
+// keep waiting as long as chunks keep arriving within DRAIN_IDLE_MS of each
+// other, but never longer than DRAIN_MAX_GRACE_MS in total.
+const DRAIN_IDLE_MS = 500;
+const DRAIN_MAX_GRACE_MS = 3_000;
+const DRAIN_POLL_MS = 50;
+
 /**
  * Shell metacharacters — defense-in-depth validation even though bridge
  * validates too. Backslash is excluded on Windows because it's the native
@@ -391,6 +398,7 @@ export async function handleExecuteInTerminal(
   const outputChunks: string[] = [];
   let outputBytes = 0;
   let truncated = false;
+  let lastChunkAt = Date.now();
 
   // Read output concurrently with waiting for execution end
   const reader = execution.read();
@@ -400,6 +408,7 @@ export async function handleExecuteInTerminal(
       for await (const chunk of {
         [Symbol.asyncIterator]: () => readerIterator,
       }) {
+        lastChunkAt = Date.now();
         if (!truncated) {
           // Audit 2026-06-08 (extension-12): count actual UTF-8 bytes, not
           // string .length (UTF-16 units), so the MAX_EXECUTE_OUTPUT_BYTES cap
@@ -414,7 +423,7 @@ export async function handleExecuteInTerminal(
       }
     } catch {
       // Swallow errors from the async iterator (e.g. terminal disposed after the
-      // 500ms grace timer wins Promise.race and reader.return() is called). Output
+      // drain grace period below gives up and reader.return() is called). Output
       // collected before disposal is preserved in outputChunks. A rejection here
       // would become an unhandled rejection and crash the extension host.
     }
@@ -439,10 +448,23 @@ export async function handleExecuteInTerminal(
     });
   });
 
-  // Drain any remaining buffered output (brief grace period), then terminate the iterator
+  // Drain any remaining buffered output. `onDidEndTerminalShellExecution`
+  // fires once the shell reports completion, but shell-integration's own
+  // output stream can still have chunks in flight (PTY buffering) — a
+  // single fixed grace period race here would either cut off real, still-
+  // arriving output (too short) or waste time on every call (too long).
+  // Instead: keep waiting as long as chunks keep arriving (resetting an
+  // idle window each time), bounded by an overall cap so a reader that
+  // never truly ends can't block the response indefinitely.
   await Promise.race([
     readPromise,
-    new Promise<void>((r) => setTimeout(r, 500)),
+    (async () => {
+      const deadline = Date.now() + DRAIN_MAX_GRACE_MS;
+      while (Date.now() < deadline) {
+        if (Date.now() - lastChunkAt >= DRAIN_IDLE_MS) return;
+        await new Promise((r) => setTimeout(r, DRAIN_POLL_MS));
+      }
+    })(),
   ]);
   await readerIterator.return?.();
 

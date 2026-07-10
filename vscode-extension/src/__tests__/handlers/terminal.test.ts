@@ -636,3 +636,164 @@ describe("handleExecuteInTerminal — shell integration unavailable", () => {
     expect(result.error).toContain("Shell Integration not available");
   });
 });
+
+describe("handleExecuteInTerminal — output drain after execution ends", () => {
+  // Bug: the drain race after onDidEndTerminalShellExecution fires used a
+  // single fixed 500ms grace period, regardless of whether output was still
+  // actively arriving. A shell whose output stream is still flushing several
+  // chunks in the ~500ms right around process exit (slow PTY renderer, a lot
+  // of output right before exit, a loaded machine) would have its later
+  // chunks silently cut off with no truncated flag — a classic "flaky,
+  // partial output" symptom.
+  //
+  // This builds a reader that delivers 4 chunks roughly 150ms apart (all
+  // comfortably inside a single 500ms window from the FIRST chunk, but the
+  // last chunk arrives ~450ms after the end event — an old fixed-from-
+  // end-event 500ms timer starting fresh would still catch it, so this test
+  // specifically checks that ALL chunks delivered before the reader goes
+  // truly idle are preserved, not just the ones that fit some arbitrary
+  // fixed window from a single anchor point).
+  it("preserves output that keeps arriving in bursts after the end event, until the stream actually goes idle", async () => {
+    const CHUNK_GAP_MS = 200;
+    const chunks = ["first ", "second ", "third ", "fourth"];
+    let deliveredCount = 0;
+    let doneSignaled = false;
+
+    const mockReader: AsyncIterableIterator<string> & {
+      return?: () => Promise<any>;
+    } = {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      async next(): Promise<IteratorResult<string>> {
+        if (deliveredCount < chunks.length) {
+          await new Promise((r) => setTimeout(r, CHUNK_GAP_MS));
+          const value = chunks[deliveredCount];
+          deliveredCount++;
+          return { value, done: false };
+        }
+        if (!doneSignaled) {
+          doneSignaled = true;
+          return { value: undefined as unknown as string, done: true };
+        }
+        // Should never be reached once done:true has been returned once.
+        await new Promise(() => {});
+        throw new Error("unreachable");
+      },
+      async return(): Promise<IteratorResult<string>> {
+        return { value: undefined, done: true };
+      },
+    };
+
+    let capturedEndHandler!: (ev: any) => void;
+    vi.mocked(vscode.window.onDidEndTerminalShellExecution).mockImplementation(
+      (handler: any) => {
+        capturedEndHandler = handler;
+        return { dispose: vi.fn() };
+      },
+    );
+
+    const mockExecution = {};
+    const mockShellIntegration = {
+      executeCommand: vi.fn(() => ({
+        ...mockExecution,
+        read: () => mockReader,
+      })),
+    };
+    const terminal = {
+      name: "test",
+      show: vi.fn(),
+      shellIntegration: mockShellIntegration,
+    };
+    vscode.window.terminals = [terminal] as any;
+    vscode.window.activeTerminal = terminal as any;
+
+    const handlerPromise = handleExecuteInTerminal({
+      command: "echo hi",
+      timeoutMs: 30_000,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Fire the end event immediately (before ANY chunk has arrived) — the
+    // shell can report completion while shell-integration output is still
+    // trickling in from the PTY buffer.
+    const execution =
+      mockShellIntegration.executeCommand.mock.results[0]?.value;
+    capturedEndHandler({ execution, exitCode: 0 });
+
+    const result = (await handlerPromise) as any;
+
+    expect(result.success).toBe(true);
+    expect(result.truncated).toBeUndefined();
+    for (const c of chunks) {
+      expect(result.output).toContain(c.trim());
+    }
+  }, 10_000);
+
+  it("still gives up (bounded) when the reader never goes idle and never ends", async () => {
+    // A reader that keeps producing chunks forever, faster than the idle
+    // window — must not hang the handler indefinitely. Bounded by an
+    // overall max grace period.
+    let n = 0;
+    const mockReader: AsyncIterableIterator<string> & {
+      return?: () => Promise<any>;
+    } = {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      async next(): Promise<IteratorResult<string>> {
+        n++;
+        await new Promise((r) => setTimeout(r, 50));
+        return { value: `chunk${n} `, done: false };
+      },
+      async return(): Promise<IteratorResult<string>> {
+        return { value: undefined, done: true };
+      },
+    };
+
+    let capturedEndHandler!: (ev: any) => void;
+    vi.mocked(vscode.window.onDidEndTerminalShellExecution).mockImplementation(
+      (handler: any) => {
+        capturedEndHandler = handler;
+        return { dispose: vi.fn() };
+      },
+    );
+
+    const mockExecution = {};
+    const mockShellIntegration = {
+      executeCommand: vi.fn(() => ({
+        ...mockExecution,
+        read: () => mockReader,
+      })),
+    };
+    const terminal = {
+      name: "test",
+      show: vi.fn(),
+      shellIntegration: mockShellIntegration,
+    };
+    vscode.window.terminals = [terminal] as any;
+    vscode.window.activeTerminal = terminal as any;
+
+    const start = Date.now();
+    const handlerPromise = handleExecuteInTerminal({
+      command: "yes",
+      timeoutMs: 30_000,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    const execution =
+      mockShellIntegration.executeCommand.mock.results[0]?.value;
+    capturedEndHandler({ execution, exitCode: 0 });
+
+    const result = (await handlerPromise) as any;
+    const elapsed = Date.now() - start;
+
+    expect(result.success).toBe(true);
+    // Must resolve well before the test's own 10s timeout — bounded by the
+    // overall max-grace cap, not left waiting for an idle gap that never comes.
+    expect(elapsed).toBeLessThan(5_000);
+  }, 10_000);
+});
