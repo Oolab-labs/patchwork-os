@@ -4,14 +4,20 @@
 id: test-guardian-worker
 name: Test Guardian Worker
 sector: engineering
-recipe: triage-failing-tests
+recipe: triage-failing-tests-autofile
 responsibilities:
   - On a failing test run, investigate the stack trace and identify the cause
   - File / update an issue with the failure summary and the suspect commit
+# Matches triage-failing-tests-autofile.yaml's actual steps exactly — not
+# aspirational. The on_test_run TRIGGER firing externally (from runTests)
+# is not itself a gated recipe step, so "ci" was previously listed here
+# with nothing in the recipe body to ever attach an observation to;
+# dropped. "fs-write" was previously MISSING despite write_note (file.write)
+# running every cycle. Verified against DOMAIN_BY_TOOL in actionClass.ts.
 owns:
-  - ci # runTests (re-runnable) — reversible
-  - vcs-read # getGitDiff / gitBlame to find the suspect commit
-  - issue # githubCreateIssue / addLinearComment — compensable + brand-exposed
+  - vcs-read # git.log_since / github.list_issues
+  - fs-write # write_note (file.write) — the triage note itself
+  - issue # file_issue (github.create_issue) — compensable + brand-exposed
 # Capped below the compensable auto-allow threshold (L2): the ramp has only
 # been validated on synthetic data (one planted break, 16 gate decisions) and
 # the outcome-verification signal (confirmed/junk labelling, see outcomeStore.ts)

@@ -312,6 +312,45 @@ with `patchwork workers shadow`.
   `~/.patchwork/recipes/`, and the worker manifest into
   `~/.patchwork/workers/`, before a real commit will exercise the `vcs-read` /
   `fs-write` gate for the first time.
+- **2026-07-10 (later same day) — release-notes-worker actually fired; two
+  correction items found by a multi-agent dogfood-setup review.** Corrected
+  the entry immediately above: the worker WAS installed and fired for real
+  later the same day — the Decision Record's last entries show
+  `workerId=release-notes-worker`, `action=allow`, `earnedLevel=0`,
+  `autonomyCeiling=4`, covering `agent`/`file.write`/`git.log_since`. All
+  trivially `allow` (its classes are reversible, so this produced zero real
+  ramp signal), but "not yet run live" as of this correction is false — worth
+  noting here since the previous entry is easy to misread as still current.
+  The same review surfaced two real bugs, both fixed:
+  1. **Outcome-store trust-by-overwrite.** `outcome-log.jsonl`'s last
+     recorded disposition for issue #1143 (the synthetic-failure test above)
+     had flipped from `junk` back to `confirmed`, authored by
+     `outcome-ingester` — the automated cron silently overwrote the manual
+     `outcomes reject` from 2026-07-08, because `OutcomeRecord` had no field
+     distinguishing a human's explicit judgment from an automated poll and
+     the store was pure last-writer-wins. Fixed: `OutcomeRecord.origin`
+     (`"manual" | "ingester"`), and a manual disposition is now sticky
+     against a later ingester overwrite (a later *manual* write still
+     applies normally — the operator can change their own mind).
+     `patchwork outcomes reject <issue-#1143-url>` should be re-run to
+     restore the correct disposition on disk (the code fix only prevents
+     *future* overwrites, it doesn't retroactively undo this one).
+  2. **`owns[]` drift on all three worker manifests**, found by cross-
+     checking each recipe's actual steps against `DOMAIN_BY_TOOL`:
+     Test Guardian was missing `fs-write` (its `write_note`/`file.write`
+     step) and claimed `ci` (nothing in the recipe body maps to that
+     domain — the `on_test_run` trigger firing externally doesn't count).
+     Dependency Upkeep claimed `vcs-remote`/`deps-read`/`vcs-local` — none
+     ever exercised, since `dependency-bump.yaml` only reviews existing PRs,
+     it never opens one — while missing `vcs-read` (`github.list_prs`).
+     Also found: `release-notes.yaml`, `triage-failing-tests.yaml`, and
+     `dependency-bump.yaml` were all missing `allowWrites` for their
+     `file.write` step, failing `recipe preflight` out of the box (the
+     *installed* copy of release-notes.yaml had the fix; the tracked
+     template didn't — now synced). All three worker manifests and all
+     three recipe templates corrected; `src/workers/__tests__/
+     runWorkerShadow.test.ts` updated to match (two tests were asserting
+     the pre-fix, incorrect ownership).
 
 ### Raising the ceiling
 

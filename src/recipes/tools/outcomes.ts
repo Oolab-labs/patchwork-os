@@ -115,6 +115,7 @@ registerTool({
         issueUrl,
         disposition,
         checkedAt,
+        origin: "ingester",
         ...(recipeName && { recipeName }),
         ...(workerClass && { workerClass }),
       });

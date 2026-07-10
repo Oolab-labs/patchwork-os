@@ -1,20 +1,30 @@
 # Dependency-upkeep worker — top-right beachhead. The classic low-blast,
-# continuous, verifiable job to land first (the wedge): watch for outdated /
-# vulnerable deps and open a bump PR.
+# continuous, verifiable job to land first (the wedge): review open
+# dependency-update PRs and recommend safe-to-merge vs needs-review. Not
+# yet installed/dogfooded (STATIC-ONLY).
 id: dependency-upkeep-worker
 name: Dependency Upkeep Worker
 sector: engineering
 recipe: dependency-bump
 responsibilities:
   - Audit dependencies for outdated / vulnerable packages
-  - Open a bump PR with the changelog and advisory links
+  - Review open dependency-update PRs and recommend safe-to-merge vs needs-review
+# `owns` matches dependency-bump.yaml's ACTUAL steps (github.list_prs ->
+# agent -> file.write) — not the aspirational "open a bump PR" described in
+# an earlier draft of `responsibilities` above (now corrected: this recipe
+# REVIEWS existing PRs, it never opens one). deps-read/vcs-local/vcs-remote
+# were previously listed here with nothing in the recipe body to ever
+# attach an observation to. If a future recipe variant actually opens PRs,
+# add vcs-remote back then (see the PR-outcome-grader note below, which
+# still applies to that future version).
 owns:
-  - deps-read # auditDependencies / getSecurityAdvisories — read-only
-  - vcs-local # gitCommit / gitCheckout on a branch — reversible
-  - vcs-remote # githubCreatePR — compensable + brand-exposed
-# Opening a PR (vcs-remote) is compensable — but there is NO outcome grader for
-# PRs yet (OutcomeStore is issue-URL-keyed only), so a bump PR nobody reviews
-# would fold good:true past the 24h durability window: the same trust-by-neglect
+  - vcs-read # github.list_prs
+  - fs-write # the review-summary file.write
+# The comment below describes a FUTURE PR-opening variant of this worker,
+# not the current one — kept for when that variant exists. Opening a PR
+# (vcs-remote) is compensable — but there is NO outcome grader for PRs yet
+# (OutcomeStore is issue-URL-keyed only), so a bump PR nobody reviews would
+# fold good:true past the 24h durability window: the same trust-by-neglect
 # the issue-class fix (#1064) closed, surviving on the PR path. Cap below the
 # compensable auto-allow rung (L2) so PR-opening stays human-approved regardless
 # of earned level — mirroring test-guardian's `issue` cap. Raise to 3 (open PRs

@@ -6,6 +6,8 @@
 apiVersion: patchwork.sh/v1
 name: dependency-bump
 description: Weekly — list open dependency-update PRs and summarize which look safe to merge.
+allowWrites:
+  - file.write
 trigger:
   type: cron
   at: "0 9 * * MON"

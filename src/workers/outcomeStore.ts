@@ -46,6 +46,23 @@ export interface OutcomeRecord {
   /** Optional context for auditing. */
   recipeName?: string;
   workerClass?: string;
+  /**
+   * Who wrote this record. "manual" — an operator ran `patchwork outcomes
+   * confirm|reject`, an explicit human judgment call. "ingester" — the
+   * automated outcome-ingester cron classifying GitHub issue state/labels.
+   * Missing on records written before this field existed; treated as
+   * "ingester" (conservative — old records get no special protection).
+   *
+   * Precedence: a "manual" disposition is STICKY against later "ingester"
+   * writes for the same issueUrl — see resolveDispositions() below. Without
+   * this, an operator's deliberate "this filing was junk" verdict (e.g. to
+   * confirm the trust dial correctly stays flat on a known-synthetic test
+   * issue) could be silently overwritten by the next automated poll, which
+   * has no way to know the human already made a final call. A later manual
+   * write always wins (the operator can change their own mind); only
+   * ingester-over-manual is blocked.
+   */
+  origin?: "manual" | "ingester";
 }
 
 /**
@@ -79,10 +96,15 @@ function parseOutcomeLog(logPath: string): {
     if (!t) continue;
     try {
       const r = JSON.parse(t) as OutcomeRecord;
-      if (r.issueUrl && r.disposition) {
-        dispositions.set(r.issueUrl, r.disposition);
-        records.set(r.issueUrl, r);
-      }
+      if (!r.issueUrl || !r.disposition) continue;
+      // A manual disposition is sticky against a later ingester write for
+      // the same issueUrl — an automated poll must not silently erase an
+      // operator's explicit judgment call. A later manual write (the
+      // operator changing their own mind) always applies normally.
+      const existing = records.get(r.issueUrl);
+      if (existing?.origin === "manual" && r.origin !== "manual") continue;
+      dispositions.set(r.issueUrl, r.disposition);
+      records.set(r.issueUrl, r);
     } catch {
       /* skip malformed lines */
     }

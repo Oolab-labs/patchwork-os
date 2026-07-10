@@ -209,4 +209,74 @@ describe("OutcomeStore", () => {
     a.upsert(rec("https://x/issues/1", "confirmed"));
     expect(b.getDisposition("https://x/issues/1")).toBe("confirmed");
   });
+
+  describe("manual disposition is sticky against ingester overwrite", () => {
+    it("a later ingester write does not overwrite an earlier manual disposition", () => {
+      const store = new OutcomeStore(dir);
+      store.upsert({
+        issueUrl: "https://x/issues/1143",
+        disposition: "junk",
+        checkedAt: 1,
+        origin: "manual",
+      });
+      store.upsert({
+        issueUrl: "https://x/issues/1143",
+        disposition: "confirmed",
+        checkedAt: 2,
+        origin: "ingester",
+      });
+      expect(store.getDisposition("https://x/issues/1143")).toBe("junk");
+      expect(
+        store.readAll().find((r) => r.issueUrl.endsWith("/1143"))?.origin,
+      ).toBe("manual");
+    });
+
+    it("a later manual write still overwrites an earlier manual disposition", () => {
+      const store = new OutcomeStore(dir);
+      store.upsert({
+        issueUrl: "https://x/issues/1143",
+        disposition: "junk",
+        checkedAt: 1,
+        origin: "manual",
+      });
+      store.upsert({
+        issueUrl: "https://x/issues/1143",
+        disposition: "confirmed",
+        checkedAt: 2,
+        origin: "manual",
+      });
+      expect(store.getDisposition("https://x/issues/1143")).toBe("confirmed");
+    });
+
+    it("ingester writes still overwrite each other normally (no manual record present)", () => {
+      const store = new OutcomeStore(dir);
+      store.upsert({
+        issueUrl: "https://x/issues/1",
+        disposition: "unknown",
+        checkedAt: 1,
+        origin: "ingester",
+      });
+      store.upsert({
+        issueUrl: "https://x/issues/1",
+        disposition: "confirmed",
+        checkedAt: 2,
+        origin: "ingester",
+      });
+      expect(store.getDisposition("https://x/issues/1")).toBe("confirmed");
+    });
+
+    it("records written before the origin field existed are treated as ingester (no special protection)", () => {
+      const store = new OutcomeStore(dir);
+      // Legacy record, no `origin` — same shape as everything written
+      // before this fix.
+      store.upsert(rec("https://x/issues/1", "junk"));
+      store.upsert({
+        issueUrl: "https://x/issues/1",
+        disposition: "confirmed",
+        checkedAt: 2,
+        origin: "ingester",
+      });
+      expect(store.getDisposition("https://x/issues/1")).toBe("confirmed");
+    });
+  });
 });
