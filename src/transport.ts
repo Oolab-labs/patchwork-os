@@ -724,27 +724,36 @@ export class McpTransport {
     this.activeWs = ws;
     this.initialized = false; // Force re-initialization on every new connection
     const gen = ++this.generation;
-    const listener = async (data: Buffer) => {
+    // The real `ws` library always emits a raw Buffer here. The Streamable
+    // HTTP adapter (streamableHttp.ts) already parses the POST body once
+    // (for session/routing logic) before feeding it to this listener — it
+    // passes that parsed object through directly instead of a Buffer, so
+    // this hot path doesn't pay for a second JSON.parse of the same bytes.
+    const listener = async (data: Buffer | Record<string, unknown>) => {
       // Ignore messages from superseded connections
       if (gen !== this.generation) return;
       let raw: unknown;
-      try {
-        raw = JSON.parse(data.toString("utf-8"));
-      } catch {
-        // Malformed JSON — send PARSE_ERROR per JSON-RPC 2.0 spec §5.1
-        await safeSend(
-          ws,
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: null,
-            error: {
-              code: ErrorCodes.PARSE_ERROR,
-              message: "Parse error: message is not valid JSON",
-            },
-          }),
-          this.logger,
-        );
-        return;
+      if (Buffer.isBuffer(data)) {
+        try {
+          raw = JSON.parse(data.toString("utf-8"));
+        } catch {
+          // Malformed JSON — send PARSE_ERROR per JSON-RPC 2.0 spec §5.1
+          await safeSend(
+            ws,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: null,
+              error: {
+                code: ErrorCodes.PARSE_ERROR,
+                message: "Parse error: message is not valid JSON",
+              },
+            }),
+            this.logger,
+          );
+          return;
+        }
+      } else {
+        raw = data;
       }
       try {
         if (typeof raw !== "object" || raw === null) {
@@ -1392,8 +1401,14 @@ export class McpTransport {
                 // Check rawArgs (before _meta strip) so a large _meta cannot bypass the limit.
                 // Fast-path: the WS message buffer is always ≥ rawArgs JSON size, so skip
                 // the expensive re-serialize for messages under 512 KB (virtually all calls).
+                // `data` is a Buffer for real WebSocket messages but an already-parsed
+                // object for Streamable HTTP (see attach() above) — there's no byte
+                // count to fast-path on in that case, so always run the exact check.
+                const likelyOversized = Buffer.isBuffer(data)
+                  ? data.byteLength > 524_288
+                  : true;
                 if (
-                  data.byteLength > 524_288 &&
+                  likelyOversized &&
                   JSON.stringify(rawArgs).length > 1_048_576
                 ) {
                   this.callCount++;

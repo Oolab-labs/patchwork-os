@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { ErrorCodes } from "../errors.js";
@@ -118,5 +119,122 @@ describe("AJV structural schema validation in tools/call", () => {
     };
     expect(result.isError).toBeFalsy();
     expect(result.content[0]?.text).toBe("x=42");
+  });
+});
+
+/**
+ * Minimal stand-in for the Streamable HTTP adapter's WebSocket-shaped
+ * interface (readyState/bufferedAmount/send/EventEmitter) — just enough for
+ * McpTransport.attach()/safeSend() to work, without a real socket.
+ */
+class FakeWs extends EventEmitter {
+  readyState = WebSocket.OPEN;
+  bufferedAmount = 0;
+  sent: string[] = [];
+  send(data: string): void {
+    this.sent.push(data);
+  }
+}
+
+async function waitForSentCount(
+  fakeWs: FakeWs,
+  n: number,
+  timeoutMs = 2000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (fakeWs.sent.length < n) {
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out waiting for ${n} sent messages`);
+    }
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+describe("attach() message threading — pre-parsed object (Streamable HTTP path)", () => {
+  it("still enforces the 1MB tool-argument size limit when fed an already-parsed object instead of a Buffer", async () => {
+    const t = new McpTransport(logger);
+    t.registerTool(
+      {
+        name: "echo_tool",
+        description: "Echoes its arguments",
+        inputSchema: { type: "object", additionalProperties: true },
+      },
+      async (args) => ({
+        content: [{ type: "text", text: JSON.stringify(args) }],
+      }),
+    );
+
+    const fakeWs = new FakeWs();
+    t.attach(fakeWs as unknown as WebSocket);
+
+    // Same handshake sequence real clients send, but delivered as parsed
+    // objects (not Buffers) — exactly what streamableHttp.ts's HttpAdapter
+    // now passes to this listener instead of re-encoding + re-parsing.
+    fakeWs.emit("message", {
+      jsonrpc: "2.0",
+      id: 0,
+      method: "initialize",
+      params: {},
+    });
+    await waitForSentCount(fakeWs, 1);
+    fakeWs.emit("message", {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+    });
+
+    const oversized = "x".repeat(1_100_000);
+    fakeWs.emit("message", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "echo_tool", arguments: { big: oversized } },
+    });
+    await waitForSentCount(fakeWs, 2);
+
+    const resp = JSON.parse(fakeWs.sent[fakeWs.sent.length - 1] ?? "{}");
+    expect(resp.error).toBeDefined();
+    expect(resp.error.code).toBe(ErrorCodes.INVALID_PARAMS);
+    expect(resp.error.message).toMatch(/exceed 1 MB size limit/);
+  });
+
+  it("still allows normal-sized arguments through the same pre-parsed-object path", async () => {
+    const t = new McpTransport(logger);
+    t.registerTool(
+      {
+        name: "echo_tool",
+        description: "Echoes its arguments",
+        inputSchema: { type: "object", additionalProperties: true },
+      },
+      async (args) => ({
+        content: [{ type: "text", text: JSON.stringify(args) }],
+      }),
+    );
+
+    const fakeWs = new FakeWs();
+    t.attach(fakeWs as unknown as WebSocket);
+
+    fakeWs.emit("message", {
+      jsonrpc: "2.0",
+      id: 0,
+      method: "initialize",
+      params: {},
+    });
+    await waitForSentCount(fakeWs, 1);
+    fakeWs.emit("message", {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+    });
+
+    fakeWs.emit("message", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "echo_tool", arguments: { hello: "world" } },
+    });
+    await waitForSentCount(fakeWs, 2);
+
+    const resp = JSON.parse(fakeWs.sent[fakeWs.sent.length - 1] ?? "{}");
+    expect(resp.error).toBeUndefined();
+    expect(resp.result?.content?.[0]?.text).toContain("world");
   });
 });
