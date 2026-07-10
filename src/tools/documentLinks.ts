@@ -1,6 +1,8 @@
+import { ToolErrorCodes } from "../errors.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import { lspColdStartError, lspWithRetry } from "./lsp.js";
 import {
+  error,
   extensionRequired,
   requireString,
   resolveFilePath,
@@ -52,6 +54,17 @@ export function createGetDocumentLinksTool(
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
         return extensionRequired("getDocumentLinks");
+      }
+      // An explicitly empty-string workspace defeats resolveFilePath's
+      // containment check (path.resolve("") === process.cwd()), letting a
+      // relative filePath resolve outside the intended workspace and be
+      // returned unscoped. Reject explicitly rather than treating "" as "no
+      // scoping requested" — that's what `undefined` is for.
+      if (workspace === "") {
+        return error(
+          "getDocumentLinks: workspace must not be an empty string — this would bypass workspace scoping.",
+          ToolErrorCodes.WORKSPACE_ESCAPE,
+        );
       }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),

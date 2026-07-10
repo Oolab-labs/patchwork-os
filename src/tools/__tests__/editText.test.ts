@@ -266,6 +266,37 @@ describe("createEditTextTool — input validation", () => {
     expect(result.error).toMatch(/text.*required/i);
   });
 
+  it("returns error when insert text contains a null byte", async () => {
+    const tool = createEditTextTool(tmpDir, disconnected);
+    const result = parse(
+      await tool.handler({
+        filePath: "test.ts",
+        edits: [{ type: "insert", line: 1, column: 1, text: "foo\x00bar" }],
+      }),
+    );
+    expect(result.error).toMatch(/null byte/i);
+  });
+
+  it("returns error when replace text contains a null byte", async () => {
+    const tool = createEditTextTool(tmpDir, disconnected);
+    const result = parse(
+      await tool.handler({
+        filePath: "test.ts",
+        edits: [
+          {
+            type: "replace",
+            line: 1,
+            column: 1,
+            endLine: 1,
+            endColumn: 2,
+            text: "foo\x00bar",
+          },
+        ],
+      }),
+    );
+    expect(result.error).toMatch(/null byte/i);
+  });
+
   it("returns error when delete missing endLine/endColumn", async () => {
     const tool = createEditTextTool(tmpDir, disconnected);
     const result = parse(
