@@ -160,7 +160,12 @@ export class McpTransport {
   public onActivity: (() => void) | undefined = undefined;
   private activityLog: ActivityLog | null = null;
   private isExtensionConnectedFn: (() => boolean) | null = null;
-  private readonly ajv = createAjv2020({ strict: false, allErrors: true });
+  // allErrors:false — AJV stops at the first failure instead of collecting
+  // every violation, which is significantly cheaper on the tool-call hot
+  // path. The error message reports one problem instead of all of them;
+  // callers get to the fix by correcting and re-calling, same as any
+  // fail-fast validator.
+  private readonly ajv = createAjv2020({ strict: false, allErrors: false });
   private readonly schemaValidators = new Map<string, ValidateFunction>();
   private readonly outputValidators = new Map<string, ValidateFunction>();
   /** Cached wire-schema array for tools/list (full mode). Invalidated on any tool registration change. */

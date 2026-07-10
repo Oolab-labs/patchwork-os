@@ -47,42 +47,12 @@ export function createGetGitStatusTool(workspace: string) {
         ? resolveFilePath(rawPath, workspace)
         : undefined;
 
-      // Check if this is a git repo
-      const checkGit = await execSafe("git", ["rev-parse", "--git-dir"], {
-        cwd: workspace,
-        signal,
-      });
-      if (checkGit.exitCode !== 0) {
-        return successStructured({
-          available: false,
-          error: "Not a git repository",
-        });
-      }
-
-      // Get branch name
-      const branchResult = await execSafe(
-        "git",
-        ["rev-parse", "--abbrev-ref", "HEAD"],
-        { cwd: workspace, signal },
-      );
-      const branch = branchResult.stdout.trim();
-
-      // Get ahead/behind counts (ignore error if no upstream)
-      let ahead = 0;
-      let behind = 0;
-      const revListResult = await execSafe(
-        "git",
-        ["rev-list", "--count", "--left-right", "HEAD...@{u}"],
-        { cwd: workspace, signal },
-      );
-      if (revListResult.exitCode === 0) {
-        const parts = revListResult.stdout.trim().split(/\s+/);
-        ahead = Number.parseInt(parts[0] ?? "0", 10);
-        behind = Number.parseInt(parts[1] ?? "0", 10);
-      }
-
-      // Get file status
-      const statusArgs = ["status", "--porcelain=v1", "-u"];
+      // One subprocess instead of four (git-dir check, branch name,
+      // ahead/behind, file status): --branch adds the "# branch.*" header
+      // lines (repo check + branch name + ahead/behind all fold in), and
+      // --porcelain=v2 gives everything --porcelain=v1 gave for files, in a
+      // slightly different (but equally parseable) column layout.
+      const statusArgs = ["status", "--porcelain=v2", "--branch", "-u"];
       if (filterPath) {
         statusArgs.push("--", filterPath);
       }
@@ -90,7 +60,16 @@ export function createGetGitStatusTool(workspace: string) {
         cwd: workspace,
         signal,
       });
+      if (statusResult.exitCode !== 0) {
+        return successStructured({
+          available: false,
+          error: "Not a git repository",
+        });
+      }
 
+      let branch = "";
+      let ahead = 0;
+      let behind = 0;
       const staged: string[] = [];
       const unstaged: string[] = [];
       const untracked: string[] = [];
@@ -98,37 +77,51 @@ export function createGetGitStatusTool(workspace: string) {
 
       for (const line of statusResult.stdout.split("\n")) {
         if (!line) continue;
-        const x = line[0] ?? " ";
-        const y = line[1] ?? " ";
-        let file = line.slice(3);
 
-        // Renames (R) and copies (C) render as `old -> new` in porcelain v1.
-        // Extract the destination path so the arrow string never leaks through.
-        if ((x === "R" || x === "C") && file.includes(" -> ")) {
-          file = file.split(" -> ").pop() ?? file;
-        }
-
-        // Conflict markers
-        if (
-          x === "U" ||
-          y === "U" ||
-          (x === "A" && y === "A") ||
-          (x === "D" && y === "D")
-        ) {
-          conflicts.push(file);
+        if (line.startsWith("# branch.head ")) {
+          const head = line.slice("# branch.head ".length).trim();
+          // Detached HEAD reports "(detached)" in v2 headers; match the old
+          // `git rev-parse --abbrev-ref HEAD` contract of plain "HEAD".
+          branch = head === "(detached)" ? "HEAD" : head;
           continue;
         }
-
-        if (x === "?" && y === "?") {
-          untracked.push(file);
+        if (line.startsWith("# branch.ab ")) {
+          const parts = line.slice("# branch.ab ".length).trim().split(/\s+/);
+          ahead = Number.parseInt(parts[0]?.replace("+", "") ?? "0", 10);
+          behind = Number.parseInt(parts[1]?.replace("-", "") ?? "0", 10);
           continue;
         }
+        if (line.startsWith("#")) continue; // branch.oid / branch.upstream — unused
 
-        if (x !== " " && x !== "?") {
-          staged.push(file);
+        // Ordinary changed entry: "1 XY sub mH mI mW hH hI path"
+        // Rename/copy entry:      "2 XY sub mH mI mW hH hI Xscore path\torigPath"
+        // Unmerged (conflict):    "u XY sub m1 m2 m3 mW h1 h2 h3 path"
+        // Untracked:              "? path"
+        const kind = line[0];
+        if (kind === "?") {
+          untracked.push(line.slice(2));
+          continue;
         }
-        if (y !== " " && y !== "?") {
-          unstaged.push(file);
+        if (kind === "u") {
+          const fields = line.split(" ");
+          conflicts.push(fields.slice(10).join(" "));
+          continue;
+        }
+        if (kind === "1" || kind === "2") {
+          const fields = line.split(" ");
+          const xy = fields[1] ?? "..";
+          const x = xy[0] ?? ".";
+          const y = xy[1] ?? ".";
+          // "1" entries have 9 leading fields before the path; "2" (rename/
+          // copy) entries have one more (the score field) and append
+          // "path\torigPath" — take the renamed-to path, which comes first.
+          const pathField = fields.slice(kind === "2" ? 9 : 8).join(" ");
+          const file = pathField.includes("\t")
+            ? (pathField.split("\t")[0] ?? pathField)
+            : pathField;
+
+          if (x !== ".") staged.push(file);
+          if (y !== ".") unstaged.push(file);
         }
       }
 
