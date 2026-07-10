@@ -284,6 +284,35 @@ path:
 Either way, the `issue` dial only climbs on **confirmed** dispositions. Watch it
 with `patchwork workers shadow`.
 
+### Cycle log
+
+- **2026-07-08 — synthetic failure, reject disposition (as designed).** Planted
+  a synthetic test failure to exercise the full loop end-to-end. `runTests`
+  failed → `on_test_run` fired → the gate correctly held `github.create_issue`
+  at L0 for `issue:compensable:high` → operator approved the gated filing →
+  issue #1143 was filed → operator ran `patchwork outcomes reject
+  <issue-#1143-url>` (correct call: the underlying failure was synthetic, not a
+  real bug) → `patchwork workers shadow` confirmed the `issue` dial stayed
+  unmoved at L0 (5 observations, 21%). Issue #1143 closed on GitHub. This
+  validates the "unknown/rejected disposition must not silently earn trust"
+  fix — a `reject` disposition correctly does not move the dial upward.
+- **2026-07-10 — release-notes-worker reviewed, made dogfood-ready (not yet
+  run live).** `templates/workers/release-notes.worker.yaml` +
+  `templates/recipes/release-notes.yaml` had zero `worker_gate_decisions.jsonl`
+  / `outcome-log.jsonl` entries — never exercised end-to-end. Verified: `recipe
+  lint` and `recipe preflight` both pass clean; `npm run build` clean;
+  `loadWorkersFromDir` loads the manifest with no parse errors; `owns:
+  [vcs-read, fs-write]` matches `DOMAIN_BY_TOOL` domains in
+  `src/workers/actionClass.ts` exactly (no drift); the `git_hook`/`post-commit`
+  trigger compiles to `onGitCommit` (`src/recipes/compiler.ts`), the same
+  bridge-tool-fired hook pattern Test Guardian's `on_test_run` uses — i.e. it
+  only fires on commits made via the bridge's `gitCommit` tool, not bare `git
+  commit`. No code changes were needed; nothing was broken. Not yet dogfooded:
+  the recipe still needs `patchwork recipe install` (or a manual copy) into
+  `~/.patchwork/recipes/`, and the worker manifest into
+  `~/.patchwork/workers/`, before a real commit will exercise the `vcs-read` /
+  `fs-write` gate for the first time.
+
 ### Raising the ceiling
 
 The shipped Test Guardian manifest caps `autonomyCeiling` at `1`, below the
@@ -295,3 +324,20 @@ confirmed-but-actually-junk cases), raise it by editing the **installed** copy
 running bridge reads `~/.patchwork/`): set `autonomyCeiling: 2` (the minimum
 that unlocks compensable auto-allow at effective L2), then reload/restart the
 bridge. Drop it back to `1` to re-gate immediately.
+
+---
+
+## What's next
+
+- **Dogfood a real failure, not a synthetic one.** The 2026-07-08 cycle
+  exercised gate → approve → file → **reject** end-to-end but, by design,
+  never moved the dial (a synthetic failure is correctly noise). The dial has
+  never been observed moving upward. The next cycle needs a genuine test
+  failure so a `patchwork outcomes confirm <issue-url>` disposition can be
+  exercised and trust accrual on `issue:compensable:high` can be verified for
+  the first time, not just its absence.
+- **Only one action-class has been dogfooded.** Everything to date covers
+  `issue:compensable:high` via the Test Guardian worker. Other action-classes
+  (e.g. other compensable or irreversible classes on other workers/recipes)
+  have not been run through this loop at all — trust-dial behavior there is
+  unverified.
