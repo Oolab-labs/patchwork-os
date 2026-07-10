@@ -126,4 +126,96 @@ describe("runVSCodeTask", () => {
     const tool = createRunVSCodeTaskTool(disconnected);
     expect((tool as any).timeoutMs).toBe(610_000);
   });
+
+  // Bug: handleRunTask (extension side) returns a non-null {success:false}
+  // object for task-not-found / exec-failure / internal-timeout. The old
+  // bridge code only checked `result === null` before calling
+  // successStructured(result) — so these real failures were reported as an
+  // MCP-level tool SUCCESS (isError:false) with the failure buried in the
+  // payload. A caller (or agent) that doesn't defensively check
+  // result.structuredContent.success would believe the task ran/passed.
+  describe("success:false extension responses must surface as real tool errors", () => {
+    it("reports isError:true when the task is not found", async () => {
+      const ext = {
+        isConnected: () => true,
+        runTask: vi
+          .fn()
+          .mockResolvedValue({ success: false, error: "Task not found: xyz" }),
+      } as any;
+      const tool = createRunVSCodeTaskTool(ext);
+      const raw = await tool.handler({ name: "xyz" });
+      expect((raw as any).isError).toBe(true);
+      const result = parse(raw as any);
+      expect(result.error).toContain("Task not found");
+    });
+
+    it("reports isError:true when the task times out", async () => {
+      const ext = {
+        isConnected: () => true,
+        runTask: vi.fn().mockResolvedValue({
+          success: false,
+          name: "build",
+          error: "Task timed out",
+          timedOut: true,
+        }),
+      } as any;
+      const tool = createRunVSCodeTaskTool(ext);
+      const raw = await tool.handler({ name: "build" });
+      expect((raw as any).isError).toBe(true);
+      const result = parse(raw as any);
+      expect(result.error).toContain("timed out");
+      expect(result.timedOut).toBe(true);
+    });
+
+    it("reports isError:true when vscode.tasks.executeTask itself fails", async () => {
+      const ext = {
+        isConnected: () => true,
+        runTask: vi.fn().mockResolvedValue({
+          success: false,
+          name: "build",
+          error: "Failed to execute task: no workspace folder",
+        }),
+      } as any;
+      const tool = createRunVSCodeTaskTool(ext);
+      const raw = await tool.handler({ name: "build" });
+      expect((raw as any).isError).toBe(true);
+      const result = parse(raw as any);
+      expect(result.error).toContain("Failed to execute task");
+    });
+
+    it("still reports isError:undefined (success) for a real success:true result", async () => {
+      const ext = {
+        isConnected: () => true,
+        runTask: vi
+          .fn()
+          .mockResolvedValue({ success: true, name: "build", exitCode: 0 }),
+      } as any;
+      const tool = createRunVSCodeTaskTool(ext);
+      const raw = await tool.handler({ name: "build" });
+      expect((raw as any).isError).toBeUndefined();
+      const result = parse(raw as any);
+      expect(result.success).toBe(true);
+      expect(result.exitCode).toBe(0);
+    });
+
+    it("still reports isError:undefined (success) for a completed task with a nonzero exit code (success:true)", async () => {
+      // exitCode !== 0 with success:true means "the task ran to completion but
+      // the underlying process failed" (e.g. lint/test failures) — this is
+      // NOT the success:false bug path; it must remain a tool success with
+      // exitCode surfaced, so the caller (agent) can inspect it. Confirms the
+      // fix distinguishes "did the task run" from "did the task's command
+      // exit 0" and doesn't overcorrect into flagging every nonzero exit.
+      const ext = {
+        isConnected: () => true,
+        runTask: vi
+          .fn()
+          .mockResolvedValue({ success: true, name: "test", exitCode: 1 }),
+      } as any;
+      const tool = createRunVSCodeTaskTool(ext);
+      const raw = await tool.handler({ name: "test" });
+      expect((raw as any).isError).toBeUndefined();
+      const result = parse(raw as any);
+      expect(result.exitCode).toBe(1);
+    });
+  });
 });
