@@ -159,7 +159,12 @@ export async function POST(req: Request) {
   webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
 
   const results = await Promise.allSettled(
-    subs.map((sub) => webpush.sendNotification(sub, payload, { agent: pushAgent })),
+    subs.map((sub) =>
+      webpush.sendNotification(sub, payload, {
+        agent: pushAgent,
+        urgency: "high",
+      }),
+    ),
   );
   const sent = results.filter((r) => r.status === "fulfilled").length;
 
