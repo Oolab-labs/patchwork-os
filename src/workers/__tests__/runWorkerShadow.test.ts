@@ -355,6 +355,54 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     expect(d.effectiveLevel).toBe(1);
     expect(d.action).toBe("gate");
   });
+
+  it("memoizes per (recipe, runs.jsonl mtime): repeat calls reuse the store, a new run invalidates it", () => {
+    const log = new RecipeRunLog({ dir });
+    log.appendDirect({
+      taskId: "t1",
+      recipeName: "release-notes",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+      stepResults: [
+        { id: "s1", tool: "editText", status: "ok", durationMs: 1 },
+      ],
+    });
+
+    const first = loadWorkerTrustForRecipe("release-notes", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+    });
+    const second = loadWorkerTrustForRecipe("release-notes", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+    });
+    // Same runs.jsonl mtime — cache hit, identical store instance reused
+    // (this is what lets buildWorkerAutonomyGate + buildWorkerAgentDisallowedTools
+    // share one replay per run instead of two).
+    expect(second?.store).toBe(first?.store);
+
+    // A new run appends to runs.jsonl, bumping its mtime — must invalidate.
+    log.appendDirect({
+      taskId: "t2",
+      recipeName: "release-notes",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 2,
+      doneAt: 3,
+      durationMs: 1,
+      stepResults: [
+        { id: "s2", tool: "editText", status: "ok", durationMs: 1 },
+      ],
+    });
+    const third = loadWorkerTrustForRecipe("release-notes", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+    });
+    expect(third?.store).not.toBe(first?.store);
+  });
 });
 
 describe("computePendingConfirmations (the confirm queue)", () => {

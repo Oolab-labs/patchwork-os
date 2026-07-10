@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
@@ -192,14 +192,39 @@ export interface RecipeWorkerTrust {
   store: WorkerLevelStore;
 }
 
+// loadWorkerTrustForRecipe is called TWICE per recipe run — once to build the
+// per-step approval gate, once to compute the agent-step disallowed-tools list
+// (recipeOrchestration.ts) — both before the run has produced any new log
+// activity. Cache the result per (recipeName, patchworkDir, workersDir) keyed
+// on runs.jsonl's mtime: unchanged mtime → the exact same replay would happen
+// again, so reuse it; a changed mtime (a run completed, appending new rows)
+// invalidates the entry. `now` isn't part of the key — the two calls a single
+// run makes happen milliseconds apart, well inside any durability-window
+// boundary, so reusing the first call's `now` for the second is a no-op
+// in practice.
+interface TrustCacheEntry {
+  runsLogMtimeMs: number;
+  trust: RecipeWorkerTrust | null;
+}
+const trustCache = new Map<string, TrustCacheEntry>();
+
+function statMtimeMs(filePath: string): number {
+  try {
+    return statSync(filePath).mtimeMs;
+  } catch {
+    return -1; // file absent — distinct from any real mtime, still cacheable
+  }
+}
+
 /**
  * Load the worker that owns `recipeName` (recipe === body) plus its earned-level
  * store, replayed from the same run log the dial uses. Returns null when no
  * worker owns the recipe (the common case — non-worker recipes are unaffected).
  *
  * This is the LIVE-gate entry: `workerGate.decideWorkerAction(worker, tool,
- * params, store)` reads the returned store. It replays the run log on each call
- * (recipe executions are infrequent); a future optimisation could cache it.
+ * params, store)` reads the returned store. Memoized per (recipe, runs.jsonl
+ * mtime) — see `trustCache` above — since both `buildWorkerAutonomyGate` and
+ * `buildWorkerAgentDisallowedTools` call this for the same recipe run.
  */
 export function loadWorkerTrustForRecipe(
   recipeName: string,
@@ -209,28 +234,42 @@ export function loadWorkerTrustForRecipe(
   const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
   const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
 
+  const cacheKey = `${patchworkDir} ${workersDir} ${recipeName}`;
+  const runsLogMtimeMs = statMtimeMs(path.join(patchworkDir, "runs.jsonl"));
+  const cached = trustCache.get(cacheKey);
+  if (cached && cached.runsLogMtimeMs === runsLogMtimeMs) {
+    return cached.trust;
+  }
+
   const workers = loadWorkersFromDir(workersDir);
-  if (!workers.length) return null;
-  // Same durable-outcome labelling as the dial (one source of truth): the live
-  // gate must not count a recent non-reversible success that could still be
-  // reverted. Real Date.now() in production; tests inject opts.now.
-  const observer = new WorkerShadowObserver(workers, {
-    now: opts.now ?? Date.now(),
-    outcomeStore: new OutcomeStore(resolveOutcomeLogDir(opts.patchworkDir)),
-  });
-  const worker = observer.workerForRecipe(recipeName);
-  if (!worker) return null;
-  // Replay in ASCENDING timestamp order (review #1027 M2). The graduation
-  // dwell/hysteresis logic is order-sensitive: ingesting newest-first leaves
-  // `lastChangeAt` pinned to the most recent run so `dwellOk` never holds and
-  // risky classes never promote — the earned-L4 path would be unreachable and
-  // the gate would floor every compensable/irreversible class to L0 forever.
-  // This mirrors buildShadowReport (the dial), so the gate and dial agree.
-  // `recipeName` === the owning worker's recipe (workerForRecipe matched on it),
-  // so filter the replay to just this recipe's runs.
-  const runs = readRuns(patchworkDir, [recipeName]).sort((a, b) => a.at - b.at);
-  for (const run of runs) observer.ingestRun(run);
-  return { worker, store: observer.levelStore };
+  const trust = ((): RecipeWorkerTrust | null => {
+    if (!workers.length) return null;
+    // Same durable-outcome labelling as the dial (one source of truth): the live
+    // gate must not count a recent non-reversible success that could still be
+    // reverted. Real Date.now() in production; tests inject opts.now.
+    const observer = new WorkerShadowObserver(workers, {
+      now: opts.now ?? Date.now(),
+      outcomeStore: new OutcomeStore(resolveOutcomeLogDir(opts.patchworkDir)),
+    });
+    const worker = observer.workerForRecipe(recipeName);
+    if (!worker) return null;
+    // Replay in ASCENDING timestamp order (review #1027 M2). The graduation
+    // dwell/hysteresis logic is order-sensitive: ingesting newest-first leaves
+    // `lastChangeAt` pinned to the most recent run so `dwellOk` never holds and
+    // risky classes never promote — the earned-L4 path would be unreachable and
+    // the gate would floor every compensable/irreversible class to L0 forever.
+    // This mirrors buildShadowReport (the dial), so the gate and dial agree.
+    // `recipeName` === the owning worker's recipe (workerForRecipe matched on it),
+    // so filter the replay to just this recipe's runs.
+    const runs = readRuns(patchworkDir, [recipeName]).sort(
+      (a, b) => a.at - b.at,
+    );
+    for (const run of runs) observer.ingestRun(run);
+    return { worker, store: observer.levelStore };
+  })();
+
+  trustCache.set(cacheKey, { runsLogMtimeMs, trust });
+  return trust;
 }
 
 export function runWorkerShadowReport(opts: RunWorkerShadowOpts = {}): string {
