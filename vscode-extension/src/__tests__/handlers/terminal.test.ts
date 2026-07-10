@@ -620,3 +620,19 @@ describe("handleExecuteInTerminal — reader rejection after grace period", () =
     expect(result.output).toContain("some output");
   }, 10_000);
 });
+
+describe("handleExecuteInTerminal — shell integration unavailable", () => {
+  it("marks the response with shellIntegrationUnavailable so the bridge can fall back to subprocess", async () => {
+    const t = _mockTerminal({ name: "no-integration" });
+    vscode.window.terminals = [t] as any;
+    vscode.window.activeTerminal = t as any;
+
+    const result = (await handleExecuteInTerminal({
+      command: "echo hi",
+    })) as any;
+
+    expect(result.success).toBe(false);
+    expect(result.shellIntegrationUnavailable).toBe(true);
+    expect(result.error).toContain("Shell Integration not available");
+  });
+});

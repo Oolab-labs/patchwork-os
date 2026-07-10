@@ -550,11 +550,19 @@ export function createRunInTerminalTool(
             timeoutMs,
             show,
           );
-          if (result !== null) {
+          const r = result as { shellIntegrationUnavailable?: boolean } | null;
+          if (result !== null && !r?.shellIntegrationUnavailable) {
             return successStructured(result);
           }
-          // null means shell integration unavailable (SSH remote, no PTY hooks)
-          // — fall through to subprocess fallback below
+          // Fall through to the subprocess fallback below only when:
+          //   • the transport validator rejected the response shape
+          //     (result === null — e.g. no PTY hooks), or
+          //   • the extension explicitly reported shellIntegrationUnavailable
+          //     (fresh terminal / SSH remote / headless — shell integration
+          //     hasn't attached yet).
+          // Every OTHER success:false (terminal not found, bad args) was
+          // already returned above, as-is — those must surface as real
+          // errors, not be silently retried as a subprocess.
         } catch (err) {
           if (err instanceof ExtensionTimeoutError) {
             // The command was already dispatched to the VS Code terminal but shell

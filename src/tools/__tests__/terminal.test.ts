@@ -393,6 +393,60 @@ describe("runInTerminal - PATH_FLAG_EXEMPTIONS", () => {
   });
 });
 
+describe("runInTerminal - shell integration unavailable falls back to subprocess", () => {
+  // Bug: handleExecuteInTerminal (extension side) returns a non-null object
+  // ({success:false, shellIntegrationUnavailable:true, error:"..."}) when
+  // shell integration hasn't attached to the terminal yet (fresh terminal,
+  // SSH remote, headless). The bridge's fallback comment says this case
+  // should fall through to the subprocess path, but the old code only
+  // fell through on a literal `null` result — so a `success:false` object
+  // was returned to the caller as a tool "success" with the failure buried
+  // in the payload, and the documented subprocess fallback never engaged.
+  function mockClient(resolvedValue: unknown) {
+    return {
+      isConnected: () => true,
+      executeInTerminal: vi.fn().mockResolvedValue(resolvedValue),
+    } as any;
+  }
+
+  it("falls back to subprocess execution when shellIntegrationUnavailable is set", async () => {
+    const tool = createRunInTerminalTool(
+      "/tmp",
+      mockClient({
+        success: false,
+        shellIntegrationUnavailable: true,
+        error: "Shell Integration not available for this terminal.",
+      }),
+      ["echo"],
+    );
+    const result = (await tool.handler({ command: "echo hi" })) as any;
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(parseResult(result));
+    expect(parsed.fallback).toBe("subprocess");
+    expect(parsed.stdout).toContain("hi");
+  });
+
+  it("does NOT fall back for other success:false reasons (e.g. terminal not found)", async () => {
+    const tool = createRunInTerminalTool(
+      "/tmp",
+      mockClient({
+        success: false,
+        error: 'Terminal not found with name "bogus"',
+      }),
+      ["echo"],
+    );
+    const result = (await tool.handler({
+      command: "echo hi",
+      name: "bogus",
+    })) as any;
+    // Must surface the extension's actual error, not silently retry as a
+    // subprocess ignoring the user's explicit terminal selection.
+    const parsed = JSON.parse(parseResult(result));
+    expect(parsed.fallback).toBeUndefined();
+    expect(parseResult(result)).toContain("Terminal not found");
+  });
+});
+
 describe("sendTerminalCommand - short-flag concat bypass (audit 2026-06-03 MEDIUM #15)", () => {
   // `node -revil.js` tokenises to ["-revil.js"]. The old flag-extraction did
   // `tok.split("=")[0]` which returns the whole token unchanged (no "=" present),

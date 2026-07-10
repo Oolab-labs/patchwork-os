@@ -366,6 +366,11 @@ export async function handleExecuteInTerminal(
   if (!terminal.shellIntegration) {
     return {
       success: false,
+      // Machine-readable signal the bridge uses to decide whether to fall
+      // back to subprocess execution (src/tools/terminal.ts). Distinct from
+      // other success:false reasons (terminal-not-found, internal timeout)
+      // which must surface as real errors, not silently retry elsewhere.
+      shellIntegrationUnavailable: true,
       error:
         "Shell Integration not available for this terminal. " +
         "Requires VS Code 1.93+ and a supported shell (bash, zsh, fish, PowerShell). " +
