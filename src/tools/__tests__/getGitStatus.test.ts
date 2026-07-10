@@ -104,13 +104,13 @@ describe("getGitStatus", () => {
     it("detects a merge conflict", async () => {
       execSync("git checkout -b feature", { cwd: tmpDir, stdio: "ignore" });
       fs.writeFileSync(path.join(tmpDir, "committed.txt"), "feature-side\n");
-      execSync("git commit -am 'feature change'", {
+      execSync('git commit -am "feature change"', {
         cwd: tmpDir,
         stdio: "ignore",
       });
       execSync("git checkout main", { cwd: tmpDir, stdio: "ignore" });
       fs.writeFileSync(path.join(tmpDir, "committed.txt"), "main-side\n");
-      execSync("git commit -am 'main change'", {
+      execSync('git commit -am "main change"', {
         cwd: tmpDir,
         stdio: "ignore",
       });
@@ -140,7 +140,7 @@ describe("getGitStatus", () => {
       });
       execSync("git push -u origin main", { cwd: tmpDir, stdio: "ignore" });
       fs.writeFileSync(path.join(tmpDir, "committed.txt"), "ahead\n");
-      execSync("git commit -am 'ahead commit'", {
+      execSync('git commit -am "ahead commit"', {
         cwd: tmpDir,
         stdio: "ignore",
       });
