@@ -58,6 +58,7 @@ describe("wireHaltPushDispatch", () => {
         haltCategory: "agent_silent_fail",
         actionHint: "inspect prompt + check trace",
       }),
+      false, // allowPrivate
     );
   });
 
@@ -77,6 +78,7 @@ describe("wireHaltPushDispatch", () => {
         haltCategory: "auth_failure",
         actionHint: "reconnect from /connections",
       }),
+      false, // allowPrivate
     );
   });
 
@@ -97,6 +99,7 @@ describe("wireHaltPushDispatch", () => {
         haltCategory: "budget_exceeded",
         actionHint: "raise tokensMax / usdMax or shrink prompts",
       }),
+      false, // allowPrivate
     );
   });
 
@@ -181,6 +184,7 @@ describe("wireHaltPushDispatch", () => {
         runSeq: 0,
         status: "error",
       }),
+      false, // allowPrivate
     );
   });
 });

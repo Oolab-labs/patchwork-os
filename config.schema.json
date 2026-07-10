@@ -75,6 +75,7 @@
     "pushServiceUrl": { "type": "string", "format": "uri" },
     "pushServiceToken": { "type": "string" },
     "pushServiceBaseUrl": { "type": "string", "format": "uri" },
+    "pushServiceAllowPrivate": { "type": "boolean" },
     "ntfyTopic": { "type": "string" },
     "ntfyServer": { "type": "string", "format": "uri" }
   },
