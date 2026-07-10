@@ -282,7 +282,7 @@ export class Bridge {
           // in-flight tool calls, but grace-period semantics preserve
           // those across the reconnect.
           existing.transport.detachSoft();
-          existing.transport.attach(ws);
+          existing.transport.attach(ws, true);
           ws.on("pong", () => {
             existing.wsAlive = true;
           });
@@ -350,7 +350,20 @@ export class Bridge {
         this._startPeriodicSnapshots();
       }
 
-      const sessionId = randomUUID();
+      // Key the session by the client-supplied X-Claude-Code-Session-Id when
+      // present so the grace-period resumption lookup above
+      // (`this.sessions.get(clientSessionId)`) can actually find it on a
+      // reconnect. Prior to this, a fresh random UUID was always used as the
+      // key, so that lookup NEVER matched: every reconnect (bridge restart,
+      // shim reconnect, sleep/wake) silently created a brand-new, UN-initialized
+      // session. Because the stdio shim treats reconnects transparently — it
+      // drops pending lines and never resends `initialize` — the client's
+      // original MCP handshake was never replayed and every subsequent tool
+      // call returned -32600 "Not initialized". Fall back to a random UUID for
+      // clients that don't send the header. (Mirrors the reference behavior in
+      // bridge-session-resumption.test.ts, which keyed correctly while the real
+      // Bridge did not — a scaffold/prod divergence that hid the bug.)
+      const sessionId = clientSessionId ?? randomUUID();
       const transport = new McpTransport(this.logger);
       transport.workspace = this.config.workspace;
       transport.sessionId = sessionId;

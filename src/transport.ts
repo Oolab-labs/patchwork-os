@@ -19,7 +19,11 @@ const TOOLS_LIST_PAGE_SIZE = 200; // Most MCP clients (Claude Desktop) only fetc
 const META_SIZE_HINT_THRESHOLD = 50_000; // 50 KB
 // Supported MCP protocol versions, newest first.
 // Extend this array when new protocol versions are ratified; keep oldest supported version last.
-const SUPPORTED_VERSIONS = ["2025-11-25"];
+// 2024-11-05 (the original MCP spec revision) is kept for backward compatibility:
+// clients that hardcode it and can't tolerate the server substituting a
+// different version get stuck retrying "initialize" forever, surfacing as a
+// permanent "Not initialized" state with no visible error.
+const SUPPORTED_VERSIONS = ["2025-11-25", "2024-11-05"];
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -720,9 +724,19 @@ export class McpTransport {
       .map(([tool, sizeChars]) => ({ tool, sizeChars }));
   }
 
-  attach(ws: WebSocket): void {
+  /**
+   * @param preserveInitialized When true, keeps the current `initialized`
+   * state instead of resetting it. Grace-period session resumption must set
+   * this — the documented contract is "no new session, no re-initialization",
+   * so a client resuming within the grace window is not expected to resend
+   * "initialize"/"notifications/initialized". Brand-new connections must NOT
+   * set this — they always require a fresh handshake.
+   */
+  attach(ws: WebSocket, preserveInitialized = false): void {
     this.activeWs = ws;
-    this.initialized = false; // Force re-initialization on every new connection
+    if (!preserveInitialized) {
+      this.initialized = false; // Force re-initialization on every new connection
+    }
     const gen = ++this.generation;
     // The real `ws` library always emits a raw Buffer here. The Streamable
     // HTTP adapter (streamableHttp.ts) already parses the POST body once

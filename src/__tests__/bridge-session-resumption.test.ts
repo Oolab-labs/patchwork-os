@@ -78,7 +78,7 @@ function buildResumptionScaffold() {
         clearTimeout(existing.graceTimer);
         existing.graceTimer = null;
         existing.ws = ws;
-        existing.transport.attach(ws);
+        existing.transport.attach(ws, true);
         ws.on("close", () => startGrace(ws, clientId));
         ws.on("error", () => {
           /* suppress in tests */
@@ -293,5 +293,47 @@ describe("session resumption via X-Claude-Code-Session-Id", () => {
 
     // Session should have been cleaned up
     expect(sessions2.has(clientId)).toBe(false);
+  });
+
+  it("stays initialized across a grace-period reattach without re-sending initialize", async () => {
+    const { send, waitFor } = await import("./wsHelpers.js");
+    const { server, authToken, sessions } = buildResumptionScaffold();
+    const port = await server.findAndListen(null);
+
+    const clientId = randomUUID();
+
+    // First connection — do the full MCP handshake once.
+    const ws1 = await connectClient(port, authToken, clientId);
+    send(ws1, { jsonrpc: "2.0", id: 0, method: "initialize", params: {} });
+    await waitFor(ws1, (m) => m.id === 0);
+    send(ws1, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await delay(50);
+    expect(sessions.get(clientId)!.transport.isReady).toBe(true);
+
+    // Disconnect — grace timer starts.
+    const closePromise = waitForClose(ws1);
+    ws1.close();
+    await closePromise;
+    await delay(50);
+
+    // Wait past the per-client rate limit, then reconnect with the SAME
+    // session ID. Per the documented grace-period contract ("no new
+    // session, no re-initialization"), the client should NOT need to
+    // resend "initialize" — the resumed session should already be ready.
+    await delay(1100);
+    const ws2 = await connectClient(port, authToken, clientId);
+    await delay(50);
+
+    const resumed = sessions.get(clientId)!;
+    expect(resumed.transport.isReady).toBe(true);
+
+    // A tool-dispatch-adjacent request should work without re-initializing.
+    const waiter = waitFor(ws2, (m) => m.id === 1);
+    send(ws2, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const resp = await waiter;
+    expect(resp.error).toBeUndefined();
+    expect(resp.result).toBeDefined();
+
+    ws2.close();
   });
 });

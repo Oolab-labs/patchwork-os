@@ -85,6 +85,28 @@ describe("McpTransport", () => {
     );
   });
 
+  it("honors the original 2024-11-05 MCP protocol version instead of forcing a mismatch", async () => {
+    // Many still-deployed MCP clients hardcode the original spec revision
+    // (2024-11-05) as their requested protocolVersion. If the server responds
+    // with a DIFFERENT version than requested, a strict client that doesn't
+    // tolerate the mismatch will abort and retry the handshake forever —
+    // producing a permanent "Not initialized" state with no visible error.
+    // The server must accept this legacy version verbatim rather than
+    // silently substituting its newest supported version.
+    const { ws } = await setup("legacy-version-test");
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2024-11-05" },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1);
+
+    const result = resp.result as Record<string, unknown>;
+    expect(result.protocolVersion).toBe("2024-11-05");
+  });
+
   it("tools/list returns registered tools with annotations", async () => {
     const { ws } = await setup("list-test", (t) => {
       t.registerTool(
