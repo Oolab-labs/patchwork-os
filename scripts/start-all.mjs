@@ -21,6 +21,7 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -42,7 +43,7 @@ const FULL_MODE = boolFlag("--full");
 const NO_DASHBOARD = boolFlag("--no-dashboard");
 const NO_REMOTE = boolFlag("--no-remote");
 const DASHBOARD_PORT = parseInt(flag("--dashboard-port") || "3200", 10);
-const BRIDGE_PORT = parseInt(flag("--bridge-port") || "0", 10);
+let BRIDGE_PORT = parseInt(flag("--bridge-port") || "0", 10);
 const NTFY_TOPIC = flag("--notify") || "";
 const AUTO_POLICY = flag("--automation-policy") || "";
 const DRIVER = flag("--driver") || "subprocess";
@@ -514,44 +515,85 @@ async function startDashboard(bridgePort) {
 }
 
 // ── Health monitor ────────────────────────────────────────────────────────────
-const sessionId = null;
+// Bridge restarts keep the existing `claude --ide` process alive rather than
+// killing/relaunching it — there's no working session-resume wired up here,
+// so a forced restart previously meant an unconditional cold-start of the
+// user's live IDE session on every bridge hiccup. Now that BRIDGE_PORT is
+// pinned (see below), the bridge comes back on the same port and `claude`'s
+// own lock-file discovery reconnects without needing to be restarted.
+let restarting = false;
 
 async function restartAll() {
-  log("health", "Bridge lock file gone — restarting...", C.yellow);
-  notify("Bridge died! Restarting...", "high");
-
-  killProc("bridge");
-  killProc("claude");
-  killProc("remote");
-  await sleep(2_000); // let processes wind down
-
-  // Exponential backoff on rapid restarts
-  const uptime = Date.now() - lastStartMs;
-  if (uptime < 60_000) {
-    log(
-      "health",
-      `Crashed quickly (${Math.round(uptime / 1000)}s) — backing off ${restartDelayMs / 1000}s (restart #${restartCount})`,
-      C.yellow,
-    );
-    await sleep(restartDelayMs);
-    restartDelayMs = Math.min(restartDelayMs * 2, 300_000);
-    restartCount++;
-  } else {
-    restartDelayMs = 5_000;
-    restartCount = 0;
+  if (restarting) {
+    log("health", "Restart already in progress — skipping", C.grey);
+    return;
   }
+  restarting = true;
+  try {
+    log("health", "Bridge unhealthy — restarting...", C.yellow);
+    notify("Bridge died! Restarting...", "high");
 
-  const port = await startBridge();
-  if (!port) return;
+    killProc("bridge");
+    killProc("remote");
+    await sleep(2_000); // let processes wind down
 
-  startClaude(sessionId); // --resume if we have a session UUID
-  startRemote();
+    // Exponential backoff on rapid restarts
+    const uptime = Date.now() - lastStartMs;
+    if (uptime < 60_000) {
+      log(
+        "health",
+        `Crashed quickly (${Math.round(uptime / 1000)}s) — backing off ${restartDelayMs / 1000}s (restart #${restartCount})`,
+        C.yellow,
+      );
+      await sleep(restartDelayMs);
+      restartDelayMs = Math.min(restartDelayMs * 2, 300_000);
+      restartCount++;
+    } else {
+      restartDelayMs = 5_000;
+      restartCount = 0;
+    }
+
+    const port = await startBridge();
+    if (!port) return;
+
+    startRemote();
+  } finally {
+    restarting = false;
+  }
+}
+
+// Actual liveness check, not just "does the lock file exist" — a wedged
+// bridge (stuck on an internal await) keeps its lock file and would
+// otherwise never get restarted.
+function checkBridgeHealth(port, timeoutMs = 5_000) {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: "127.0.0.1", port, path: "/health", timeout: timeoutMs },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode != null && res.statusCode < 500);
+      },
+    );
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.on("error", () => resolve(false));
+  });
 }
 
 function startHealthMonitor() {
   setInterval(async () => {
     if (!lockPath) return;
-    if (!fs.existsSync(lockPath)) await restartAll();
+    if (!fs.existsSync(lockPath)) {
+      await restartAll();
+      return;
+    }
+    const content = readLock(lockPath);
+    const port = content?.port ?? BRIDGE_PORT;
+    if (!port) return;
+    const healthy = await checkBridgeHealth(port);
+    if (!healthy) await restartAll();
   }, 10_000);
 }
 
@@ -561,6 +603,11 @@ if (!bridgePort) {
   cleanup();
   process.exit(1);
 }
+// Pin the auto-assigned port so every subsequent restartAll()-triggered
+// startBridge() lands on the same port instead of a fresh random one, and
+// takes the exact-path waitForLock() branch instead of the racy
+// waitForNewLock() guess.
+if (BRIDGE_PORT === 0) BRIDGE_PORT = bridgePort;
 
 startClaude();
 startRemote();
