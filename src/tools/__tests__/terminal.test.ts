@@ -411,7 +411,13 @@ describe("runInTerminal - shell integration unavailable falls back to subprocess
 
   it("falls back to subprocess execution when shellIntegrationUnavailable is set", async () => {
     const tool = createRunInTerminalTool(
-      "/tmp",
+      // The subprocess fallback actually spawns a real process with this as
+      // its cwd — unlike the other tests in this file, which mock
+      // executeInTerminal directly and never touch the filesystem, "/tmp"
+      // here would ENOENT on Windows (no such directory) and the subprocess
+      // would fail to start, with execSafe swallowing the error into an
+      // empty-output result. Use process.cwd(), guaranteed to exist.
+      process.cwd(),
       mockClient({
         success: false,
         shellIntegrationUnavailable: true,
