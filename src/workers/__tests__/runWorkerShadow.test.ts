@@ -281,7 +281,11 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     for (let i = 0; i < 18; i++) {
       log.appendDirect({
         taskId: `t${i}`,
-        recipeName: "triage-failing-tests",
+        // test-guardian.worker.yaml points at the -autofile variant (the
+        // one that actually files an issue) — the base triage-failing-tests
+        // recipe never calls githubCreateIssue, so trust for that class only
+        // accrues under the recipe name the worker is actually wired to.
+        recipeName: "triage-failing-tests-autofile",
         trigger: "recipe",
         status: "done",
         createdAt: i * SEVEN_HOURS,
@@ -295,7 +299,7 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
         })),
       });
     }
-    const trust = loadWorkerTrustForRecipe("triage-failing-tests", {
+    const trust = loadWorkerTrustForRecipe("triage-failing-tests-autofile", {
       workersDir: WORKERS_DIR,
       patchworkDir: dir,
     });
@@ -313,12 +317,15 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     expect(d.action).toBe("gate");
   });
 
-  it("dependency-upkeep's PR-opening stays gated at earned L4 (ceiling cap neutralises the PR trust-by-neglect leak)", () => {
-    // dependency-upkeep owns `vcs-remote` (githubCreatePR, compensable). Its
-    // ceiling is capped at 1 because there is no PR-outcome grader yet, so a bump
-    // PR nobody reviews would otherwise fold good:true and graduate the class to
-    // auto-open PRs (the trust-by-neglect leak, on the PR path). Seed enough
-    // dwell-separated clean PR opens to earn L4, then prove the gate STILL gates.
+  it("dependency-upkeep does NOT own vcs-remote — the recipe only reviews PRs, it never opens one", () => {
+    // Prior to a dogfood-setup review, this manifest claimed `vcs-remote`
+    // (githubCreatePR, compensable) despite dependency-bump.yaml never
+    // calling it — a class with nothing in the recipe body to ever attach
+    // a real observation to (dead ownership diluting the trust signal, and
+    // misleadingly implying PR-opening had been evidence-gated when it had
+    // never been exercised at all). Fixed by dropping vcs-remote from
+    // owns[]; this test proves githubCreatePR now correctly resolves as
+    // un-owned for this worker rather than silently gate-capped-but-claimed.
     const log = new RecipeRunLog({ dir });
     const SEVEN_HOURS = 7 * 3600 * 1000; // > the 6h default dwell window
     for (let i = 0; i < 18; i++) {
@@ -349,10 +356,7 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
       {},
       trust!.store,
     );
-    expect(d.owned).toBe(true);
-    expect(d.earnedLevel).toBe(4);
-    // Ceiling (1) < compensable threshold (2) → capped despite earned L4.
-    expect(d.effectiveLevel).toBe(1);
+    expect(d.owned).toBe(false);
     expect(d.action).toBe("gate");
   });
 

@@ -6,6 +6,8 @@
 apiVersion: patchwork.sh/v1
 name: triage-failing-tests
 description: On a failing test run, correlate the failure with recent commits and write a triage note.
+allowWrites:
+  - file.write
 trigger:
   type: on_test_run
   filter: failure

@@ -39,6 +39,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
+import { FLAG_ENFORCE_ALLOWWRITES, isEnabled } from "../featureFlags.js";
 import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
@@ -596,6 +597,18 @@ export interface RunnerDeps {
   mockConnectors?: Partial<Record<string, MockToolConnector>>;
   /** Directory to store recorded connector fixtures for `patchwork recipe record`. */
   recordFixturesDir?: string;
+  /**
+   * Tool ids / namespaces acknowledged as intentional writes (the recipe's
+   * own `allowWrites` merged with any caller-supplied entries). Previously
+   * checked ONLY at `recipe preflight` time (src/commands/recipe.ts) — a
+   * write-classified step (`tool.isWrite === true`) ran with no runtime
+   * check at all, so `allowWrites` was advisory metadata a lint command
+   * could warn about, not something that actually stopped anything. Now
+   * also enforced in `executeStep`: an unacknowledged write throws before
+   * the tool runs. Populated by `runYamlRecipe` from `recipe.allowWrites`;
+   * set directly here only in tests that call `executeStep` standalone.
+   */
+  allowWrites?: string[];
   /** Suppress run logs / notifications for mocked recipe test execution. */
   testMode?: boolean;
   /**
@@ -1131,7 +1144,22 @@ export async function runYamlRecipe(
     ...seedContext,
   };
 
-  const stepDeps = resolveStepDeps(deps, { recipeName: recipe.name });
+  // Merge the recipe's declared allowWrites with any caller-supplied
+  // entries (mirrors runPreflight's merge in src/commands/recipe.ts) so
+  // executeStep's runtime write-ack check sees the same allowlist preflight
+  // validated against.
+  const recipeAllowWrites = Array.isArray(recipe.allowWrites)
+    ? recipe.allowWrites.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
+    : [];
+  const stepDeps = resolveStepDeps(
+    {
+      ...deps,
+      allowWrites: [...recipeAllowWrites, ...(deps.allowWrites ?? [])],
+    },
+    { recipeName: recipe.name },
+  );
 
   // Phase 0β — inbox provenance. When a recipe `file.write` / `file.append`
   // step targets `~/.patchwork/inbox/`, prepend a YAML frontmatter block
@@ -2581,6 +2609,33 @@ export async function executeStep(
   // Check if tool is registered in the new registry
   if (hasTool(toolId)) {
     const tool = getTool(toolId);
+    // Runtime write-ack enforcement — mirrors runPreflight's
+    // "unacknowledged-write" check (src/commands/recipe.ts) but this one
+    // actually stops the step instead of only warning ahead of time.
+    // Preflight is opt-in (nothing forces an operator to run it before
+    // installing a recipe to ~/.patchwork/), so a recipe that declares no
+    // allowWrites — or a compromised/edited-after-preflight recipe file —
+    // could otherwise write anywhere its tool permits with zero runtime
+    // check at all. Gated behind FLAG_ENFORCE_ALLOWWRITES (default OFF) —
+    // an audit found 46/66 installed recipes on a real dogfood machine
+    // (24 self-firing) have at least one unacknowledged write; turning
+    // this on unconditionally would break them with no warning. See the
+    // flag's doc comment in featureFlags.ts.
+    if (tool?.isWrite === true && isEnabled(FLAG_ENFORCE_ALLOWWRITES)) {
+      const allowlist = new Set(deps.allowWrites ?? []);
+      const acknowledged =
+        allowlist.has(toolId) ||
+        (tool.namespace && allowlist.has(tool.namespace));
+      if (!acknowledged) {
+        const err = new Error(
+          `unacknowledged-write: step performs a write via "${toolId}" but ` +
+            `is not acknowledged via allowWrites. Add "${toolId}" (or ` +
+            `"${tool.namespace}") to the recipe's allowWrites list.`,
+        );
+        (err as Error & { code?: string }).code = "unacknowledged_write";
+        throw err;
+      }
+    }
     // Build params with template rendering for string values.
     // `do` is left raw: it carries a nested sub-step template (used by
     // `fan_out`) whose `{{item.*}}` placeholders must be rendered per-iter
@@ -2860,6 +2915,7 @@ function resolveStepDeps(
     providerDriverFn: deps.providerDriverFn ?? makeProviderDriverFn(),
     mockConnectors: deps.mockConnectors ?? {},
     recordFixturesDir: deps.recordFixturesDir,
+    allowWrites: deps.allowWrites ?? [],
     getGmailToken:
       deps.getGmailToken ??
       (async () => {

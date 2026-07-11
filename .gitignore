@@ -104,3 +104,10 @@ intellij-plugin/.gradle/
 /docs/audit-bridge-changelog-2026-06-25.md
 /docs/positioning-pricing-onepager.md
 /docs/roadmap-plan-2026-07-02.md
+/docs/business/
+/docs/showcase-guide.md
+/scratch_test_ollama.js
+
+# Codex CLI scaffolding (different coding agent tool, not used for this repo)
+/.codex/
+/AGENTS.md

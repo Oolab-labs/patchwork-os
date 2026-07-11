@@ -99,6 +99,7 @@ export function runOutcomesCli(
       issueUrl,
       disposition,
       checkedAt: deps.now,
+      origin: "manual",
       ...(recipeName ? { recipeName } : {}),
       ...(workerClass ? { workerClass } : {}),
     };

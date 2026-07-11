@@ -11,7 +11,17 @@ responsibilities:
 owns:
   - vcs-read # getGitStatus / getGitDiff / getGitLog — reversible, low blast
   - fs-write # editText / createFile (the changelog) — reversible
-autonomyCeiling: 4 # internal + reversible: may earn full autonomy
+# autonomyCeiling: 4 (full autonomy) is safe with zero dogfood evidence
+# specifically because BOTH owned classes (vcs-read, fs-write) are
+# "reversible" per REVERSIBILITY_BY_DOMAIN — reversible actions bypass the
+# gate unconditionally regardless of ceiling (see workerGate.ts), so this
+# value currently gates nothing. Unlike test-guardian's `issue` or
+# dependency-upkeep's `vcs-remote` (compensable, gate-relevant), there is
+# no compensable/irreversible class here for the ceiling to prematurely
+# unlock. If a future recipe variant adds a compensable/irreversible step
+# (e.g. auto-publishing the changelog externally), that class needs its
+# own evidence-gated ceiling — do not assume this 4 still applies to it.
+autonomyCeiling: 4
 competence: # shipped competence (a prior), NOT trust — trust earns locally
   mean: 0.85
   strength: 4

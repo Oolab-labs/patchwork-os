@@ -4507,3 +4507,114 @@ describe("runYamlRecipe — run registry registration (H11)", () => {
     }
   });
 });
+
+describe("runtime allowWrites enforcement (FLAG_ENFORCE_ALLOWWRITES)", () => {
+  // Gated behind a default-off flag — see featureFlags.ts's doc comment for
+  // why (46/66 installed recipes on a real dogfood machine had at least one
+  // unacknowledged write; unconditional enforcement would have broken them
+  // with no warning). These tests exercise the flag ON explicitly; every
+  // other test in this file runs with it at its OFF default, which is why
+  // none of them declare allowWrites for their incidental file.write/
+  // file.append steps.
+  afterEach(async () => {
+    const { setFlag, FLAG_ENFORCE_ALLOWWRITES } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_ALLOWWRITES, false);
+  });
+
+  it("throws on an unacknowledged write step when the flag is ON", async () => {
+    const { setFlag, FLAG_ENFORCE_ALLOWWRITES } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_ALLOWWRITES, true);
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "should-not-be-written.md"),
+          content: "x",
+        },
+      ],
+      // No allowWrites — this is the point of the test.
+    });
+    const result = await runYamlRecipe(recipe, noop());
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.error).toMatch(/unacknowledged-write/);
+  });
+
+  it("runs normally when the write step IS acknowledged via allowWrites", async () => {
+    const { setFlag, FLAG_ENFORCE_ALLOWWRITES } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_ALLOWWRITES, true);
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      allowWrites: ["file.write"],
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "acknowledged.md"),
+          content: "hello",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(written[path.join(TMP, "acknowledged.md")]).toBe("hello");
+  });
+
+  it("accepts the tool's NAMESPACE (not just the full tool id) in allowWrites", async () => {
+    const { setFlag, FLAG_ENFORCE_ALLOWWRITES } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_ALLOWWRITES, true);
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      allowWrites: ["file"], // namespace, not "file.write"
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "namespace-ack.md"),
+          content: "hello",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(written[path.join(TMP, "namespace-ack.md")]).toBe("hello");
+  });
+
+  it("does NOT throw on an unacknowledged write when the flag is OFF (default)", async () => {
+    // Explicitly does not set the flag — proves the default-off behavior
+    // that every other test in this file relies on.
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "unflagged.md"),
+          content: "hello",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(written[path.join(TMP, "unflagged.md")]).toBe("hello");
+  });
+});

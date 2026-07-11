@@ -4,14 +4,18 @@
 apiVersion: patchwork.sh/v1
 name: release-notes
 description: After a commit lands, draft a changelog entry from the new commits into the inbox.
+allowWrites:
+  - file.write
 trigger:
   type: git_hook
   event: post-commit
 steps:
-  - tool: git.log_since
+  - id: get_commits
+    tool: git.log_since
     since: 24h
     into: commits
-  - agent:
+  - id: draft_notes
+    agent:
       prompt: |
         New commits landed in the last 24h:
         {{commits}}
@@ -22,7 +26,8 @@ steps:
       # subprocess `claude -p` under your existing subscription (no API key)
       driver: claude-code
       into: notes
-  - tool: file.write
+  - id: write_note
+    tool: file.write
     path: ~/.patchwork/inbox/release-notes-{{date}}.md
     content: |
       # Release notes draft — {{date}}

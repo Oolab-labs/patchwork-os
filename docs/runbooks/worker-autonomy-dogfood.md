@@ -284,6 +284,74 @@ path:
 Either way, the `issue` dial only climbs on **confirmed** dispositions. Watch it
 with `patchwork workers shadow`.
 
+### Cycle log
+
+- **2026-07-08 — synthetic failure, reject disposition (as designed).** Planted
+  a synthetic test failure to exercise the full loop end-to-end. `runTests`
+  failed → `on_test_run` fired → the gate correctly held `github.create_issue`
+  at L0 for `issue:compensable:high` → operator approved the gated filing →
+  issue #1143 was filed → operator ran `patchwork outcomes reject
+  <issue-#1143-url>` (correct call: the underlying failure was synthetic, not a
+  real bug) → `patchwork workers shadow` confirmed the `issue` dial stayed
+  unmoved at L0 (5 observations, 21%). Issue #1143 closed on GitHub. This
+  validates the "unknown/rejected disposition must not silently earn trust"
+  fix — a `reject` disposition correctly does not move the dial upward.
+- **2026-07-10 — release-notes-worker reviewed, made dogfood-ready (not yet
+  run live).** `templates/workers/release-notes.worker.yaml` +
+  `templates/recipes/release-notes.yaml` had zero `worker_gate_decisions.jsonl`
+  / `outcome-log.jsonl` entries — never exercised end-to-end. Verified: `recipe
+  lint` and `recipe preflight` both pass clean; `npm run build` clean;
+  `loadWorkersFromDir` loads the manifest with no parse errors; `owns:
+  [vcs-read, fs-write]` matches `DOMAIN_BY_TOOL` domains in
+  `src/workers/actionClass.ts` exactly (no drift); the `git_hook`/`post-commit`
+  trigger compiles to `onGitCommit` (`src/recipes/compiler.ts`), the same
+  bridge-tool-fired hook pattern Test Guardian's `on_test_run` uses — i.e. it
+  only fires on commits made via the bridge's `gitCommit` tool, not bare `git
+  commit`. No code changes were needed; nothing was broken. Not yet dogfooded:
+  the recipe still needs `patchwork recipe install` (or a manual copy) into
+  `~/.patchwork/recipes/`, and the worker manifest into
+  `~/.patchwork/workers/`, before a real commit will exercise the `vcs-read` /
+  `fs-write` gate for the first time.
+- **2026-07-10 (later same day) — release-notes-worker actually fired; two
+  correction items found by a multi-agent dogfood-setup review.** Corrected
+  the entry immediately above: the worker WAS installed and fired for real
+  later the same day — the Decision Record's last entries show
+  `workerId=release-notes-worker`, `action=allow`, `earnedLevel=0`,
+  `autonomyCeiling=4`, covering `agent`/`file.write`/`git.log_since`. All
+  trivially `allow` (its classes are reversible, so this produced zero real
+  ramp signal), but "not yet run live" as of this correction is false — worth
+  noting here since the previous entry is easy to misread as still current.
+  The same review surfaced two real bugs, both fixed:
+  1. **Outcome-store trust-by-overwrite.** `outcome-log.jsonl`'s last
+     recorded disposition for issue #1143 (the synthetic-failure test above)
+     had flipped from `junk` back to `confirmed`, authored by
+     `outcome-ingester` — the automated cron silently overwrote the manual
+     `outcomes reject` from 2026-07-08, because `OutcomeRecord` had no field
+     distinguishing a human's explicit judgment from an automated poll and
+     the store was pure last-writer-wins. Fixed: `OutcomeRecord.origin`
+     (`"manual" | "ingester"`), and a manual disposition is now sticky
+     against a later ingester overwrite (a later *manual* write still
+     applies normally — the operator can change their own mind).
+     `patchwork outcomes reject <issue-#1143-url>` should be re-run to
+     restore the correct disposition on disk (the code fix only prevents
+     *future* overwrites, it doesn't retroactively undo this one).
+  2. **`owns[]` drift on all three worker manifests**, found by cross-
+     checking each recipe's actual steps against `DOMAIN_BY_TOOL`:
+     Test Guardian was missing `fs-write` (its `write_note`/`file.write`
+     step) and claimed `ci` (nothing in the recipe body maps to that
+     domain — the `on_test_run` trigger firing externally doesn't count).
+     Dependency Upkeep claimed `vcs-remote`/`deps-read`/`vcs-local` — none
+     ever exercised, since `dependency-bump.yaml` only reviews existing PRs,
+     it never opens one — while missing `vcs-read` (`github.list_prs`).
+     Also found: `release-notes.yaml`, `triage-failing-tests.yaml`, and
+     `dependency-bump.yaml` were all missing `allowWrites` for their
+     `file.write` step, failing `recipe preflight` out of the box (the
+     *installed* copy of release-notes.yaml had the fix; the tracked
+     template didn't — now synced). All three worker manifests and all
+     three recipe templates corrected; `src/workers/__tests__/
+     runWorkerShadow.test.ts` updated to match (two tests were asserting
+     the pre-fix, incorrect ownership).
+
 ### Raising the ceiling
 
 The shipped Test Guardian manifest caps `autonomyCeiling` at `1`, below the
@@ -295,3 +363,20 @@ confirmed-but-actually-junk cases), raise it by editing the **installed** copy
 running bridge reads `~/.patchwork/`): set `autonomyCeiling: 2` (the minimum
 that unlocks compensable auto-allow at effective L2), then reload/restart the
 bridge. Drop it back to `1` to re-gate immediately.
+
+---
+
+## What's next
+
+- **Dogfood a real failure, not a synthetic one.** The 2026-07-08 cycle
+  exercised gate → approve → file → **reject** end-to-end but, by design,
+  never moved the dial (a synthetic failure is correctly noise). The dial has
+  never been observed moving upward. The next cycle needs a genuine test
+  failure so a `patchwork outcomes confirm <issue-url>` disposition can be
+  exercised and trust accrual on `issue:compensable:high` can be verified for
+  the first time, not just its absence.
+- **Only one action-class has been dogfooded.** Everything to date covers
+  `issue:compensable:high` via the Test Guardian worker. Other action-classes
+  (e.g. other compensable or irreversible classes on other workers/recipes)
+  have not been run through this loop at all — trust-dial behavior there is
+  unverified.

@@ -1230,6 +1230,7 @@ export function tryHandleRecipeRoute(
           issueUrl,
           disposition,
           checkedAt: Date.now(),
+          origin: "manual",
           ...(recipeName ? { recipeName } : {}),
           ...(workerClass ? { workerClass } : {}),
         });
