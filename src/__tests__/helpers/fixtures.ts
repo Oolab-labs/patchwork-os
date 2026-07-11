@@ -48,6 +48,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     pushServiceUrl: null,
     pushServiceToken: null,
     pushServiceBaseUrl: null,
+    pushServiceAllowPrivate: false,
     ntfyTopic: null,
     ntfyServer: null,
     watch: false,
