@@ -7,6 +7,7 @@ import { ActivityLog } from "./activityLog.js";
 import { buildSummary } from "./analyticsAggregator.js";
 import { getAnalyticsPref, getAnalyticsSalt } from "./analyticsPrefs.js";
 import { sendAnalytics } from "./analyticsSend.js";
+import { enqueueApprovalWithDispatch } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { loadOrCreateBridgeToken } from "./bridgeToken.js";
@@ -403,14 +404,25 @@ export class Bridge {
               workspace: this.config.workspace,
             });
             if (gate.decision === "bypass") return "bypass";
-            const queue = getApprovalQueue();
-            const { promise, callId } = queue.request({
-              toolName,
-              params,
-              tier: gate.tier,
-              sessionId: sessionId ?? undefined,
-              riskSignals: gate.riskSignals,
-            });
+            const { promise, callId } = enqueueApprovalWithDispatch(
+              {
+                queue: getApprovalQueue(),
+                webhookUrl: this.server.approvalWebhookUrl,
+                pushServiceUrl: this.server.pushServiceUrl,
+                pushServiceToken: this.server.pushServiceToken,
+                pushServiceBaseUrl: this.server.pushServiceBaseUrl,
+                pushServiceAllowPrivate: this.server.pushServiceAllowPrivate,
+                ntfyTopic: this.server.ntfyTopic,
+                ntfyServer: this.server.ntfyServer,
+              },
+              {
+                toolName,
+                params,
+                tier: gate.tier,
+                sessionId: sessionId ?? undefined,
+                riskSignals: gate.riskSignals,
+              },
+            );
             onPending?.(callId);
             return promise;
           },
@@ -1678,6 +1690,8 @@ export class Bridge {
     this.server.pushServiceToken = this.config.pushServiceToken ?? undefined;
     this.server.pushServiceBaseUrl =
       this.config.pushServiceBaseUrl ?? undefined;
+    this.server.pushServiceAllowPrivate =
+      this.config.pushServiceAllowPrivate ?? false;
     this.server.ntfyTopic = this.config.ntfyTopic ?? undefined;
     this.server.ntfyServer = this.config.ntfyServer ?? undefined;
 
@@ -1691,7 +1705,11 @@ export class Bridge {
         const url = this.server.pushServiceUrl;
         const token = this.server.pushServiceToken;
         if (!url || !token) return null;
-        return { url, token };
+        return {
+          url,
+          token,
+          allowPrivate: this.server.pushServiceAllowPrivate,
+        };
       },
       logger: this.logger,
     });
@@ -1794,6 +1812,7 @@ export class Bridge {
             pushServiceUrl: this.server.pushServiceUrl ?? null,
             pushServiceToken: this.server.pushServiceToken ? "***" : null,
             pushServiceBaseUrl: this.server.pushServiceBaseUrl ?? null,
+            pushServiceAllowPrivate: this.server.pushServiceAllowPrivate,
             ntfyTopic: this.server.ntfyTopic ?? null,
             ntfyServer: this.server.ntfyServer ?? null,
           };

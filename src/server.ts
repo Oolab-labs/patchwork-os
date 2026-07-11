@@ -418,6 +418,8 @@ export class Server extends EventEmitter<ServerEvents> {
   public pushServiceToken: string | undefined = undefined;
   /** Patchwork: public base URL of this bridge, embedded in push payloads as callback base. */
   public pushServiceBaseUrl: string | undefined = undefined;
+  /** Patchwork: allow pushServiceUrl to target a private/CGNAT host (e.g. Tailscale). Default false — SSRF guard blocks private ranges. */
+  public pushServiceAllowPrivate: boolean = false;
   /** Patchwork: ntfy.sh topic for direct phone-path approvals via action buttons. */
   public ntfyTopic: string | undefined = undefined;
   /** Patchwork: ntfy server (default https://ntfy.sh; override for self-hosted). */
@@ -1785,6 +1787,7 @@ export class Server extends EventEmitter<ServerEvents> {
           pushServiceUrl?: string;
           pushServiceToken?: string;
           pushServiceBaseUrl?: string;
+          pushServiceAllowPrivate?: boolean;
           ntfyTopic?: string;
           ntfyServer?: string;
         }>(req, SETTINGS_BODY_CAP);
@@ -1813,6 +1816,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 "pushServiceUrl",
                 "pushServiceToken",
                 "pushServiceBaseUrl",
+                "pushServiceAllowPrivate",
                 "ntfyTopic",
                 "ntfyServer",
               ])
@@ -1961,6 +1965,15 @@ export class Server extends EventEmitter<ServerEvents> {
               return;
             }
 
+            // pushServiceAllowPrivate
+            if (
+              body.pushServiceAllowPrivate !== undefined &&
+              typeof body.pushServiceAllowPrivate !== "boolean"
+            ) {
+              respond400("pushServiceAllowPrivate must be a boolean");
+              return;
+            }
+
             // ntfyTopic — bearer-token on public ntfy.sh; charset-restricted.
             const ntfyTopicTrimmed =
               body.ntfyTopic !== undefined ? body.ntfyTopic.trim() : undefined;
@@ -2077,6 +2090,9 @@ export class Server extends EventEmitter<ServerEvents> {
             if (pushBaseTrimmed !== undefined) {
               cfg.pushServiceBaseUrl = pushBaseTrimmed || undefined;
             }
+            if (body.pushServiceAllowPrivate !== undefined) {
+              cfg.pushServiceAllowPrivate = body.pushServiceAllowPrivate;
+            }
             if (ntfyTopicTrimmed !== undefined) {
               cfg.ntfyTopic = ntfyTopicTrimmed || undefined;
             }
@@ -2188,6 +2204,9 @@ export class Server extends EventEmitter<ServerEvents> {
             if (pushBaseTrimmed !== undefined) {
               this.pushServiceBaseUrl = pushBaseTrimmed || undefined;
             }
+            if (body.pushServiceAllowPrivate !== undefined) {
+              this.pushServiceAllowPrivate = body.pushServiceAllowPrivate;
+            }
             if (ntfyTopicTrimmed !== undefined) {
               this.ntfyTopic = ntfyTopicTrimmed || undefined;
             }
@@ -2233,6 +2252,8 @@ export class Server extends EventEmitter<ServerEvents> {
                 changes.pushServiceToken = pushTokenTrimmed ? "***" : "";
               if (pushBaseTrimmed !== undefined)
                 changes.pushServiceBaseUrl = pushBaseTrimmed || "";
+              if (body.pushServiceAllowPrivate !== undefined)
+                changes.pushServiceAllowPrivate = body.pushServiceAllowPrivate;
               if (ntfyTopicTrimmed !== undefined)
                 changes.ntfyTopic = ntfyTopicTrimmed ? "***" : "";
               if (ntfyServerTrimmed !== undefined)
@@ -2897,6 +2918,7 @@ export class Server extends EventEmitter<ServerEvents> {
               pushServiceUrl: this.pushServiceUrl,
               pushServiceToken: this.pushServiceToken,
               pushServiceBaseUrl: this.pushServiceBaseUrl,
+              pushServiceAllowPrivate: this.pushServiceAllowPrivate,
               ntfyTopic: this.ntfyTopic,
               ntfyServer: this.ntfyServer,
               activityLog: this.activityLog,

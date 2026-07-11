@@ -54,6 +54,7 @@ export async function dispatchHaltPushNotification(
   pushServiceUrl: string,
   pushServiceToken: string,
   payload: HaltPushPayload,
+  allowPrivate: boolean = false,
 ): Promise<void> {
   if (!pushServiceUrl.startsWith("https://")) {
     console.warn(`[halt-push] Rejected non-HTTPS push service URL`);
@@ -70,19 +71,21 @@ export async function dispatchHaltPushNotification(
     console.warn(`[halt-push] Blocked loopback push service hostname`);
     return;
   }
-  try {
-    const resolved = await dns.lookup(hostname);
-    if (isBlockedIp(resolved.address)) {
+  if (!allowPrivate) {
+    try {
+      const resolved = await dns.lookup(hostname);
+      if (isBlockedIp(resolved.address)) {
+        console.warn(
+          `[halt-push] Blocked private/loopback IP for push service: ${resolved.address}`,
+        );
+        return;
+      }
+    } catch (err) {
       console.warn(
-        `[halt-push] Blocked private/loopback IP for push service: ${resolved.address}`,
+        `[halt-push] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
       );
       return;
     }
-  } catch (err) {
-    console.warn(
-      `[halt-push] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return;
   }
 
   const controller = new AbortController();

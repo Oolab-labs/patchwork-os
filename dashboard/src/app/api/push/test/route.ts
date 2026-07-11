@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import webpush from "web-push";
+import { pushAgent } from "@/lib/pushAgent";
 import { getSubscriptionsFor } from "@/lib/pushStore";
 import { requireSameOrigin } from "@/lib/csrf";
 
@@ -45,7 +46,12 @@ export async function POST(req: Request) {
   });
 
   const results = await Promise.allSettled(
-    subs.map((sub) => webpush.sendNotification(sub, payload)),
+    subs.map((sub) =>
+      webpush.sendNotification(sub, payload, {
+        agent: pushAgent,
+        urgency: "high",
+      }),
+    ),
   );
 
   const sent = results.filter((r) => r.status === "fulfilled").length;
