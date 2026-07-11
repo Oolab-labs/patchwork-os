@@ -324,6 +324,19 @@ export const FLAG_BLOCK_RECIPE_ALLOW_PRIVATE = "block-recipe-allow-private";
  */
 export const FLAG_WORKER_AUTONOMY = "worker.autonomy";
 
+/**
+ * Enforce a recipe's `allowWrites` acknowledgment at RUNTIME (in
+ * `executeStep`, src/recipes/yamlRunner.ts), not just at `recipe preflight`
+ * time. Default OFF: an audit found 46 of 66 installed recipes on a real
+ * dogfood machine (24 of them cron/git_hook/on_test_run self-firing) have at
+ * least one unacknowledged write step — turning this on unconditionally
+ * would hard-fail those recipes on their next trigger with zero warning.
+ * Opt in once you've reviewed/updated your installed recipes' `allowWrites`
+ * blocks (`recipe preflight <name>` reports exactly which steps are
+ * unacknowledged, recipe-by-recipe, without needing this flag on).
+ */
+export const FLAG_ENFORCE_ALLOWWRITES = "recipe.enforce-allowwrites";
+
 // Register built-in flags
 registerFlag({
   id: KILL_SWITCH_WRITES,
@@ -365,6 +378,15 @@ registerFlag({
   id: FLAG_WORKER_AUTONOMY,
   description:
     "Worker autonomy ramp: gate a worker recipe's risky (high-blast / irreversible) automated steps for approval until the owning worker earns L4 trust on that action-class; low-blast reversible steps flow freely. Default off.",
+  defaultValue: false,
+  category: "safety",
+  requiresOptIn: true,
+});
+
+registerFlag({
+  id: FLAG_ENFORCE_ALLOWWRITES,
+  description:
+    "Enforce a recipe's allowWrites acknowledgment at runtime (not just at `recipe preflight` time) — an unacknowledged write step throws instead of running. Default off; see FLAG_ENFORCE_ALLOWWRITES doc comment for why.",
   defaultValue: false,
   category: "safety",
   requiresOptIn: true,
