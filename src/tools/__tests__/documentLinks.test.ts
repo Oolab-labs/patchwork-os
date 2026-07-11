@@ -82,4 +82,18 @@ describe("getDocumentLinks", () => {
     await tool.handler({ filePath });
     expect(client.getDocumentLinks).toHaveBeenCalledWith(filePath, undefined);
   });
+
+  it("rejects an empty-string workspace instead of silently bypassing scoping", async () => {
+    const client = makeClient();
+    // Empty-string workspace previously defeated resolveFilePath's containment
+    // check: path.resolve("", "foo.ts") === path.resolve(process.cwd(), "foo.ts"),
+    // and path.resolve("") === process.cwd(), so the containment check trivially
+    // passed and getDocumentLinks was called on a cwd-relative path completely
+    // outside the intended workspace — an explicit reject is required instead.
+    const tool = createGetDocumentLinksTool("", client as never);
+    const result = (await tool.handler({ filePath: "foo.ts" })) as any;
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.code).toBe("workspace_escape");
+    expect(client.getDocumentLinks).not.toHaveBeenCalled();
+  });
 });

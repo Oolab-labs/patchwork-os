@@ -298,6 +298,14 @@ export function createEditTextTool(
         if (type === "replace" && typeof edit.text !== "string") {
           return error(`edits[${i}].text is required for replace operations`);
         }
+        // Null bytes in edit text permanently corrupt the file (same rationale as
+        // searchAndReplace's guard): git treats it as binary, tsc/editors refuse to open it.
+        if (
+          typeof edit.text === "string" &&
+          (edit.text as string).includes("\x00")
+        ) {
+          return error(`edits[${i}].text must not contain a null byte`);
+        }
       }
 
       const filePath = resolveFilePath(rawPath, workspace, { write: true });
