@@ -6,6 +6,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0-beta.3] — 2026-07-11
+
+Phone-path push notifications for approval-gate events, two recovered security fixes, and a worker-autonomy dogfood review pass.
+
+### Fixed
+
+- CLI-originated tool approvals (the `transport.setApprovalGate` PreToolUse path — `gitCommit`, `runInTerminal`, etc. from `claude` itself) never dispatched a push/webhook/ntfy notification at all; that logic only lived in the separate HTTP `/approvals` route used by a different caller. Extracted `enqueueApprovalWithDispatch()` so both paths behave identically (#1153).
+- Web Push sends had no `urgency` header, letting APNs defer delivery under battery-saving heuristics — notifications could arrive late or not at all despite a successful server-side send. Added `urgency: "high"` (#1153).
+- `web-push`'s default dual-stack connect could hang/ETIMEDOUT on a network with unroutable IPv6 (observed with Tailscale active, no native IPv6 uplink), silently dropping every push. Forced IPv4 via a shared `https.Agent` (#1153).
+- The SSRF guard on `pushServiceUrl` blocked the entire `100.64.0.0/10` CGNAT range — including Tailscale's own address space, the standard way to get HTTPS in front of a private dashboard. Added `--push-service-allow-private` / `pushServiceAllowPrivate` (default off), mirroring `--automation-allow-private-webhooks` (#1153).
+- `getDocumentLinks` accepted an empty-string `workspace`, defeating `resolveFilePath`'s containment check and letting a relative `filePath` resolve outside the intended workspace unscoped. Now rejected with `WORKSPACE_ESCAPE` (#1154).
+- `editText` accepted null bytes in insert/replace text, permanently corrupting the target file (git treats it as binary, editors refuse to open it). Now rejected up front, matching `searchAndReplace`'s existing guard (#1154).
+- Outcome-store trust-by-overwrite: the automated `outcome-ingester` cron could silently overwrite an operator's explicit `patchwork outcomes confirm|reject` verdict for the same issue URL (pure last-writer-wins, no origin tracking). Added `OutcomeRecord.origin` (`"manual" | "ingester"`) — a manual disposition is now sticky against a later ingester overwrite (#1155).
+- `owns[]` drift on all three worker manifests (Test Guardian, Dependency Upkeep, Release Worker), cross-checked against each recipe's actual tool calls — corrected to match reality rather than aspiration (#1155).
+- `release-notes.yaml`, `triage-failing-tests.yaml`, and `dependency-bump.yaml` were all missing `allowWrites` for their `file.write` step, failing `recipe preflight` out of the box (#1155).
+
+### Added
+
+- `allowWrites` is now enforced at recipe runtime, not just at opt-in `recipe preflight` time — gated behind `FLAG_ENFORCE_ALLOWWRITES` (default off; a real-machine audit found 46 of 66 installed recipes would break unconditionally) (#1155).
+
+### Extension
+
+- Bumped to 1.4.24 — PR #1150 changed extension handler code (`terminal.ts`) without a version bump, so a cached `.vsix` install would have silently kept running the pre-fix build.
+
 ## [1.1.0-beta.2] — 2026-07-08
 
 Small follow-up cycle from live dogfooding of the worker-autonomy gate.
