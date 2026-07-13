@@ -4618,3 +4618,135 @@ describe("runtime allowWrites enforcement (FLAG_ENFORCE_ALLOWWRITES)", () => {
     expect(written[path.join(TMP, "unflagged.md")]).toBe("hello");
   });
 });
+
+describe("per-worker allowedTools policy enforcement (FLAG_ENFORCE_POLICY)", () => {
+  // The bridge's CLI/HTTP dispatch chokepoint (bridge.ts / streamableHttp.ts)
+  // has no workerId to check patchwork.policy.yml's per-worker allowedTools
+  // against — recipe/worker context only exists at this layer. These tests
+  // exercise executeStep's own checkPolicy call, gated on `deps.workerId`
+  // (set by the orchestrator via resolveWorkerIdForRecipe) AND the flag.
+  let policyDir: string;
+
+  afterEach(async () => {
+    const { setFlag, FLAG_ENFORCE_POLICY } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_POLICY, false);
+    rmSync(policyDir, { recursive: true, force: true });
+  });
+
+  function writePolicy(yaml: string): string {
+    policyDir = mkdtempSync(path.join(os.tmpdir(), "yamlrunner-policy-"));
+    writeFileSync(path.join(policyDir, "patchwork.policy.yml"), yaml);
+    return policyDir;
+  }
+
+  it("denies a tool call outside the worker's allowedTools when the flag is ON", async () => {
+    const { setFlag, FLAG_ENFORCE_POLICY } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_POLICY, true);
+    const workdir = writePolicy(
+      "version: 1\nworkers:\n  triage-bot:\n    allowedTools: [github.listIssues]\n",
+    );
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.write", path: path.join(TMP, "x.md"), content: "x" },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      workdir,
+      workerId: "triage-bot",
+    });
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.error).toMatch(/policy_denied/);
+    expect(result.stepResults[0]?.error).toMatch(/not allowed to call/);
+  });
+
+  it("allows a tool call inside the worker's allowedTools when the flag is ON", async () => {
+    const { setFlag, FLAG_ENFORCE_POLICY } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_POLICY, true);
+    const written: Record<string, string> = {};
+    const workdir = writePolicy(
+      "version: 1\nworkers:\n  triage-bot:\n    allowedTools: [file.write]\n",
+    );
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "allowed.md"),
+          content: "x",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      workdir,
+      workerId: "triage-bot",
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(written[path.join(TMP, "allowed.md")]).toBe("x");
+  });
+
+  it("does NOT restrict a recipe with no workerId, even with the flag ON", async () => {
+    const { setFlag, FLAG_ENFORCE_POLICY } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_POLICY, true);
+    const written: Record<string, string> = {};
+    const workdir = writePolicy(
+      "version: 1\nworkers:\n  triage-bot:\n    allowedTools: [github.listIssues]\n",
+    );
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "no-worker.md"),
+          content: "x",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      workdir,
+      // no workerId — recipe isn't owned by a worker.
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(written[path.join(TMP, "no-worker.md")]).toBe("x");
+  });
+
+  it("does NOT restrict a worker-owned recipe when the flag is OFF (default)", async () => {
+    const written: Record<string, string> = {};
+    const workdir = writePolicy(
+      "version: 1\nworkers:\n  triage-bot:\n    allowedTools: [github.listIssues]\n",
+    );
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "flag-off.md"),
+          content: "x",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      workdir,
+      workerId: "triage-bot",
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(written[path.join(TMP, "flag-off.md")]).toBe("x");
+  });
+});
