@@ -5016,6 +5016,46 @@ describe("ephemeral file rollback (end-to-end through runYamlRecipe)", () => {
 });
 
 describe("flight recorder — per-step output capture", () => {
+  it("REGRESSION: captured output survives the real runLog.completeRun disk persist + reload round trip", async () => {
+    // Bug found by dogfooding replay end-to-end (not caught by any prior
+    // unit test): completeRun's call site builds `finalStepResults` via a
+    // hand-picked whitelist map (id/tool/status/error/haltReason/...) that
+    // did NOT include `output` — so the captured output existed on the
+    // in-memory RunResult (what every other test in this describe block
+    // checks) but was silently stripped before ever reaching
+    // runs.jsonl. Every prior replay test fed a SYNTHETIC RecipeRun
+    // fixture directly into replayFlatMockedRun/buildFlatMockedOutputs,
+    // so none of them round-tripped through a real RecipeRunLog and none
+    // caught this. This test goes through the actual disk persist +
+    // reload, the only way replay ever consumes a run in production.
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "runlog-output-capture-"));
+    try {
+      const runLog = new RecipeRunLog({ dir: tmp });
+      const recipe = makeRecipe({
+        name: "output-persist-regression",
+        steps: [
+          {
+            tool: "file.write",
+            path: path.join(TMP, "persist.md"),
+            content: "x",
+          },
+        ],
+      });
+      await runYamlRecipe(recipe, { ...noop(), runLog });
+      const persisted = runLog.query({
+        recipe: "output-persist-regression",
+      })[0];
+      expect(persisted?.stepResults?.[0]?.status).toBe("ok");
+      expect(persisted?.stepResults?.[0]?.output).toBeDefined();
+      expect(persisted?.stepResults?.[0]?.output).toHaveProperty(
+        "bytesWritten",
+      );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("captures a successful tool step's output onto StepResult.output", async () => {
     const recipe = makeRecipe({
       steps: [
