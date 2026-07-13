@@ -603,18 +603,9 @@ export class RecipeOrchestration {
         const { readFileSync } = await import("node:fs");
         const { parse: parseYaml } = await import("yaml");
         const recipeYaml = parseYaml(readFileSync(recipePath, "utf-8"));
-        // Only chained recipes have per-step capture today; flag others.
         const triggerType = (
           recipeYaml as { trigger?: { type?: string } } | undefined
         )?.trigger?.type;
-        if (triggerType !== "chained") {
-          return {
-            ok: false,
-            error: "replay_only_supported_for_chained_recipes",
-          };
-        }
-        const { replayMockedRun } = await import("./recipes/replayRun.js");
-        const { buildChainedDeps } = await import("./recipes/yamlRunner.js");
         // Reuse the orchestrator's claudeCodeFn for any step that falls
         // through to real execution (unmocked steps — caller is told).
         const orch = this.deps.getOrchestrator();
@@ -648,6 +639,39 @@ export class RecipeOrchestration {
           return task.output ?? task.errorMessage ?? "";
         };
         const runnerDeps = { workdir: this.deps.workdir, claudeCodeFn };
+
+        // Flat (manual/cron/webhook) recipes: runYamlRecipe + per-step
+        // output capture (added alongside replayFlatMockedRun) make these
+        // just as replayable as chained recipes — previously hard-flagged
+        // "replay_only_supported_for_chained_recipes" here.
+        if (triggerType !== "chained") {
+          const { replayFlatMockedRun } = await import(
+            "./recipes/replayRun.js"
+          );
+          const result = await replayFlatMockedRun({
+            originalRun: original as unknown as import("./runLog.js").RecipeRun,
+            recipe:
+              recipeYaml as unknown as import("./recipes/yamlRunner.js").YamlRecipe,
+            deps: {
+              runLog: this.deps.recipeRunLog,
+              ...(this.deps.activityLog !== undefined && {
+                activityLog: this.deps.activityLog,
+              }),
+              runnerDeps,
+            },
+          });
+          return {
+            ok: result.ok,
+            ...(result.newSeq !== undefined && { newSeq: result.newSeq }),
+            ...(result.unmockedSteps !== undefined && {
+              unmockedSteps: result.unmockedSteps,
+            }),
+            ...(result.error !== undefined && { error: result.error }),
+          };
+        }
+
+        const { replayMockedRun } = await import("./recipes/replayRun.js");
+        const { buildChainedDeps } = await import("./recipes/yamlRunner.js");
         // buildChainedDeps just primes default tool/agent/recipe loaders.
         void buildChainedDeps;
         const result = await replayMockedRun({

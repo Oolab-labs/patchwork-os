@@ -9,8 +9,13 @@ import type {
   RunOptions,
 } from "../chainedRunner.js";
 import { runChainedRecipe } from "../chainedRunner.js";
-import { buildMockedOutputs, replayMockedRun } from "../replayRun.js";
-import type { RunnerDeps } from "../yamlRunner.js";
+import {
+  buildFlatMockedOutputs,
+  buildMockedOutputs,
+  replayFlatMockedRun,
+  replayMockedRun,
+} from "../replayRun.js";
+import type { RunnerDeps, YamlRecipe } from "../yamlRunner.js";
 
 let tmpDir: string;
 
@@ -392,5 +397,176 @@ describe("replayMockedRun", () => {
       if (origSecret === undefined) delete process.env.SUPER_SECRET_TOKEN;
       else process.env.SUPER_SECRET_TOKEN = origSecret;
     }
+  });
+});
+
+// ── buildFlatMockedOutputs — flat-recipe counterpart to buildMockedOutputs ─
+
+describe("buildFlatMockedOutputs", () => {
+  it("collects captured outputs into the map keyed by stepId, stringified", () => {
+    const run: RecipeRun = {
+      seq: 7,
+      taskId: "t",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 100,
+      doneAt: 200,
+      durationMs: 100,
+      stepResults: [
+        { id: "s1", status: "ok", durationMs: 5, output: "already-a-string" },
+        { id: "s2", status: "ok", durationMs: 5, output: { a: 1 } },
+      ],
+    };
+    const { outputs, unmocked } = buildFlatMockedOutputs(run);
+    expect(outputs.get("s1")).toBe("already-a-string");
+    expect(outputs.get("s2")).toBe(JSON.stringify({ a: 1 }));
+    expect(unmocked).toEqual([]);
+  });
+
+  it("flags steps without captured output as unmocked", () => {
+    const run: RecipeRun = {
+      seq: 1,
+      taskId: "t",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+      stepResults: [
+        { id: "captured", status: "ok", durationMs: 5, output: "ok" },
+        { id: "no-capture", status: "ok", durationMs: 5 },
+      ],
+    };
+    const { outputs, unmocked } = buildFlatMockedOutputs(run);
+    expect([...outputs.keys()]).toEqual(["captured"]);
+    expect(unmocked).toEqual(["no-capture"]);
+  });
+
+  it("excludes truncation-envelope outputs (>8KB)", () => {
+    const run: RecipeRun = {
+      seq: 1,
+      taskId: "t",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+      stepResults: [
+        {
+          id: "huge",
+          status: "ok",
+          durationMs: 5,
+          output: { "[truncated]": true, bytes: 20000, preview: "x" },
+        },
+        { id: "small", status: "ok", durationMs: 5, output: "fine" },
+      ],
+    };
+    const { outputs, unmocked } = buildFlatMockedOutputs(run);
+    expect([...outputs.keys()]).toEqual(["small"]);
+    expect(unmocked).toEqual(["huge"]);
+  });
+
+  it("skips steps with status 'skipped'", () => {
+    const run: RecipeRun = {
+      seq: 1,
+      taskId: "t",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+      stepResults: [
+        { id: "conditional", status: "skipped", durationMs: 0 },
+        { id: "actual", status: "ok", durationMs: 5, output: "data" },
+      ],
+    };
+    const { outputs } = buildFlatMockedOutputs(run);
+    expect([...outputs.keys()]).toEqual(["actual"]);
+  });
+});
+
+// ── replayFlatMockedRun — the flat entrypoint, previously nonexistent
+// ("replay_only_supported_for_chained_recipes" was hard-coded) ────────────
+
+describe("replayFlatMockedRun", () => {
+  function flatRecipe(): YamlRecipe {
+    return {
+      name: "daily-flat",
+      trigger: { type: "manual" },
+      steps: [
+        { tool: "file.write", into: "s1", path: "note.md", content: "x" },
+      ],
+    } as unknown as YamlRecipe;
+  }
+
+  function originalRun(overrides: Partial<RecipeRun> = {}): RecipeRun {
+    return {
+      seq: 1,
+      taskId: "t1",
+      recipeName: "daily-flat",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1000,
+      doneAt: 2000,
+      durationMs: 1000,
+      stepResults: [
+        { id: "s1", status: "ok", durationMs: 5, output: "captured-value" },
+      ],
+      ...overrides,
+    } as RecipeRun;
+  }
+
+  async function deps() {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const runLog = new RecipeRunLog({ dir: tmpDir });
+    const runnerDeps: RunnerDeps = {
+      logDir: tmpDir,
+      workdir: tmpDir,
+      testMode: false,
+      writeFile: () => {
+        throw new Error("real tool must not run — step should be mocked");
+      },
+    };
+    return { runLog, activityLog: undefined, runnerDeps };
+  }
+
+  it("replays using captured step outputs and reports the new run's seq", async () => {
+    const replayDeps = await deps();
+    const result = await replayFlatMockedRun({
+      originalRun: originalRun(),
+      recipe: flatRecipe(),
+      deps: replayDeps,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.newSeq).toBeDefined();
+    expect(result.result?.context.s1).toBe("captured-value");
+    expect(result.unmockedSteps).toBeUndefined();
+  });
+
+  it("tags the new run with manualRunId replay-<originalSeq> (BUG-4 parity)", async () => {
+    const replayDeps = await deps();
+    await replayFlatMockedRun({
+      originalRun: originalRun({ seq: 42 }),
+      recipe: flatRecipe(),
+      deps: replayDeps,
+    });
+    const run = replayDeps.runLog.query()[0];
+    expect(run?.manualRunId).toBe("replay-42");
+  });
+
+  it("reports unmockedSteps when a step in the original run has no captured output", async () => {
+    const replayDeps = await deps();
+    const result = await replayFlatMockedRun({
+      originalRun: originalRun({
+        stepResults: [{ id: "s1", status: "ok", durationMs: 5 }],
+      }),
+      recipe: flatRecipe(),
+      deps: replayDeps,
+    });
+    expect(result.unmockedSteps).toEqual(["s1"]);
   });
 });
