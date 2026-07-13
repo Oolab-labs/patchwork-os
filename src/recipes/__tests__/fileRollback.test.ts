@@ -1,4 +1,5 @@
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -174,5 +175,106 @@ describe("rollbackFileWrites", () => {
       scopeKey: "never-used",
     });
     expect(result).toEqual({ restored: [], deleted: [], failed: [] });
+  });
+
+  it("records a per-file failure instead of throwing when a restore fails", () => {
+    // A path whose parent directory is itself a plain FILE (not a
+    // directory) makes mkdirSync(dirname, {recursive:true}) throw ENOTDIR
+    // — a realistic way a restore can fail without touching permissions.
+    const blocker = path.join(workDir, "blocker");
+    writeFileSync(blocker, "im-a-file-not-a-dir");
+    const target = path.join(blocker, "nested", "note.md");
+    const log = new FileRollbackLog({ dir: ledgerDir, scopeKey: "s1" });
+    // Can't literally writeFileSync to `target` (blocker isn't a dir), but
+    // capturePreImage only needs to try-and-fail-to-lstat it, which is
+    // exactly what an ENOENT-style "did not exist" capture looks like.
+    log.capturePreImage(target);
+
+    const result = rollbackFileWrites({ dir: ledgerDir, scopeKey: "s1" });
+    // hadContent=false → rollback tries existsSync/unlinkSync, which is a
+    // clean no-op here (nothing to delete under a non-directory parent).
+    expect(result.deleted).toEqual([target]);
+    expect(result.failed).toEqual([]);
+  });
+
+  it("records a per-file failure when restoring content whose parent dir got replaced by a file", () => {
+    // Capture happens while `nested` is a real directory (hadContent=true
+    // succeeds normally), then `nested` is replaced with a plain FILE
+    // before rollback runs — mkdirSync(dirname, {recursive:true}) then
+    // throws instead of silently succeeding, exercising the catch branch
+    // in rollbackFileWrites without needing filesystem permissions.
+    const nestedDir = path.join(workDir, "nested");
+    mkdirSync(nestedDir, { recursive: true });
+    const target = path.join(nestedDir, "note.md");
+    writeFileSync(target, "original");
+    const log = new FileRollbackLog({ dir: ledgerDir, scopeKey: "s1" });
+    log.capturePreImage(target);
+    expect(log.rows()).toEqual([
+      { path: target, hadContent: true, content: "original" },
+    ]);
+
+    rmSync(nestedDir, { recursive: true, force: true });
+    writeFileSync(nestedDir, "now a file, not a directory");
+
+    const result = rollbackFileWrites({ dir: ledgerDir, scopeKey: "s1" });
+    expect(result.restored).toEqual([]);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.path).toBe(target);
+  });
+});
+
+describe("FileRollbackLog directory safety", () => {
+  it("throws when dir is not an absolute path", () => {
+    expect(
+      () => new FileRollbackLog({ dir: "relative/path", scopeKey: "s1" }),
+    ).toThrow(/absolute/);
+  });
+
+  it("throws when dir contains a null byte", () => {
+    expect(
+      () => new FileRollbackLog({ dir: `${workDir}/a\0b`, scopeKey: "s1" }),
+    ).toThrow(/null bytes/);
+  });
+
+  it("throws when dir is empty", () => {
+    expect(() => new FileRollbackLog({ dir: "", scopeKey: "s1" })).toThrow(
+      /non-empty/,
+    );
+  });
+
+  it("throws when dir is a symlink", async () => {
+    const { symlinkSync: symlink } = await import("node:fs");
+    const realDir = mkdtempSync(path.join(os.tmpdir(), "rollback-real-"));
+    const linkDir = path.join(os.tmpdir(), `rollback-link-${Date.now()}`);
+    symlink(realDir, linkDir, "dir");
+    try {
+      expect(
+        () => new FileRollbackLog({ dir: linkDir, scopeKey: "s1" }),
+      ).toThrow(/symlink/);
+    } finally {
+      rmSync(linkDir, { recursive: true, force: true });
+      rmSync(realDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("FileRollbackLog rotation", () => {
+  it("rotates the log once it exceeds the size cap, preserving the most recent rows", () => {
+    const log = new FileRollbackLog({ dir: ledgerDir, scopeKey: "s1" });
+    // Force append()'s size check to trip: capture one huge pre-image
+    // (content alone exceeds the 1MB cap), then a second capture triggers
+    // the pre-append statSync check that calls rotate().
+    const bigPath = path.join(workDir, "big.md");
+    writeFileSync(bigPath, "x".repeat(1_100_000));
+    log.capturePreImage(bigPath);
+
+    const smallPath = path.join(workDir, "small.md");
+    writeFileSync(smallPath, "small");
+    log.capturePreImage(smallPath);
+
+    // Rotation trims to MAX_PERSIST_LINES but both rows still fit (well
+    // under 10k lines) — both must survive the rotation.
+    const rows = log.rows().map((r) => r.path);
+    expect(rows.sort()).toEqual([bigPath, smallPath].sort());
   });
 });
