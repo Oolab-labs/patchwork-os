@@ -96,6 +96,7 @@ registerTool({
     assertWriteAllowed("file.write");
     const p = jailedPath(params.path as string, deps.workdir, true);
     const content = params.content as string;
+    deps.fileRollbackLog?.capturePreImage(p);
     ensureDir(p);
     deps.writeFile(p, content);
     return JSON.stringify({
@@ -151,6 +152,7 @@ registerTool({
     if (when && !evalCondition(when, (ctx ?? {}) as Record<string, unknown>)) {
       return null;
     }
+    deps.fileRollbackLog?.capturePreImage(p);
     ensureDir(p);
     deps.appendFile(p, content);
     return JSON.stringify({

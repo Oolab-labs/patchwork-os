@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Isolate from the developer's real ~/.patchwork/config.json — agent steps
 // now read it via a static import (was a broken `require()` under ESM that
@@ -4871,5 +4871,118 @@ describe("circuit breaker enforcement (FLAG_CIRCUIT_BREAKER)", () => {
       expect(result.stepResults[0]?.error).not.toMatch(/circuit_open/);
     }
     expect(writeAttempts).toBe(8); // every call actually ran the tool
+  });
+});
+
+describe("ephemeral file rollback (end-to-end through runYamlRecipe)", () => {
+  // Proves the full wiring: resolveStepDeps constructs a FileRollbackLog
+  // when ledgerDir + manualRunId are supplied (same gating as
+  // writeEffectLedger/PR5b), file.ts's execute handler calls
+  // capturePreImage before writing, and rollbackFileWrites (the operator-
+  // facing entry point) can later undo the run's file-write side effects
+  // using nothing but the recipe name + manualRunId + ledgerDir.
+  let ledgerDir: string;
+  let workDir: string;
+
+  beforeEach(async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    ledgerDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlrunner-rollback-"));
+    workDir = fs.mkdtempSync(path.join(os.tmpdir(), "yamlrunner-rollback-wd-"));
+  });
+
+  afterEach(async () => {
+    const fs = await import("node:fs");
+    fs.rmSync(ledgerDir, { recursive: true, force: true });
+    fs.rmSync(workDir, { recursive: true, force: true });
+  });
+
+  it("rolls back a real file.write step run through the full runner", async () => {
+    const fs = await import("node:fs");
+    const target = path.join(workDir, "note.md");
+    fs.writeFileSync(target, "pristine");
+
+    const recipe = makeRecipe({
+      name: "rollback-e2e-recipe",
+      steps: [
+        { tool: "file.write", path: target, content: "mutated by the run" },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      // Use the real fs writeFile (not noop's stub) so the run actually
+      // touches disk — the point of this test is proving the on-disk
+      // round trip, not just in-memory StepDeps plumbing.
+      writeFile: (p, content) => fs.writeFileSync(p, content),
+      ledgerDir,
+      manualRunId: "attempt-1",
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(fs.readFileSync(target, "utf-8")).toBe("mutated by the run");
+
+    const { rollbackFileWrites } = await import("../fileRollback.js");
+    const { deriveScopeKey } = await import("../idempotencyKey.js");
+    const rollback = rollbackFileWrites({
+      dir: ledgerDir,
+      scopeKey: deriveScopeKey("rollback-e2e-recipe", "attempt-1"),
+    });
+    expect(rollback.restored).toEqual([target]);
+    expect(fs.readFileSync(target, "utf-8")).toBe("pristine");
+  });
+
+  it("deletes a file that the run created (did not exist before)", async () => {
+    const fs = await import("node:fs");
+    const target = path.join(workDir, "new-note.md");
+
+    const recipe = makeRecipe({
+      name: "rollback-e2e-created-recipe",
+      steps: [
+        { tool: "file.write", path: target, content: "created by the run" },
+      ],
+    });
+    await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, content) => fs.writeFileSync(p, content),
+      ledgerDir,
+      manualRunId: "attempt-1",
+    });
+    expect(fs.readFileSync(target, "utf-8")).toBe("created by the run");
+
+    const { rollbackFileWrites } = await import("../fileRollback.js");
+    const { deriveScopeKey } = await import("../idempotencyKey.js");
+    const rollback = rollbackFileWrites({
+      dir: ledgerDir,
+      scopeKey: deriveScopeKey("rollback-e2e-created-recipe", "attempt-1"),
+    });
+    expect(rollback.deleted).toEqual([target]);
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
+  it("does not capture anything when ledgerDir/manualRunId are absent (default)", async () => {
+    const fs = await import("node:fs");
+    const target = path.join(workDir, "unscoped.md");
+    fs.writeFileSync(target, "pristine");
+
+    const recipe = makeRecipe({
+      name: "rollback-e2e-unscoped-recipe",
+      steps: [
+        { tool: "file.write", path: target, content: "mutated by the run" },
+      ],
+    });
+    await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, content) => fs.writeFileSync(p, content),
+      // No ledgerDir / manualRunId — rollback capture is unavailable.
+    });
+    expect(fs.readFileSync(target, "utf-8")).toBe("mutated by the run");
+
+    const { rollbackFileWrites } = await import("../fileRollback.js");
+    const { deriveScopeKey } = await import("../idempotencyKey.js");
+    const rollback = rollbackFileWrites({
+      dir: ledgerDir,
+      scopeKey: deriveScopeKey("rollback-e2e-unscoped-recipe", "attempt-1"),
+    });
+    expect(rollback).toEqual({ restored: [], deleted: [], failed: [] });
+    expect(fs.readFileSync(target, "utf-8")).toBe("mutated by the run"); // unchanged — nothing to roll back
   });
 });
