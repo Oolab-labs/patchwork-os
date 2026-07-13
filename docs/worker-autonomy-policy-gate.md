@@ -245,8 +245,53 @@ uniquely earns. Ship the Bayes quietly; sell the governance.
 
 ---
 
+## 6. Sibling trust-architecture layers (shipped 2026-07-13)
+
+The gate above governs *how much autonomy a worker has earned*. A separate set of
+deterministic, trust-independent layers governs *what's allowed regardless of
+autonomy* and *what can be undone/replayed* — these compose with, but are distinct
+from, the earned-trust ramp. All shipped 2026-07-13 (#1157-#1163):
+
+- **Deterministic policy** (`src/policy.ts`, `patchwork.policy.yml`) —
+  forbiddenPaths/allowedNetworkHosts/allowedCommands/per-worker allowedTools,
+  checked BEFORE the trust gate. No amount of earned trust unlocks a
+  policy-forbidden action. `FLAG_ENFORCE_POLICY`.
+- **Cross-run idempotency** (`src/recipes/idempotencyKey.ts`'s
+  `WriteEffectLedger`) — disk-backed dedup so a retried attempt doesn't replay
+  write side effects. Predates this wave (PR5b) but is part of the same
+  trust-architecture stack.
+- **Circuit breakers** (`src/recipes/circuitBreaker.ts`) — per-`(recipe, tool)`
+  CLOSED→OPEN→HALF-OPEN state machine so a broken dependency stops getting
+  hammered on every cron/webhook trigger. `FLAG_CIRCUIT_BREAKER`.
+- **Ephemeral rollback** (`src/recipes/fileRollback.ts`,
+  `patchwork recipe rollback`) — undo a recipe attempt's `file.write`/
+  `file.append` side effects using a captured pre-image ledger.
+- **Flight recorder / mocked replay** (`src/recipes/replayRun.ts`) — per-step
+  output capture + replay against captured evidence, for both chained AND flat
+  (manual/cron/webhook) recipes, with zero external calls or write side effects.
+
+A 4-dimension multi-agent adversarial review of all five (#1163) found and fixed
+17 real defects, including two security regressions introduced in the same
+wave (policy checks silently skipped for non-worker recipes; secret redaction
+was a no-op on the new flight-recorder capture path) — worth a review pass
+after a fast sequence of feature PRs even when each shipped green.
+
+**Deliberately deferred, not forgotten:**
+- **Durable SQLite state store** — `documents/roadmap.md` explicitly defers
+  this until query volume demands it; the current per-log JSONL model
+  (`runs.jsonl`, worker trust store, Decision Record, effect ledger) is a
+  deliberate choice.
+- **Context distillation / resource ring-fencing** — scoped but not started.
+  `src/drivers/local/index.ts` (Ollama/LM Studio) has zero context-window
+  awareness today; the lowest-risk starting point if this is ever picked up
+  is a preflight prompt-size guard scoped to the local driver only, not a
+  cross-driver context-window table or an LLM-summarization step.
+
+---
+
 ## See also
 
 - [docs/runbooks/worker-autonomy-dogfood.md](runbooks/worker-autonomy-dogfood.md) — operator runbook for the live dogfood campaign
 - `src/workers/` — implementation
+- `src/policy.ts`, `src/recipes/circuitBreaker.ts`, `src/recipes/fileRollback.ts`, `src/recipes/replayRun.ts` — sibling trust-architecture layers (§6)
 - `templates/workers/` — three reference worker manifests
