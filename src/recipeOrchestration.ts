@@ -276,6 +276,32 @@ export async function buildWorkerAgentDisallowedTools(
   }
 }
 
+/**
+ * The id of the worker that owns `recipeName` (its `*.worker.yaml` manifest
+ * declares `recipe: <recipeName>`), if any. Deliberately independent of
+ * FLAG_WORKER_AUTONOMY — unlike the trust-ramp gate above, patchwork.policy.yml's
+ * per-worker `allowedTools` list is a separate deterministic boundary that
+ * should apply whenever a worker owns a recipe, autonomy flag on or off.
+ * Only reads worker manifests from disk (no trust-store / run-log replay),
+ * so this is cheap enough to call on every recipe fire. Fail-soft: any
+ * resolution error → undefined (never crash a run over a malformed manifest).
+ */
+export async function resolveWorkerIdForRecipe(
+  recipeName: string,
+  workersDir?: string,
+): Promise<string | undefined> {
+  try {
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { loadWorkersFromDir } = await import("./workers/workerLoader.js");
+    const dir = workersDir ?? path.join(os.homedir(), ".patchwork", "workers");
+    const workers = loadWorkersFromDir(dir);
+    return workers.find((w) => w.recipe === recipeName)?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public interfaces
 // ---------------------------------------------------------------------------
@@ -1275,6 +1301,9 @@ export class RecipeOrchestration {
     const agentDisallowedTools = await buildWorkerAgentDisallowedTools(
       opts.name,
     );
+    // Independent of FLAG_WORKER_AUTONOMY — see resolveWorkerIdForRecipe's
+    // doc comment. Feeds executeStep's per-worker allowedTools policy check.
+    const workerId = await resolveWorkerIdForRecipe(opts.name);
     const runnerDeps = {
       workdir: this.deps.workdir,
       claudeCodeFn,
@@ -1288,6 +1317,7 @@ export class RecipeOrchestration {
       ...(requireApprovalFn && { requireApprovalFn }),
       ...(gateAutomatedRuns && { gateAutomatedRuns: true }),
       ...(agentDisallowedTools && { agentDisallowedTools }),
+      ...(workerId && { workerId }),
     };
     // Pass the bridge's long-lived RecipeRunLog so chainedRunner can flip the
     // run from `running` → terminal in-place via startRun/completeRun. The

@@ -39,9 +39,14 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
-import { FLAG_ENFORCE_ALLOWWRITES, isEnabled } from "../featureFlags.js";
+import {
+  FLAG_ENFORCE_ALLOWWRITES,
+  FLAG_ENFORCE_POLICY,
+  isEnabled,
+} from "../featureFlags.js";
 import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
+import { checkPolicy, loadPolicyFile } from "../policy.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import { classifyTool } from "../riskTier.js";
 import type { RecipeRunLog } from "../runLog.js";
@@ -661,6 +666,18 @@ export interface RunnerDeps {
    * recipes → agent steps are byte-identical to pre-flip behaviour.
    */
   agentDisallowedTools?: string[];
+  /**
+   * The id of the worker that owns this recipe (matches `id:` in the
+   * worker's `*.worker.yaml` manifest), if any. Set by the orchestrator via
+   * `resolveWorkerIdForRecipe` independent of the FLAG_WORKER_AUTONOMY trust
+   * ramp — policy's per-worker `allowedTools` list (patchwork.policy.yml) is
+   * a separate deterministic boundary from earned trust, so this is
+   * populated whenever a worker owns the recipe, autonomy flag or not.
+   * Passed to `checkPolicy` in `executeStep` so a worker restricted to a
+   * specific tool list can't call anything outside it, even via a plain
+   * (non-agent) tool step. Undefined for non-worker recipes.
+   */
+  workerId?: string;
 }
 
 export interface RunResult {
@@ -774,6 +791,9 @@ export type StepDeps = Required<
     // Cancellation is checked in the run loop against `deps`, not per-step;
     // keep it off StepDeps so it isn't forced Required here.
     | "signal"
+    // Present only when a worker owns the recipe — keep optional, not
+    // forced Required by the Omit-based mapped type.
+    | "workerId"
   >
 > & {
   workdir: string;
@@ -796,6 +816,8 @@ export type StepDeps = Required<
    * `runChainedRecipe`; discarded when the run completes.
    */
   writeEffectLedger?: WriteEffectLedger;
+  /** See `RunnerDeps.workerId`. */
+  workerId?: string;
 };
 
 // Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
@@ -2651,6 +2673,33 @@ export async function executeStep(
       params[key] = deepRender(value, ctx);
     }
 
+    // Deterministic per-worker tool-allowlist policy check. The bridge's
+    // CLI/HTTP dispatch chokepoint (bridge.ts / streamableHttp.ts) already
+    // runs `checkPolicy` for every tool call, but has no workerId to check
+    // against — recipe/worker context only exists here, inside the runner.
+    // Runs only when `deps.workerId` is set (a worker owns this recipe) and
+    // FLAG_ENFORCE_POLICY is on; a recipe with no owning worker is
+    // unaffected. Deny is fail-closed on a malformed policy file, matching
+    // the bridge-level check.
+    if (deps.workerId && isEnabled(FLAG_ENFORCE_POLICY)) {
+      const loaded = loadPolicyFile(deps.workdir);
+      if (!loaded.ok) {
+        const err = new Error(`policy_denied: ${loaded.error}`);
+        (err as Error & { code?: string }).code = "policy_denied";
+        throw err;
+      }
+      const verdict = checkPolicy(loaded.policy, {
+        toolName: toolId,
+        params,
+        workerId: deps.workerId,
+      });
+      if (!verdict.allowed) {
+        const err = new Error(`policy_denied: ${verdict.reason}`);
+        (err as Error & { code?: string }).code = "policy_denied";
+        throw err;
+      }
+    }
+
     // Check if mock connector is available for this tool
     if (deps.mockConnectors?.[toolId]) {
       return deps.mockConnectors[toolId].invoke("execute", params);
@@ -2950,6 +2999,7 @@ function resolveStepDeps(
             ),
           })
         : new WriteEffectLedger(),
+    workerId: deps.workerId,
   };
 }
 
