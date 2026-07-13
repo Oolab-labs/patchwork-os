@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { CircuitBreaker, deriveBreakerKey } from "../circuitBreaker.js";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  CircuitBreaker,
+  deriveBreakerKey,
+  resetCircuitBreakerForTests,
+} from "../circuitBreaker.js";
+import { buildChainedDeps } from "../yamlRunner.js";
+
+const TMP = os.tmpdir();
 
 describe("deriveBreakerKey", () => {
   it("is stable for the same (recipeName, toolId) pair", () => {
@@ -112,5 +121,135 @@ describe("CircuitBreaker", () => {
     expect(breaker.isOpen("k")).toBe(false);
     breaker.recordFailure("k");
     expect(breaker.isOpen("k")).toBe(true);
+  });
+
+  it("REGRESSION: only ONE concurrent caller gets the half-open probe permit", () => {
+    // Bug found in session-review: isOpen() cleared `openedAt` synchronously
+    // to admit a probe, but recordFailure/recordSuccess only run after the
+    // AWAITED tool call resolves — so two concurrent callers sharing the
+    // same key (e.g. overlapping cron + manual triggers of the same
+    // recipe) could both observe isOpen()===false during the same
+    // half-open window and both slip through unprotected before either
+    // records an outcome. Only the first caller to check after the
+    // cooldown elapses should get the probe permit.
+    const breaker = new CircuitBreaker({
+      failureThreshold: 2,
+      cooldownMs: 1000,
+    });
+    breaker.recordFailure("k", 0);
+    breaker.recordFailure("k", 100); // trips at t=100
+
+    // Two "concurrent" callers both check isOpen() at the same instant,
+    // t=1100 (cooldown elapsed). Only the first may pass.
+    const firstCallerResult = breaker.isOpen("k", 1100);
+    const secondCallerResult = breaker.isOpen("k", 1100);
+    expect(firstCallerResult).toBe(false); // gets the probe permit
+    expect(secondCallerResult).toBe(true); // still sees the breaker as open
+
+    // A third caller after the probe's outcome is recorded should see the
+    // updated state, not remain stuck behind a stale in-flight probe.
+    breaker.recordSuccess("k");
+    expect(breaker.isOpen("k", 1200)).toBe(false);
+  });
+
+  it("REGRESSION: a failed probe releases the in-flight permit so the NEXT cooldown cycle can admit a probe", () => {
+    const breaker = new CircuitBreaker({
+      failureThreshold: 2,
+      cooldownMs: 1000,
+    });
+    breaker.recordFailure("k", 0);
+    breaker.recordFailure("k", 100); // trips at t=100
+    expect(breaker.isOpen("k", 1100)).toBe(false); // probe admitted
+    breaker.recordFailure("k", 1100); // probe fails — re-opens, releases permit
+    expect(breaker.isOpen("k", 1100)).toBe(true); // immediately re-opened
+
+    // Next cooldown cycle (from the NEW openedAt=1100) must still be able
+    // to admit exactly one probe — a stuck `probeInFlight` from the failed
+    // probe above would wedge the breaker open forever.
+    expect(breaker.isOpen("k", 2099)).toBe(true); // cooldown not yet elapsed
+    expect(breaker.isOpen("k", 2100)).toBe(false); // new probe admitted
+  });
+});
+
+describe("buildChainedDeps — REGRESSION: recipeName threading (chained/nested recipes)", () => {
+  // Bug found in session-review: buildChainedDeps() called
+  // resolveStepDeps(runnerDeps) with NO scope argument, so StepDeps.recipeName
+  // stayed undefined and every tool call inside a chained (or nested)
+  // recipe silently skipped the circuit breaker check in executeStep
+  // (`deps.recipeName && isEnabled(...)` is false with no recipeName) no
+  // matter how many times the tool failed.
+  afterEach(async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, false);
+    resetCircuitBreakerForTests();
+  });
+
+  it("trips the breaker for a tool called through buildChainedDeps's executeTool when recipeName is passed", async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, true);
+    let realCalls = 0;
+    const chainedDeps = buildChainedDeps(
+      {
+        workdir: TMP,
+        testMode: true,
+        writeFile: () => {
+          realCalls++;
+          throw new Error("disk full");
+        },
+      },
+      undefined,
+      "my-chained-recipe", // the fix: recipeName threaded through
+    );
+
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        chainedDeps.executeTool("file.write", {
+          path: path.join(TMP, "x.md"),
+          content: "x",
+        }),
+      ).rejects.toThrow(/disk full/);
+    }
+    // 6th call: breaker should be open now — short-circuited without
+    // invoking the real tool again.
+    await expect(
+      chainedDeps.executeTool("file.write", {
+        path: path.join(TMP, "x.md"),
+        content: "x",
+      }),
+    ).rejects.toThrow(/circuit_open/);
+    expect(realCalls).toBe(5);
+  });
+
+  it("without recipeName (pre-fix behavior), the breaker never trips no matter how many failures", async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, true);
+    let realCalls = 0;
+    const chainedDeps = buildChainedDeps({
+      workdir: TMP,
+      testMode: true,
+      writeFile: () => {
+        realCalls++;
+        throw new Error("disk full");
+      },
+    }); // no recipeName argument at all
+
+    for (let i = 0; i < 8; i++) {
+      await expect(
+        chainedDeps.executeTool("file.write", {
+          path: path.join(TMP, "x.md"),
+          content: "x",
+        }),
+      ).rejects.toThrow(/disk full/);
+    }
+    // Confirms the ABSENCE of recipeName really does disable the breaker
+    // (documents the tradeoff — this is expected, not a bug, when a
+    // caller genuinely has no recipe name available).
+    expect(realCalls).toBe(8);
   });
 });

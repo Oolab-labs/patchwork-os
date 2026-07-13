@@ -3404,13 +3404,40 @@ if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
     process.exit(0);
   }
   const wantJson = args.includes("--json");
-  const recipeName = args.find((a) => !a.startsWith("--"));
-  const attemptIdx = args.indexOf("--attempt");
-  const attemptId = attemptIdx >= 0 ? args[attemptIdx + 1] : undefined;
-  const ledgerDirIdx = args.indexOf("--ledger-dir");
-  const ledgerDir = ledgerDirIdx >= 0 ? args[ledgerDirIdx + 1] : undefined;
+  // Parse --attempt/--ledger-dir by consuming their (flag, value) pairs
+  // OUT of the arg list first, then treat whatever's left over as the
+  // positional recipe name. Previously `args.find(a => !a.startsWith("--"))`
+  // picked the FIRST non-flag token — if --attempt/--ledger-dir happened to
+  // be given before the positional name (a normal CLI convention), that
+  // "first non-flag token" was a flag's VALUE (e.g. the attempt id), not
+  // the recipe name, silently producing a wrong scope key and a confusing
+  // "nothing to roll back" instead of a clear usage error.
+  let attemptId: string | undefined;
+  let ledgerDir: string | undefined;
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--attempt") {
+      attemptId = args[++i];
+      continue;
+    }
+    if (arg === "--ledger-dir") {
+      ledgerDir = args[++i];
+      continue;
+    }
+    if (arg === "--json" || arg === "--help" || arg === "-h") continue;
+    if (arg !== undefined) positional.push(arg);
+  }
+  const recipeName = positional[0];
 
-  if (!recipeName || !attemptId || !ledgerDir) {
+  if (
+    !recipeName ||
+    positional.length > 1 ||
+    !attemptId ||
+    attemptId.startsWith("--") ||
+    !ledgerDir ||
+    ledgerDir.startsWith("--")
+  ) {
     process.stderr.write(usage);
     process.exit(1);
   }

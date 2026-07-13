@@ -94,15 +94,21 @@ describe("FileRollbackLog.capturePreImage", () => {
     ]);
   });
 
-  it("records absent (not the symlink target's content) for a symlinked path", () => {
+  it("marks a symlinked path uncertain (not the symlink target's content, and not 'absent' either)", () => {
     const real = path.join(workDir, "real.md");
     writeFileSync(real, "secret");
     const link = path.join(workDir, "link.md");
     symlinkSync(real, link);
     const log = new FileRollbackLog({ dir: ledgerDir, scopeKey: "s1" });
     log.capturePreImage(link);
+    // NOT recorded as hadContent:false/"absent" — the subsequent write
+    // goes THROUGH the symlink and mutates the real target, so treating
+    // this as "didn't exist" would make rollback delete the symlink and
+    // report false success while the target's real prior content (never
+    // captured) is permanently lost. `uncertain: true` makes rollback
+    // fail loudly for this path instead of guessing.
     expect(log.rows()).toEqual([
-      { path: link, hadContent: false, content: null },
+      { path: link, hadContent: false, content: null, uncertain: true },
     ]);
   });
 });
@@ -177,25 +183,37 @@ describe("rollbackFileWrites", () => {
     expect(result).toEqual({ restored: [], deleted: [], failed: [] });
   });
 
-  it("records a per-file failure instead of throwing when a restore fails", () => {
-    // A path whose parent directory is itself a plain FILE (not a
-    // directory) makes mkdirSync(dirname, {recursive:true}) throw ENOTDIR
-    // — a realistic way a restore can fail without touching permissions.
-    const blocker = path.join(workDir, "blocker");
-    writeFileSync(blocker, "im-a-file-not-a-dir");
-    const target = path.join(blocker, "nested", "note.md");
-    const log = new FileRollbackLog({ dir: ledgerDir, scopeKey: "s1" });
-    // Can't literally writeFileSync to `target` (blocker isn't a dir), but
-    // capturePreImage only needs to try-and-fail-to-lstat it, which is
-    // exactly what an ENOENT-style "did not exist" capture looks like.
-    log.capturePreImage(target);
+  // Windows note: lstatSync on a path through a non-directory parent
+  // reports ENOENT there (no distinct ENOTDIR the way POSIX has), so this
+  // specific scenario can't reliably exercise the "non-ENOENT error" branch
+  // cross-platform. POSIX-only; the ENOENT branch itself (hadContent:false,
+  // no `uncertain`) is exercised on all platforms by the "records
+  // hadContent=false for a file that did not exist" test above.
+  it.skipIf(process.platform === "win32")(
+    "marks capture uncertain (not 'absent') when lstat fails with something other than ENOENT",
+    () => {
+      // A path whose parent directory is itself a plain FILE (not a
+      // directory) makes lstatSync throw ENOTDIR on POSIX — capture must
+      // NOT conflate that with "genuinely didn't exist" (the file may well
+      // exist; we just couldn't stat it for an unrelated reason), so this
+      // is recorded `uncertain` and rollback reports it as failed rather
+      // than silently treating "couldn't check" as "safe to delete".
+      const blocker = path.join(workDir, "blocker");
+      writeFileSync(blocker, "im-a-file-not-a-dir");
+      const target = path.join(blocker, "nested", "note.md");
+      const log = new FileRollbackLog({ dir: ledgerDir, scopeKey: "s1" });
+      log.capturePreImage(target);
+      expect(log.rows()).toEqual([
+        { path: target, hadContent: false, content: null, uncertain: true },
+      ]);
 
-    const result = rollbackFileWrites({ dir: ledgerDir, scopeKey: "s1" });
-    // hadContent=false → rollback tries existsSync/unlinkSync, which is a
-    // clean no-op here (nothing to delete under a non-directory parent).
-    expect(result.deleted).toEqual([target]);
-    expect(result.failed).toEqual([]);
-  });
+      const result = rollbackFileWrites({ dir: ledgerDir, scopeKey: "s1" });
+      expect(result.deleted).toEqual([]);
+      expect(result.restored).toEqual([]);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0]?.path).toBe(target);
+    },
+  );
 
   it("records a per-file failure when restoring content whose parent dir got replaced by a file", () => {
     // Capture happens while `nested` is a real directory (hadContent=true

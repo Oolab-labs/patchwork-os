@@ -487,6 +487,26 @@ describe("buildFlatMockedOutputs", () => {
     const { outputs } = buildFlatMockedOutputs(run);
     expect([...outputs.keys()]).toEqual(["actual"]);
   });
+
+  it("REGRESSION: excludes positional (auto-generated step_N) ids — not stable across a recipe edit", () => {
+    const run: RecipeRun = {
+      seq: 1,
+      taskId: "t",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+      stepResults: [
+        { id: "step_0", status: "ok", durationMs: 5, output: "positional" },
+        { id: "named-step", status: "ok", durationMs: 5, output: "stable" },
+      ],
+    };
+    const { outputs, unmocked } = buildFlatMockedOutputs(run);
+    expect([...outputs.keys()]).toEqual(["named-step"]);
+    expect(unmocked).toEqual(["step_0"]);
+  });
 });
 
 // ── replayFlatMockedRun — the flat entrypoint, previously nonexistent
@@ -568,5 +588,32 @@ describe("replayFlatMockedRun", () => {
       deps: replayDeps,
     });
     expect(result.unmockedSteps).toEqual(["s1"]);
+  });
+
+  it("REGRESSION: never mocks a positional (auto-generated) step id — always falls through to real execution", async () => {
+    // Bug found in session-review: `step.into ?? "step_${n}"` fallback ids
+    // are purely positional ("the 4th step THIS run executed"), not
+    // stable across a recipe edit that adds/removes/reorders steps before
+    // that point. Silently matching captured output to a positional id
+    // during replay risks attributing it to a DIFFERENT step after an
+    // edit. buildFlatMockedOutputs must treat `step_N`-shaped ids as
+    // always-unmocked, regardless of whether output was captured.
+    const replayDeps = await deps();
+    const result = await replayFlatMockedRun({
+      originalRun: originalRun({
+        // No explicit `into:` on the flatRecipe()'s step, so its captured
+        // id is the positional fallback "step_0".
+        stepResults: [
+          { id: "step_0", status: "ok", durationMs: 5, output: "captured" },
+        ],
+      }),
+      recipe: {
+        name: "daily-flat",
+        trigger: { type: "manual" },
+        steps: [{ tool: "file.write", path: "note.md", content: "x" }],
+      } as unknown as YamlRecipe,
+      deps: replayDeps,
+    });
+    expect(result.unmockedSteps).toEqual(["step_0"]);
   });
 });

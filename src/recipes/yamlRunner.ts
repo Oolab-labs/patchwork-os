@@ -2399,9 +2399,20 @@ export async function runYamlRecipe(
           step.tool === "github.create_issue"
         ) {
           try {
+            // github.create_issue's actual output shape is
+            // {ok, number, url, title, error} (see its outputSchema in
+            // src/recipes/tools/github.ts) — NOT `issueNumber`, which was
+            // always undefined here. shadowObserver.ts only reads `.url`
+            // today, but capture the full real shape anyway so replay
+            // doesn't lose `number`/`title`/`ok` for no reason.
             const parsed = JSON.parse(result) as Record<string, unknown>;
             if (typeof parsed.url === "string") {
-              stepOutput = { url: parsed.url, issueNumber: parsed.issueNumber };
+              stepOutput = {
+                ok: parsed.ok,
+                number: parsed.number,
+                url: parsed.url,
+                title: parsed.title,
+              };
             }
           } catch {
             /* non-JSON or missing url — falls through to general capture */
@@ -2414,12 +2425,24 @@ export async function runYamlRecipe(
         // recipes; previously ONLY github.create_issue steps captured
         // anything, so flat recipes had no flight-recorder / replay
         // capability at all (chained recipes only — see replayRun.ts).
+        //
+        // Parse first (when it looks like JSON) before capturing —
+        // captureForRunlog's secret-key redaction walks OBJECT properties
+        // by key; passed a raw string it's a structural no-op, so a tool
+        // whose JSON output legitimately contains a `token`/`password`
+        // field would otherwise be written to runs.jsonl unredacted.
         if (
           stepOutput === undefined &&
           finalStatus === "ok" &&
           result !== null
         ) {
-          stepOutput = captureForRunlog(result);
+          let toCapture: unknown = result;
+          try {
+            toCapture = JSON.parse(result);
+          } catch {
+            /* not JSON — capture the raw string as-is */
+          }
+          stepOutput = captureForRunlog(toCapture);
         }
         stepResults.push({
           id: stepId,
@@ -2750,15 +2773,21 @@ export async function executeStep(
       params[key] = deepRender(value, ctx);
     }
 
-    // Deterministic per-worker tool-allowlist policy check. The bridge's
-    // CLI/HTTP dispatch chokepoint (bridge.ts / streamableHttp.ts) already
-    // runs `checkPolicy` for every tool call, but has no workerId to check
-    // against — recipe/worker context only exists here, inside the runner.
-    // Runs only when `deps.workerId` is set (a worker owns this recipe) and
-    // FLAG_ENFORCE_POLICY is on; a recipe with no owning worker is
-    // unaffected. Deny is fail-closed on a malformed policy file, matching
-    // the bridge-level check.
-    if (deps.workerId && isEnabled(FLAG_ENFORCE_POLICY)) {
+    // Deterministic policy check. Recipe/worker tool calls dispatch
+    // in-process via toolRegistry.executeTool and NEVER pass through
+    // McpTransport, so the bridge's CLI/HTTP chokepoint (bridge.ts /
+    // streamableHttp.ts) never sees them — this is the ONLY policy
+    // enforcement point for a flat recipe's tool steps. Runs whenever
+    // FLAG_ENFORCE_POLICY is on, independent of whether a worker owns the
+    // recipe: `checkPolicy`'s base rules (forbiddenPaths /
+    // allowedNetworkHosts / allowedCommands) apply to every tool call
+    // regardless of workerId; only its 4th check (per-worker allowedTools)
+    // actually needs one, and that check itself no-ops when workerId is
+    // undefined. Gating the whole call on `deps.workerId` here previously
+    // meant a recipe with no owning worker manifest — the common case —
+    // got ZERO policy enforcement even with a populated
+    // patchwork.policy.yml. Deny is fail-closed on a malformed policy file.
+    if (isEnabled(FLAG_ENFORCE_POLICY)) {
       const loaded = loadPolicyFile(deps.workdir);
       if (!loaded.ok) {
         const err = new Error(`policy_denied: ${loaded.error}`);
@@ -2768,7 +2797,7 @@ export async function executeStep(
       const verdict = checkPolicy(loaded.policy, {
         toolName: toolId,
         params,
-        workerId: deps.workerId,
+        ...(deps.workerId !== undefined && { workerId: deps.workerId }),
       });
       if (!verdict.allowed) {
         const err = new Error(`policy_denied: ${verdict.reason}`);
@@ -3663,8 +3692,21 @@ export function buildChainedDeps(
       disallowedTools?: string[];
     },
   ) => Promise<string | AgentResult>,
+  /**
+   * The chained recipe's name. Without this, `resolveStepDeps` gets no
+   * scope, so `StepDeps.recipeName` stays undefined and every tool call
+   * inside a chained (or nested) recipe silently skips the circuit
+   * breaker check in `executeStep` — `deps.recipeName && isEnabled(...)`
+   * is false with no recipeName, so the breaker never trips no matter how
+   * many times the tool fails. Pass the recipe's `.name` whenever it's
+   * known at the call site.
+   */
+  recipeName?: string,
 ): import("./chainedRunner.js").ExecutionDeps {
-  const stepDeps = resolveStepDeps(runnerDeps);
+  const stepDeps = resolveStepDeps(
+    runnerDeps,
+    recipeName !== undefined ? { recipeName } : undefined,
+  );
 
   function normalizeNestedRecipeLookupName(ref: string): string {
     return ref.trim().replace(/\.ya?ml$/i, "");

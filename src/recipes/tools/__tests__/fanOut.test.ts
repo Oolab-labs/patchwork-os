@@ -226,3 +226,78 @@ describe("fan_out — error handling", () => {
     expect(d.readFile?.(outPath)).toBe("abc");
   });
 });
+
+describe("fan_out — circuit breaker (REGRESSION, FLAG_CIRCUIT_BREAKER)", () => {
+  // Session-review bug: fan_out calls toolRegistry.executeTool DIRECTLY
+  // for its inner `do` tool, bypassing executeStep entirely — which is
+  // where the circuit-breaker check/record actually lives. A fan_out
+  // iterating a broken tool got zero protection, hammering it once per
+  // item forever regardless of the breaker flag.
+  afterEach(async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, false);
+    const { resetCircuitBreakerForTests } = await import(
+      "../../circuitBreaker.js"
+    );
+    resetCircuitBreakerForTests();
+  });
+
+  it("short-circuits the inner tool after 5 consecutive iteration failures", async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, true);
+    let realCalls = 0;
+    const recipe: YamlRecipe = {
+      name: "fan-out-breaker",
+      trigger: { type: "manual" },
+      steps: [
+        {
+          tool: "fan_out",
+          items: '["a","b","c","d","e","f","g"]',
+          as: "item",
+          on_iter_error: "continue",
+          do: {
+            tool: "file.write",
+            path: path.join(tmpDir, "{{item}}.txt"),
+            content: "x",
+          },
+          into: "results",
+        },
+      ],
+    } as unknown as YamlRecipe;
+    const d = deps();
+    const result = await runYamlRecipe(recipe, {
+      ...d,
+      testMode: true,
+      writeFile: () => {
+        realCalls++;
+        throw new Error("disk full");
+      },
+    });
+    expect(result.stepResults?.[0]?.status).toBe("ok"); // on_iter_error: continue
+    const rawAggregate =
+      result.stepResults?.[0]?.output ?? result.outputs[0] ?? "[]";
+    const aggregate = JSON.parse(
+      typeof rawAggregate === "string"
+        ? rawAggregate
+        : JSON.stringify(rawAggregate),
+    ) as Array<{ ok: boolean; error?: string }>;
+    // 7 items, breaker trips after the 5th failure — items 6 and 7 must be
+    // short-circuited (circuit_open) WITHOUT calling the real tool again.
+    expect(realCalls).toBe(5);
+    expect(aggregate).toHaveLength(7);
+    expect(
+      aggregate
+        .slice(0, 5)
+        .every((r) => !r.ok && r.error?.includes("disk full")),
+    ).toBe(true);
+    expect(
+      aggregate
+        .slice(5)
+        .every((r) => !r.ok && r.error?.includes("circuit_open")),
+    ).toBe(true);
+  });
+});
