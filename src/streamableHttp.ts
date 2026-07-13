@@ -864,19 +864,16 @@ export class StreamableHttpHandler {
     }
     if (scope) transport.setSessionScope(scope);
     if (denyTools.size > 0) transport.setDenyTools(denyTools);
-    if (this.config.approvalGate !== "off") {
+    if (this.config.approvalGate !== "off" || isEnabled(FLAG_ENFORCE_POLICY)) {
       transport.setApprovalGate(
         async ({ toolName, params, sessionId, onPending }) => {
           // Deterministic policy check — see the matching block in
           // bridge.ts's WS approval-gate wiring for the full rationale.
-          // KNOWN LIMITATION shared with the WS path: this whole callback
-          // (and therefore the policy check) is only registered when
-          // approvalGate !== "off". A policy-forbidden action is NOT
-          // currently blocked on a bridge started with approvalGate=off,
-          // even though policy and trust are meant to be independent
-          // axes. Fixing that means restructuring gate registration to
-          // run unconditionally, which is a bigger change than this pass
-          // — tracked as a follow-up, not silently accepted as correct.
+          // Runs even when approvalGate is "off": policy and trust are
+          // independent axes, and evaluateInProcessGate below already
+          // bypasses unconditionally for gate "off" once the policy check
+          // clears, so installing this handler unconditionally costs
+          // nothing on the trust-gate side while closing the policy gap.
           if (isEnabled(FLAG_ENFORCE_POLICY)) {
             const loaded = loadPolicyFile(this.config.workspace);
             if (!loaded.ok) {
