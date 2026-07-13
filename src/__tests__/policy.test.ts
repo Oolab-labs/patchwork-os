@@ -208,7 +208,7 @@ describe("checkPolicy", () => {
     it("does not restrict non-network tools even with a host allowlist configured", () => {
       const result = checkPolicy(policy, {
         toolName: "file.write",
-        params: { path: "/tmp/x.txt" },
+        params: { path: path.join(os.tmpdir(), "x.txt") },
       });
       expect(result.allowed).toBe(true);
     });
