@@ -4750,3 +4750,126 @@ describe("per-worker allowedTools policy enforcement (FLAG_ENFORCE_POLICY)", () 
     expect(written[path.join(TMP, "flag-off.md")]).toBe("x");
   });
 });
+
+describe("circuit breaker enforcement (FLAG_CIRCUIT_BREAKER)", () => {
+  // The breaker is a process-lifetime singleton (see circuitBreaker.ts), so
+  // it persists ACROSS separate runYamlRecipe calls within a test — matching
+  // production, where the same recipe is re-triggered by cron/webhook many
+  // times over the bridge's lifetime. Reset it after every test so failures
+  // don't leak between cases.
+  afterEach(async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, false);
+    const { resetCircuitBreakerForTests } = await import(
+      "../circuitBreaker.js"
+    );
+    resetCircuitBreakerForTests();
+  });
+
+  it("short-circuits after 5 consecutive failures, before the tool runs a 6th time", async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, true);
+    let writeAttempts = 0;
+    const failingWriteFile = () => {
+      writeAttempts++;
+      throw new Error("disk full");
+    };
+    const recipe = makeRecipe({
+      name: "breaker-recipe",
+      steps: [
+        { tool: "file.write", path: path.join(TMP, "x.md"), content: "x" },
+      ],
+    });
+
+    for (let i = 0; i < 5; i++) {
+      const result = await runYamlRecipe(recipe, {
+        ...noop(),
+        writeFile: failingWriteFile,
+      });
+      expect(result.stepResults[0]?.status).toBe("error");
+      expect(result.stepResults[0]?.error).toMatch(/disk full/);
+    }
+    expect(writeAttempts).toBe(5);
+
+    // 6th trigger: the breaker is now open — the tool must NOT run again.
+    const sixth = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: failingWriteFile,
+    });
+    expect(sixth.stepResults[0]?.status).toBe("error");
+    expect(sixth.stepResults[0]?.error).toMatch(/circuit_open/);
+    expect(writeAttempts).toBe(5); // unchanged — short-circuited before the tool ran
+  });
+
+  it("a success in between resets the failure streak (breaker never trips)", async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, true);
+    let shouldFail = true;
+    let writeAttempts = 0;
+    const recipe = makeRecipe({
+      name: "breaker-reset-recipe",
+      steps: [
+        { tool: "file.write", path: path.join(TMP, "y.md"), content: "x" },
+      ],
+    });
+    const flakyWriteFile = () => {
+      writeAttempts++;
+      if (shouldFail) throw new Error("transient");
+    };
+
+    for (let i = 0; i < 4; i++) {
+      await runYamlRecipe(recipe, { ...noop(), writeFile: flakyWriteFile });
+    }
+    shouldFail = false;
+    const successRun = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: flakyWriteFile,
+    });
+    expect(successRun.stepResults[0]?.status).toBe("ok");
+
+    // Streak reset by the success above — 4 more failures should NOT trip
+    // a breaker that requires 5 CONSECUTIVE failures.
+    shouldFail = true;
+    for (let i = 0; i < 4; i++) {
+      const result = await runYamlRecipe(recipe, {
+        ...noop(),
+        writeFile: flakyWriteFile,
+      });
+      expect(result.stepResults[0]?.error).toMatch(/transient/);
+      expect(result.stepResults[0]?.error).not.toMatch(/circuit_open/);
+    }
+    // 4 failures + 1 success + 4 failures = 9 real tool invocations — the
+    // breaker never short-circuited any of them.
+    expect(writeAttempts).toBe(9);
+  });
+
+  it("does NOT trip when the flag is OFF (default), even after many failures", async () => {
+    let writeAttempts = 0;
+    const failingWriteFile = () => {
+      writeAttempts++;
+      throw new Error("disk full");
+    };
+    const recipe = makeRecipe({
+      name: "breaker-flag-off-recipe",
+      steps: [
+        { tool: "file.write", path: path.join(TMP, "z.md"), content: "x" },
+      ],
+    });
+
+    for (let i = 0; i < 8; i++) {
+      const result = await runYamlRecipe(recipe, {
+        ...noop(),
+        writeFile: failingWriteFile,
+      });
+      expect(result.stepResults[0]?.error).toMatch(/disk full/);
+      expect(result.stepResults[0]?.error).not.toMatch(/circuit_open/);
+    }
+    expect(writeAttempts).toBe(8); // every call actually ran the tool
+  });
+});

@@ -241,7 +241,7 @@ function assertSafeLedgerDir(dir: string): void {
  * JSON primitives/arrays, and objects without `ok === false` (e.g.
  * `{ok:true}`) are all treated as genuine successes and cache normally.
  */
-function isReturnValueFailure(result: string | null): boolean {
+export function isReturnValueFailure(result: string | null): boolean {
   if (result === null) return false;
   let parsed: unknown;
   try {

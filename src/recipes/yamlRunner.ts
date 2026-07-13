@@ -40,6 +40,7 @@ import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
 import {
+  FLAG_CIRCUIT_BREAKER,
   FLAG_ENFORCE_ALLOWWRITES,
   FLAG_ENFORCE_POLICY,
   isEnabled,
@@ -66,10 +67,12 @@ import {
   type AgentResult,
   type AgentUsage,
 } from "./agentExecutor.js";
+import { deriveBreakerKey, getCircuitBreaker } from "./circuitBreaker.js";
 import { categoriseHaltReason, type HaltCategory } from "./haltCategory.js";
 import {
   assertValidManualRunId,
   deriveScopeKey,
+  isReturnValueFailure,
   WriteEffectLedger,
 } from "./idempotencyKey.js";
 import {
@@ -818,6 +821,15 @@ export type StepDeps = Required<
   writeEffectLedger?: WriteEffectLedger;
   /** See `RunnerDeps.workerId`. */
   workerId?: string;
+  /**
+   * The owning recipe's name, sourced from `resolveStepDeps`'s `scope`
+   * param (set by `runYamlRecipe`). Feeds the circuit breaker's
+   * `(recipeName, toolId)` key — see `circuitBreaker.ts`. Undefined for
+   * callers that build StepDeps without a scope (e.g. `buildChainedDeps`),
+   * in which case the breaker check in `executeStep` is a no-op for that
+   * call path.
+   */
+  recipeName?: string;
 };
 
 // Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
@@ -2705,6 +2717,50 @@ export async function executeStep(
       return deps.mockConnectors[toolId].invoke("execute", params);
     }
 
+    // Circuit breaker — short-circuits a recipe/tool pair that has failed
+    // `failureThreshold` times in a row, instead of letting a broken
+    // dependency (dead API, expired token) get hammered on every cron/
+    // webhook trigger forever. See circuitBreaker.ts's module doc. Runs
+    // only when `deps.recipeName` is known (unset for callers that build
+    // StepDeps without a scope, e.g. buildChainedDeps) and
+    // FLAG_CIRCUIT_BREAKER is on; mock/fixture-recording paths above are
+    // deliberately exempt (tests and recording runs shouldn't trip on a
+    // stubbed failure).
+    const breakerKey =
+      deps.recipeName && isEnabled(FLAG_CIRCUIT_BREAKER)
+        ? deriveBreakerKey(deps.recipeName, toolId)
+        : null;
+    if (breakerKey) {
+      const breaker = getCircuitBreaker();
+      if (breaker.isOpen(breakerKey)) {
+        const err = new Error(
+          `circuit_open: "${toolId}" has failed repeatedly for recipe ` +
+            `"${deps.recipeName}" — short-circuiting until the cooldown elapses.`,
+        );
+        (err as Error & { code?: string }).code = "circuit_open";
+        throw err;
+      }
+    }
+
+    const runAndRecordBreaker = async (
+      fn: () => Promise<string | null>,
+    ): Promise<string | null> => {
+      if (!breakerKey) return fn();
+      const breaker = getCircuitBreaker();
+      try {
+        const result = await fn();
+        if (isReturnValueFailure(result)) {
+          breaker.recordFailure(breakerKey);
+        } else {
+          breaker.recordSuccess(breakerKey);
+        }
+        return result;
+      } catch (err) {
+        breaker.recordFailure(breakerKey);
+        throw err;
+      }
+    };
+
     if (
       tool &&
       deps.recordFixturesDir &&
@@ -2712,16 +2768,21 @@ export async function executeStep(
       tool.namespace !== "git" &&
       tool.namespace !== "diagnostics"
     ) {
-      return captureFixture(
-        path.join(deps.recordFixturesDir, `${tool.namespace}.json`),
-        tool.namespace,
-        toolId.split(".")[1] ?? toolId,
-        params,
-        async () => executeTool(toolId, { params, step, ctx, deps }),
+      const recordFixturesDir = deps.recordFixturesDir;
+      return runAndRecordBreaker(() =>
+        captureFixture(
+          path.join(recordFixturesDir, `${tool.namespace}.json`),
+          tool.namespace,
+          toolId.split(".")[1] ?? toolId,
+          params,
+          async () => executeTool(toolId, { params, step, ctx, deps }),
+        ),
       );
     }
 
-    return executeTool(toolId, { params, step, ctx, deps });
+    return runAndRecordBreaker(() =>
+      executeTool(toolId, { params, step, ctx, deps }),
+    );
   }
 
   // Unknown tool — skip, don't throw (forward compat)
@@ -3000,6 +3061,7 @@ function resolveStepDeps(
           })
         : new WriteEffectLedger(),
     workerId: deps.workerId,
+    recipeName: scope?.recipeName,
   };
 }
 

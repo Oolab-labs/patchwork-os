@@ -349,6 +349,18 @@ export const FLAG_ENFORCE_ALLOWWRITES = "recipe.enforce-allowwrites";
  */
 export const FLAG_ENFORCE_POLICY = "policy.enforce";
 
+/**
+ * Trip a per-(recipe, tool) circuit breaker after repeated CONSECUTIVE
+ * failures — see src/recipes/circuitBreaker.ts's module doc for the full
+ * rationale (the automation-hooks DSL has cooldown/dedup/retry primitives,
+ * but nothing stops a cron/webhook-triggered recipe from hammering a
+ * broken tool call forever). Default OFF: a recipe with a genuinely flaky
+ * (not broken) dependency would otherwise start getting its calls
+ * short-circuited without an explicit operator opt-in — worth turning on
+ * deliberately per deployment, same posture as FLAG_ENFORCE_ALLOWWRITES.
+ */
+export const FLAG_CIRCUIT_BREAKER = "recipe.circuit-breaker";
+
 // Register built-in flags
 registerFlag({
   id: KILL_SWITCH_WRITES,
@@ -408,6 +420,15 @@ registerFlag({
   id: FLAG_ENFORCE_POLICY,
   description:
     "Enforce patchwork.policy.yml — a deterministic, non-LLM permissions matrix checked before the trust/approval gate. Default off; see FLAG_ENFORCE_POLICY doc comment for why.",
+  defaultValue: false,
+  category: "safety",
+  requiresOptIn: true,
+});
+
+registerFlag({
+  id: FLAG_CIRCUIT_BREAKER,
+  description:
+    "Trip a per-(recipe, tool) circuit breaker after repeated consecutive failures, short-circuiting further calls until a cooldown elapses. Default off; see FLAG_CIRCUIT_BREAKER doc comment for why.",
   defaultValue: false,
   category: "safety",
   requiresOptIn: true,
