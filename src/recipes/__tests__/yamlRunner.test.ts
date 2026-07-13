@@ -5050,13 +5050,13 @@ describe("flight recorder — per-step output capture", () => {
       ...noop(),
       mockConnectors: {
         "github.create_issue": {
-          invoke: async () =>
+          invoke: async <TOutput = unknown>() =>
             JSON.stringify({
               url: "https://github.com/acme/widgets/issues/1",
               issueNumber: 1,
               title: "bug",
               body: "irrelevant, must not leak into the captured output",
-            }),
+            }) as TOutput,
         },
       },
     });
