@@ -370,3 +370,51 @@ describe("RecipeOrchestration", () => {
     expect(typeof scheduler.start).toBe("function");
   });
 });
+
+describe("resolveWorkerIdForRecipe", () => {
+  let workersDir: string;
+
+  beforeEach(() => {
+    workersDir = mkdtempSync(join(tmpdir(), "resolve-worker-id-"));
+  });
+
+  function writeWorker(fileBase: string, id: string, recipe: string): void {
+    writeFileSync(
+      join(workersDir, `${fileBase}.worker.yaml`),
+      `id: ${id}\nname: ${id}\nrecipe: ${recipe}\n`,
+    );
+  }
+
+  it("resolves the sole worker whose recipe field matches", async () => {
+    writeWorker("a", "triage-bot", "triage-failing-tests");
+    const { resolveWorkerIdForRecipe } = RecipeOrchestrationModule;
+    const id = await resolveWorkerIdForRecipe(
+      "triage-failing-tests",
+      workersDir,
+    );
+    expect(id).toBe("triage-bot");
+  });
+
+  it("returns undefined when no worker owns the recipe", async () => {
+    writeWorker("a", "triage-bot", "some-other-recipe");
+    const { resolveWorkerIdForRecipe } = RecipeOrchestrationModule;
+    const id = await resolveWorkerIdForRecipe(
+      "triage-failing-tests",
+      workersDir,
+    );
+    expect(id).toBeUndefined();
+  });
+
+  it("REGRESSION: returns undefined (never guesses) when TWO workers declare the same recipe", async () => {
+    // Bug found in session-review: Array.find picked whichever worker
+    // sorted first (loadWorkersFromDir sorts by id) with no validation —
+    // silently applying the WRONG worker's patchwork.policy.yml
+    // allowedTools list. Ambiguous ownership must resolve to undefined,
+    // not a guess.
+    writeWorker("a", "worker-alpha", "shared-recipe");
+    writeWorker("b", "worker-beta", "shared-recipe");
+    const { resolveWorkerIdForRecipe } = RecipeOrchestrationModule;
+    const id = await resolveWorkerIdForRecipe("shared-recipe", workersDir);
+    expect(id).toBeUndefined();
+  });
+});

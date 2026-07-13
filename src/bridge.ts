@@ -377,100 +377,87 @@ export class Bridge {
       transport.setActivityLog(this.activityLog);
       transport.setToolRateLimit(this.config.toolRateLimit);
       if (this.config.lazyTools) transport.setLazyTools(true);
-      // The policy check must run even when the trust/approval gate is off —
-      // policy and trust are separate axes, and a deployment that disables
-      // the gate (or hasn't opted into it yet) should not thereby also
-      // silently disable patchwork.policy.yml enforcement. So the gate
-      // handler is installed whenever either the approval gate or policy
-      // enforcement is active; the two concerns are independently checked
-      // inside the handler.
-      if (
-        this.server.approvalGate !== "off" ||
-        isEnabled(FLAG_ENFORCE_POLICY)
-      ) {
-        if (this.server.approvalGate !== "off") {
-          this.logger.info(
-            `[patchwork] approval gate active: ${this.server.approvalGate} tier(s) require dashboard approval`,
+      if (this.server.approvalGate !== "off") {
+        this.logger.info(
+          `[patchwork] approval gate active: ${this.server.approvalGate} tier(s) require dashboard approval`,
+        );
+        // The approval gate only sees traffic if Claude Code's PreToolUse
+        // hook is registered to POST into /approvals. If it isn't, every
+        // CC tool call bypasses the bridge entirely — the queue stays
+        // empty, no `approval_decision` rows accumulate, and the entire
+        // personalSignals catalog has no input data. Silent foot-gun
+        // that wasted hours of investigation; surface it loudly.
+        try {
+          const ccSettingsPath = path.join(
+            process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+            "settings.json",
           );
-          // The approval gate only sees traffic if Claude Code's PreToolUse
-          // hook is registered to POST into /approvals. If it isn't, every
-          // CC tool call bypasses the bridge entirely — the queue stays
-          // empty, no `approval_decision` rows accumulate, and the entire
-          // personalSignals catalog has no input data. Silent foot-gun
-          // that wasted hours of investigation; surface it loudly.
-          try {
-            const ccSettingsPath = path.join(
-              process.env.CLAUDE_CONFIG_DIR ??
-                path.join(os.homedir(), ".claude"),
-              "settings.json",
+          if (!isPreToolUseHookRegistered(ccSettingsPath)) {
+            this.logger.warn?.(
+              `[patchwork] WARNING: approval gate is on but no PreToolUse hook found in ${ccSettingsPath}. ` +
+                `Claude Code will bypass the approval queue. Run 'patchwork-init' to register the hook.`,
             );
-            if (!isPreToolUseHookRegistered(ccSettingsPath)) {
-              this.logger.warn?.(
-                `[patchwork] WARNING: approval gate is on but no PreToolUse hook found in ${ccSettingsPath}. ` +
-                  `Claude Code will bypass the approval queue. Run 'patchwork-init' to register the hook.`,
-              );
-            }
-          } catch {
-            // Best-effort warning — never block startup on a hook check failure.
           }
+        } catch {
+          // Best-effort warning — never block startup on a hook check failure.
         }
-        transport.setApprovalGate(
-          async ({ toolName, params, sessionId, onPending }) => {
-            // Deterministic policy check — runs BEFORE the trust/approval
-            // gate and is checked independently of it. A policy violation
-            // is refused outright, even for a call the gate would have
-            // bypassed entirely (e.g. a reversible read of a forbidden
-            // path) — trust level and policy are separate axes; no amount
-            // of earned trust unlocks a policy-forbidden action. Gated
-            // behind FLAG_ENFORCE_POLICY (default off) — see its doc
-            // comment in featureFlags.ts.
-            if (isEnabled(FLAG_ENFORCE_POLICY)) {
-              const loaded = loadPolicyFile(this.config.workspace);
-              if (!loaded.ok) {
-                // Fail-closed: a malformed patchwork.policy.yml must never
-                // be silently equivalent to "no policy configured".
-                this.logger.warn?.(`[policy] ${loaded.error}`);
-                return "policy_denied";
-              }
-              const verdict = checkPolicy(loaded.policy, { toolName, params });
-              if (!verdict.allowed) {
-                this.logger.warn?.(
-                  `[policy] denied "${toolName}": ${verdict.reason}`,
-                );
-                return "policy_denied";
-              }
+      }
+      transport.setApprovalGate(
+        async ({ toolName, params, sessionId, onPending }) => {
+          // Deterministic policy check — runs BEFORE the trust/approval
+          // gate and is checked independently of it. A policy violation
+          // is refused outright, even for a call the gate would have
+          // bypassed entirely (e.g. a reversible read of a forbidden
+          // path) — trust level and policy are separate axes; no amount
+          // of earned trust unlocks a policy-forbidden action. Gated
+          // behind FLAG_ENFORCE_POLICY (default off) — see its doc
+          // comment in featureFlags.ts.
+          if (isEnabled(FLAG_ENFORCE_POLICY)) {
+            const loaded = loadPolicyFile(this.config.workspace);
+            if (!loaded.ok) {
+              // Fail-closed: a malformed patchwork.policy.yml must never
+              // be silently equivalent to "no policy configured".
+              this.logger.warn?.(`[policy] ${loaded.error}`);
+              return "policy_denied";
             }
-            const gate = evaluateInProcessGate({
+            const verdict = checkPolicy(loaded.policy, { toolName, params });
+            if (!verdict.allowed) {
+              this.logger.warn?.(
+                `[policy] denied "${toolName}": ${verdict.reason}`,
+              );
+              return "policy_denied";
+            }
+          }
+          const gate = evaluateInProcessGate({
+            toolName,
+            params,
+            gate: this.server.approvalGate,
+            workspace: this.config.workspace,
+          });
+          if (gate.decision === "bypass") return "bypass";
+          const { promise, callId } = enqueueApprovalWithDispatch(
+            {
+              queue: getApprovalQueue(),
+              webhookUrl: this.server.approvalWebhookUrl,
+              pushServiceUrl: this.server.pushServiceUrl,
+              pushServiceToken: this.server.pushServiceToken,
+              pushServiceBaseUrl: this.server.pushServiceBaseUrl,
+              pushServiceAllowPrivate: this.server.pushServiceAllowPrivate,
+              ntfyTopic: this.server.ntfyTopic,
+              ntfyServer: this.server.ntfyServer,
+            },
+            {
               toolName,
               params,
-              gate: this.server.approvalGate,
-              workspace: this.config.workspace,
-            });
-            if (gate.decision === "bypass") return "bypass";
-            const { promise, callId } = enqueueApprovalWithDispatch(
-              {
-                queue: getApprovalQueue(),
-                webhookUrl: this.server.approvalWebhookUrl,
-                pushServiceUrl: this.server.pushServiceUrl,
-                pushServiceToken: this.server.pushServiceToken,
-                pushServiceBaseUrl: this.server.pushServiceBaseUrl,
-                pushServiceAllowPrivate: this.server.pushServiceAllowPrivate,
-                ntfyTopic: this.server.ntfyTopic,
-                ntfyServer: this.server.ntfyServer,
-              },
-              {
-                toolName,
-                params,
-                tier: gate.tier,
-                sessionId: sessionId ?? undefined,
-                riskSignals: gate.riskSignals,
-              },
-            );
-            onPending?.(callId);
-            return promise;
-          },
-        );
-      }
+              tier: gate.tier,
+              sessionId: sessionId ?? undefined,
+              riskSignals: gate.riskSignals,
+            },
+          );
+          onPending?.(callId);
+          return promise;
+        },
+      );
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
       );

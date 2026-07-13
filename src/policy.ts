@@ -166,16 +166,44 @@ function extractPathCandidates(params: Record<string, unknown>): string[] {
   return out;
 }
 
+/**
+ * Widen a relative-looking directory glob so it matches regardless of
+ * where in an absolute path it appears. Without this, a natural
+ * `forbiddenPaths` entry like `"secrets/**"` (written the way an operator
+ * would expect — "block anything under a secrets directory") never
+ * matches the absolute paths most resolved tool calls actually carry
+ * (e.g. `/home/user/project/secrets/keys.pem`) — `minimatch` anchors a
+ * non-`**`-prefixed, non-absolute pattern to the START of the string.
+ * Leaves already-absolute (`/...`) or already-`**`-anchored patterns
+ * untouched — those are deliberately anchored by the operator.
+ */
+function widenRelativeGlob(g: string): string | null {
+  if (g.startsWith("/") || g.startsWith("**/") || g.startsWith("**")) {
+    return null;
+  }
+  return `**/${g}`;
+}
+
 function matchesAnyGlob(candidate: string, globs: string[]): string | null {
   // Match both the raw (possibly relative) value and its normalized form,
   // since a forbidden-path glob author can't predict whether a tool
   // receives an absolute or workspace-relative path.
   const normalized = candidate.replace(/\\/g, "/");
+  const basename = path.basename(normalized);
+  // Security boundary: match case-INsensitively unconditionally, not just
+  // on case-insensitive filesystems. macOS and Windows (both explicitly
+  // supported — see CLAUDE.md) default to case-insensitive filesystems,
+  // where `SECRETS.env` and `secrets.env` resolve to the SAME file — a
+  // case-varied path must not bypass a forbiddenPaths block. On Linux
+  // (case-sensitive) this only widens matches (never narrows), which for
+  // a deny-list is the safe direction to err in.
+  const opts = { dot: true, nocase: true } as const;
   for (const g of globs) {
-    if (
-      minimatch(normalized, g, { dot: true }) ||
-      minimatch(path.basename(normalized), g, { dot: true })
-    ) {
+    if (minimatch(normalized, g, opts) || minimatch(basename, g, opts)) {
+      return g;
+    }
+    const widened = widenRelativeGlob(g);
+    if (widened && minimatch(normalized, widened, opts)) {
       return g;
     }
   }

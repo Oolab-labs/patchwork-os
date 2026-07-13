@@ -18,6 +18,9 @@
  * present only when `ok === false`.
  */
 
+import { FLAG_CIRCUIT_BREAKER, isEnabled } from "../../featureFlags.js";
+import { deriveBreakerKey, getCircuitBreaker } from "../circuitBreaker.js";
+import { isReturnValueFailure } from "../idempotencyKey.js";
 import { executeTool, hasTool, registerTool } from "../toolRegistry.js";
 import type { RunContext } from "../yamlRunner.js";
 
@@ -179,6 +182,29 @@ registerTool({
         innerParams[k] = deepRenderForIter(v, iterCtx, render);
       }
 
+      // Circuit breaker — fan_out calls executeTool DIRECTLY, bypassing
+      // executeStep's own breaker check/record (that logic lives in the
+      // step loop, not in executeTool). Without this, a fan_out whose
+      // inner tool is broken would hammer it once per item with zero
+      // protection, defeating the whole point of the breaker for exactly
+      // the workload (many repeated calls to the same tool) it matters
+      // most for. Mirrors executeStep's gating: only when deps.recipeName
+      // is known and FLAG_CIRCUIT_BREAKER is on.
+      const breakerKey =
+        deps.recipeName && isEnabled(FLAG_CIRCUIT_BREAKER)
+          ? deriveBreakerKey(deps.recipeName, innerToolId)
+          : null;
+      if (breakerKey && getCircuitBreaker().isOpen(breakerKey)) {
+        const msg = `circuit_open: "${innerToolId}" has failed repeatedly for recipe "${deps.recipeName}" — short-circuiting until the cooldown elapses.`;
+        aggregate.push({ index: i, ok: false, error: msg });
+        if (onIterError === "halt") {
+          throw new Error(
+            `fan_out: iter ${i} failed (on_iter_error=halt): ${msg}`,
+          );
+        }
+        continue;
+      }
+
       try {
         const output = await executeTool(innerToolId, {
           params: innerParams,
@@ -186,12 +212,20 @@ registerTool({
           ctx: iterCtx,
           deps,
         });
+        if (breakerKey) {
+          if (isReturnValueFailure(output)) {
+            getCircuitBreaker().recordFailure(breakerKey);
+          } else {
+            getCircuitBreaker().recordSuccess(breakerKey);
+          }
+        }
         aggregate.push({
           index: i,
           ok: true,
           ...(output != null && { output }),
         });
       } catch (err) {
+        if (breakerKey) getCircuitBreaker().recordFailure(breakerKey);
         const msg = err instanceof Error ? err.message : String(err);
         aggregate.push({ index: i, ok: false, error: msg });
         if (onIterError === "halt") {

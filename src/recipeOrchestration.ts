@@ -296,7 +296,15 @@ export async function resolveWorkerIdForRecipe(
     const { loadWorkersFromDir } = await import("./workers/workerLoader.js");
     const dir = workersDir ?? path.join(os.homedir(), ".patchwork", "workers");
     const workers = loadWorkersFromDir(dir);
-    return workers.find((w) => w.recipe === recipeName)?.id;
+    // Ambiguous → undefined, never guess. Two worker manifests declaring
+    // the same `recipe:` previously resolved to whichever sorted first
+    // (loadWorkersFromDir sorts by id) with no validation — silently
+    // applying the WRONG worker's patchwork.policy.yml allowedTools list
+    // (too permissive OR too restrictive) with no warning. Mirrors
+    // shadowObserver.ts's `workerForAction`: "attribute a tool call to
+    // its SOLE owning worker (ambiguous → skip)".
+    const owners = workers.filter((w) => w.recipe === recipeName);
+    return owners.length === 1 ? owners[0]?.id : undefined;
   } catch {
     return undefined;
   }
@@ -638,7 +646,17 @@ export class RecipeOrchestration {
           });
           return task.output ?? task.errorMessage ?? "";
         };
-        const runnerDeps = { workdir: this.deps.workdir, claudeCodeFn };
+        // Resolve the owning worker (if any) so replayed steps that fall
+        // through to real execution still get the per-worker allowedTools
+        // policy check in executeStep — a replay that skipped this would
+        // let a restricted worker's recipe call tools outside its
+        // allowedTools list during replay even though a live run couldn't.
+        const workerId = await resolveWorkerIdForRecipe(recipeName);
+        const runnerDeps = {
+          workdir: this.deps.workdir,
+          claudeCodeFn,
+          ...(workerId && { workerId }),
+        };
 
         // Flat (manual/cron/webhook) recipes: runYamlRecipe + per-step
         // output capture (added alongside replayFlatMockedRun) make these
@@ -1369,7 +1387,11 @@ export class RecipeOrchestration {
             recipe,
             {
               ...runnerDeps,
-              chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
+              chainedDeps: buildChainedDeps(
+                runnerDeps,
+                claudeCodeFn,
+                recipe.name,
+              ),
               chainedOptions,
             },
             seedContext,

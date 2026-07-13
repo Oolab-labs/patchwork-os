@@ -4724,6 +4724,34 @@ describe("per-worker allowedTools policy enforcement (FLAG_ENFORCE_POLICY)", () 
     expect(written[path.join(TMP, "no-worker.md")]).toBe("x");
   });
 
+  it("REGRESSION: base defaults (forbiddenPaths) ARE enforced for a recipe with NO owning worker", async () => {
+    // Bug found in session-review: the checkPolicy call in executeStep was
+    // gated on `deps.workerId && isEnabled(FLAG_ENFORCE_POLICY)`, so ANY
+    // recipe without an owning worker manifest — the common case for
+    // ad-hoc cron/webhook/file_watch recipes — got ZERO policy enforcement
+    // at all, including the universal forbiddenPaths/allowedNetworkHosts/
+    // allowedCommands defaults that have nothing to do with workerId.
+    const { setFlag, FLAG_ENFORCE_POLICY } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_ENFORCE_POLICY, true);
+    const forbidden = path.join(TMP, "secrets", "creds.md");
+    const workdir = writePolicy(
+      `version: 1\ndefaults:\n  forbiddenPaths: ["${forbidden.replace(/\\/g, "/")}"]\n`,
+    );
+    const recipe = makeRecipe({
+      steps: [{ tool: "file.write", path: forbidden, content: "x" }],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      workdir,
+      // no workerId — this is exactly the case that was unprotected.
+    });
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.error).toMatch(/policy_denied/);
+    expect(result.stepResults[0]?.error).toMatch(/forbidden pattern/);
+  });
+
   it("does NOT restrict a worker-owned recipe when the flag is OFF (default)", async () => {
     const written: Record<string, string> = {};
     const workdir = writePolicy(
@@ -4997,10 +5025,11 @@ describe("flight recorder — per-step output capture", () => {
     const result = await runYamlRecipe(recipe, noop());
     expect(result.stepResults[0]?.status).toBe("ok");
     expect(result.stepResults[0]?.output).toBeDefined();
-    // file.write returns JSON.stringify({path, bytesWritten}) — the raw
-    // string result, captured via captureForRunlog (redaction + cap, no
-    // reshaping for a plain string under the size cap).
-    expect(result.stepResults[0]?.output).toContain("bytesWritten");
+    // file.write returns JSON.stringify({path, bytesWritten}) — parsed
+    // before capture (so captureForRunlog's key-based secret redaction
+    // can actually see the object's keys instead of a no-op on a raw
+    // string) and stored as the parsed object.
+    expect(result.stepResults[0]?.output).toHaveProperty("bytesWritten");
   });
 
   it("does not capture output for a skipped step", async () => {
@@ -5035,7 +5064,7 @@ describe("flight recorder — per-step output capture", () => {
     expect(result.stepResults[0]?.output).toBeUndefined();
   });
 
-  it("preserves the narrow {url, issueNumber} shape for github.create_issue (outcome attribution)", async () => {
+  it("preserves the narrow {ok, number, url, title} shape for github.create_issue (outcome attribution)", async () => {
     const recipe = makeRecipe({
       steps: [
         {
@@ -5052,8 +5081,9 @@ describe("flight recorder — per-step output capture", () => {
         "github.create_issue": {
           invoke: async <TOutput = unknown>() =>
             JSON.stringify({
+              ok: true,
+              number: 1,
               url: "https://github.com/acme/widgets/issues/1",
-              issueNumber: 1,
               title: "bug",
               body: "irrelevant, must not leak into the captured output",
             }) as TOutput,
@@ -5061,10 +5091,45 @@ describe("flight recorder — per-step output capture", () => {
       },
     });
     expect(result.stepResults[0]?.status).toBe("ok");
+    // `number` (not `issueNumber` — matches the tool's real outputSchema
+    // in src/recipes/tools/github.ts) and `ok`/`title` preserved; `body`
+    // dropped.
     expect(result.stepResults[0]?.output).toEqual({
+      ok: true,
+      number: 1,
       url: "https://github.com/acme/widgets/issues/1",
-      issueNumber: 1,
+      title: "bug",
     });
+  });
+
+  it("REGRESSION: redacts a secret key in the general capture path", async () => {
+    // Bug found in session-review: the general capture called
+    // captureForRunlog(result) where `result` was the tool's RAW STRING
+    // output. captureForRunlog's key-based redaction (redactSensitive)
+    // only walks OBJECT properties — passed a string it's a structural
+    // no-op, so a tool whose JSON output legitimately contains a
+    // token/password field got written to runs.jsonl UNREDACTED. Now the
+    // string is JSON.parse'd before capture (when parseable) so
+    // redaction can actually see the keys.
+    const recipe = makeRecipe({
+      steps: [{ tool: "http.post", url: "https://api.example.com/token" }],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      mockConnectors: {
+        "http.post": {
+          invoke: async <TOutput = unknown>() =>
+            JSON.stringify({
+              access_token: "super-secret-value",
+              expires_in: 3600,
+            }) as TOutput,
+        },
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    const output = result.stepResults[0]?.output;
+    expect(JSON.stringify(output)).not.toContain("super-secret-value");
+    expect((output as Record<string, unknown>).access_token).toBe("[REDACTED]");
   });
 });
 

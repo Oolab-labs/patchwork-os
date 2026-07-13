@@ -108,6 +108,7 @@ export async function replayMockedRun(opts: {
       (async () => {
         return "";
       }),
+    recipe.name,
   );
 
   const runOptions: RunOptions = {
@@ -151,6 +152,19 @@ export async function replayMockedRun(opts: {
 }
 
 /**
+ * Auto-generated positional step id (yamlRunner.ts: `step.into ?? "step_${n}"`).
+ * Matched only when the step has no explicit `into:` name — a purely
+ * positional id ("step_3" = "the 4th step in THIS run's execution order")
+ * that is NOT stable across a recipe edit that adds/removes/reorders
+ * steps before it. Replaying against a captured output under a
+ * positional id risks silently matching it to a DIFFERENT step after an
+ * edit; an explicit `into:` name is a stable, user-chosen identifier
+ * (the flat-recipe analogue of a chained recipe's mandatory `id:`) and is
+ * safe to replay against.
+ */
+const POSITIONAL_STEP_ID = /^step_\d+$/;
+
+/**
  * Build the `mockedOutputs` map for a FLAT (non-chained) recipe's replay.
  * Flat `RunContext` values are strings (see `RunContext = Record<string,
  * string>` in yamlRunner.ts), so a captured non-string output is
@@ -166,6 +180,13 @@ export function buildFlatMockedOutputs(originalRun: RecipeRun): {
   const unmocked: string[] = [];
   for (const step of originalRun.stepResults ?? []) {
     if (step.status === "skipped") continue;
+    // See POSITIONAL_STEP_ID's doc comment — a step with no explicit
+    // `into:` isn't safely replayable against a (possibly edited) recipe
+    // file, so it always falls through to real execution.
+    if (POSITIONAL_STEP_ID.test(step.id)) {
+      unmocked.push(step.id);
+      continue;
+    }
     const out = step.output;
     if (out === undefined) {
       unmocked.push(step.id);

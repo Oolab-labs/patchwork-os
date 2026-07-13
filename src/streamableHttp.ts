@@ -864,50 +864,56 @@ export class StreamableHttpHandler {
     }
     if (scope) transport.setSessionScope(scope);
     if (denyTools.size > 0) transport.setDenyTools(denyTools);
-    if (this.config.approvalGate !== "off" || isEnabled(FLAG_ENFORCE_POLICY)) {
-      transport.setApprovalGate(
-        async ({ toolName, params, sessionId, onPending }) => {
-          // Deterministic policy check — see the matching block in
-          // bridge.ts's WS approval-gate wiring for the full rationale.
-          // Runs even when approvalGate is "off": policy and trust are
-          // independent axes, and evaluateInProcessGate below already
-          // bypasses unconditionally for gate "off" once the policy check
-          // clears, so installing this handler unconditionally costs
-          // nothing on the trust-gate side while closing the policy gap.
-          if (isEnabled(FLAG_ENFORCE_POLICY)) {
-            const loaded = loadPolicyFile(this.config.workspace);
-            if (!loaded.ok) {
-              this.logger.warn?.(`[policy] ${loaded.error}`);
-              return "policy_denied";
-            }
-            const verdict = checkPolicy(loaded.policy, { toolName, params });
-            if (!verdict.allowed) {
-              this.logger.warn?.(
-                `[policy] denied "${toolName}": ${verdict.reason}`,
-              );
-              return "policy_denied";
-            }
+    // Installed UNCONDITIONALLY — see the matching comment in bridge.ts's
+    // WS approval-gate wiring. Both approvalGate and FLAG_ENFORCE_POLICY
+    // are re-checked LIVE inside the handler on every call, so an HTTP
+    // session that connected while both were off still gets protected the
+    // moment an operator flips FLAG_ENFORCE_POLICY on — previously this
+    // whole block was gated on a ONE-TIME check of both at connection
+    // time, so an already-open session never got a handler installed and
+    // stayed unprotected until it reconnected.
+    transport.setApprovalGate(
+      async ({ toolName, params, sessionId, onPending }) => {
+        // Deterministic policy check — see the matching block in
+        // bridge.ts's WS approval-gate wiring for the full rationale.
+        // Runs even when approvalGate is "off": policy and trust are
+        // independent axes, and evaluateInProcessGate below already
+        // bypasses unconditionally for gate "off" once the policy check
+        // clears, so installing this handler unconditionally costs
+        // nothing on the trust-gate side while closing the policy gap.
+        if (isEnabled(FLAG_ENFORCE_POLICY)) {
+          const loaded = loadPolicyFile(this.config.workspace);
+          if (!loaded.ok) {
+            this.logger.warn?.(`[policy] ${loaded.error}`);
+            return "policy_denied";
           }
-          const gate = evaluateInProcessGate({
-            toolName,
-            params,
-            gate: this.config.approvalGate,
-            workspace: this.config.workspace,
-          });
-          if (gate.decision === "bypass") return "bypass";
-          const queue = getApprovalQueue();
-          const { promise, callId } = queue.request({
-            toolName,
-            params,
-            tier: gate.tier,
-            sessionId: sessionId ?? undefined,
-            riskSignals: gate.riskSignals,
-          });
-          onPending?.(callId);
-          return promise;
-        },
-      );
-    }
+          const verdict = checkPolicy(loaded.policy, { toolName, params });
+          if (!verdict.allowed) {
+            this.logger.warn?.(
+              `[policy] denied "${toolName}": ${verdict.reason}`,
+            );
+            return "policy_denied";
+          }
+        }
+        const gate = evaluateInProcessGate({
+          toolName,
+          params,
+          gate: this.config.approvalGate,
+          workspace: this.config.workspace,
+        });
+        if (gate.decision === "bypass") return "bypass";
+        const queue = getApprovalQueue();
+        const { promise, callId } = queue.request({
+          toolName,
+          params,
+          tier: gate.tier,
+          sessionId: sessionId ?? undefined,
+          riskSignals: gate.riskSignals,
+        });
+        onPending?.(callId);
+        return promise;
+      },
+    );
 
     const terminalPrefix = `h${id.slice(0, 8)}-`; // "h" prefix distinguishes HTTP sessions
 

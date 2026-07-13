@@ -164,6 +164,61 @@ describe("checkPolicy", () => {
     });
   });
 
+  describe("forbidden paths — REGRESSION: relative directory glob vs absolute paths", () => {
+    // Bug found in session-review: a natural operator-written glob like
+    // "secrets/**" (the way you'd expect to write "block a secrets
+    // directory") never matched the ABSOLUTE paths most resolved tool
+    // calls actually carry, because minimatch anchors a non-`**`-prefixed
+    // pattern to the start of the string.
+    const policy = parsePolicy({
+      version: 1,
+      defaults: { forbiddenPaths: ["secrets/**"] },
+    });
+
+    it("blocks an absolute path under the directory even though the glob is relative", () => {
+      const result = checkPolicy(policy, {
+        toolName: "file.read",
+        params: { path: "/home/user/project/secrets/keys.pem" },
+      });
+      expect(result.allowed).toBe(false);
+    });
+
+    it("still blocks a workspace-relative path (unchanged from before)", () => {
+      const result = checkPolicy(policy, {
+        toolName: "file.read",
+        params: { path: "secrets/keys.pem" },
+      });
+      expect(result.allowed).toBe(false);
+    });
+
+    it("does not false-positive on an unrelated path", () => {
+      const result = checkPolicy(policy, {
+        toolName: "file.read",
+        params: { path: "/home/user/project/src/index.ts" },
+      });
+      expect(result.allowed).toBe(true);
+    });
+  });
+
+  describe("forbidden paths — REGRESSION: case-insensitivity bypass", () => {
+    // Bug found in session-review: minimatch is case-sensitive by default,
+    // but macOS and Windows (both explicitly supported platforms) default
+    // to case-insensitive filesystems — a case-varied path resolves to the
+    // SAME file the OS sees, so it must not bypass the block.
+    const policy = parsePolicy({
+      version: 1,
+      defaults: { forbiddenPaths: ["**/.env"] },
+    });
+
+    it("blocks a case-varied match on a case-insensitive-filesystem platform", () => {
+      const result = checkPolicy(policy, {
+        toolName: "file.read",
+        params: { path: "/repo/.ENV" },
+      });
+      expect(result.allowed).toBe(false);
+    });
+  });
+
   describe("network host allowlist", () => {
     const policy = parsePolicy({
       version: 1,

@@ -1159,7 +1159,7 @@ export async function runRecipe(
     recipeToRun,
     {
       ...runnerDeps,
-      chainedDeps: buildChainedDeps(runnerDeps),
+      chainedDeps: buildChainedDeps(runnerDeps, undefined, recipeToRun.name),
       chainedOptions: { sourcePath: recipePath },
     },
     vars,
