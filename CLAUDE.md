@@ -52,6 +52,8 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `recipe record <name>` — Record a successful run as a learned trace.
 - `recipe schema` — Print the active recipe JSON schema.
 
+**Flight recorder / mocked replay** (`POST /runs/:seq/replay`, dashboard run-detail page — no dedicated CLI verb): every successful tool step's output is captured onto `RunStepResult.output` (secret-redacted, 8 KB cap) for both chained recipes (VD-2, pre-existing) and flat manual/cron/webhook recipes (`src/recipes/yamlRunner.ts`'s `StepResult.output` + `captureForRunlog`). Replay re-runs the recipe with each captured step short-circuited to its prior output — `replayMockedRun` for chained, `replayFlatMockedRun` for flat (`src/recipes/replayRun.ts`) — so template/transform/expect wiring can be debugged against real evidence with zero external calls or write side effects. `runReplayFn` in `src/recipeOrchestration.ts` dispatches on the recipe's `trigger.type`; flat recipes previously hard-errored with `replay_only_supported_for_chained_recipes` before this capability existed. Real-mode replay (write tools actually fire) is deliberately out of scope — needs a confirmation UX + kill-switch interaction, ship separately.
+
 #### Operational commands
 
 - `start [--port N] [--workspace <path>]` — Single-bridge start (no tmux). Pair with `--watch` for supervised mode.

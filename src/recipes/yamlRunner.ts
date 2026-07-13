@@ -95,7 +95,11 @@ import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import { registerRun, unregisterRun } from "./runRegistry.js";
 import type { ErrorPolicy } from "./schema.js";
-import { detectSilentFail, redactSecretsForPrompt } from "./stepObservation.js";
+import {
+  captureForRunlog,
+  detectSilentFail,
+  redactSecretsForPrompt,
+} from "./stepObservation.js";
 // Import tool registry and trigger tool self-registration
 import {
   applyToolOutputContext,
@@ -682,6 +686,20 @@ export interface RunnerDeps {
    * (non-agent) tool step. Undefined for non-worker recipes.
    */
   workerId?: string;
+  /**
+   * Flight-recorder mocked replay for flat (non-chained) recipes — the flat
+   * counterpart to `chainedRunner.ts`'s `RunOptions.mockedOutputs`. Keyed by
+   * step id (the same `step.into ?? "step_${n}"` value RunStepResult.id
+   * uses). When a step's id is present, its real tool execution is
+   * SKIPPED — the mocked value is used as the step's result and flows
+   * through `transform` / `expect` / ctx-commit exactly as a real result
+   * would, so a replay shows how the recipe's wiring (not just the
+   * upstream tool) behaves against captured evidence. Built by
+   * `replayFlatMockedRun` (replayRun.ts) from a prior run's captured
+   * `output` fields (see `captureForRunlog` in the step-result push
+   * sites below). Unset for a normal (non-replay) run.
+   */
+  mockedOutputs?: Map<string, string>;
 }
 
 export interface RunResult {
@@ -773,6 +791,14 @@ export type StepResult = {
    */
   costUsd?: number;
   durationMs: number;
+  /**
+   * Flight recorder — the step's captured output (via `captureForRunlog`:
+   * secret-key redaction + 8 KB cap, `[truncated]` envelope beyond that).
+   * Present for successful tool steps; ABSENT for agent steps, skipped
+   * steps, and errored steps. Mirrors `RunStepResult.output` in runLog.ts
+   * (VD-2) — feeds `replayFlatMockedRun`'s mocked replay for flat recipes.
+   */
+  output?: unknown;
 };
 
 export type StepDeps = Required<
@@ -798,6 +824,10 @@ export type StepDeps = Required<
     // Present only when a worker owns the recipe — keep optional, not
     // forced Required by the Omit-based mapped type.
     | "workerId"
+    // Flight-recorder mocked replay is checked in the run loop against
+    // `deps`, not per-step StepDeps; keep it off StepDeps so it isn't
+    // forced Required here.
+    | "mockedOutputs"
   >
 > & {
   workdir: string;
@@ -2218,98 +2248,107 @@ export async function runYamlRecipe(
       let stepErrorIsSilentFail = false;
       let thrownError: string | undefined;
       let thrownErrorCode: string | undefined;
-      for (let attempt = 0; attempt <= retryCount; attempt++) {
-        if (attempt > 0) {
-          await new Promise((r) => setTimeout(r, retryDelayMs));
-        }
-        stepError = undefined;
-        stepErrorIsSilentFail = false;
-        thrownError = undefined;
-        thrownErrorCode = undefined;
-        try {
-          // Slice (sandbox-alternative): per-step wall-clock timeout via
-          // Promise.race. The underlying tool keeps running in the
-          // background — this is a halt signal for the runner, not a
-          // process kill. The thrown error carries a `step_timeout`
-          // prefix so categoriseHaltReason maps it correctly.
-          const timeoutMs =
-            typeof step.timeout_ms === "number" && step.timeout_ms > 0
-              ? step.timeout_ms
-              : 0;
-          if (timeoutMs > 0) {
-            let timer: NodeJS.Timeout | undefined;
-            const timeoutPromise = new Promise<string | null>((_, reject) => {
-              timer = setTimeout(() => {
-                reject(
-                  new Error(
-                    `step_timeout: exceeded ${timeoutMs}ms in step "${step.into ?? step.tool ?? "?"}"`,
-                  ),
-                );
-              }, timeoutMs);
-            });
-            try {
-              result = await Promise.race([
-                executeStep(step, ctx, stepDeps),
-                timeoutPromise,
-              ]);
-            } finally {
-              if (timer) clearTimeout(timer);
-            }
-          } else {
-            result = await executeStep(step, ctx, stepDeps);
+      // Flight-recorder mocked replay: short-circuit BEFORE executing the
+      // tool. The step still flows through transform/expect/ctx-commit
+      // below (driven by `result`), so a replay shows how the recipe's
+      // wiring behaves against captured evidence — only the tool call
+      // itself is skipped. See RunnerDeps.mockedOutputs's doc comment.
+      if (deps.mockedOutputs?.has(stepId)) {
+        result = deps.mockedOutputs.get(stepId) ?? null;
+      } else {
+        for (let attempt = 0; attempt <= retryCount; attempt++) {
+          if (attempt > 0) {
+            await new Promise((r) => setTimeout(r, retryDelayMs));
           }
-          // Detect tool-level errors reported as JSON {ok: false, error: ...}
-          if (result !== null) {
-            try {
-              const parsed = JSON.parse(result) as Record<string, unknown>;
-              if (parsed.ok === false && typeof parsed.error === "string") {
-                stepError = parsed.error;
+          stepError = undefined;
+          stepErrorIsSilentFail = false;
+          thrownError = undefined;
+          thrownErrorCode = undefined;
+          try {
+            // Slice (sandbox-alternative): per-step wall-clock timeout via
+            // Promise.race. The underlying tool keeps running in the
+            // background — this is a halt signal for the runner, not a
+            // process kill. The thrown error carries a `step_timeout`
+            // prefix so categoriseHaltReason maps it correctly.
+            const timeoutMs =
+              typeof step.timeout_ms === "number" && step.timeout_ms > 0
+                ? step.timeout_ms
+                : 0;
+            if (timeoutMs > 0) {
+              let timer: NodeJS.Timeout | undefined;
+              const timeoutPromise = new Promise<string | null>((_, reject) => {
+                timer = setTimeout(() => {
+                  reject(
+                    new Error(
+                      `step_timeout: exceeded ${timeoutMs}ms in step "${step.into ?? step.tool ?? "?"}"`,
+                    ),
+                  );
+                }, timeoutMs);
+              });
+              try {
+                result = await Promise.race([
+                  executeStep(step, ctx, stepDeps),
+                  timeoutPromise,
+                ]);
+              } finally {
+                if (timer) clearTimeout(timer);
               }
-            } catch {
-              /* non-JSON result is fine */
+            } else {
+              result = await executeStep(step, ctx, stepDeps);
             }
-          }
-          // Silent-fail detection: tools that return string placeholders
-          // (`(git branches unavailable)`, `[agent step skipped: ...]`)
-          // or empty list-tool error shapes (`{count:0,error:"..."}`)
-          // succeed with bad data — flag them as `error` so the runner
-          // doesn't quietly hand garbage to a downstream agent. Per-step
-          // opt-out via `silentFailDetection: false`.
-          if (
-            !stepError &&
-            result !== null &&
-            step.silentFailDetection !== false
-          ) {
-            const detected = detectSilentFail(result);
-            if (detected) {
-              stepError = `silent-fail detected (${detected.reason}): ${detected.matched}`;
-              stepErrorIsSilentFail = true;
+            // Detect tool-level errors reported as JSON {ok: false, error: ...}
+            if (result !== null) {
+              try {
+                const parsed = JSON.parse(result) as Record<string, unknown>;
+                if (parsed.ok === false && typeof parsed.error === "string") {
+                  stepError = parsed.error;
+                }
+              } catch {
+                /* non-JSON result is fine */
+              }
             }
+            // Silent-fail detection: tools that return string placeholders
+            // (`(git branches unavailable)`, `[agent step skipped: ...]`)
+            // or empty list-tool error shapes (`{count:0,error:"..."}`)
+            // succeed with bad data — flag them as `error` so the runner
+            // doesn't quietly hand garbage to a downstream agent. Per-step
+            // opt-out via `silentFailDetection: false`.
+            if (
+              !stepError &&
+              result !== null &&
+              step.silentFailDetection !== false
+            ) {
+              const detected = detectSilentFail(result);
+              if (detected) {
+                stepError = `silent-fail detected (${detected.reason}): ${detected.matched}`;
+                stepErrorIsSilentFail = true;
+              }
+            }
+          } catch (err) {
+            thrownError = err instanceof Error ? err.message : String(err);
+            // Preserve structured error codes (e.g. recipe_path_jail_escape)
+            // so callers and tests can branch on `err.code` per R2 M-4
+            // without scraping the message string.
+            const code = (err as { code?: unknown })?.code;
+            if (typeof code === "string") thrownErrorCode = code;
+            result = null;
           }
-        } catch (err) {
-          thrownError = err instanceof Error ? err.message : String(err);
-          // Preserve structured error codes (e.g. recipe_path_jail_escape)
-          // so callers and tests can branch on `err.code` per R2 M-4
-          // without scraping the message string.
-          const code = (err as { code?: unknown })?.code;
-          if (typeof code === "string") thrownErrorCode = code;
-          result = null;
+          if (!stepError && !thrownError) break;
+          // Audit 2026-06-10 recipe-runners-2: do NOT retry on a step_timeout.
+          // The timed-out attempt's underlying tool call keeps running in the
+          // background (Promise.race only abandons the wait, it does not cancel
+          // the call). Re-issuing the step here is, at best, pointless — for a
+          // write tool the in-flight idempotency ledger short-circuits the retry
+          // to the SAME promise (no second side effect, but also no progress) —
+          // and, at worst, a second side effect for any tool the ledger cannot
+          // dedup (non-write tools, or a write tool whose first attempt already
+          // committed its effect then threw). A true cancel needs an AbortSignal
+          // threaded through every tool/connector call, which is out of scope
+          // here; until then, refusing to retry on timeout is the safe contract.
+          // (Genuine transient failures — non-timeout throws / {ok:false} — still
+          // retry below.)
+          if (thrownError?.startsWith("step_timeout:")) break;
         }
-        if (!stepError && !thrownError) break;
-        // Audit 2026-06-10 recipe-runners-2: do NOT retry on a step_timeout.
-        // The timed-out attempt's underlying tool call keeps running in the
-        // background (Promise.race only abandons the wait, it does not cancel
-        // the call). Re-issuing the step here is, at best, pointless — for a
-        // write tool the in-flight idempotency ledger short-circuits the retry
-        // to the SAME promise (no second side effect, but also no progress) —
-        // and, at worst, a second side effect for any tool the ledger cannot
-        // dedup (non-write tools, or a write tool whose first attempt already
-        // committed its effect then threw). A true cancel needs an AbortSignal
-        // threaded through every tool/connector call, which is out of scope
-        // here; until then, refusing to retry on timeout is the safe contract.
-        // (Genuine transient failures — non-timeout throws / {ok:false} — still
-        // retry below.)
-        if (thrownError?.startsWith("step_timeout:")) break;
       }
 
       // Recipe-level fallback: log_only / deliver_original treat step failure
@@ -2350,9 +2389,10 @@ export async function runYamlRecipe(
           retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
         // Outcome attribution: capture the filed-issue URL on github.create_issue
         // steps so trust-replay can look up the issue's eventual disposition in
-        // the outcome store (confirmed/junk/unknown). Targeted to this one tool
-        // only — storing all tool outputs would bloat the run log unnecessarily.
-        let stepOutput: Record<string, unknown> | undefined;
+        // the outcome store (confirmed/junk/unknown). Takes priority over the
+        // general capture below — a smaller, stable shape trust-replay depends
+        // on, rather than the tool's full (and potentially larger) response.
+        let stepOutput: unknown | undefined;
         if (
           finalStatus === "ok" &&
           result !== null &&
@@ -2364,8 +2404,22 @@ export async function runYamlRecipe(
               stepOutput = { url: parsed.url, issueNumber: parsed.issueNumber };
             }
           } catch {
-            /* non-JSON or missing url — skip output capture */
+            /* non-JSON or missing url — falls through to general capture */
           }
+        }
+        // Flight recorder — general per-step output capture (parity with
+        // chainedRunner's VD-2 `captureForRunlog(result.data)`). Redacts
+        // known secret keys and caps at 8 KB (truncation envelope beyond
+        // that). Feeds `replayFlatMockedRun`'s mocked replay for flat
+        // recipes; previously ONLY github.create_issue steps captured
+        // anything, so flat recipes had no flight-recorder / replay
+        // capability at all (chained recipes only — see replayRun.ts).
+        if (
+          stepOutput === undefined &&
+          finalStatus === "ok" &&
+          result !== null
+        ) {
+          stepOutput = captureForRunlog(result);
         }
         stepResults.push({
           id: stepId,

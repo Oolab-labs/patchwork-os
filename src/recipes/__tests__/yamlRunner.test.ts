@@ -4986,3 +4986,160 @@ describe("ephemeral file rollback (end-to-end through runYamlRecipe)", () => {
     expect(fs.readFileSync(target, "utf-8")).toBe("mutated by the run"); // unchanged — nothing to roll back
   });
 });
+
+describe("flight recorder — per-step output capture", () => {
+  it("captures a successful tool step's output onto StepResult.output", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.write", path: path.join(TMP, "cap.md"), content: "x" },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, noop());
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[0]?.output).toBeDefined();
+    // file.write returns JSON.stringify({path, bytesWritten}) — the raw
+    // string result, captured via captureForRunlog (redaction + cap, no
+    // reshaping for a plain string under the size cap).
+    expect(result.stepResults[0]?.output).toContain("bytesWritten");
+  });
+
+  it("does not capture output for a skipped step", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.append",
+          path: path.join(TMP, "skip.md"),
+          content: "x",
+          when: "missing > 0", // resolves false — step is skipped
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, noop());
+    expect(result.stepResults[0]?.status).toBe("skipped");
+    expect(result.stepResults[0]?.output).toBeUndefined();
+  });
+
+  it("does not capture output for an errored step", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.write", path: path.join(TMP, "err.md"), content: "x" },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: () => {
+        throw new Error("disk full");
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.output).toBeUndefined();
+  });
+
+  it("preserves the narrow {url, issueNumber} shape for github.create_issue (outcome attribution)", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "github.create_issue",
+          owner: "acme",
+          repo: "widgets",
+          title: "bug",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      mockConnectors: {
+        "github.create_issue": {
+          invoke: async <TOutput = unknown>() =>
+            JSON.stringify({
+              url: "https://github.com/acme/widgets/issues/1",
+              issueNumber: 1,
+              title: "bug",
+              body: "irrelevant, must not leak into the captured output",
+            }) as TOutput,
+        },
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[0]?.output).toEqual({
+      url: "https://github.com/acme/widgets/issues/1",
+      issueNumber: 1,
+    });
+  });
+});
+
+describe("flight recorder — mockedOutputs replay short-circuit", () => {
+  it("uses the mocked value instead of calling the real tool", async () => {
+    let realCalls = 0;
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "real.md"),
+          content: "x",
+          into: "s1",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: () => {
+        realCalls++;
+      },
+      mockedOutputs: new Map([["s1", "MOCKED_OUTPUT"]]),
+    });
+    expect(realCalls).toBe(0);
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.context.s1).toBe("MOCKED_OUTPUT");
+  });
+
+  it("falls through to real execution for a step NOT in mockedOutputs", async () => {
+    let realCalls = 0;
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "real2.md"),
+          content: "x",
+          into: "s1",
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "real3.md"),
+          content: "x",
+          into: "s2",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: () => {
+        realCalls++;
+      },
+      mockedOutputs: new Map([["s1", "MOCKED_OUTPUT"]]),
+    });
+    expect(realCalls).toBe(1); // only s2 ran for real
+    expect(result.context.s1).toBe("MOCKED_OUTPUT");
+    expect(result.stepResults[1]?.status).toBe("ok");
+  });
+
+  it("re-applies the step's transform on top of the mocked value", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "transform.md"),
+          content: "x",
+          into: "s1",
+          transform: "hello, {{ $result }}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: () => {},
+      mockedOutputs: new Map([["s1", "world"]]),
+    });
+    expect(result.context.s1).toBe("hello, world");
+  });
+});

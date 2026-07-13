@@ -25,8 +25,12 @@ import type {
   RunOptions,
 } from "./chainedRunner.js";
 import { runChainedRecipe } from "./chainedRunner.js";
-import type { RunnerDeps } from "./yamlRunner.js";
-import { buildChainedDeps, declaredRecipeEnv } from "./yamlRunner.js";
+import type { RunnerDeps, RunResult, YamlRecipe } from "./yamlRunner.js";
+import {
+  buildChainedDeps,
+  declaredRecipeEnv,
+  runYamlRecipe,
+} from "./yamlRunner.js";
 
 export interface ReplayDeps {
   /** Long-lived run log so the new run shows up live in the dashboard. */
@@ -132,6 +136,101 @@ export async function replayMockedRun(opts: {
     const newRun = recent.find((r) => r.createdAt > originalRun.doneAt);
     return {
       ok: result.success,
+      ...(newRun?.seq !== undefined && { newSeq: newRun.seq }),
+      result,
+      ...(result.errorMessage !== undefined && { error: result.errorMessage }),
+      ...(unmocked.length > 0 && { unmockedSteps: unmocked }),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      ...(unmocked.length > 0 && { unmockedSteps: unmocked }),
+    };
+  }
+}
+
+/**
+ * Build the `mockedOutputs` map for a FLAT (non-chained) recipe's replay.
+ * Flat `RunContext` values are strings (see `RunContext = Record<string,
+ * string>` in yamlRunner.ts), so a captured non-string output is
+ * JSON-stringified — matching what the original tool call's raw string
+ * result would have looked like before any downstream `{{template}}`
+ * substitution treated it as text.
+ */
+export function buildFlatMockedOutputs(originalRun: RecipeRun): {
+  outputs: Map<string, string>;
+  unmocked: string[];
+} {
+  const outputs = new Map<string, string>();
+  const unmocked: string[] = [];
+  for (const step of originalRun.stepResults ?? []) {
+    if (step.status === "skipped") continue;
+    const out = step.output;
+    if (out === undefined) {
+      unmocked.push(step.id);
+      continue;
+    }
+    if (
+      out !== null &&
+      typeof out === "object" &&
+      (out as Record<string, unknown>)["[truncated]"] === true
+    ) {
+      unmocked.push(step.id);
+      continue;
+    }
+    outputs.set(step.id, typeof out === "string" ? out : JSON.stringify(out));
+  }
+  return { outputs, unmocked };
+}
+
+export interface FlatReplayResult {
+  ok: boolean;
+  /** New run's seq if the replay started successfully. */
+  newSeq?: number;
+  /** Underlying flat-runner result for callers that want full detail. */
+  result?: RunResult;
+  error?: string;
+  /** Steps that lacked captured outputs — fell through to REAL execution. */
+  unmockedSteps?: string[];
+}
+
+/**
+ * Fire a mocked replay of a FLAT (manual/cron/webhook-triggered) recipe's
+ * run — the counterpart to `replayMockedRun` for recipes that use
+ * `runYamlRecipe` rather than `runChainedRecipe`. Previously flat recipes
+ * had NO replay capability at all (`runReplayFn` in recipeOrchestration.ts
+ * hard-coded `replay_only_supported_for_chained_recipes`) even though
+ * `runYamlRecipe`'s per-step captures (added alongside this function) make
+ * it just as replayable.
+ *
+ * Tagged via `manualRunId: "replay-<originalSeq>"` (reusing the existing
+ * PR5b field) rather than a taskId prefix — yamlRunner's taskId format
+ * (`yaml:<recipe>:<startedAt>`) has no override seam, and manualRunId is
+ * already surfaced in the dashboard / `runs.jsonl`, so this is enough to
+ * distinguish a replay run from a real one without new plumbing.
+ */
+export async function replayFlatMockedRun(opts: {
+  originalRun: RecipeRun;
+  recipe: YamlRecipe;
+  deps: ReplayDeps;
+}): Promise<FlatReplayResult> {
+  const { originalRun, recipe, deps } = opts;
+  const { outputs, unmocked } = buildFlatMockedOutputs(originalRun);
+
+  try {
+    const result = await runYamlRecipe(recipe, {
+      ...deps.runnerDeps,
+      runLog: deps.runLog,
+      ...(deps.activityLog !== undefined && { activityLog: deps.activityLog }),
+      mockedOutputs: outputs,
+      manualRunId: `replay-${originalRun.seq}`,
+      testMode: false,
+    });
+    const recent = deps.runLog.query({ recipe: recipe.name, limit: 5 });
+    const newRun = recent.find((r) => r.createdAt >= originalRun.doneAt);
+    return {
+      ok: !result.errorMessage,
       ...(newRun?.seq !== undefined && { newSeq: newRun.seq }),
       result,
       ...(result.errorMessage !== undefined && { error: result.errorMessage }),
