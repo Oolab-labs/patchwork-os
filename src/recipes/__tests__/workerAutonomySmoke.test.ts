@@ -346,6 +346,25 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
       "a recent issue success is withheld (durable-outcome label)",
     ).toBeUndefined();
 
+    // An operator confirmation (`patchwork outcomes confirm <url>`) is the
+    // only thing that moves the dial for a non-reversible success — an
+    // unconfirmed ("unknown" disposition) filing is durably WITHHELD, never
+    // folded as evidence, even after the durability window elapses (#1064).
+    // Now that the flight-recorder fix makes `output.url` actually reach
+    // disk (see the yamlRunner.ts finalStepResults regression fixed
+    // alongside this test), loadWorkerTrustForRecipe's OutcomeStore lookup
+    // is reachable — simulate the real confirm step so this smoke test
+    // still exercises "durable success + confirmed disposition", the
+    // combination that's actually supposed to accrue evidence.
+    const { OutcomeStore } = await import("../../workers/outcomeStore.js");
+    new OutcomeStore(patchworkDir).upsert({
+      issueUrl: "https://github.com/patchwork/os/issues/4242",
+      disposition: "confirmed",
+      checkedAt: Date.now(),
+      recipeName: RECIPE_NAME,
+      origin: "manual",
+    });
+
     // …but once the run has survived the durability window it accrues evidence.
     // (Inject a future `now` to simulate the window elapsing.)
     const durableTrust = loadWorkerTrustForRecipe(RECIPE_NAME, {

@@ -2593,6 +2593,17 @@ export async function runYamlRecipe(
           : {}),
         ...(typeof s.costUsd === "number" ? { costUsd: s.costUsd } : {}),
         durationMs: s.durationMs,
+        // Flight recorder — without this, the captured `output` (added
+        // alongside replayFlatMockedRun) never survives persistence: this
+        // whitelist map is what actually reaches disk via
+        // `runLog.completeRun`, so a replay reloading the ORIGINAL run
+        // from disk (the only way replay ever consumes it in real usage)
+        // saw every step as unmocked no matter what executeStep captured
+        // in memory. Found by dogfooding replay end-to-end — unit tests
+        // missed it because they fed synthetic RecipeRun fixtures
+        // directly into replayFlatMockedRun, never round-tripping through
+        // a real runLog persist + reload.
+        ...(s.output !== undefined ? { output: s.output } : {}),
       }));
       // P1: run-level token aggregate + budget totals (latter only when a
       // budget was configured — never persist all-zero no-budget totals).
