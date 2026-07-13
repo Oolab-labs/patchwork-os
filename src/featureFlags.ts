@@ -337,6 +337,18 @@ export const FLAG_WORKER_AUTONOMY = "worker.autonomy";
  */
 export const FLAG_ENFORCE_ALLOWWRITES = "recipe.enforce-allowwrites";
 
+/**
+ * Enforce `patchwork.policy.yml` (src/policy.ts) — a deterministic,
+ * non-LLM permissions matrix checked BEFORE the trust/approval gate.
+ * Default OFF: no policy file exists on a fresh install, and even where
+ * one does, this changes the failure mode of every gated tool call from
+ * "queue for approval" to a hard, silent-to-the-caller "policy_denied"
+ * for anything the file forbids — worth opting into deliberately per
+ * operator rather than surprising an existing setup. See src/policy.ts's
+ * module doc for the fail-closed-on-malformed-file behavior.
+ */
+export const FLAG_ENFORCE_POLICY = "policy.enforce";
+
 // Register built-in flags
 registerFlag({
   id: KILL_SWITCH_WRITES,
@@ -387,6 +399,15 @@ registerFlag({
   id: FLAG_ENFORCE_ALLOWWRITES,
   description:
     "Enforce a recipe's allowWrites acknowledgment at runtime (not just at `recipe preflight` time) — an unacknowledged write step throws instead of running. Default off; see FLAG_ENFORCE_ALLOWWRITES doc comment for why.",
+  defaultValue: false,
+  category: "safety",
+  requiresOptIn: true,
+});
+
+registerFlag({
+  id: FLAG_ENFORCE_POLICY,
+  description:
+    "Enforce patchwork.policy.yml — a deterministic, non-LLM permissions matrix checked before the trust/approval gate. Default off; see FLAG_ENFORCE_POLICY doc comment for why.",
   defaultValue: false,
   category: "safety",
   requiresOptIn: true,

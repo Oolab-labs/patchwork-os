@@ -21,10 +21,12 @@ import type { ActivityLog } from "./activityLog.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { Config } from "./config.js";
 import type { ExtensionClient } from "./extensionClient.js";
+import { FLAG_ENFORCE_POLICY, isEnabled } from "./featureFlags.js";
 import type { FileLock } from "./fileLock.js";
 import type { Logger } from "./logger.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import type { PluginWatcher } from "./pluginWatcher.js";
+import { checkPolicy, loadPolicyFile } from "./policy.js";
 import type { ProbeResults } from "./probe.js";
 import { evaluateInProcessGate } from "./riskSignals.js";
 import { corsOrigin } from "./server.js";
@@ -865,6 +867,30 @@ export class StreamableHttpHandler {
     if (this.config.approvalGate !== "off") {
       transport.setApprovalGate(
         async ({ toolName, params, sessionId, onPending }) => {
+          // Deterministic policy check — see the matching block in
+          // bridge.ts's WS approval-gate wiring for the full rationale.
+          // KNOWN LIMITATION shared with the WS path: this whole callback
+          // (and therefore the policy check) is only registered when
+          // approvalGate !== "off". A policy-forbidden action is NOT
+          // currently blocked on a bridge started with approvalGate=off,
+          // even though policy and trust are meant to be independent
+          // axes. Fixing that means restructuring gate registration to
+          // run unconditionally, which is a bigger change than this pass
+          // — tracked as a follow-up, not silently accepted as correct.
+          if (isEnabled(FLAG_ENFORCE_POLICY)) {
+            const loaded = loadPolicyFile(this.config.workspace);
+            if (!loaded.ok) {
+              this.logger.warn?.(`[policy] ${loaded.error}`);
+              return "policy_denied";
+            }
+            const verdict = checkPolicy(loaded.policy, { toolName, params });
+            if (!verdict.allowed) {
+              this.logger.warn?.(
+                `[policy] denied "${toolName}": ${verdict.reason}`,
+              );
+              return "policy_denied";
+            }
+          }
           const gate = evaluateInProcessGate({
             toolName,
             params,

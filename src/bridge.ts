@@ -19,7 +19,12 @@ import { DecisionTraceLog } from "./decisionTraceLog.js";
 import { createDriver } from "./drivers/index.js";
 import { getLocalEmbedFn } from "./embeddings/index.js";
 import { ExtensionClient } from "./extensionClient.js";
-import { lockKillSwitchEnv, watchFlags } from "./featureFlags.js";
+import {
+  FLAG_ENFORCE_POLICY,
+  isEnabled,
+  lockKillSwitchEnv,
+  watchFlags,
+} from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
 import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
@@ -33,6 +38,7 @@ import {
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
+import { checkPolicy, loadPolicyFile } from "./policy.js";
 import { isPreToolUseHookRegistered } from "./preToolUseHook.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
@@ -397,6 +403,30 @@ export class Bridge {
         }
         transport.setApprovalGate(
           async ({ toolName, params, sessionId, onPending }) => {
+            // Deterministic policy check — runs BEFORE the trust/approval
+            // gate and is checked independently of it. A policy violation
+            // is refused outright, even for a call the gate would have
+            // bypassed entirely (e.g. a reversible read of a forbidden
+            // path) — trust level and policy are separate axes; no amount
+            // of earned trust unlocks a policy-forbidden action. Gated
+            // behind FLAG_ENFORCE_POLICY (default off) — see its doc
+            // comment in featureFlags.ts.
+            if (isEnabled(FLAG_ENFORCE_POLICY)) {
+              const loaded = loadPolicyFile(this.config.workspace);
+              if (!loaded.ok) {
+                // Fail-closed: a malformed patchwork.policy.yml must never
+                // be silently equivalent to "no policy configured".
+                this.logger.warn?.(`[policy] ${loaded.error}`);
+                return "policy_denied";
+              }
+              const verdict = checkPolicy(loaded.policy, { toolName, params });
+              if (!verdict.allowed) {
+                this.logger.warn?.(
+                  `[policy] denied "${toolName}": ${verdict.reason}`,
+                );
+                return "policy_denied";
+              }
+            }
             const gate = evaluateInProcessGate({
               toolName,
               params,
