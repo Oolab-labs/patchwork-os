@@ -3386,6 +3386,62 @@ if (process.argv[2] === "recipe" && process.argv[3] === "fmt") {
   })();
 }
 
+// Patchwork: `patchwork recipe rollback <name> --attempt <id> --ledger-dir <path>`
+// — undo a recipe attempt's file.write/file.append side effects. See
+// fileRollback.ts / runRecipeRollback for the mechanism. No bridge required
+// — purely local file I/O against the same ledger dir the run used.
+if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
+  const args = process.argv.slice(4);
+  const usage =
+    "Usage: patchwork recipe rollback <name> --attempt <id> --ledger-dir <path> [--json]\n\n" +
+    "Undoes a recipe attempt's file.write/file.append side effects by restoring\n" +
+    "each touched file to its pre-run content (or deleting it, if the run\n" +
+    "created it). <name> must match the recipe's declared `name:` — not the\n" +
+    "file path. Both --attempt and --ledger-dir must match what the original\n" +
+    "`recipe run` invocation used.\n";
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(usage);
+    process.exit(0);
+  }
+  const wantJson = args.includes("--json");
+  const recipeName = args.find((a) => !a.startsWith("--"));
+  const attemptIdx = args.indexOf("--attempt");
+  const attemptId = attemptIdx >= 0 ? args[attemptIdx + 1] : undefined;
+  const ledgerDirIdx = args.indexOf("--ledger-dir");
+  const ledgerDir = ledgerDirIdx >= 0 ? args[ledgerDirIdx + 1] : undefined;
+
+  if (!recipeName || !attemptId || !ledgerDir) {
+    process.stderr.write(usage);
+    process.exit(1);
+  }
+
+  (async () => {
+    try {
+      const { runRecipeRollback, formatRollbackReport } = await import(
+        "./commands/recipe.js"
+      );
+      const result = runRecipeRollback(
+        recipeName,
+        attemptId,
+        path.resolve(ledgerDir),
+      );
+      if (wantJson) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        process.stdout.write(
+          `${formatRollbackReport(recipeName, attemptId, result)}\n`,
+        );
+      }
+      process.exit(result.failed.length > 0 ? 1 : 0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 // Patchwork: `patchwork recipe record <file.yaml>` — execute live and record connector fixtures.
 if (process.argv[2] === "recipe" && process.argv[3] === "record") {
   const args = process.argv.slice(4);

@@ -24,11 +24,14 @@ import {
   detectRequiredConnectors,
   findMissingConnectors,
 } from "../recipes/connectorPreflight.js";
+import type { RollbackResult } from "../recipes/fileRollback.js";
+import { rollbackFileWrites } from "../recipes/fileRollback.js";
 import {
   HALT_CATEGORY_HINTS,
   HALT_CATEGORY_LABELS,
   type HaltCategory,
 } from "../recipes/haltCategory.js";
+import { deriveScopeKey } from "../recipes/idempotencyKey.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
@@ -2556,6 +2559,59 @@ export async function runRecord(
     stepsRun,
     outputs,
   };
+}
+
+/**
+ * `patchwork recipe rollback <name> --attempt <id> --ledger-dir <path>` —
+ * undo a recipe attempt's file-write side effects using its FileRollbackLog
+ * (see fileRollback.ts). Both `attemptId` and `ledgerDir` are REQUIRED
+ * (unlike `recipe run`'s optional --attempt/--ledger-dir, which merely
+ * enable dedup): a rollback with no disk-backed log to read has nothing to
+ * undo. `recipeName` must match the recipe's declared `name:` (the same
+ * value the run used to derive its scope key) — not the file path.
+ *
+ * Purely local file I/O — no bridge required, mirrors `outcomes
+ * confirm|reject`'s no-bridge posture.
+ */
+export function runRecipeRollback(
+  recipeName: string,
+  attemptId: string,
+  ledgerDir: string,
+): RollbackResult {
+  return rollbackFileWrites({
+    dir: ledgerDir,
+    scopeKey: deriveScopeKey(recipeName, attemptId),
+  });
+}
+
+/** Human-readable rendering of a RollbackResult for CLI output. */
+export function formatRollbackReport(
+  recipeName: string,
+  attemptId: string,
+  result: RollbackResult,
+): string {
+  const lines: string[] = [];
+  lines.push(`Rollback — ${recipeName} (attempt ${attemptId})`);
+  lines.push("─".repeat(40));
+  if (
+    result.restored.length === 0 &&
+    result.deleted.length === 0 &&
+    result.failed.length === 0
+  ) {
+    lines.push(
+      "Nothing to roll back — no captured file writes for this attempt.",
+    );
+    return lines.join("\n");
+  }
+  for (const p of result.restored) lines.push(`  restored: ${p}`);
+  for (const p of result.deleted) lines.push(`  deleted:  ${p}`);
+  for (const f of result.failed)
+    lines.push(`  FAILED:   ${f.path} — ${f.error}`);
+  lines.push("");
+  lines.push(
+    `${result.restored.length} restored, ${result.deleted.length} deleted, ${result.failed.length} failed`,
+  );
+  return lines.join("\n");
 }
 
 export async function runTest(

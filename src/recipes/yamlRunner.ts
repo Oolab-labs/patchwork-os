@@ -68,6 +68,7 @@ import {
   type AgentUsage,
 } from "./agentExecutor.js";
 import { deriveBreakerKey, getCircuitBreaker } from "./circuitBreaker.js";
+import { FileRollbackLog } from "./fileRollback.js";
 import { categoriseHaltReason, type HaltCategory } from "./haltCategory.js";
 import {
   assertValidManualRunId,
@@ -830,6 +831,16 @@ export type StepDeps = Required<
    * call path.
    */
   recipeName?: string;
+  /**
+   * Ephemeral rollback — same `ledgerDir` + `manualRunId` gating as
+   * `writeEffectLedger` (PR5b), disk-backed at
+   * `${ledgerDir}/file_rollback.jsonl`. `file.write` / `file.append` call
+   * `capturePreImage` before writing; `patchwork recipe rollback` later
+   * replays the log to undo the attempt's file-write side effects. See
+   * fileRollback.ts's module doc. Undefined when ledgerDir/manualRunId
+   * aren't both supplied — rollback capture is then a no-op.
+   */
+  fileRollbackLog?: FileRollbackLog;
 };
 
 // Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
@@ -3062,6 +3073,21 @@ function resolveStepDeps(
         : new WriteEffectLedger(),
     workerId: deps.workerId,
     recipeName: scope?.recipeName,
+    // Ephemeral rollback — same disk-availability gating as writeEffectLedger
+    // above (deliberately: both share the operator's --ledger-dir/--attempt
+    // inputs). No in-memory fallback: rollback only makes sense as a
+    // disk-backed record an operator can replay after the run has ended, so
+    // there's nothing useful an in-memory-only instance would provide.
+    fileRollbackLog:
+      deps.ledgerDir && deps.manualRunId && scope?.recipeName
+        ? new FileRollbackLog({
+            dir: deps.ledgerDir,
+            scopeKey: deriveScopeKey(
+              scope.recipeName,
+              assertValidManualRunId(deps.manualRunId),
+            ),
+          })
+        : undefined,
   };
 }
 
