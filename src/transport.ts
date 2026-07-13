@@ -143,6 +143,10 @@ export class McpTransport {
    * increment errorCount and never produce a tool-stats entry.
    */
   private approvalRejectionCount = 0;
+  /** Tool calls blocked by patchwork.policy.yml — tracked separately from
+   *  approvalRejectionCount since no human/approval-gate decision was
+   *  involved (a deterministic policy check refused the call outright). */
+  private policyDenialCount = 0;
   private generation = 0; // incremented on each attach; stale handlers check this
   private readonly sessionStartedAt = Date.now();
   private readonly resultSizeTracker = new Map<string, number>();
@@ -215,7 +219,12 @@ export class McpTransport {
          *  for human approval — lets the dispatcher signal "pending" to clients. */
         onPending?: (callId: string) => void;
       }) => Promise<
-        "approved" | "rejected" | "expired" | "cancelled" | "bypass"
+        | "approved"
+        | "rejected"
+        | "expired"
+        | "cancelled"
+        | "bypass"
+        | "policy_denied"
       >)
     | null = null;
 
@@ -225,7 +234,14 @@ export class McpTransport {
       params: Record<string, unknown>;
       sessionId: string | null;
       onPending?: (callId: string) => void;
-    }) => Promise<"approved" | "rejected" | "expired" | "cancelled" | "bypass">,
+    }) => Promise<
+      | "approved"
+      | "rejected"
+      | "expired"
+      | "cancelled"
+      | "bypass"
+      | "policy_denied"
+    >,
   ): void {
     this.approvalGate = fn;
   }
@@ -662,6 +678,7 @@ export class McpTransport {
     callCount: number;
     errorCount: number;
     approvalRejectionCount: number;
+    policyDenialCount: number;
     activeToolCalls: number;
     inFlightTools: string[];
     startedAt: number;
@@ -670,6 +687,7 @@ export class McpTransport {
       callCount: this.callCount,
       errorCount: this.errorCount,
       approvalRejectionCount: this.approvalRejectionCount,
+      policyDenialCount: this.policyDenialCount,
       activeToolCalls: this.activeToolCalls,
       inFlightTools: [...this.inFlightToolNames.values()],
       startedAt: this.sessionStartedAt,
@@ -1501,7 +1519,8 @@ export class McpTransport {
                     | "rejected"
                     | "expired"
                     | "cancelled"
-                    | "bypass";
+                    | "bypass"
+                    | "policy_denied";
                   try {
                     decision = await this.approvalGate({
                       toolName: params.name,
@@ -1546,7 +1565,8 @@ export class McpTransport {
                   if (
                     decision === "rejected" ||
                     decision === "expired" ||
-                    decision === "cancelled"
+                    decision === "cancelled" ||
+                    decision === "policy_denied"
                   ) {
                     // Clamp: detach() may have reset activeToolCalls to 0 if
                     // the WS dropped mid-approval. See line 1478 for the
@@ -1557,15 +1577,25 @@ export class McpTransport {
                     );
                     this.inFlightToolNames.delete(msg.id);
                     this.inFlightControllers.delete(msg.id);
-                    // Approval rejections/expiries are NOT tool failures — track
-                    // them on a dedicated counter and record a lifecycle event
-                    // (not a tool entry) so stats() avg/p95/p99 stay clean.
-                    this.approvalRejectionCount++;
-                    this.activityLog?.recordEvent("approval_rejected", {
-                      tool: params.name,
-                      decision,
-                      sessionId: this.sessionId ?? undefined,
-                    });
+                    // Approval rejections/expiries/policy denials are NOT tool
+                    // failures — track them on a dedicated counter and record
+                    // a lifecycle event (not a tool entry) so stats()
+                    // avg/p95/p99 stay clean.
+                    if (decision === "policy_denied") {
+                      this.policyDenialCount++;
+                    } else {
+                      this.approvalRejectionCount++;
+                    }
+                    this.activityLog?.recordEvent(
+                      decision === "policy_denied"
+                        ? "policy_denied"
+                        : "approval_rejected",
+                      {
+                        tool: params.name,
+                        decision,
+                        sessionId: this.sessionId ?? undefined,
+                      },
+                    );
                     response = {
                       jsonrpc: "2.0",
                       id: msg.id,
@@ -1578,7 +1608,9 @@ export class McpTransport {
                                 ? `Tool call "${params.name}" rejected by human reviewer via Patchwork dashboard.`
                                 : decision === "cancelled"
                                   ? `Tool call "${params.name}" cancelled before a human decision was made (originating client abandoned the request).`
-                                  : `Tool call "${params.name}" expired without human decision (no action taken).`,
+                                  : decision === "policy_denied"
+                                    ? `Tool call "${params.name}" blocked by patchwork.policy.yml — see the bridge log for the specific rule.`
+                                    : `Tool call "${params.name}" expired without human decision (no action taken).`,
                           },
                         ],
                         isError: true,
