@@ -54,8 +54,13 @@ export function findBridge(): BridgeLock | null {
   return lock;
 }
 
+function _lockDir(): string {
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  return path.join(configDir, "ide");
+}
+
 function _scanLockFiles(): BridgeLock | null {
-  const dir = path.join(os.homedir(), ".claude", "ide");
+  const dir = _lockDir();
   if (!fs.existsSync(dir)) return null;
   const pinned = process.env.PATCHWORK_BRIDGE_PORT;
   const files = fs
@@ -109,7 +114,11 @@ function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (err) {
+    // EPERM: we lack permission to signal the process, but it IS running
+    // (cross-user or elevated on Windows). Mirror src/bridgeLockDiscovery.ts.
+    if ((err as NodeJS.ErrnoException).code === "EPERM") return true;
+    // ESRCH (or anything else): no such process → dead.
     return false;
   }
 }

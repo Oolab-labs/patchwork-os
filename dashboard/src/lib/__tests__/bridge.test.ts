@@ -15,6 +15,7 @@ const ENV_KEYS = [
   "PATCHWORK_BRIDGE_URL",
   "PATCHWORK_BRIDGE_TOKEN",
   "PATCHWORK_BRIDGE_PORT",
+  "CLAUDE_CONFIG_DIR",
 ] as const;
 
 function clearBridgeEnv() {
@@ -234,5 +235,41 @@ describe("findBridge — lock-file scan", () => {
     const future = Date.now() / 1000 + 60;
     fs.utimesSync(path.join(ideDir, "4242.lock"), future, future);
     expect(findBridge()?.authToken).toBe("good");
+  });
+
+  it("honours CLAUDE_CONFIG_DIR to relocate the lock scan directory", () => {
+    const altConfigDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "bridge-altconfig-"),
+    );
+    const altIdeDir = path.join(altConfigDir, "ide");
+    fs.mkdirSync(altIdeDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(altIdeDir, "7777.lock"),
+      JSON.stringify({ pid: process.pid, authToken: "alt", isBridge: true }),
+    );
+    process.env.CLAUDE_CONFIG_DIR = altConfigDir;
+    try {
+      expect(findBridge()?.authToken).toBe("alt");
+    } finally {
+      fs.rmSync(altConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  it("treats a PID that throws EPERM as alive (cross-user/elevated process)", () => {
+    writeLock(8888, { pid: 4321, authToken: "eperm-ok", isBridge: true });
+    const eperm = Object.assign(new Error("EPERM"), { code: "EPERM" });
+    vi.spyOn(process, "kill").mockImplementation((pid) => {
+      if (pid === 4321) throw eperm;
+      throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+    });
+    expect(findBridge()?.authToken).toBe("eperm-ok");
+  });
+
+  it("treats a PID that throws ESRCH as dead", () => {
+    writeLock(8889, { pid: 4322, authToken: "esrch-bad", isBridge: true });
+    vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+    });
+    expect(findBridge()).toBeNull();
   });
 });
