@@ -2781,7 +2781,9 @@ export default function HomePage() {
                       <span className="td-pill td-pill-ok">✓ done</span>
                     )}
                     {m.action.status === "undone" && (
-                      <span className="td-pill">↺ discarded</span>
+                      <span className="td-pill">
+                        {m.action.kind === "create_recipe" ? "↺ discarded" : "↺ undone"}
+                      </span>
                     )}
                   </div>
                   {(m.action.status === "pending" || m.action.status === "running") && (
