@@ -44,6 +44,12 @@ import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./workers/outcomeStore.js";
 import { computePendingConfirmations } from "./workers/runWorkerShadow.js";
+import {
+  lintWorkerContent,
+  listWorkers,
+  loadWorkerContent,
+  saveWorkerContent,
+} from "./workersHttp.js";
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -399,6 +405,27 @@ export class RecipeOrchestration {
     server.deleteRecipeContentFn = (name: string) => {
       const recipesDir = join(homedir(), ".patchwork", "recipes");
       return deleteRecipeContent(recipesDir, name);
+    };
+
+    server.listWorkersFn = () => {
+      const workersDir = join(homedir(), ".patchwork", "workers");
+      return listWorkers(workersDir);
+    };
+
+    server.loadWorkerContentFn = (id: string) => {
+      const workersDir = join(homedir(), ".patchwork", "workers");
+      return loadWorkerContent(workersDir, id);
+    };
+
+    server.saveWorkerContentFn = (id: string, content: string) => {
+      const workersDir = join(homedir(), ".patchwork", "workers");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      return saveWorkerContent(workersDir, recipesDir, id, content);
+    };
+
+    server.lintWorkerContentFn = (content: string) => {
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      return lintWorkerContent(content, recipesDir);
     };
 
     server.archiveRecipeFn = (name: string) => {

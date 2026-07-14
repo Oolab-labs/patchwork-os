@@ -2,14 +2,21 @@
  * Deterministic intent parser for the copilot chat pane (Overview deck's
  * "7:copilot", docs/plans/dashboard-terminal-copilot-plan-2026-07-03.md).
  *
- * Tier 1 only: a small, explicit set of safe "lever" intents (pause/enable/
- * run a recipe by name, explain a recent halt, read-only status Q&A).
- * Deliberately NOT an LLM call — every phrasing this recognizes is
- * enumerable and unit-testable, and an unrecognized message always falls
- * back to a canned reply rather than guessing. Recipe/worker AI-creation
- * (the mockup's tiers 2/3) are out of scope here; see the plan doc's risk
- * register for why those need a generation endpoint + lint/preflight
- * wiring + much more safety review before they can ship.
+ * Tier 1: a small, explicit set of safe "lever" intents (pause/enable/run a
+ * recipe by name, explain a recent halt, read-only status Q&A). Deliberately
+ * NOT an LLM call — every phrasing this recognizes is enumerable and
+ * unit-testable, and an unrecognized message always falls back to a canned
+ * reply rather than guessing.
+ *
+ * Recipe/worker creation (PR 8 of the plan doc) IS handled here, but only as
+ * intent *detection* — matching "create/build/make a recipe/worker" and
+ * carrying the raw goal text forward. The actual generation (an LLM call via
+ * /recipes/generate) and the safety-reviewed install/save step both happen
+ * dashboard-side (page.tsx's confirmCopilotAction), never in this
+ * deterministic parser. A create_worker card never auto-saves a manifest —
+ * `owns`/`autonomyCeiling` need human review, so it hands off to the
+ * /workers/new wizard instead; see that page and the plan doc's risk
+ * register for why.
  */
 
 export interface CopilotRecipeRef {
@@ -25,6 +32,8 @@ export type CopilotIntent =
   | { kind: "ambiguous_recipe"; candidates: CopilotRecipeRef[] }
   | { kind: "approvals_status" }
   | { kind: "kill_switch_status" }
+  | { kind: "create_recipe"; goal: string }
+  | { kind: "create_worker"; goal: string }
   | { kind: "unrecognized"; text: string };
 
 /** "nightly-review" / "nightly review" / "NIGHTLY_REVIEW" all match a
@@ -72,6 +81,13 @@ const ENABLE_PATTERN = /\b(enable|resume|unpause|re-?enable|turn on)\b/i;
 const RUN_PATTERN = /\b(run|start|trigger|kick off|fire)\b/i;
 const APPROVALS_PATTERN = /\bapprovals?\b/i;
 const KILL_SWITCH_PATTERN = /\bkill.?switch\b/i;
+// Captures which noun ("recipe" or "worker") the creation verb targets, so
+// the two map to distinct intents (a worker card hands off to /workers/new
+// instead of ever auto-saving — see module doc). "worker" checked first:
+// "create a worker that reviews PRs using the release-notes recipe" mentions
+// both nouns, and the worker is the thing actually being created.
+const CREATION_PATTERN =
+  /\b(?:create|build|make|generate|scaffold)\b.*\b(recipe|worker)\b/i;
 
 export function parseCopilotIntent(
   text: string,
@@ -84,6 +100,17 @@ export function parseCopilotIntent(
   // since these questions never name a recipe.
   if (KILL_SWITCH_PATTERN.test(trimmed)) return { kind: "kill_switch_status" };
   if (APPROVALS_PATTERN.test(trimmed)) return { kind: "approvals_status" };
+
+  // Creation intent — checked before recipe-name matching so "create a
+  // recipe called nightly-review" isn't misread as mentioning an existing
+  // recipe of that name (there usually isn't one yet).
+  const creationMatch = CREATION_PATTERN.exec(trimmed);
+  if (creationMatch) {
+    const noun = creationMatch[1]?.toLowerCase();
+    return noun === "worker"
+      ? { kind: "create_worker", goal: trimmed }
+      : { kind: "create_recipe", goal: trimmed };
+  }
 
   const matches = findMentionedRecipes(trimmed, recipes);
   if (matches.length > 1)
@@ -112,19 +139,19 @@ export function parseCopilotIntent(
 }
 
 const CAN_DO_HINT =
-  'I can pause, enable, or run a recipe by name, explain a recent halt, or answer "approvals pending"/"kill switch status" — try "pause nightly-review" or "why did outcome-ingester halt".';
-
-const CREATION_HINT =
-  "Creating recipes or workers from a goal isn't wired up yet — for now, use Marketplace → Install or `recipe new` for those.";
-
-const CREATION_KEYWORDS =
-  /\b(create|build|make|generate|scaffold)\b.*\b(recipe|worker)\b/i;
+  'I can pause, enable, or run a recipe by name, explain a recent halt, answer "approvals pending"/"kill switch status", or draft a new recipe/worker from a goal — try "pause nightly-review" or "create a recipe that drafts release notes".';
 
 export interface CopilotReplyResult {
   reply: string;
   action?: {
-    kind: "pause_recipe" | "enable_recipe" | "run_recipe";
+    kind:
+      | "pause_recipe"
+      | "enable_recipe"
+      | "run_recipe"
+      | "create_recipe"
+      | "create_worker";
     recipeName: string;
+    goal?: string;
   };
 }
 
@@ -189,10 +216,20 @@ export function buildCopilotReply(
       return {
         reply: `Kill switch is ${opts.killSwitchEngaged ? "engaged (writes blocked)" : "released"}.`,
       };
+    case "create_recipe":
+      return {
+        reply:
+          "Drafting a recipe from that goal — review the preview below before it's saved.",
+        action: { kind: "create_recipe", recipeName: "", goal: intent.goal },
+      };
+    case "create_worker":
+      return {
+        reply:
+          "Worker manifests need a human review of what it owns and its autonomy ceiling — " +
+          "I'll open the worker wizard prefilled from that goal rather than saving one directly.",
+        action: { kind: "create_worker", recipeName: "", goal: intent.goal },
+      };
     case "unrecognized":
-      if (CREATION_KEYWORDS.test(intent.text)) {
-        return { reply: CREATION_HINT };
-      }
       return { reply: CAN_DO_HINT };
   }
 }

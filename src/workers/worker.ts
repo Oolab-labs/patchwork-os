@@ -13,7 +13,7 @@ import {
  * references a recipe by name rather than redefining execution. (worker-ramp-v0)
  */
 
-const WORKER_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const WORKER_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 export interface WorkerCompetence {
   /** Claimed reliability mean (0–1) — a competence claim, not trust. */

@@ -254,6 +254,37 @@ export class Server extends EventEmitter<ServerEvents> {
   public deleteRecipeContentFn:
     | ((name: string) => { ok: boolean; path?: string; error?: string })
     | null = null;
+  /** Patchwork: set by bridge to list worker manifests for the dashboard. */
+  public listWorkersFn:
+    | (() => {
+        workersDir: string;
+        workers: import("./workers/worker.js").WorkerManifest[];
+      })
+    | null = null;
+  /** Patchwork: set by bridge to load raw worker manifest content by id. */
+  public loadWorkerContentFn:
+    | ((id: string) => { content: string; path: string } | null)
+    | null = null;
+  /** Patchwork: set by bridge to save raw worker manifest content by id. */
+  public saveWorkerContentFn:
+    | ((
+        id: string,
+        content: string,
+      ) => {
+        ok: boolean;
+        path?: string;
+        error?: string;
+        warnings?: string[];
+      })
+    | null = null;
+  /** Patchwork: set by bridge to lint worker manifest content without saving. */
+  public lintWorkerContentFn:
+    | ((content: string) => {
+        ok: boolean;
+        errors: import("./workersHttp.js").WorkerLintIssue[];
+        warnings: import("./workersHttp.js").WorkerLintIssue[];
+      })
+    | null = null;
   /** Patchwork: set by bridge to archive a recipe (move to .archive/). */
   public archiveRecipeFn:
     | ((name: string) => { ok: boolean; path?: string; error?: string })
@@ -1666,6 +1697,10 @@ export class Server extends EventEmitter<ServerEvents> {
           loadRecipeContentFn: this.loadRecipeContentFn,
           saveRecipeContentFn: this.saveRecipeContentFn,
           deleteRecipeContentFn: this.deleteRecipeContentFn,
+          listWorkersFn: this.listWorkersFn,
+          loadWorkerContentFn: this.loadWorkerContentFn,
+          saveWorkerContentFn: this.saveWorkerContentFn,
+          lintWorkerContentFn: this.lintWorkerContentFn,
           archiveRecipeFn: this.archiveRecipeFn,
           duplicateRecipeFn: this.duplicateRecipeFn,
           promoteRecipeVariantFn: this.promoteRecipeVariantFn,

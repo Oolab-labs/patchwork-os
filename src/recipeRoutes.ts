@@ -330,6 +330,8 @@ export const RECIPE_ROUTE_BODY_CAPS = {
    * 4 KB is generous for free text while blocking a pathological paste.
    */
   copilotMessage: 4 * 1024,
+  /** GET /workers (list), PUT /workers/:id, POST /workers/lint — yaml content. */
+  workerContent: 256 * 1024,
 } as const;
 
 /**
@@ -588,6 +590,33 @@ export interface RecipeRouteDeps {
     | null;
   deleteRecipeContentFn:
     | ((name: string) => { ok: boolean; path?: string; error?: string })
+    | null;
+  listWorkersFn:
+    | (() => {
+        workersDir: string;
+        workers: import("./workers/worker.js").WorkerManifest[];
+      })
+    | null;
+  loadWorkerContentFn:
+    | ((id: string) => { content: string; path: string } | null)
+    | null;
+  saveWorkerContentFn:
+    | ((
+        id: string,
+        content: string,
+      ) => {
+        ok: boolean;
+        path?: string;
+        error?: string;
+        warnings?: string[];
+      })
+    | null;
+  lintWorkerContentFn:
+    | ((content: string) => {
+        ok: boolean;
+        errors: import("./workersHttp.js").WorkerLintIssue[];
+        warnings: import("./workersHttp.js").WorkerLintIssue[];
+      })
     | null;
   archiveRecipeFn:
     | ((name: string) => { ok: boolean; path?: string; error?: string })
@@ -2212,6 +2241,132 @@ export function tryHandleRecipeRoute(
     } catch (err) {
       respond500(res, err);
     }
+    return true;
+  }
+
+  // GET /workers — list installed worker manifests for the dashboard.
+  if (parsedUrl.pathname === "/workers" && req.method === "GET") {
+    try {
+      const data = deps.listWorkersFn?.() ?? { workersDir: null, workers: [] };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      respond500(res, err);
+    }
+    return true;
+  }
+
+  // POST /workers/lint — parse + validate raw worker YAML without saving.
+  // Mirrors /recipes/lint's shape.
+  if (parsedUrl.pathname === "/workers/lint" && req.method === "POST") {
+    void (async () => {
+      const parsedBody = await readJsonBody<{ content?: string }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.workerContent,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.workerContent);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
+      try {
+        const body = parsedBody.value ?? {};
+        if (typeof body?.content !== "string") {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ ok: false, error: "content (string) required" }),
+          );
+          return;
+        }
+        if (!deps.lintWorkerContentFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ ok: false, error: "Worker lint unavailable" }),
+          );
+          return;
+        }
+        const result = deps.lintWorkerContentFn(body.content);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch {
+        respondInvalidJson(res);
+      }
+    })();
+    return true;
+  }
+
+  // GET/PUT /workers/:id — load/save raw worker manifest content by id.
+  // Mirrors the /recipes/:name content route.
+  const workerContentMatch = /^\/workers\/([^/]+)$/.exec(parsedUrl.pathname);
+  if (workerContentMatch && req.method === "GET") {
+    const id = decodeURIComponent(workerContentMatch[1] ?? "");
+    if (!deps.loadWorkerContentFn) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({ ok: false, error: "Worker content unavailable" }),
+      );
+      return true;
+    }
+    const result = deps.loadWorkerContentFn(id);
+    if (!result) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "Worker not found" }));
+      return true;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(result));
+    return true;
+  }
+
+  if (workerContentMatch && req.method === "PUT") {
+    const id = decodeURIComponent(workerContentMatch[1] ?? "");
+    void (async () => {
+      const parsedBody = await readJsonBody<{ content?: string }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.workerContent,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.workerContent);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
+      try {
+        const body = parsedBody.value ?? {};
+        if (typeof body.content !== "string") {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ ok: false, error: "content (string) required" }),
+          );
+          return;
+        }
+        if (!deps.saveWorkerContentFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "Worker content saving unavailable",
+            }),
+          );
+          return;
+        }
+        const result = deps.saveWorkerContentFn(id, body.content);
+        res.writeHead(result.ok ? 200 : 400, {
+          "Content-Type": "application/json",
+        });
+        const safeResult = result.error
+          ? { ...result, error: sanitizeStorageError(result.error) }
+          : result;
+        res.end(JSON.stringify(safeResult));
+      } catch {
+        respondInvalidJson(res);
+      }
+    })();
     return true;
   }
 

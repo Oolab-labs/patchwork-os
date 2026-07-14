@@ -270,13 +270,47 @@ describe("buildCopilotReply", () => {
     expect(result.reply).toMatch(/pause, enable, or run/i);
   });
 
-  it("gives an honest deferred-feature reply for recipe/worker creation asks", () => {
-    const result = buildCopilotReply({
-      kind: "unrecognized",
-      text: "create a recipe that posts failed deploys to slack",
+  it("proposes a create_recipe card for a recipe-creation goal", () => {
+    const intent = parseCopilotIntent(
+      "create a recipe that posts failed deploys to slack",
+      RECIPES,
+    );
+    expect(intent).toEqual({
+      kind: "create_recipe",
+      goal: "create a recipe that posts failed deploys to slack",
     });
-    expect(result.reply).toMatch(/isn't wired up yet/i);
-    expect(result.action).toBeUndefined();
+    const result = buildCopilotReply(intent);
+    expect(result.action).toEqual({
+      kind: "create_recipe",
+      recipeName: "",
+      goal: "create a recipe that posts failed deploys to slack",
+    });
+  });
+
+  it("proposes a create_worker card for a worker-creation goal, distinct from create_recipe", () => {
+    const intent = parseCopilotIntent(
+      "build a worker that reviews PRs",
+      RECIPES,
+    );
+    expect(intent).toEqual({
+      kind: "create_worker",
+      goal: "build a worker that reviews PRs",
+    });
+    const result = buildCopilotReply(intent);
+    expect(result.action?.kind).toBe("create_worker");
+    expect(result.reply).toMatch(
+      /owns.*autonomy ceiling|autonomy ceiling.*owns/i,
+    );
+  });
+
+  it("does not mistake a creation goal naming an existing recipe for a lever action", () => {
+    // "nightly-review" is installed, but "create a recipe" should win over
+    // treating this as a mention of the existing recipe.
+    const intent = parseCopilotIntent(
+      "create a recipe similar to nightly-review but for weekly summaries",
+      RECIPES,
+    );
+    expect(intent.kind).toBe("create_recipe");
   });
 
   it("asks for disambiguation without proposing an action", () => {
