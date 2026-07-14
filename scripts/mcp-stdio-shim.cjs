@@ -51,14 +51,26 @@ function isAlive(pid) {
 // rather than on every poll tick.
 let lastSelectedLockPath = null;
 
+// Normalize a path for cross-platform comparison: resolve it, convert
+// backslashes to forward slashes, and (on Windows only) lowercase it — NTFS
+// paths are case-insensitive but a VS Code-spawned bridge and a
+// terminal-spawned shim can report the same path with different casing.
+// Mirrors normalizePathForComparison() in src/bridgeLockDiscovery.ts.
+function normalizePathForComparison(p) {
+  const resolved = path.resolve(p).replace(/\\/g, "/");
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
 // True when `cwd` is the workspace root or a descendant of it. Used (only when
 // no --workspace filter is set) to prefer the bridge for the project the shim is
 // actually running in, rather than whichever lock has the newest mtime. Mirrors
 // cwdInWorkspace() in src/bridgeLockDiscovery.ts (unit-tested there).
 function cwdInWorkspace(cwd, workspace) {
   if (!workspace) return false;
-  const rel = path.relative(workspace, cwd);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  const normCwd = normalizePathForComparison(cwd);
+  const normWorkspace = normalizePathForComparison(workspace);
+  const rel = path.posix.relative(normWorkspace, normCwd);
+  return rel === "" || (!rel.startsWith("..") && !path.posix.isAbsolute(rel));
 }
 
 function findLockFile() {
@@ -93,7 +105,14 @@ function findLockFile() {
         // When a workspace filter is set, require an EXACT workspace match — a
         // lock with a missing/blank workspace field must not be picked under the
         // filter (otherwise the shim can latch onto an unrelated bridge).
-        if (workspaceFilter && (!data || data.workspace !== workspaceFilter))
+        // Normalized so a --workspace flag with different drive-letter casing
+        // than the lock file's recorded path still matches on Windows.
+        if (
+          workspaceFilter &&
+          (!data?.workspace ||
+            normalizePathForComparison(data.workspace) !==
+              normalizePathForComparison(workspaceFilter))
+        )
           continue;
         const isBridge = data ? data.isBridge === true : false;
         const isOrchestrator = data ? data.orchestrator === true : false;

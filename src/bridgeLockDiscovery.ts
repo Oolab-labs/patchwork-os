@@ -31,11 +31,29 @@ export interface LockDiscoveryDeps {
   cwd?: string;
 }
 
-/** True when `cwd` is the workspace root or a descendant of it. */
-function cwdInWorkspace(cwd: string, workspace: string): boolean {
+/**
+ * Normalize a path for cross-platform comparison: resolve it, convert
+ * backslashes to forward slashes, and (on Windows only) lowercase it — NTFS
+ * paths are case-insensitive but VS Code / a terminal-spawned process can
+ * report the same path with different drive-letter/segment casing.
+ */
+function normalizePathForComparison(p: string): string {
+  const resolved = path.resolve(p).replace(/\\/g, "/");
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+/**
+ * True when `cwd` is the workspace root or a descendant of it. Exported for
+ * direct unit testing of the cross-platform (case/slash) comparison rules —
+ * `findBridgeLock`'s own tests otherwise depend on non-deterministic
+ * `readdir` ordering to observe which candidate wins.
+ */
+export function cwdInWorkspace(cwd: string, workspace: string): boolean {
   if (!workspace) return false;
-  const rel = path.relative(workspace, cwd);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  const normCwd = normalizePathForComparison(cwd);
+  const normWorkspace = normalizePathForComparison(workspace);
+  const rel = path.posix.relative(normWorkspace, normCwd);
+  return rel === "" || (!rel.startsWith("..") && !path.posix.isAbsolute(rel));
 }
 
 function defaultIsLive(pid: number): boolean {

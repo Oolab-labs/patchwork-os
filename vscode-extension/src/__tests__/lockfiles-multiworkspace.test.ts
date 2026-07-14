@@ -189,3 +189,40 @@ describe("readAllMatchingLockFiles", () => {
     expect(results).toHaveLength(0);
   });
 });
+
+// ── Windows drive-letter/case-insensitivity ──────────────────────────────────
+
+describe("cross-platform workspace-path matching", () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform });
+  });
+
+  it("readLockFileForWorkspace matches a drive-letter-case mismatch on win32", async () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    setupLocks([{ file: "10001.lock", workspace: "C:\\Users\\dev\\repo" }]);
+    // VS Code-style lowercase drive letter + forward slashes.
+    const result = await readLockFileForWorkspace("c:/users/dev/repo");
+    expect(result).not.toBeNull();
+    expect(result!.port).toBe(10001);
+  });
+
+  it("readLockFileForWorkspace does NOT fold case on non-Windows platforms", async () => {
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    setupLocks([{ file: "10001.lock", workspace: "/Project/A" }]);
+    const result = await readLockFileForWorkspace("/project/a");
+    expect(result).toBeNull();
+  });
+
+  it("readAllMatchingLockFiles matches drive-letter-case mismatches on win32", async () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    (vscode.workspace as any).workspaceFolders = [
+      { uri: { fsPath: "c:/users/dev/repo" } },
+    ];
+    setupLocks([{ file: "10001.lock", workspace: "C:\\Users\\dev\\repo" }]);
+    const results = await readAllMatchingLockFiles();
+    expect(results).toHaveLength(1);
+    expect(results[0].port).toBe(10001);
+  });
+});
