@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { type CSSProperties, useState } from "react";
 import { EmptyState, ErrorState, HBarList } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
@@ -1263,6 +1264,9 @@ export default function WorkersPage() {
                 : `based on ${data.runsScanned} runs`}
             </span>
           )}
+          <Link href="/workers/new" className="btn sm primary" style={{ textDecoration: "none" }}>
+            + New worker
+          </Link>
           <ExpertToggle />
         </div>
       </div>

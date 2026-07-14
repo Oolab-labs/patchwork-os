@@ -137,6 +137,15 @@ export function knownActionTools(): string[] {
   return Object.keys(DOMAIN_BY_TOOL);
 }
 
+/**
+ * The closed vocabulary of action-class domains a worker manifest's `owns`
+ * field can name (bare domain form). Exposed so UI/validation code has one
+ * source of truth instead of hand-maintaining a second copy of this list.
+ */
+export function knownActionDomains(): string[] {
+  return Object.keys(REVERSIBILITY_BY_DOMAIN);
+}
+
 export function classifyActionClass(
   toolName: string,
   _params?: Record<string, unknown>,

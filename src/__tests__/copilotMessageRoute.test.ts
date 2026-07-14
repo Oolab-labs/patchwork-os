@@ -147,13 +147,28 @@ describe("POST /copilot/message", () => {
     expect(parsed.reply).toMatch(/pause, enable, or run/i);
   });
 
-  it("gives an honest deferred-feature reply for recipe/worker creation asks", async () => {
+  it("proposes a create_recipe card (never auto-generates) for a recipe-creation ask", async () => {
     const { body } = await postCopilotMessage({
       text: "create a recipe that posts failed deploys to slack",
     });
     const parsed = JSON.parse(body);
-    expect(parsed.action).toBeUndefined();
-    expect(parsed.reply).toMatch(/isn't wired up yet/i);
+    expect(parsed.action).toEqual({
+      kind: "create_recipe",
+      recipeName: "",
+      goal: "create a recipe that posts failed deploys to slack",
+    });
+  });
+
+  it("proposes a create_worker card (never auto-saves a manifest) for a worker-creation ask", async () => {
+    const { body } = await postCopilotMessage({
+      text: "create a worker that reviews PRs",
+    });
+    const parsed = JSON.parse(body);
+    expect(parsed.action).toEqual({
+      kind: "create_worker",
+      recipeName: "",
+      goal: "create a worker that reviews PRs",
+    });
   });
 
   it("never executes anything — response is always {reply, action?}, no side-effect fields", async () => {
