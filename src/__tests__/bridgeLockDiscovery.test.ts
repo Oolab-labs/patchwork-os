@@ -17,7 +17,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findAllLiveBridges, findBridgeLock } from "../bridgeLockDiscovery.js";
+import {
+  cwdInWorkspace,
+  findAllLiveBridges,
+  findBridgeLock,
+} from "../bridgeLockDiscovery.js";
 
 let dir: string;
 
@@ -261,5 +265,37 @@ describe("findBridgeLock() — workspace-aware selection (multi-bridge)", () => 
       cwd: "/totally/unrelated",
     });
     expect(pick?.port).toBe(3101);
+  });
+});
+
+describe("cwdInWorkspace() — Windows drive-letter/case handling", () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform });
+  });
+
+  it("matches a drive-letter-case mismatch when platform is win32", () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    // VS Code-style lowercase drive letter + forward slashes vs. a bridge's
+    // OS-native uppercase-drive, backslash-separated workspace path.
+    expect(
+      cwdInWorkspace("c:/users/dev/repo/src", "C:\\Users\\dev\\repo"),
+    ).toBe(true);
+  });
+
+  it("matches mixed segment casing when platform is win32", () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    expect(cwdInWorkspace("C:/Repo/Src", "c:/repo")).toBe(true);
+  });
+
+  it("does NOT fold case on non-Windows platforms", () => {
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    expect(cwdInWorkspace("/ws/a/src", "/Ws/A")).toBe(false);
+  });
+
+  it("still matches exact-case paths on non-Windows platforms", () => {
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    expect(cwdInWorkspace("/ws/a/src", "/ws/a")).toBe(true);
   });
 });

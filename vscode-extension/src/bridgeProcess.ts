@@ -36,6 +36,17 @@ function validateBinaryPath(binaryPath: string): void {
   }
 }
 
+/**
+ * Normalize a workspace path for cross-platform comparison: resolve it,
+ * convert backslashes to forward slashes, and (on Windows only) lowercase
+ * it — NTFS paths are case-insensitive but VS Code / a terminal-spawned
+ * process can report the same path with different casing.
+ */
+function normalizeWorkspacePathForComparison(p: string): string {
+  const resolved = path.resolve(p).replace(/\\/g, "/");
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
 export interface BridgeStartedEvent {
   port: number;
   authToken: string;
@@ -264,9 +275,12 @@ export class BridgeProcess {
                 // Normalise both sides to forward slashes before comparing so
                 // a lock file written with a Unix path (e.g. from WSL or a
                 // cross-platform tool) matches a Windows backslash path and
-                // vice-versa.
-                path.resolve(content.workspace).replace(/\\/g, "/") !==
-                  path.resolve(this.workspacePath).replace(/\\/g, "/")
+                // vice-versa. Also lowercase on Windows — NTFS paths are
+                // case-insensitive but VS Code's URI-normalized workspace path
+                // and a bridge's process.cwd()-derived path can differ in
+                // drive-letter/segment casing.
+                normalizeWorkspacePathForComparison(content.workspace) !==
+                  normalizeWorkspacePathForComparison(this.workspacePath)
               )
                 continue;
 

@@ -7,6 +7,18 @@ import type { LockFileData } from "./types";
 
 // ── Internal helper ───────────────────────────────────────────────────────────
 
+/**
+ * Normalize a path for cross-platform comparison: resolve it, convert
+ * backslashes to forward slashes, and (on Windows only) lowercase it — NTFS
+ * paths are case-insensitive, but VS Code's URI-normalized workspace paths
+ * (typically lowercase drive letter) and a bridge's `process.cwd()`-derived
+ * workspace field (OS-native case) can otherwise fail to match.
+ */
+function normalizeWorkspacePath(p: string): string {
+  const resolved = path.resolve(p).replace(/\\/g, "/");
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
 /** Read all valid, live lock files and return their parsed data sorted newest first. */
 async function readValidLockFiles(
   lockDir?: string,
@@ -106,7 +118,10 @@ export async function readLockFilesAsync(
   }
   for (const candidate of candidates) {
     if (currentWorkspace && candidate.workspace) {
-      if (path.resolve(candidate.workspace) !== path.resolve(currentWorkspace))
+      if (
+        normalizeWorkspacePath(candidate.workspace) !==
+        normalizeWorkspacePath(currentWorkspace)
+      )
         continue;
     }
     return candidate;
@@ -120,12 +135,12 @@ export async function readLockFileForWorkspace(
   lockDir?: string,
 ): Promise<LockFileData | null> {
   const candidates = await readValidLockFiles(lockDir);
-  const resolved = path.resolve(workspace);
+  const resolved = normalizeWorkspacePath(workspace);
   for (const candidate of candidates) {
     // Skip candidates with no workspace field — they must not match a specific
     // workspace query or they could connect to the wrong bridge in multi-root setups.
     if (!candidate.workspace) continue;
-    if (path.resolve(candidate.workspace) !== resolved) continue;
+    if (normalizeWorkspacePath(candidate.workspace) !== resolved) continue;
     return candidate;
   }
   return null;
@@ -150,9 +165,9 @@ export async function readAllMatchingLockFiles(
   const seenPorts = new Set<number>();
 
   for (const folder of folders) {
-    const resolved = path.resolve(folder.uri.fsPath);
+    const resolved = normalizeWorkspacePath(folder.uri.fsPath);
     const match = candidates.find(
-      (c) => c.workspace && path.resolve(c.workspace) === resolved,
+      (c) => c.workspace && normalizeWorkspacePath(c.workspace) === resolved,
     );
     if (match && !seenPorts.has(match.port)) {
       seenPorts.add(match.port);
