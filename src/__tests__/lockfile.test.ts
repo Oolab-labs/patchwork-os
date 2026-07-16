@@ -240,4 +240,67 @@ describe("LockFileManager", () => {
       });
     }
   });
+
+  // ─── Oversized lock file (size guard must not bypass liveness check) ──────
+  // A multi-root workspace with many long folder paths in workspaceFolders
+  // can legitimately produce a lock file over 4096 bytes. The size guard
+  // must not delete it purely for being large — it must fall back to the
+  // same PID-liveness logic used everywhere else in cleanStale().
+  it("cleanStale removes an oversized lock file with a dead PID", () => {
+    const ideDir = path.join(tmpDir, "ide");
+    fs.mkdirSync(ideDir, { recursive: true, mode: 0o700 });
+
+    const bigWorkspaceFolders = Array.from(
+      { length: 200 },
+      (_, i) => `/some/long/workspace/folder/path/number-${i}`,
+    );
+    const oversizedDeadPath = path.join(ideDir, "44441.lock");
+    const content = JSON.stringify({
+      pid: 999999, // dead
+      workspaceFolders: bigWorkspaceFolders,
+    });
+    expect(Buffer.byteLength(content)).toBeGreaterThan(4096);
+    fs.writeFileSync(oversizedDeadPath, content, { mode: 0o600 });
+
+    const mgr = new LockFileManager(logger);
+    mgr.cleanStale();
+
+    expect(fs.existsSync(oversizedDeadPath)).toBe(false);
+  });
+
+  it("cleanStale keeps an oversized lock file with a live PID (legit large multi-root workspace)", () => {
+    const ideDir = path.join(tmpDir, "ide");
+    fs.mkdirSync(ideDir, { recursive: true, mode: 0o700 });
+
+    const bigWorkspaceFolders = Array.from(
+      { length: 200 },
+      (_, i) => `/some/long/workspace/folder/path/number-${i}`,
+    );
+    const oversizedLivePath = path.join(ideDir, "44442.lock");
+    const content = JSON.stringify({
+      pid: process.pid, // alive
+      workspaceFolders: bigWorkspaceFolders,
+    });
+    expect(Buffer.byteLength(content)).toBeGreaterThan(4096);
+    fs.writeFileSync(oversizedLivePath, content, { mode: 0o600 });
+
+    const mgr = new LockFileManager(logger);
+    mgr.cleanStale();
+
+    expect(fs.existsSync(oversizedLivePath)).toBe(true);
+  });
+
+  it("cleanStale removes an oversized lock file that isn't valid JSON", () => {
+    const ideDir = path.join(tmpDir, "ide");
+    fs.mkdirSync(ideDir, { recursive: true, mode: 0o700 });
+
+    const oversizedGarbagePath = path.join(ideDir, "44443.lock");
+    const garbage = "x".repeat(5000);
+    fs.writeFileSync(oversizedGarbagePath, garbage, { mode: 0o600 });
+
+    const mgr = new LockFileManager(logger);
+    mgr.cleanStale();
+
+    expect(fs.existsSync(oversizedGarbagePath)).toBe(false);
+  });
 });
