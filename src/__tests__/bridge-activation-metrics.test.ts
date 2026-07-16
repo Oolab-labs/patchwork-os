@@ -2,6 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  getApprovalQueue,
+  resetApprovalQueueForTests,
+} from "../approvalQueue.js";
 import type { Config } from "../config.js";
 import { makeConfig as buildConfig } from "./helpers/fixtures.js";
 
@@ -274,5 +278,29 @@ describe("Bridge activation metrics", () => {
     } finally {
       await bridge.stop();
     }
+  });
+
+  it("resolves pending human approvals with 'cancelled' on shutdown instead of losing them silently", async () => {
+    // Regression: ApprovalQueue is purely in-memory — a pending approval
+    // request survived nowhere else. bridge.stop() cancelled orchestrator
+    // tasks but never touched the approval queue, so a parked approval
+    // just vanished on restart with no decision ever reaching the
+    // originating tool call (an ungraceful teardown instead of the
+    // "cancelled" semantics this queue already has a dedicated
+    // discriminant for — see cancelAll()'s doc comment).
+    resetApprovalQueueForTests();
+    const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-approval-"));
+    const bridge = new Bridge(makeConfig(workspace));
+    await bridge.start();
+
+    const { promise } = getApprovalQueue().request({
+      toolName: "test.write",
+      params: {},
+      tier: "high",
+    });
+
+    await bridge.stop();
+
+    await expect(promise).resolves.toBe("cancelled");
   });
 });
