@@ -363,3 +363,39 @@ describe("POST /api/relay/push — respects approvals opt-out", () => {
     expect(webpush.sendNotification).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/relay/push — cancel (dismiss a stale approval card)", () => {
+  it("fans out a { kind: 'cancel', callId } payload without requiring approve/reject fields", async () => {
+    const r = await POST(
+      req({ authorization: `Bearer ${TOKEN}` }, { kind: "cancel", callId: "call-123" }),
+    );
+    expect(r.status).toBe(200);
+    expect(webpush.sendNotification).toHaveBeenCalledTimes(1);
+    const [, payloadStr] = vi.mocked(webpush.sendNotification).mock.calls[0]!;
+    expect(JSON.parse(payloadStr as string)).toEqual({
+      kind: "cancel",
+      callId: "call-123",
+    });
+  });
+
+  it("400s a cancel payload missing callId", async () => {
+    const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, { kind: "cancel" }));
+    expect(r.status).toBe(400);
+    expect(webpush.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("404s a cancel payload when no subscriber is opted in to approvals", async () => {
+    vi.mocked(getSubscriptionsFor).mockReturnValue([]);
+    const r = await POST(
+      req({ authorization: `Bearer ${TOKEN}` }, { kind: "cancel", callId: "call-123" }),
+    );
+    expect(r.status).toBe(404);
+    expect(webpush.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("still enforces Bearer auth for cancel payloads", async () => {
+    const r = await POST(req({}, { kind: "cancel", callId: "call-123" }));
+    expect(r.status).toBe(401);
+    expect(webpush.sendNotification).not.toHaveBeenCalled();
+  });
+});

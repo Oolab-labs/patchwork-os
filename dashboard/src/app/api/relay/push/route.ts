@@ -45,6 +45,7 @@ function readVapidConfig(): {
 }
 
 interface RelayPushBody {
+  kind?: "cancel";
   callId?: string;
   toolName?: string;
   tier?: string;
@@ -87,6 +88,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const body = parsed.value;
+
+  // Cancel pushes only need a callId — they tell the SW to close a
+  // previously-shown "tap to approve" notification by tag, not to show a
+  // new one, so none of the approve/reject wiring below applies.
+  if (body.kind === "cancel") {
+    if (!body.callId) {
+      return NextResponse.json(
+        { error: "missing required field: callId" },
+        { status: 400 },
+      );
+    }
+    const subs = getSubscriptionsFor("approvals");
+    if (subs.length === 0) {
+      return NextResponse.json(
+        { ok: false, sent: 0, total: 0, error: "no approval subscribers" },
+        { status: 404 },
+      );
+    }
+    const cancelPayload = JSON.stringify({
+      kind: "cancel",
+      callId: body.callId,
+    });
+    webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
+    const results = await Promise.allSettled(
+      subs.map((sub) =>
+        webpush.sendNotification(sub, cancelPayload, { agent: pushAgent }),
+      ),
+    );
+    const sent = results.filter((r) => r.status === "fulfilled").length;
+    return NextResponse.json({ ok: true, sent, total: subs.length });
+  }
 
   const { callId, toolName, tier, approvalToken, bridgeCallbackBase } = body;
   if (!callId || !toolName || !tier || !approvalToken) {

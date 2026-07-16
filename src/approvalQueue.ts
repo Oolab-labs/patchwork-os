@@ -394,15 +394,17 @@ export class ApprovalQueue {
    * Used when the operator downgrades the approval gate to "off" so
    * phone approvers don't see "Approve" buttons whose token is now
    * meaningless (the originating tool dispatch already short-circuited
-   * to bypass on the new gate). Returns the number of entries that
-   * were cancelled.
+   * to bypass on the new gate). Returns the callIds that were cancelled —
+   * callers use this to dismiss any outstanding phone push per entry
+   * (`dispatchCancelPush`), since resolving the promise here only updates
+   * in-memory state and does not reach the device.
    */
-  cancelAll(): number {
-    let n = 0;
+  cancelAll(): string[] {
+    const cancelled: string[] = [];
     for (const id of this.entries.keys()) {
-      if (this.resolveEntry(id, "cancelled")) n++;
+      if (this.resolveEntry(id, "cancelled")) cancelled.push(id);
     }
-    return n;
+    return cancelled;
   }
 
   list(): PendingApproval[] {

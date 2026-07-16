@@ -626,6 +626,66 @@ async function dispatchPushNotification(
 }
 
 /**
+ * Tell the push relay to dismiss a previously-sent approval notification.
+ * Fired when a pending entry resolves via a path other than the phone tap
+ * itself — gate downgraded to "off" (`ApprovalQueue.cancelAll()`) or bridge
+ * shutdown — so a stale "tap to approve" card doesn't sit on the lock
+ * screen forever for a decision that's already moot. Same SSRF guard and
+ * fire-and-forget contract as `dispatchPushNotification`; a failed dismiss
+ * just means the notification lingers until the user dismisses it by hand,
+ * it never blocks the cancellation itself.
+ */
+export async function dispatchCancelPush(
+  pushServiceUrl: string,
+  pushServiceToken: string,
+  callId: string,
+  allowPrivate: boolean = false,
+): Promise<void> {
+  if (!pushServiceUrl.startsWith("https://")) {
+    console.warn(`[push] Rejected non-HTTPS push service URL`);
+    return;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(pushServiceUrl).hostname;
+  } catch {
+    console.warn(`[push] Malformed push service URL — skipping`);
+    return;
+  }
+  if (hostname === "localhost") {
+    console.warn(`[push] Blocked loopback push service hostname`);
+    return;
+  }
+  if (!allowPrivate && (await hostResolvesToBlockedIp(hostname, "push")))
+    return;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const res = await fetch(`${pushServiceUrl}/push`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${pushServiceToken}`,
+      },
+      body: JSON.stringify({ kind: "cancel", callId }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(
+        `[push] Non-2xx from push relay (cancel): ${res.status} ${res.statusText}`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[push] Cancel dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Publish an approval prompt to ntfy.sh with Approve / Reject HTTP action
  * buttons that POST back to the bridge using the single-use approval token.
  * Reuses the same SSRF guard as the push relay path. Fire-and-forget.
