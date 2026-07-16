@@ -164,6 +164,61 @@ describe("VsCodeBackend.postWebhook — SSRF DNS pre-resolution (LOW #25)", () =
     expect(headers["Host"] ?? headers["host"]).toBe("example.com");
   });
 
+  // Regression: URL always lowercases parsed.hostname, so pinning that did
+  // opts.url.replace(parsed.hostname, pinnedHost) silently no-op'd for any
+  // URL with uppercase letters in its host — fetch() then re-resolved the
+  // original hostname itself, reopening the exact DNS-rebinding TOCTOU
+  // window M15 exists to close, with no error/log to signal the failure.
+  it("still pins the resolved IP when the URL's hostname has uppercase letters", async () => {
+    vi.mocked(dns.lookup).mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    });
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+
+    const backend = makeBackend(false);
+    await backend.postWebhook({
+      url: "http://MyHooks.Example.COM/hook",
+      method: "POST",
+      headers: {},
+      body: { x: 1 },
+      hookKey: "test",
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [calledUrl, calledOpts] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ];
+    expect(calledUrl).toContain("93.184.216.34");
+    expect(calledUrl.toLowerCase()).not.toContain("myhooks.example.com");
+    const headers = calledOpts.headers as Record<string, string>;
+    expect((headers["Host"] ?? headers["host"])?.toLowerCase()).toBe(
+      "myhooks.example.com",
+    );
+  });
+
+  it("pins an IPv6 resolved address in bracket form", async () => {
+    vi.mocked(dns.lookup).mockResolvedValue({
+      address: "2606:2800:220:1:248:1893:25c8:1946",
+      family: 6,
+    });
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+
+    const backend = makeBackend(false);
+    await backend.postWebhook({
+      url: "http://example.com/hook",
+      method: "POST",
+      headers: {},
+      body: {},
+      hookKey: "test",
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [calledUrl] = fetchMock.mock.calls[0] as [string, unknown];
+    expect(calledUrl).toContain("[2606:2800:220:1:248:1893:25c8:1946]");
+  });
+
   it("allows private IPs when allowPrivateWebhooks=true", async () => {
     // With the allow-private flag, private hosts are permitted regardless.
     vi.mocked(dns.lookup).mockResolvedValue({

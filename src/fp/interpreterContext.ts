@@ -257,9 +257,20 @@ export class VsCodeBackend implements Backend {
           );
           return { ok: false, error };
         }
-        // Pin the resolved IP: replace hostname with IP in the URL.
+        // Pin the resolved IP by mutating the URL object's hostname
+        // directly — NOT opts.url.replace(parsed.hostname, pinnedHost).
+        // parsed.hostname is always lowercased by the WHATWG URL parser,
+        // so a string .replace() against the original (possibly
+        // mixed-case) opts.url silently finds no match and returns
+        // opts.url unchanged for any URL with uppercase letters in its
+        // host — quietly defeating the whole point of pinning (the
+        // subsequent fetch() then re-resolves the hostname itself,
+        // reopening the DNS-rebinding TOCTOU window this code exists to
+        // close, with no error/log to indicate the pin failed).
         const pinnedHost = family === 6 ? `[${address}]` : address;
-        fetchUrl = opts.url.replace(parsed.hostname, pinnedHost);
+        const pinnedUrl = new URL(opts.url);
+        pinnedUrl.hostname = pinnedHost;
+        fetchUrl = pinnedUrl.href;
       } catch {
         // DNS failure is treated as non-blocking — let the subsequent fetch
         // surface the real network error. This mirrors the policy in
