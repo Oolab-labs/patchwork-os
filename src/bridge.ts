@@ -1044,11 +1044,17 @@ export class Bridge {
 
     // 1. Probe available CLI tools (pass workspace so local node_modules/.bin is checked)
     this.probes = await probeAll(this.config.workspace);
-    this.ready = true;
 
     this.tokenUsageTracker.start();
 
-    // 2. Load plugins (after probes, before accepting sessions)
+    // 2. Load plugins (after probes, before accepting sessions). this.ready
+    // is NOT set until after this resolves — it's the gate the WS connection
+    // handler checks before accepting a session (see the `if (!this.ready)`
+    // guard above), and the /ready HTTP endpoint reports on it too. Setting
+    // it earlier (as this code used to) let a client connect and receive a
+    // fully-initialized session whose tools/list was silently missing every
+    // plugin tool, for as long as the plugin's register()/import took to
+    // resolve — worse the slower the plugin.
     this.pluginTools = await loadPlugins(
       this.config.plugins,
       this.config,
@@ -1070,6 +1076,8 @@ export class Bridge {
         `[plugin-watch] Watching ${loadedPlugins.length} plugin director${loadedPlugins.length === 1 ? "y" : "ies"}`,
       );
     }
+
+    this.ready = true;
 
     const probes = this.probes;
     const probeList = (keys?: string[]) =>
