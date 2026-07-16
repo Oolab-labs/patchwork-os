@@ -326,6 +326,75 @@ describe("Streamable HTTP: per-session ownership token", () => {
     );
     expect(res.status).toBe(200);
   });
+});
+
+// Regression: checkOwnership() previously allowed ANY request that simply
+// omitted Mcp-Session-Token, even in OAuth mode — the exact deployment the
+// token exists to protect, where multiple distinct clients share visibility
+// of the bridge and could plausibly learn each other's Mcp-Session-Id. An
+// attacker who knew a victim's session ID could hijack it by never sending
+// the header at all. Sessions created while OAuth mode is active
+// (resolveScopeFn configured) now require the header.
+describe("Streamable HTTP: per-session ownership token — OAuth mode enforcement", () => {
+  let oauthHandler: StreamableHttpHandler | null = null;
+  let oauthPort: number;
+
+  beforeEach(async () => {
+    const deps = makeDeps();
+    const oauthServer = new Server(TOKEN, logger);
+    oauthHandler = new StreamableHttpHandler(
+      deps.config as any,
+      {} as any,
+      deps.extensionClient as any,
+      deps.activityLog as any,
+      deps.fileLock as any,
+      new Map(),
+      null,
+      logger,
+      () => [],
+      () => null,
+      () => null, // resolveScopeFn configured — simulates OAuth mode active
+    );
+    oauthServer.httpMcpHandler = (req, res) => oauthHandler!.handle(req, res);
+    oauthPort = await oauthServer.findAndListen(null);
+    (oauthHandler as unknown as { __server: Server }).__server = oauthServer;
+  });
+
+  afterEach(async () => {
+    const s = (oauthHandler as unknown as { __server: Server })?.__server;
+    oauthHandler?.close();
+    oauthHandler = null;
+    await s?.close();
+  });
+
+  it("DELETE without Mcp-Session-Token is REJECTED (403) in OAuth mode", async () => {
+    const { sid } = await initSession(oauthPort);
+    const res = await httpReq(oauthPort, "DELETE", sid); // no token
+    expect(res.status).toBe(403);
+  });
+
+  it("DELETE with the correct Mcp-Session-Token still succeeds in OAuth mode", async () => {
+    const { sid, token } = await initSession(oauthPort);
+    const res = await httpReq(oauthPort, "DELETE", sid, token);
+    expect(res.status).toBe(204);
+  });
+
+  it("DELETE with a wrong Mcp-Session-Token is rejected (403) in OAuth mode", async () => {
+    const { sid } = await initSession(oauthPort);
+    const wrongToken = "0".repeat(64);
+    const res = await httpReq(oauthPort, "DELETE", sid, wrongToken);
+    expect(res.status).toBe(403);
+  });
+
+  it("POST without Mcp-Session-Token is REJECTED (403) in OAuth mode", async () => {
+    const { sid } = await initSession(oauthPort);
+    const res = await post(
+      oauthPort,
+      { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+      sid, // no token
+    );
+    expect(res.status).toBe(403);
+  });
 
   it("session A's token cannot DELETE session B (cross-session takeover)", async () => {
     const a = await initSession(port);
