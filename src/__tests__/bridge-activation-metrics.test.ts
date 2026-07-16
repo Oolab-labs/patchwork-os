@@ -16,8 +16,8 @@ const yamlRunnerModule = await vi.hoisted(async () => ({
 }));
 
 const pluginLoaderModule = await vi.hoisted(async () => ({
-  loadPlugins: vi.fn(async () => []),
-  loadPluginsFull: vi.fn(async () => []),
+  loadPlugins: vi.fn(async (): Promise<unknown[]> => []),
+  loadPluginsFull: vi.fn(async (): Promise<unknown[]> => []),
 }));
 
 vi.mock("../activationMetrics.js", () => activationMetricsModule);
@@ -248,7 +248,7 @@ describe("Bridge activation metrics", () => {
     let resolveLoadPlugins!: (tools: unknown[]) => void;
     pluginLoaderModule.loadPlugins.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<unknown[]>((resolve) => {
           resolveLoadPlugins = resolve;
         }),
     );
