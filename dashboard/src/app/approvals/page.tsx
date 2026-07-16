@@ -930,19 +930,34 @@ function ApprovalsContent() {
       );
       if (!proceed) return;
     }
+    // Collect one shared rejection reason for the whole batch when it
+    // includes any high-tier item — mirrors the audit-provenance
+    // requirement handleDecide enforces for a single high-tier reject
+    // (one prompt per batch, not one per item, so this doesn't become
+    // N confirm dialogs for a large selection).
+    let reason: string | undefined;
+    if (decision === "reject" && highCount > 0) {
+      const entered = window.prompt(
+        `Why are you rejecting ${highCount} high-risk approval${highCount === 1 ? "" : "s"}? (logged for audit; max 500 chars)`,
+        "",
+      );
+      if (entered === null) return; // user hit cancel
+      reason = entered.trim() || undefined;
+    }
     if (decision === "approve") setBatchApproving(true);
     else setBatchRejecting(true);
     setBatchErr(null);
     try {
       const failedIds: string[] = [];
+      // Reuse decide() (not a raw fetch) so the batch path gets the same
+      // audit-reason body and 409-already-decided handling as the
+      // single-item path — previously this inline fetch silently dropped
+      // the rejection reason on every high-tier bulk reject and treated
+      // an already-decided-elsewhere 409 as a failure.
       await Promise.all(
         ids.map((id) =>
-          fetch(`${API}/${decision}/${id}`, { method: "POST" }).then((res) => {
-            if (res.ok) {
-              removeWithFade(id);
-            } else {
-              failedIds.push(id.slice(0, 8));
-            }
+          decide(id, decision, reason).catch(() => {
+            failedIds.push(id.slice(0, 8));
           }),
         ),
       );
