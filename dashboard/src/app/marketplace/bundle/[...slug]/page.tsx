@@ -17,6 +17,13 @@ import BundleInstallPanel from "./BundleInstallPanel";
 // bundles shouldn't 404 for 5 min after the registry PR lands.
 export const revalidate = 60;
 
+// Same fix as the recipe detail page (marketplace/[...slug]/page.tsx):
+// fetchGithubFile's own `next: { revalidate }` fetch-cache option
+// defaults to 300s independently of the route segment's revalidate
+// above — pass it explicitly so a bundle manifest edit is visible within
+// the same 60s window the page itself re-renders on, not up to 5x later.
+const FETCH_OPTS = { revalidate };
+
 interface PageProps {
   // Next 15: dynamic route params are Promise-typed.
   params: Promise<{ slug: string[] }>;
@@ -25,7 +32,7 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
   const fullName = decodeURIComponent(slug.join("/"));
-  const registry = await fetchRegistry();
+  const registry = await fetchRegistry(FETCH_OPTS);
   if (!registry) {
     return { title: "Registry unreachable — Marketplace · Patchwork OS" };
   }
@@ -41,7 +48,7 @@ export default async function BundleDetailPage({ params }: PageProps) {
   const { slug } = await params;
   const fullName = decodeURIComponent(slug.join("/"));
 
-  const registry = await fetchRegistry();
+  const registry = await fetchRegistry(FETCH_OPTS);
   // Same fix as the recipe detail page: don't conflate "registry
   // unreachable" with "bundle missing". Pre-fix, every bundle URL 404'd
   // whenever the CDN was down.
@@ -54,7 +61,7 @@ export default async function BundleDetailPage({ params }: PageProps) {
   let manifestErr = false;
   if (src) {
     try {
-      manifest = await fetchBundleManifest(src);
+      manifest = await fetchBundleManifest(src, FETCH_OPTS);
       // fetchBundleManifest swallows network errors and returns null —
       // treat null as a manifest-unavailable signal so the page renders
       // a notice instead of an empty bundle.
