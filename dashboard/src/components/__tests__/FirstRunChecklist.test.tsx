@@ -4,13 +4,26 @@
  *   - first incomplete step is marked as "next" (data-state="next")
  *   - collapses when all 4 steps are complete
  *   - collapses when the user dismisses + persists across remounts
+ *
+ * bridgeStatus is passed in as a prop (not fetched internally) — see
+ * FirstRunChecklist.tsx's comment: a second independent useBridgeStatus()
+ * instance here would double real /api/bridge/status polling traffic
+ * alongside HomePage's own instance.
  */
 
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FirstRunChecklist } from "@/components/FirstRunChecklist";
+import type { BridgeStatus } from "@/hooks/useBridgeStatus";
 
 const originalFetch = global.fetch;
+
+const HEALTHY_STATUS: BridgeStatus = { ok: true };
+const UNREACHABLE_STATUS: BridgeStatus = {
+  ok: false,
+  degraded: false,
+  lastAttemptAt: Date.now(),
+};
 
 type Probe =
   | { kind: "arr"; arr: unknown[] }
@@ -48,7 +61,9 @@ describe("<FirstRunChecklist/>", () => {
       "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
       "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
-    const { findByText, container } = render(<FirstRunChecklist />);
+    const { findByText, container } = render(
+      <FirstRunChecklist bridgeStatus={HEALTHY_STATUS} />,
+    );
     expect(await findByText(/Get started/)).toBeInTheDocument();
     // Step 1 label is present
     expect(container.textContent).toMatch(/Install or create a recipe/);
@@ -65,7 +80,9 @@ describe("<FirstRunChecklist/>", () => {
       "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
       "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
-    const { findByText, container } = render(<FirstRunChecklist />);
+    const { findByText, container } = render(
+      <FirstRunChecklist bridgeStatus={HEALTHY_STATUS} />,
+    );
     await findByText(/Get started/);
     const items = container.querySelectorAll("li");
     // Step 1 done, step 2 is next
@@ -80,7 +97,9 @@ describe("<FirstRunChecklist/>", () => {
       "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
       "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
-    const { findByText, container } = render(<FirstRunChecklist />);
+    const { findByText, container } = render(
+      <FirstRunChecklist bridgeStatus={HEALTHY_STATUS} />,
+    );
     await findByText(/Get started/);
     const items = container.querySelectorAll("li");
     expect(items[2]?.getAttribute("data-state")).toBe("next");
@@ -93,7 +112,9 @@ describe("<FirstRunChecklist/>", () => {
       "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [{ id: "i1" }] },
       "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [{ id: "gmail" }] },
     });
-    const { container } = render(<FirstRunChecklist />);
+    const { container } = render(
+      <FirstRunChecklist bridgeStatus={HEALTHY_STATUS} />,
+    );
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
     });
@@ -109,7 +130,9 @@ describe("<FirstRunChecklist/>", () => {
       "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
       "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
-    const { container } = render(<FirstRunChecklist />);
+    const { container } = render(
+      <FirstRunChecklist bridgeStatus={HEALTHY_STATUS} />,
+    );
     expect(container.firstChild).toBeNull();
   });
 
@@ -120,14 +143,18 @@ describe("<FirstRunChecklist/>", () => {
       "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
       "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
-    const { findByRole, container, unmount } = render(<FirstRunChecklist />);
+    const { findByRole, container, unmount } = render(
+      <FirstRunChecklist bridgeStatus={HEALTHY_STATUS} />,
+    );
     const dismiss = await findByRole("button", {
       name: /dismiss first-run checklist/i,
     });
     fireEvent.click(dismiss);
     expect(container.firstChild).toBeNull();
     unmount();
-    const { container: c2 } = render(<FirstRunChecklist />);
+    const { container: c2 } = render(
+      <FirstRunChecklist bridgeStatus={HEALTHY_STATUS} />,
+    );
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalled();
     });
@@ -135,20 +162,15 @@ describe("<FirstRunChecklist/>", () => {
   });
 
   it("suppresses itself when the bridge is unreachable (leaves it to BridgeOfflineBanner)", async () => {
-    // /api/bridge/status and /api/bridge/approvals both fail (no bridge
-    // running) — useBridgeStatus() should land on ok:false, degraded:false.
-    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/bridge/status") || url.includes("/api/bridge/approvals")) {
-        return new Response("Service Unavailable", { status: 503 });
-      }
-      // Recipe/run/inbox/connection probes would all report "empty" too,
-      // since a real 503 from the proxy looks the same to probeArray().
-      return new Response("[]", {
-        headers: { "content-type": "application/json" },
-      });
-    }) as unknown as typeof fetch;
-    const { container } = render(<FirstRunChecklist />);
+    global.fetch = makeFetch({
+      "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [] },
+      "/api/bridge/runs": { kind: "wrap", key: "runs", arr: [] },
+      "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
+      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
+    });
+    const { container } = render(
+      <FirstRunChecklist bridgeStatus={UNREACHABLE_STATUS} />,
+    );
     await waitFor(() => {
       expect(container.firstChild).toBeNull();
     });
@@ -161,7 +183,9 @@ describe("<FirstRunChecklist/>", () => {
       "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
       "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
-    const { findByText, container } = render(<FirstRunChecklist />);
+    const { findByText, container } = render(
+      <FirstRunChecklist bridgeStatus={HEALTHY_STATUS} />,
+    );
     await findByText(/Get started/);
     // All 4 steps have CTAs since nothing is done
     expect(container.querySelector('a[href="/marketplace"]')).not.toBeNull();

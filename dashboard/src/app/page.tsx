@@ -1795,7 +1795,7 @@ export default function HomePage() {
 
   return (
     <section className="td-root">
-      <FirstRunChecklist />
+      <FirstRunChecklist bridgeStatus={bridgeStatus} />
 
       {/* Statusline */}
       <div className="td-statusline" role="status" aria-label="Bridge status">

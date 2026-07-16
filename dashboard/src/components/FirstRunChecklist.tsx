@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useBridgeStatus } from "@/hooks/useBridgeStatus";
+import type { BridgeStatus } from "@/hooks/useBridgeStatus";
 import { apiPath } from "@/lib/api";
 
 /**
@@ -87,10 +87,20 @@ function writeDismissed() {
   }
 }
 
-export function FirstRunChecklist() {
+export function FirstRunChecklist({
+  bridgeStatus,
+}: {
+  /**
+   * Passed down from the page rather than calling useBridgeStatus() here
+   * directly — HomePage already polls /api/bridge/status via its own
+   * useBridgeStatus() instance; a second independent instance in this
+   * component would double real polling traffic on every page load where
+   * the checklist is visible (each instance opens its own fetch interval).
+   */
+  bridgeStatus: BridgeStatus;
+}) {
   const [status, setStatus] = useState<Status>(emptyStatus);
   const [dismissed, setDismissed] = useState(false);
-  const bridgeStatus = useBridgeStatus();
 
   useEffect(() => {
     setDismissed(readDismissed());
