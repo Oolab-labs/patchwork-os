@@ -14,7 +14,10 @@ import {
   shortName,
   summarizeRisk,
 } from "@/lib/registry";
-import { TrustDivergenceNotice } from "../_components/TrustDivergenceNotice";
+import {
+  detectTrustDivergence,
+  TrustDivergenceNotice,
+} from "../_components/TrustDivergenceNotice";
 import InstallPanel from "./InstallPanel";
 
 // 60s ISR (was 300s). A 5-minute cache hides freshly merged recipes
@@ -98,6 +101,25 @@ export default async function RecipeDetailPage({ params }: PageProps) {
     }
   }
 
+  // Computed once and shared by InstallPanel's elevated-confirm gate and
+  // TrustDivergenceNotice's warning banner, so they can never disagree.
+  // Pre-fix, InstallPanel's one-click-vs-confirm decision only looked at
+  // the registry's self-reported (community-maintained, unsigned)
+  // risk_level/network_access/file_access — a recipe whose actual YAML
+  // contradicted that metadata (declared low-risk but the fetched YAML has
+  // high-risk file/network steps) still got a bare one-click Install
+  // button; the divergence warning rendered further down the page only
+  // AFTER the button the user had already clicked.
+  const divergenceMeta = {
+    risk_level: recipe.risk_level,
+    network_access: recipe.network_access,
+    file_access: recipe.file_access,
+  };
+  const riskSummary = yaml
+    ? summarizeRisk(yaml)
+    : { low: 0, medium: 0, high: 0, steps: 0 };
+  const trustDivergence = detectTrustDivergence(divergenceMeta, riskSummary);
+
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "var(--s-6)" }}>
       <Link
@@ -119,6 +141,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
         connectors={recipe.connectors}
         networkAccess={recipe.network_access}
         fileAccess={recipe.file_access}
+        hasTrustDivergence={trustDivergence.length > 0}
       />
 
       <ConnectorHealthPanel connectors={recipe.connectors} marginTop={0} />
@@ -130,12 +153,8 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       <TrustMetadataCard recipe={recipe} />
 
       <TrustDivergenceNotice
-        meta={{
-          risk_level: recipe.risk_level,
-          network_access: recipe.network_access,
-          file_access: recipe.file_access,
-        }}
-        riskSummary={yaml ? summarizeRisk(yaml) : { low: 0, medium: 0, high: 0, steps: 0 }}
+        meta={divergenceMeta}
+        riskSummary={riskSummary}
       />
 
       <YamlPreview yaml={yaml} src={src} mainFile={manifest?.recipes?.main} />

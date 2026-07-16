@@ -96,6 +96,59 @@ describe("InstallPanel — install-confirm dialog", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
+  // Regression: InstallPanel's elevated-confirm gate previously looked
+  // ONLY at the registry's self-reported (unsigned, community-maintained)
+  // risk_level/network_access/file_access — the reconciliation against the
+  // recipe's actual YAML (detectTrustDivergence, in TrustDivergenceNotice)
+  // rendered further down the same page but never fed back into this
+  // gate. A recipe that claimed low-risk while its real YAML disagreed
+  // still got a bare one-click Install button.
+  it("opens the confirm dialog when hasTrustDivergence is true even though metadata claims low-risk", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { recipes: [] })); // status poll
+    render(
+      <InstallPanel
+        install={INSTALL}
+        name={NAME}
+        riskLevel="low"
+        networkAccess={false}
+        fileAccess={false}
+        hasTrustDivergence={true}
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^Install$/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Install$/i }));
+    // Dialog opens — install POST does NOT fire yet.
+    await screen.findByRole("dialog");
+    expect(fetchMock).toHaveBeenCalledTimes(1); // status poll only
+  });
+
+  it("still installs in one tap when hasTrustDivergence is false and metadata is low-risk", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { recipes: [] })) // status poll
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true })); // install
+    render(
+      <InstallPanel
+        install={INSTALL}
+        name={NAME}
+        riskLevel="low"
+        networkAccess={false}
+        fileAccess={false}
+        hasTrustDivergence={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^Install$/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Install$/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
   it("opens the confirm dialog when trust metadata is missing (live-registry case)", async () => {
     // Marketplace trust Wave 0 — the live registry doesn't carry
     // risk_level / network_access / file_access on any recipe today.
