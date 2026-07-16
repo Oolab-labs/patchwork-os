@@ -11,8 +11,10 @@
  */
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RegistryRecipe } from "@/lib/registry";
 import {
+  checkTrustDivergence,
   detectTrustDivergence,
   TrustDivergenceNotice,
 } from "../TrustDivergenceNotice";
@@ -101,5 +103,102 @@ describe("TrustDivergenceNotice (render)", () => {
       />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+// Regression: the marketplace BROWSE grid (dashboard/src/app/marketplace/
+// page.tsx's useRecipeInstall) gates its one-click-vs-confirm-dialog
+// decision on registry metadata alone — the same class of bug #1185 fixed
+// on the detail page's InstallPanel. checkTrustDivergence is the fetch +
+// reconcile helper the browse grid calls at install-click time (not eagerly
+// per card) to close that gap; test it directly against a mocked fetch
+// rather than mounting the 1000+-line, untested page component.
+describe("checkTrustDivergence", () => {
+  const baseRecipe: RegistryRecipe = {
+    name: "@patchworkos/example",
+    version: "1.0.0",
+    description: "example",
+    tags: [],
+    connectors: [],
+    downloads: 0,
+    install: "github:patchworkos/recipes/recipes/example",
+  };
+
+  function jsonResponse(body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  function textResponse(body: string): Response {
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    });
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns true when metadata claims low-risk but the YAML declares high-risk steps", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ name: "example", version: "1.0.0", recipes: { main: "recipe.yaml" } }),
+      )
+      .mockResolvedValueOnce(
+        textResponse("steps:\n  - risk: high\n  - risk: high\n"),
+      );
+
+    const divergent = await checkTrustDivergence({
+      ...baseRecipe,
+      risk_level: "low",
+      network_access: false,
+      file_access: false,
+    });
+    expect(divergent).toBe(true);
+  });
+
+  it("returns false when metadata and YAML agree", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ name: "example", version: "1.0.0", recipes: { main: "recipe.yaml" } }),
+      )
+      .mockResolvedValueOnce(textResponse("steps:\n  - risk: low\n"));
+
+    const divergent = await checkTrustDivergence({
+      ...baseRecipe,
+      risk_level: "low",
+      network_access: false,
+      file_access: false,
+    });
+    expect(divergent).toBe(false);
+  });
+
+  it("fails open (returns false) when the manifest fetch fails", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("network error"));
+
+    const divergent = await checkTrustDivergence({
+      ...baseRecipe,
+      risk_level: "low",
+      network_access: false,
+      file_access: false,
+    });
+    expect(divergent).toBe(false);
+  });
+
+  it("returns false for an unparseable install source", async () => {
+    const divergent = await checkTrustDivergence({
+      ...baseRecipe,
+      install: "not-a-github-source",
+      risk_level: "low",
+    });
+    expect(divergent).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { EmptyState, HintCard } from "@/components/patchwork";
 import { canonicalRecipeKey } from "@/lib/entityKey";
 import { InstallConfirmDialog } from "./_components/InstallConfirmDialog";
+import { checkTrustDivergence } from "./_components/TrustDivergenceNotice";
 import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
@@ -285,8 +286,23 @@ function useRecipeInstall(
     }
   }
 
-  function handleInstall() {
+  async function handleInstall() {
     if (elevated) {
+      setConfirmOpen(true);
+      return;
+    }
+    // Metadata alone says one-click is safe, but the registry is
+    // community-maintained and unsigned — verify the actual YAML
+    // doesn't contradict it before bypassing the confirm dialog
+    // (mirrors the detail page's hasTrustDivergence gate, #1185).
+    setLoading(true);
+    let divergent = false;
+    try {
+      divergent = await checkTrustDivergence(recipe);
+    } finally {
+      setLoading(false);
+    }
+    if (divergent) {
       setConfirmOpen(true);
       return;
     }
