@@ -53,7 +53,7 @@ beforeEach(() => {
   // keyboard-focus effect that fires on mount.
   Element.prototype.scrollIntoView = vi.fn();
   // jsdom has no EventSource — the page's polling fallback fires
-  // immediately via fetch(`${API}/approvals`), no fake timers needed.
+  // immediately via a GET to the approvals endpoint, no fake timers needed.
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     const method = init?.method ?? "GET";
