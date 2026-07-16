@@ -5198,7 +5198,17 @@ if (__subcommandWillRun) {
         });
       }
 
-      child.on("exit", (code, signal) => {
+      // A failed spawn (e.g. ENOENT — binary moved/deleted between restarts,
+      // permission denied) emits 'error', NOT 'exit'. Without this handler
+      // Node re-throws it as an unhandled 'error' event and kills the whole
+      // supervisor process — the restart/backoff logic below never runs, so
+      // --watch silently stops auto-restarting instead of retrying. Guard
+      // against a double-restart in the rare case both 'error' and 'exit'
+      // fire for the same failure.
+      let handled = false;
+      const restart = (reason: string) => {
+        if (handled) return;
+        handled = true;
         if (stopping) {
           process.stderr.write("[supervisor] bridge stopped\n");
           process.exit(0);
@@ -5208,12 +5218,19 @@ if (__subcommandWillRun) {
           delay = BASE_DELAY_MS; // reset backoff after a stable run
         }
         process.stderr.write(
-          `[supervisor] bridge exited (code=${code ?? signal}), restarting in ${delay / 1000}s\n`,
+          `[supervisor] ${reason}, restarting in ${delay / 1000}s\n`,
         );
         setTimeout(() => {
           delay = Math.min(delay * 2, MAX_DELAY_MS);
           runChild();
         }, delay);
+      };
+
+      child.on("error", (err) => {
+        restart(`bridge failed to start (${err.message})`);
+      });
+      child.on("exit", (code, signal) => {
+        restart(`bridge exited (code=${code ?? signal})`);
       });
     }
 
