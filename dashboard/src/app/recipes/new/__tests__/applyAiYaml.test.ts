@@ -53,7 +53,8 @@ steps:
     const result = await prepareAndSaveAiRecipe(yaml, fetcher);
 
     expect(result).toEqual({ ok: true, recipeName: "morning-inbox" });
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    // 2 calls: the PUT save, then the force-disable PATCH (#1189-style fix).
+    expect(fetcher).toHaveBeenCalledTimes(2);
     const [url, init] = (fetcher as unknown as { mock: { calls: [string, RequestInit][] } })
       .mock.calls[0];
     expect(url).toBe("/api/bridge/recipes/morning-inbox");
@@ -207,6 +208,83 @@ describe("prepareAndSaveAiRecipe — error + demo paths", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBe("ECONNREFUSED");
+    }
+  });
+});
+
+describe("prepareAndSaveAiRecipe — force-disable after save (same fix as #1189's installGeneratedRecipe)", () => {
+  // Regression: a top-level recipe file is enabled by default
+  // (isRecipeFileEnabled in src/recipesHttp.ts), and AI-generated YAML has
+  // no guarantee of including `enabled: false`. Without checking the
+  // disable PATCH's response, a save could succeed while the recipe stays
+  // live/enabled with no error surfaced — the caller (page.tsx) would then
+  // redirect to the edit page as if everything were safe, before the user
+  // ever reviewed the generated steps.
+  it("PATCHes { enabled: false } after a successful save", async () => {
+    const yaml = `name: cron-recipe\ntrigger: { type: manual }\nsteps: []\n`;
+    const fetcher = vi.fn(async () => okResponse({ ok: true })) as unknown as typeof fetch;
+
+    const result = await prepareAndSaveAiRecipe(yaml, fetcher);
+
+    expect(result).toEqual({ ok: true, recipeName: "cron-recipe" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const calls = (fetcher as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    const [patchUrl, patchInit] = calls[1]!;
+    expect(patchUrl).toBe("/api/bridge/recipes/cron-recipe");
+    expect(patchInit?.method).toBe("PATCH");
+    expect(JSON.parse(patchInit?.body as string)).toEqual({ enabled: false });
+  });
+
+  it("returns ok:false and surfaces the bridge's error when the disable PATCH fails", async () => {
+    const yaml = `name: cron-recipe\ntrigger: { type: manual }\nsteps: []\n`;
+    let call = 0;
+    const fetcher = vi.fn(async () => {
+      call++;
+      if (call === 1) return okResponse({ ok: true }); // PUT save succeeds
+      return errorResponse(500, { error: "bridge busy" }); // PATCH disable fails
+    }) as unknown as typeof fetch;
+
+    const result = await prepareAndSaveAiRecipe(yaml, fetcher);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("bridge busy");
+    }
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to a clear message when the disable PATCH fails with no error body", async () => {
+    const yaml = `name: cron-recipe\ntrigger: { type: manual }\nsteps: []\n`;
+    let call = 0;
+    const fetcher = vi.fn(async () => {
+      call++;
+      if (call === 1) return okResponse({ ok: true });
+      return errorResponse(500, {});
+    }) as unknown as typeof fetch;
+
+    const result = await prepareAndSaveAiRecipe(yaml, fetcher);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/could not be forced disabled/i);
+      expect(result.error).toMatch(/cron-recipe/);
+    }
+  });
+
+  it("recovers when the disable PATCH itself throws a network error", async () => {
+    const yaml = `name: cron-recipe\ntrigger: { type: manual }\nsteps: []\n`;
+    let call = 0;
+    const fetcher = vi.fn(async () => {
+      call++;
+      if (call === 1) return okResponse({ ok: true });
+      throw new Error("ECONNRESET");
+    }) as unknown as typeof fetch;
+
+    const result = await prepareAndSaveAiRecipe(yaml, fetcher);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("ECONNRESET");
     }
   });
 });
