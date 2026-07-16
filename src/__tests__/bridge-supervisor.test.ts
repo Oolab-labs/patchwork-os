@@ -302,6 +302,66 @@ child.on('exit', () => {
     expect(allOutput).toContain("[supervisor] bridge stopped");
     expect(allOutput).not.toContain("unexpected restart");
   }, 10_000);
+
+  // Regression: spawn() failing entirely (ENOENT — binary moved/deleted
+  // between restarts, permission denied) emits 'error', not 'exit'. Without
+  // an 'error' handler, Node re-throws it as an unhandled 'error' event and
+  // crashes the whole supervisor process — the restart/backoff logic never
+  // runs, so --watch silently stops auto-restarting. This mirrors the real
+  // fix in src/index.ts's runChild(): both 'error' and 'exit' route through
+  // the same restart() function, guarded against firing twice.
+  it("supervisor restarts (does not crash) when the child binary can't be spawned at all", async () => {
+    const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-sup-"));
+    tmpDirs.push(scriptDir);
+
+    const supervisorPath = path.join(scriptDir, "supervisor.mjs");
+    fs.writeFileSync(
+      supervisorPath,
+      `
+import { spawn } from 'node:child_process';
+
+const BASE_DELAY_MS = 50;
+const MAX_DELAY_MS = 200;
+let delay = BASE_DELAY_MS;
+let runs = 0;
+
+function runChild() {
+  runs++;
+  if (runs > 2) { process.stderr.write('[supervisor] giving up\\n'); process.exit(0); }
+  process.stderr.write('[supervisor] starting bridge\\n');
+  const child = spawn('/definitely/does/not/exist-xyz', [], { stdio: 'inherit' });
+  let handled = false;
+  const restart = (reason) => {
+    if (handled) return;
+    handled = true;
+    process.stderr.write('[supervisor] ' + reason + ', restarting in ' + (delay / 1000) + 's\\n');
+    setTimeout(() => { delay = Math.min(delay * 2, MAX_DELAY_MS); runChild(); }, delay);
+  };
+  child.on('error', (err) => restart('bridge failed to start (' + err.message + ')'));
+  child.on('exit', (code, signal) => restart('bridge exited (code=' + (code ?? signal) + ')'));
+}
+runChild();
+`,
+      "utf-8",
+    );
+
+    const proc = spawn(process.execPath, [supervisorPath], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    const lines = await collectStderr(proc, 3000);
+    const exitCode = await new Promise<number | null>((resolve) => {
+      if (proc.exitCode !== null) return resolve(proc.exitCode);
+      proc.on("exit", (code) => resolve(code));
+    });
+
+    const output = lines.join("\n");
+    // The supervisor process itself must not crash with an unhandled
+    // 'error' exception — it should log and retry, then give up cleanly.
+    expect(exitCode).toBe(0);
+    expect(output).toContain("bridge failed to start");
+    expect(output).toContain("giving up");
+    expect(output).not.toContain("Unhandled 'error' event");
+  }, 5000);
 });
 
 // ── Regression: orchestrator subcommand must not fall through to parseConfig ──
