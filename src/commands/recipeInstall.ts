@@ -16,6 +16,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -546,37 +547,90 @@ export async function runRecipeInstall(
     const isReinstall = existsSync(installDir);
     const wasEnabled = isReinstall ? !isInstallDirDisabled(installDir) : false;
 
-    if (isReinstall) {
-      // Clear stale files from the previous version so files dropped from
-      // the new manifest don't linger. We rebuild the install dir wholesale
-      // rather than overlay the new files on top of the old.
-      try {
-        rmSync(installDir, { recursive: true, force: true });
-      } catch {
-        // best-effort; mkdirSync below will throw with a clearer error
-      }
-    }
-    mkdirSync(installDir, { recursive: true });
+    // Stage the new install content in a sibling directory inside
+    // `recipesDir` (same filesystem as `installDir`, required for an
+    // atomic rename below) instead of copying directly into `installDir`.
+    //
+    // Previously, files were `cpSync`'d one at a time straight into
+    // `installDir`, with the `.disabled` safety marker written only AFTER
+    // every file finished copying. A crash/kill between the first and
+    // last copy left a partially-copied recipe with no marker — the next
+    // startup's directory scan (eventTriggerPrograms.ts / scheduler.ts,
+    // neither of which checks "does this look complete") would treat it
+    // as a live, enabled recipe and either throw cryptically on the
+    // missing file or silently run a mutated/incomplete version.
+    //
+    // Now the `.disabled` marker is written into the staging dir BEFORE
+    // any file is copied, so a crash anywhere before the final rename
+    // leaves (at worst) an orphaned `.installing-*` directory that scans
+    // as disabled and is inert. The marker is only removed from the real
+    // `installDir` — restoring "was enabled" for a reinstall — after the
+    // rename has fully succeeded.
+    mkdirSync(recipesDir, { recursive: true });
+    const stagingDir = mkdtempSync(
+      path.join(recipesDir, `.installing-${installName}-`),
+    );
+    try {
+      writeFileSync(disabledMarkerPath(stagingDir), "");
 
-    // Copy files
-    for (const file of filesToCopy) {
-      const src = path.join(tmpDir, file);
-      const dest = path.join(installDir, file);
-      // Ensure subdirs exist (recipe.json could declare children in subdirs)
-      const destParent = path.dirname(dest);
-      if (!existsSync(destParent)) {
-        mkdirSync(destParent, { recursive: true });
+      for (const file of filesToCopy) {
+        const src = path.join(tmpDir, file);
+        const dest = path.join(stagingDir, file);
+        // Ensure subdirs exist (recipe.json could declare children in subdirs)
+        const destParent = path.dirname(dest);
+        if (!existsSync(destParent)) {
+          mkdirSync(destParent, { recursive: true });
+        }
+        cpSync(src, dest);
       }
-      cpSync(src, dest);
+
+      if (isReinstall) {
+        // Move the old install dir aside rather than deleting it first —
+        // if the process dies between removing the old dir and renaming
+        // the new one into place, the recipe would vanish entirely
+        // instead of just being stale. Renaming keeps a recoverable copy
+        // on disk until the very last (best-effort) cleanup step.
+        const backupDir = `${installDir}.replaced-${Date.now()}`;
+        renameSync(installDir, backupDir);
+        try {
+          renameSync(stagingDir, installDir);
+        } catch (err) {
+          // Restore the old install dir so the recipe isn't left missing.
+          renameSync(backupDir, installDir);
+          throw err;
+        }
+        try {
+          rmSync(backupDir, { recursive: true, force: true });
+        } catch {
+          // best-effort — a leftover `${name}.replaced-<ts>` dir is
+          // harmless (not a valid recipe name; won't collide on rescan)
+        }
+      } else {
+        renameSync(stagingDir, installDir);
+      }
+    } catch (err) {
+      try {
+        rmSync(stagingDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+      throw err;
     }
 
     // Write the disabled-marker policy:
-    //   - Fresh install: start disabled (per the wave2 plan's safety story).
+    //   - Fresh install: start disabled (per the wave2 plan's safety story;
+    //     the marker written into the staging dir above already achieves
+    //     this — nothing further to do).
     //   - Reinstall (upgrade in place): preserve whatever the user had set.
-    //     If the recipe was enabled before, leave it enabled; if disabled,
-    //     leave it disabled. Don't silently revoke an explicit user opt-in.
-    if (!isReinstall || !wasEnabled) {
-      writeFileSync(disabledMarkerPath(installDir), "");
+    //     If the recipe was enabled before, remove the marker we staged
+    //     with so it goes back to enabled; if disabled, leave it.
+    if (isReinstall && wasEnabled) {
+      try {
+        unlinkSync(disabledMarkerPath(installDir));
+      } catch {
+        /* best-effort — worst case the recipe stays disabled and the user
+           re-enables it, rather than silently losing the "enabled" state */
+      }
     }
 
     return {

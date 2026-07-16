@@ -14,17 +14,29 @@ import {
   existsSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isRecipeEnabled,
   runRecipeInstall,
   runRecipeUninstall,
 } from "../recipeInstall.js";
+
+// Native ESM module namespaces aren't configurable, so cpSync/rmSync can't
+// be vi.spyOn'd directly (they can only be intercepted via vi.mock).
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    cpSync: vi.fn(actual.cpSync),
+    rmSync: vi.fn(actual.rmSync),
+  };
+});
 
 let recipesRoot: string;
 let srcRoot: string;
@@ -221,5 +233,151 @@ describe("runRecipeInstall — reinstall correctness", () => {
     expect(before).toContain(".disabled");
     expect(before).toContain("recipe.json");
     expect(before).toContain("main.yaml");
+  });
+});
+
+describe("runRecipeInstall — crash safety (staged install + atomic rename)", () => {
+  afterEach(async () => {
+    // Reset the mocked cpSync/rmSync back to real implementations so other
+    // describe blocks in this file (which share the same mocked module
+    // instance) aren't affected by a mockImplementation set here.
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const mocked = await import("node:fs");
+    vi.mocked(mocked.cpSync).mockImplementation(actual.cpSync);
+    vi.mocked(mocked.rmSync).mockImplementation(actual.rmSync);
+  });
+
+  /**
+   * Makes cpSync throw only for the per-file copies into the recipesDir
+   * staging directory (what we're actually testing crash-safety for) —
+   * NOT for stageLocalSource's own unrelated bulk `cpSync(src, tmpDir,
+   * {recursive:true})` call that stages the source package into an OS
+   * temp dir before runRecipeInstall ever reaches the code under test.
+   */
+  async function mockCpSyncThrowsForRecipesRoot(): Promise<void> {
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const { cpSync } = await import("node:fs");
+    vi.mocked(cpSync).mockImplementation((src, dest, opts) => {
+      if (String(dest).includes(recipesRoot)) {
+        throw new Error("simulated crash mid-copy");
+      }
+      return actual.cpSync(src as never, dest as never, opts as never);
+    });
+  }
+
+  it("fresh install: a crash mid-copy leaves no trace at the final install path", async () => {
+    const src = writeSrcRecipe(
+      { "main.yaml": "name: crash-fresh\nsteps: []\n" },
+      {
+        name: "crash-fresh",
+        version: "1.0.0",
+        description: "x",
+        recipes: { main: "main.yaml" },
+      },
+    );
+
+    await mockCpSyncThrowsForRecipesRoot();
+
+    await expect(
+      runRecipeInstall(src, { recipesDir: recipesRoot }),
+    ).rejects.toThrow("simulated crash mid-copy");
+
+    // The real install path was never touched — nothing under it, because
+    // nothing was ever copied there directly (staged in a sibling dir first).
+    expect(existsSync(path.join(recipesRoot, "crash-fresh"))).toBe(false);
+  });
+
+  it("fresh install: if cleanup itself also fails, the orphaned staging dir is still marked disabled (never scanned as live)", async () => {
+    const src = writeSrcRecipe(
+      { "main.yaml": "name: crash-fresh-2\nsteps: []\n" },
+      {
+        name: "crash-fresh-2",
+        version: "1.0.0",
+        description: "x",
+        recipes: { main: "main.yaml" },
+      },
+    );
+
+    await mockCpSyncThrowsForRecipesRoot();
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const { rmSync: mockedRmSync } = await import("node:fs");
+    // Simulate the process dying before the catch block's best-effort
+    // rmSync(stagingDir) cleanup can run.
+    vi.mocked(mockedRmSync).mockImplementation((target, opts) => {
+      if (String(target).includes(".installing-")) {
+        throw new Error("simulated: no cleanup, process died");
+      }
+      return actual.rmSync(target as string, opts as never);
+    });
+
+    await expect(
+      runRecipeInstall(src, { recipesDir: recipesRoot }),
+    ).rejects.toThrow("simulated crash mid-copy");
+
+    const leftovers = readdirSync(recipesRoot).filter((f) =>
+      f.startsWith(".installing-"),
+    );
+    expect(leftovers.length).toBeGreaterThan(0);
+    for (const leftover of leftovers) {
+      // The safety marker was written BEFORE any file copy was attempted —
+      // an orphaned staging dir is always inert, regardless of how much (if
+      // any) of the copy loop completed before the crash.
+      expect(existsSync(path.join(recipesRoot, leftover, ".disabled"))).toBe(
+        true,
+      );
+    }
+  });
+
+  it("reinstall: a crash mid-copy leaves the PREVIOUS version installed and enabled, untouched", async () => {
+    const v1 = writeSrcRecipe(
+      { "main.yaml": "name: crash-reinstall\nsteps: []\nversion: 1\n" },
+      {
+        name: "crash-reinstall",
+        version: "1.0.0",
+        description: "x",
+        recipes: { main: "main.yaml" },
+      },
+    );
+    const inst1 = await runRecipeInstall(v1, { recipesDir: recipesRoot });
+    // Explicitly enable it, like a real user would after a fresh install.
+    writeFileSync(
+      path.join(inst1.installDir, "main.yaml"),
+      "name: crash-reinstall\nsteps: []\nversion: 1\n",
+    );
+    const disabledMarker = path.join(inst1.installDir, ".disabled");
+    rmSync(disabledMarker, { force: true });
+    expect(isRecipeEnabled(inst1.installDir)).toBe(true);
+
+    const v2 = writeSrcRecipe(
+      { "main.yaml": "name: crash-reinstall\nsteps: []\nversion: 2\n" },
+      {
+        name: "crash-reinstall",
+        version: "2.0.0",
+        description: "x",
+        recipes: { main: "main.yaml" },
+      },
+    );
+
+    await mockCpSyncThrowsForRecipesRoot();
+
+    await expect(
+      runRecipeInstall(v2, { recipesDir: recipesRoot }),
+    ).rejects.toThrow("simulated crash mid-copy");
+
+    // The old install dir must still exist, unchanged, and still enabled —
+    // the old dir is renamed aside (not deleted) until the new one has
+    // fully landed, and a crash during copy means the new one never lands.
+    expect(existsSync(inst1.installDir)).toBe(true);
+    expect(isRecipeEnabled(inst1.installDir)).toBe(true);
+    expect(
+      readFileSync(path.join(inst1.installDir, "main.yaml"), "utf-8"),
+    ).toContain("version: 1");
+
+    // No leftover `.replaced-<ts>` backup dir either — restored via rename,
+    // not left as a stray duplicate.
+    const stray = readdirSync(recipesRoot).filter((f) =>
+      f.includes(".replaced-"),
+    );
+    expect(stray).toEqual([]);
   });
 });
