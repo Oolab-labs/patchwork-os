@@ -1,4 +1,11 @@
-import type { TrustMetadata } from "@/lib/registry";
+import {
+  fetchManifest,
+  fetchRecipeYaml,
+  parseInstallSource,
+  type RegistryRecipe,
+  summarizeRisk,
+  type TrustMetadata,
+} from "@/lib/registry";
 
 /**
  * Trust-vs-YAML reconciliation for the recipe DETAIL page.
@@ -85,6 +92,46 @@ export function detectTrustDivergence(
   }
 
   return contradictions;
+}
+
+/**
+ * Fetch a recipe's actual YAML and check it against the registry's
+ * self-reported risk metadata via `detectTrustDivergence` — the same
+ * reconciliation the detail page runs eagerly (via `TrustDivergenceNotice`
+ * below), but computed on demand here so callers that render many recipes
+ * at once (the marketplace browse grid) aren't forced to fetch YAML for
+ * every card up front. Intended to be called only when the metadata ALONE
+ * would already bypass an elevated-confirm gate — a recipe that's already
+ * going to show a confirm dialog on its own metadata doesn't need this.
+ *
+ * Fails open (returns false) on any fetch/parse error, matching the detail
+ * page's `yaml=null` → zero-risk-summary → no-divergence semantics: this is
+ * a hint layer on top of the default-deny metadata gate, not the sole gate.
+ */
+export async function checkTrustDivergence(
+  recipe: RegistryRecipe,
+): Promise<boolean> {
+  const src = parseInstallSource(recipe.install);
+  if (!src) return false;
+  try {
+    const manifest = await fetchManifest(src);
+    const main = manifest?.recipes?.main;
+    if (!main) return false;
+    const yaml = await fetchRecipeYaml(src, main);
+    if (!yaml) return false;
+    const riskSummary = summarizeRisk(yaml);
+    const contradictions = detectTrustDivergence(
+      {
+        risk_level: recipe.risk_level,
+        network_access: recipe.network_access,
+        file_access: recipe.file_access,
+      },
+      riskSummary,
+    );
+    return contradictions.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
