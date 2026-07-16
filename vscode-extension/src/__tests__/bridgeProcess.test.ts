@@ -43,7 +43,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import * as vscode from "vscode";
-import { BridgeProcess } from "../bridgeProcess";
+import { BridgeProcess, validateShellArgs } from "../bridgeProcess";
 
 let tmpDir: string;
 let output: {
@@ -418,5 +418,44 @@ describe("BridgeProcess — fixed port", () => {
     const spawnCalls = vi.mocked(spawn).mock.calls;
     const args = spawnCalls[spawnCalls.length - 1]![1] as string[];
     expect(args).not.toContain("--port");
+  });
+});
+
+// ── validateShellArgs (Windows shell:true injection guard) ────────────────
+//
+// The .cmd-wrapper spawn path uses shell:true, under which Node's own docs
+// warn array-form argument escaping isn't guaranteed complete for every
+// shell metacharacter. --workspace carries a user-controlled path (could
+// contain "&", "%", etc. on Windows from an unusual folder/username) — this
+// validates it the same way validateBinaryPath already validates the binary.
+describe("validateShellArgs", () => {
+  // SHELL_METACHARACTERS is a module-level constant frozen at import time
+  // from the real process.platform — it can't be exercised for both
+  // platform variants in one test run, so these tests cover the rules that
+  // hold on every platform (the metacharacter set minus backslash, which is
+  // POSIX-only per validateBinaryPath's existing platform split).
+  it("does not throw for ordinary paths, including ones with spaces", () => {
+    expect(() =>
+      validateShellArgs(["--workspace", "/Users/John Smith/Projects/Foo"]),
+    ).not.toThrow();
+  });
+
+  it("throws when an argument contains a shell metacharacter", () => {
+    expect(() =>
+      validateShellArgs(["--workspace", "/Users/evil/Foo & Bar"]),
+    ).toThrow(/shell metacharacters/);
+  });
+
+  it("throws on each of the blocked metacharacters", () => {
+    for (const ch of [";", "&", "|", "`", "$", "(", ")", "<", ">", '"', "'"]) {
+      expect(
+        () => validateShellArgs([`some${ch}value`]),
+        `expected "${ch}" to be rejected`,
+      ).toThrow();
+    }
+  });
+
+  it("does not throw when no args are passed", () => {
+    expect(() => validateShellArgs([])).not.toThrow();
   });
 });

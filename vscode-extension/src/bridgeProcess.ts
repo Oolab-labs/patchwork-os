@@ -37,6 +37,26 @@ function validateBinaryPath(binaryPath: string): void {
 }
 
 /**
+ * Validate spawn arguments when shell:true is used (Windows .cmd wrappers).
+ * Node's array-form argument escaping for shell:true is not guaranteed
+ * complete for every shell metacharacter (the Node docs explicitly warn
+ * against passing unsanitized input under shell:true) — an argument like
+ * the workspace path could otherwise carry a `&`/`%`/etc. straight into
+ * cmd.exe's command line. This only fires under shell:true; the plain
+ * spawn(shell:false) path is not subject to shell interpretation at all.
+ * @throws Error if any arg contains shell metacharacters
+ */
+export function validateShellArgs(args: string[]): void {
+  for (const arg of args) {
+    if (SHELL_METACHARACTERS.test(arg)) {
+      throw new Error(
+        `Argument contains shell metacharacters (potential injection under shell:true): ${arg}`,
+      );
+    }
+  }
+}
+
+/**
  * Normalize a workspace path for cross-platform comparison: resolve it,
  * convert backslashes to forward slashes, and (on Windows only) lowercase
  * it — NTFS paths are case-insensitive but VS Code / a terminal-spawned
@@ -391,6 +411,19 @@ export class BridgeProcess {
     // with ENOENT even though the path is valid.
     const needsShell =
       process.platform === "win32" && binary.toLowerCase().endsWith(".cmd");
+
+    if (needsShell) {
+      try {
+        validateShellArgs(spawnArgs);
+      } catch (err) {
+        const msg = `Bridge spawn blocked: ${err instanceof Error ? err.message : String(err)}`;
+        this.log(msg);
+        await this.releaseSentinel();
+        this.onStartupFailed?.(msg);
+        return;
+      }
+    }
+
     const child = spawn(binary, spawnArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
