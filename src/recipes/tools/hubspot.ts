@@ -203,6 +203,9 @@ registerTool({
     assertWriteAllowed("hubspot.createNote");
     const { getHubSpotConnector } = await import("../../connectors/hubspot.js");
     const connector = getHubSpotConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("hubspot.createNote");
     const note = await connector.createNote(
       params.body as string,
       typeof params.contactId === "string" ? params.contactId : undefined,

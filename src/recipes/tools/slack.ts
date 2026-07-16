@@ -73,6 +73,11 @@ const slackPostMessage: RegisteredTool = {
     const blocks = Array.isArray(params.blocks) ? params.blocks : undefined;
     const threadTs = params.thread_ts ? String(params.thread_ts) : undefined;
 
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import()/token-load above (the whole
+    // point of an emergency-stop is to catch writes that haven't dispatched
+    // yet, however small the window).
+    assertWriteAllowed("slack.post_message");
     try {
       const result = await postMessage(
         channel,

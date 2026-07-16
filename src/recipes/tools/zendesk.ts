@@ -157,6 +157,9 @@ registerTool({
     assertWriteAllowed("zendesk.addComment");
     const { getZendeskConnector } = await import("../../connectors/zendesk.js");
     const connector = getZendeskConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("zendesk.addComment");
     const ticket = await connector.addComment(
       params.ticketId as number,
       params.body as string,
@@ -206,6 +209,9 @@ registerTool({
     assertWriteAllowed("zendesk.updateStatus");
     const { getZendeskConnector } = await import("../../connectors/zendesk.js");
     const connector = getZendeskConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("zendesk.updateStatus");
     const ticket = await connector.updateStatus(
       params.ticketId as number,
       params.status as

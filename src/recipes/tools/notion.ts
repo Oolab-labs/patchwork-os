@@ -227,6 +227,9 @@ registerTool({
     assertWriteAllowed("notion.createPage");
     const { getNotionConnector } = await import("../../connectors/notion.js");
     const connector = getNotionConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("notion.createPage");
     const page = await connector.createPage({
       parentId: params.parentId as string,
       parentType: (params.parentType as "database" | "page") ?? "database",
@@ -296,6 +299,9 @@ registerTool({
     assertWriteAllowed("notion.appendBlock");
     const { getNotionConnector } = await import("../../connectors/notion.js");
     const connector = getNotionConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("notion.appendBlock");
     const result = await connector.appendBlock({
       pageId: params.pageId as string,
       content: params.content as string,

@@ -150,6 +150,9 @@ registerTool({
       60_000,
     );
 
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the SSRF/URL validation above.
+    assertWriteAllowed("http.post");
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     // Use undici.fetch directly (not global fetch) so we can pass the custom

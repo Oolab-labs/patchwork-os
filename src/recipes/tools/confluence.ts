@@ -157,6 +157,9 @@ registerTool({
       "../../connectors/confluence.js"
     );
     const connector = getConfluenceConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("confluence.createPage");
     const page = await connector.createPage({
       spaceId: params.spaceId as string,
       title: params.title as string,
@@ -211,6 +214,9 @@ registerTool({
       "../../connectors/confluence.js"
     );
     const connector = getConfluenceConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("confluence.appendToPage");
     const page = await connector.appendToPage(
       params.pageId as string,
       params.content as string,
