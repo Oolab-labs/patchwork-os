@@ -2378,6 +2378,14 @@ export class Bridge {
         this.orchestrator.cancel(task.id, "shutdown");
       }
     }
+    // Same reasoning as the orchestrator cancel above: the ApprovalQueue is
+    // purely in-memory (no disk persistence), so a pending human-approval
+    // request silently vanishes on restart with no "cancelled" decision ever
+    // reaching the originating tool call — it just hangs until its own
+    // connection drops, an ungraceful teardown instead of the graceful
+    // `cancelled` semantics this queue already has a dedicated discriminant
+    // for. Resolve them here, while the transport is still reachable.
+    getApprovalQueue().cancelAll();
     try {
       await this.server.close();
     } catch {
