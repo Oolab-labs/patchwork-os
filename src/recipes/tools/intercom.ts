@@ -154,6 +154,9 @@ registerTool({
       "../../connectors/intercom.js"
     );
     const connector = getIntercomConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("intercom.replyToConversation");
     const conversation = await connector.replyToConversation(
       params.conversationId as string,
       params.body as string,
@@ -198,6 +201,9 @@ registerTool({
       "../../connectors/intercom.js"
     );
     const connector = getIntercomConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("intercom.closeConversation");
     const conversation = await connector.closeConversation(
       params.conversationId as string,
     );

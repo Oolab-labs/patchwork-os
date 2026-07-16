@@ -211,6 +211,9 @@ registerTool({
     assertWriteAllowed("datadog.muteMonitor");
     const { getDatadogConnector } = await import("../../connectors/datadog.js");
     const connector = getDatadogConnector();
+    // Re-check immediately before the network write: the kill switch may
+    // have been engaged during the import() above.
+    assertWriteAllowed("datadog.muteMonitor");
     const monitor = await connector.muteMonitor(
       params.monitorId as number,
       typeof params.end === "number" ? params.end : undefined,
