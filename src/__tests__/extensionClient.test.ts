@@ -425,6 +425,50 @@ describe("ExtensionClient", () => {
     ws.close();
   });
 
+  it("replacing a mismatched connection resets extensionProtocolMismatch (clean slate for the new connection)", async () => {
+    // Regression: the replace-connection branch in handleExtensionConnection()
+    // never fires handleDisconnect() for the old socket (its listeners are
+    // removed before terminate(), so 'close' never fires) — handleDisconnect
+    // is the only other place extensionProtocolMismatch was reset, alongside
+    // a fresh (non-mismatched) "hello". Without resetting it on replace too,
+    // a version-compatible reconnect stayed marked unavailable until its own
+    // hello was processed.
+    const firstConn = new Promise<WebSocket>((resolve) => {
+      wss.once("connection", resolve);
+    });
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws1);
+    const serverWs1 = await firstConn;
+    client.handleExtensionConnection(serverWs1);
+
+    ws1.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/hello",
+        params: { extensionVersion: "99.0.0", vscodeVersion: "1.85.0" },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(client.isConnected()).toBe(false); // marked unavailable by mismatch
+
+    // A second extension connects and replaces the first — before it has a
+    // chance to send its own "hello".
+    const secondConn = new Promise<WebSocket>((resolve) => {
+      wss.once("connection", resolve);
+    });
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws2);
+    const serverWs2 = await secondConn;
+    client.handleExtensionConnection(serverWs2);
+
+    // Fresh connection, no hello processed yet — must not still be marked
+    // unavailable by the PREVIOUS connection's mismatch.
+    expect(client.isConnected()).toBe(true);
+
+    ws1.close();
+    ws2.close();
+  });
+
   it("disconnect() does not fire onExtensionDisconnected (spurious-callback fix)", async () => {
     const serverConn = new Promise<WebSocket>((resolve) => {
       wss.on("connection", resolve);

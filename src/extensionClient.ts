@@ -222,6 +222,14 @@ export class ExtensionClient {
     this.extensionFailureTimes = [];
     this.extensionHalfOpen = false;
     this.lastRttMs = null;
+    // Also reset the protocol-mismatch gate: on the replace-connection path
+    // above, the old socket's close event never fires (listeners removed),
+    // so handleDisconnect() — the only other place this resets — never runs
+    // for it. Without this, a previously-mismatched connection's stale
+    // extensionProtocolMismatch=true would make isAvailable() report false
+    // for a freshly reconnected (possibly now version-compatible) extension
+    // until its next "hello" is processed.
+    this.extensionProtocolMismatch = false;
 
     this.logger.info("Extension client connected");
 
