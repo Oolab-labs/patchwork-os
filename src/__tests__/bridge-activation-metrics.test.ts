@@ -15,6 +15,11 @@ const yamlRunnerModule = await vi.hoisted(async () => ({
   buildChainedDeps: vi.fn(() => ({})),
 }));
 
+const pluginLoaderModule = await vi.hoisted(async () => ({
+  loadPlugins: vi.fn(async (): Promise<unknown[]> => []),
+  loadPluginsFull: vi.fn(async (): Promise<unknown[]> => []),
+}));
+
 vi.mock("../activationMetrics.js", () => activationMetricsModule);
 vi.mock("../bridgeToken.js", () => ({
   loadOrCreateBridgeToken: vi.fn(() => "bridge-test-token"),
@@ -26,8 +31,8 @@ vi.mock("../probe.js", () => ({
   probeAll: vi.fn(async () => ({})),
 }));
 vi.mock("../pluginLoader.js", () => ({
-  loadPlugins: vi.fn(async () => []),
-  loadPluginsFull: vi.fn(async () => []),
+  loadPlugins: pluginLoaderModule.loadPlugins,
+  loadPluginsFull: pluginLoaderModule.loadPluginsFull,
 }));
 vi.mock("../bridgeToolsRules.js", () => ({
   repairBridgeToolsRulesIfStale: vi.fn(),
@@ -117,6 +122,10 @@ describe("Bridge activation metrics", () => {
       trigger: { type: "manual" },
       steps: [],
     });
+    pluginLoaderModule.loadPlugins.mockReset();
+    pluginLoaderModule.loadPlugins.mockImplementation(async () => []);
+    pluginLoaderModule.loadPluginsFull.mockReset();
+    pluginLoaderModule.loadPluginsFull.mockImplementation(async () => []);
   });
 
   afterEach(() => {
@@ -230,6 +239,38 @@ describe("Bridge activation metrics", () => {
 
       expect(yamlRunnerModule.dispatchRecipe).toHaveBeenCalledTimes(1);
       expect(activationMetricsModule.recordRecipeRun).not.toHaveBeenCalled();
+    } finally {
+      await bridge.stop();
+    }
+  });
+
+  it("does not report ready until plugin loading resolves (regression: sessions could connect before plugin tools were registered)", async () => {
+    let resolveLoadPlugins!: (tools: unknown[]) => void;
+    pluginLoaderModule.loadPlugins.mockImplementation(
+      () =>
+        new Promise<unknown[]>((resolve) => {
+          resolveLoadPlugins = resolve;
+        }),
+    );
+
+    const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-ready-"));
+    const bridge = new Bridge(makeConfig(workspace));
+
+    try {
+      const startPromise = bridge.start();
+
+      // Let start() run up to (and block on) the loadPlugins() await, without
+      // letting it resolve yet. A few microtask turns is enough since nothing
+      // between probeAll() and loadPlugins() awaits anything real.
+      for (let i = 0; i < 5; i++) {
+        await Promise.resolve();
+      }
+      expect((bridge as unknown as { ready: boolean }).ready).toBe(false);
+
+      resolveLoadPlugins([]);
+      await startPromise;
+
+      expect((bridge as unknown as { ready: boolean }).ready).toBe(true);
     } finally {
       await bridge.stop();
     }
