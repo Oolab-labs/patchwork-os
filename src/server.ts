@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { unlinkSync } from "node:fs";
 import http from "node:http";
@@ -516,11 +516,22 @@ export class Server extends EventEmitter<ServerEvents> {
   public broadcastKillSwitchEventFn:
     | ((engaged: boolean, reason?: string) => void)
     | null = null;
-  /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
+  /**
+   * Patchwork: set by bridge to match + fire webhook-triggered recipes.
+   * `deliveryId` — a stable per-delivery identity (sender's delivery
+   * header if present, else a hash of the raw request body — see the
+   * call site) — lets the recipe's write-effect ledger disk-back and
+   * dedup a redelivered webhook (sender retries on timeout/5xx) against
+   * a run that already executed its writes before the bridge crashed or
+   * restarted mid-run. Scheduler/dashboard-fired runs have no equivalent
+   * "same logical event, redelivered" case, so they intentionally don't
+   * pass anything analogous here.
+   */
   public webhookFn:
     | ((
         path: string,
         payload: unknown,
+        deliveryId?: string,
       ) => Promise<{
         ok: boolean;
         taskId?: string;
@@ -1451,6 +1462,21 @@ export class Server extends EventEmitter<ServerEvents> {
             payload = read.body;
           }
         }
+        // Stable per-delivery identity for redelivery dedup: the sender's
+        // own delivery-id header when present (GitHub's X-GitHub-Delivery
+        // is a UUID unique per delivery attempt — including retries of the
+        // SAME delivery, which is exactly what we want to dedup against),
+        // else a hash of the raw body as a best-effort fallback for
+        // senders with no delivery header. Hashed either way rather than
+        // used verbatim so this stays a fixed-length, filesystem/audit-safe
+        // token regardless of what a sender puts in the header.
+        const deliveryHeader = readSingleSignatureHeader(
+          req.headers["x-github-delivery"],
+        );
+        const deliveryId = createHash("sha256")
+          .update(deliveryHeader ?? read.bytes)
+          .digest("hex")
+          .slice(0, 32);
         if (!this.webhookFn) {
           res.writeHead(503, { "Content-Type": "application/json" });
           res.end(
@@ -1462,7 +1488,7 @@ export class Server extends EventEmitter<ServerEvents> {
           );
           return;
         }
-        const result = await this.webhookFn(hookPath, payload);
+        const result = await this.webhookFn(hookPath, payload, deliveryId);
         const status = result.ok
           ? 200
           : result.error === "not_found"

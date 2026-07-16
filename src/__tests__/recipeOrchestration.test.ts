@@ -71,6 +71,11 @@ vi.mock("../commands/recipe.js", () => ({
   runRecipeDryPlan: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock("../recipes/yamlRunner.js", () => ({
+  buildChainedDeps: vi.fn().mockReturnValue({}),
+  dispatchRecipe: vi.fn().mockResolvedValue({ success: true, summary: {} }),
+}));
+
 // ---------------------------------------------------------------------------
 
 describe("RecipeOrchestration", () => {
@@ -357,6 +362,98 @@ describe("RecipeOrchestration", () => {
       logLabel: '"foo"',
     });
     expect(result).toMatchObject({ ok: false, error: "boom" });
+  });
+
+  it("fireYamlRecipe() — deliveryId threads manualRunId + a fixed ledgerDir into the dispatch deps (webhook redelivery dedup)", async () => {
+    const { dispatchRecipe } = await import("../recipes/yamlRunner.js");
+    vi.mocked(dispatchRecipe).mockClear();
+
+    // Capture the dispatchFn passed to recipeOrchestrator.fire() and invoke
+    // it ourselves — fire() itself is mocked and would never call it.
+    let capturedDispatchFn:
+      | ((recipe: unknown, deps: unknown, seedContext: unknown) => unknown)
+      | undefined;
+    const fireStub = vi.fn().mockImplementation(async (opts) => {
+      capturedDispatchFn = opts.dispatchFn;
+      return { ok: true, taskId: "t1", name: "foo" };
+    });
+    const recipeOrch = makeRecipeOrchestrator({ fire: fireStub });
+    const mockOrchestrator = { runAndWait: vi.fn() };
+
+    const server = makeServer();
+    const ro = new RecipeOrchestration({
+      server,
+      getOrchestrator: () => mockOrchestrator,
+      recipeOrchestrator: recipeOrch,
+      recipeRunLog: null,
+      workdir: "/tmp/ws",
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    await ro.fireYamlRecipe({
+      filePath: "/r/foo.yaml",
+      name: "foo",
+      taskIdPrefix: "yaml-webhook-foo",
+      triggerSourceSuffix: "webhook:foo",
+      logLabel: 'webhook "foo"',
+      deliveryId: "deadbeefdeadbeefdeadbeefdeadbeef",
+    });
+
+    expect(capturedDispatchFn).toBeDefined();
+    await capturedDispatchFn?.({ name: "foo" }, {}, {});
+
+    expect(dispatchRecipe).toHaveBeenCalledTimes(1);
+    const passedDeps = vi.mocked(dispatchRecipe).mock.calls[0]![1] as {
+      manualRunId?: string;
+      ledgerDir?: string;
+    };
+    expect(passedDeps.manualRunId).toBe("deadbeefdeadbeefdeadbeefdeadbeef");
+    expect(passedDeps.ledgerDir).toMatch(
+      /[/\\]\.patchwork[/\\]webhook-effect-ledger$/,
+    );
+  });
+
+  it("fireYamlRecipe() — omits manualRunId/ledgerDir when no deliveryId is given (scheduler/dashboard-fired runs)", async () => {
+    const { dispatchRecipe } = await import("../recipes/yamlRunner.js");
+    vi.mocked(dispatchRecipe).mockClear();
+
+    let capturedDispatchFn:
+      | ((recipe: unknown, deps: unknown, seedContext: unknown) => unknown)
+      | undefined;
+    const fireStub = vi.fn().mockImplementation(async (opts) => {
+      capturedDispatchFn = opts.dispatchFn;
+      return { ok: true, taskId: "t1", name: "foo" };
+    });
+    const recipeOrch = makeRecipeOrchestrator({ fire: fireStub });
+    const mockOrchestrator = { runAndWait: vi.fn() };
+
+    const server = makeServer();
+    const ro = new RecipeOrchestration({
+      server,
+      getOrchestrator: () => mockOrchestrator,
+      recipeOrchestrator: recipeOrch,
+      recipeRunLog: null,
+      workdir: "/tmp/ws",
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    await ro.fireYamlRecipe({
+      filePath: "/r/foo.yaml",
+      name: "foo",
+      taskIdPrefix: "yaml-recipe-foo",
+      triggerSourceSuffix: "recipe:foo",
+      logLabel: '"foo"',
+      // no deliveryId — scheduler/dashboard-fired run
+    });
+
+    await capturedDispatchFn?.({ name: "foo" }, {}, {});
+
+    const passedDeps = vi.mocked(dispatchRecipe).mock.calls[0]![1] as {
+      manualRunId?: string;
+      ledgerDir?: string;
+    };
+    expect(passedDeps.manualRunId).toBeUndefined();
+    expect(passedDeps.ledgerDir).toBeUndefined();
   });
 
   it("buildScheduler() — returns a RecipeScheduler instance", () => {

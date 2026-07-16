@@ -753,7 +753,11 @@ export class RecipeOrchestration {
 
     this.wireGenerateFn();
 
-    server.webhookFn = async (hookPath: string, payload: unknown) => {
+    server.webhookFn = async (
+      hookPath: string,
+      payload: unknown,
+      deliveryId?: string,
+    ) => {
       // #605: same kill-switch gate as runRecipeFn — webhook trigger
       // is just another path into recipe execution.
       try {
@@ -823,6 +827,7 @@ export class RecipeOrchestration {
           triggerSourceSuffix: `webhook:${match.name}`,
           logLabel: `webhook "${match.name}"`,
           seedContext,
+          deliveryId,
         });
       }
       const loaded = loadRecipePrompt(
@@ -1288,6 +1293,15 @@ export class RecipeOrchestration {
     triggerSourceSuffix: string;
     logLabel: string;
     seedContext?: Record<string, string>;
+    /**
+     * Stable per-delivery identity (webhook redelivery only — see
+     * `server.webhookFn`'s doc comment). When set, disk-backs this run's
+     * write-effect ledger so a redelivered webhook can't double-execute
+     * writes a prior (possibly crashed-mid-run) delivery already made.
+     * Scheduler/dashboard-fired runs never pass this — there's no "same
+     * logical event, redelivered" case for those triggers.
+     */
+    deliveryId?: string;
   }): Promise<{ ok: boolean; taskId?: string; name?: string; error?: string }> {
     if (!this.deps.recipeOrchestrator) {
       return { ok: false, error: "recipe orchestrator unavailable" };
@@ -1387,6 +1401,16 @@ export class RecipeOrchestration {
       ...(gateAutomatedRuns && { gateAutomatedRuns: true }),
       ...(agentDisallowedTools && { agentDisallowedTools }),
       ...(workerId && { workerId }),
+      // Webhook redelivery dedup — see fireYamlRecipe's `deliveryId` doc
+      // comment. Disk-backs the write-effect ledger under a fixed shared
+      // directory (scoped internally by a hash of recipeName+deliveryId,
+      // per idempotencyKey.ts's deriveScopeKey) so a sender's retried
+      // delivery can't double-execute writes a crashed-mid-run prior
+      // delivery already made.
+      ...(opts.deliveryId && {
+        manualRunId: opts.deliveryId,
+        ledgerDir: join(homedir(), ".patchwork", "webhook-effect-ledger"),
+      }),
     };
     // Pass the bridge's long-lived RecipeRunLog so chainedRunner can flip the
     // run from `running` → terminal in-place via startRun/completeRun. The
