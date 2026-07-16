@@ -103,6 +103,45 @@ export async function prepareAndSaveAiRecipe(
         "Demo mode — recipe was not persisted. Disable demo mode to save real recipes.",
     };
   }
+
+  // Force disabled regardless of whatever the fresh save defaulted to —
+  // same reasoning and same check-the-response fix as the copilot chat
+  // install flow (installGeneratedRecipe in app/page.tsx, #1189). A
+  // top-level recipe file is enabled by default (isRecipeFileEnabled in
+  // src/recipesHttp.ts), and AI-generated YAML has no guarantee of
+  // including `enabled: false` — without this PATCH (and without
+  // checking it), a recipe with e.g. a cron trigger drafted from a
+  // prompt like "every weekday at 9am, summarize Gmail and post to
+  // Slack" would autonomously fire before the user ever reviewed it on
+  // the edit page this flow redirects to.
+  let disableRes: Response;
+  try {
+    disableRes = await fetcher(
+      apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeName)}`),
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      },
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+  if (!disableRes.ok) {
+    const disableData = (await disableRes.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    return {
+      ok: false,
+      error:
+        disableData.error ??
+        `"${recipeName}" was saved but could not be forced disabled (HTTP ${disableRes.status}) — it may be live and enabled. Check /recipes/${recipeName} before trusting it.`,
+    };
+  }
+
   return {
     ok: true,
     recipeName,
