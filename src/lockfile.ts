@@ -129,6 +129,39 @@ export class LockFileManager {
             continue;
           }
           if (stat.size > 4096) {
+            // A multi-root workspace with many long folder paths in
+            // workspaceFolders can legitimately exceed 4096 bytes — don't
+            // delete a live sibling's lock based on size alone (every other
+            // branch in this function checks PID liveness first). Only treat
+            // it as garbage if it doesn't parse as valid JSON with a live PID.
+            let keep = false;
+            try {
+              const raw = fs.readFileSync(filePath, "utf-8");
+              const content = JSON.parse(raw);
+              if (
+                typeof content.pid === "number" &&
+                Number.isInteger(content.pid) &&
+                content.pid > 0
+              ) {
+                try {
+                  process.kill(content.pid, 0);
+                  keep = true;
+                } catch (killErr) {
+                  // EPERM: process exists but we lack permission to signal it
+                  // (cross-user/elevated) — assume a legitimate live sibling.
+                  // ESRCH or anything else: dead, fall through to delete.
+                  keep = (killErr as NodeJS.ErrnoException).code === "EPERM";
+                }
+              }
+            } catch {
+              // unparseable — fall through to delete as oversized garbage
+            }
+            if (keep) {
+              this.logger.debug(
+                `Oversized but valid lock file, keeping: ${file} (${stat.size} bytes)`,
+              );
+              continue;
+            }
             this.logger.warn(
               `Removing oversized lock file: ${file} (${stat.size} bytes)`,
             );
