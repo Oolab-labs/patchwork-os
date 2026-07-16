@@ -374,6 +374,52 @@ describe("PluginWatcher", () => {
     watcher.stop();
   });
 
+  // Regression: applying a broken reload to every live transport used to
+  // roll each transport back to `old.tools` but still commit `fresh` to
+  // `loadedPlugins` (the source `getTools()` reads from). Any NEW session
+  // connecting after the failed reload would then be seeded with the
+  // broken `fresh` tools via `getTools()`, even though every EXISTING
+  // session correctly kept running the old ones.
+  it("reloadPlugin() — replaceTool throws on every transport — does NOT advance loadedPlugins/getTools(), does NOT call sendListChanged", async () => {
+    const config = makeConfig();
+    const logger = makeLogger();
+    const sendListChanged = vi.fn();
+    const watcher = new PluginWatcher(config, logger, sendListChanged);
+
+    const spec = "./my-plugin";
+    const plugin = makeLoadedPlugin(spec, tmpDir, "testPluginOld");
+    watcher.start([plugin]);
+
+    const freshPlugin = makeLoadedPlugin(spec, tmpDir, "testPluginBroken");
+    vi.mocked(loadOnePluginFull).mockResolvedValueOnce(freshPlugin);
+
+    const transport = makeTransport();
+    vi.mocked(transport.replaceTool).mockImplementation((schema) => {
+      // Fail applying the fresh tool, succeed on the old-tools rollback pass.
+      if (schema.name === "testPluginBroken") {
+        throw new Error("ajv.compile: invalid outputSchema");
+      }
+    });
+    watcher.addTransport(transport);
+
+    await watcher.reloadPlugin(spec);
+
+    // Rollback ran: transport ends up re-registered with the old tool.
+    expect(vi.mocked(transport.replaceTool)).toHaveBeenCalledWith(
+      plugin.tools[0]!.schema,
+      plugin.tools[0]!.handler,
+      undefined,
+    );
+    // But the canonical registry must NOT advance to the broken version —
+    // a session connecting right now must still see the old tools.
+    expect(sendListChanged).not.toHaveBeenCalled();
+    const tools = watcher.getTools();
+    expect(tools).toHaveLength(1);
+    expect(tools[0]!.schema.name).toBe("testPluginOld");
+
+    watcher.stop();
+  });
+
   it("getTools() returns flat list of all plugin tools", () => {
     const config = makeConfig();
     const logger = makeLogger();

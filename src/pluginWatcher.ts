@@ -137,6 +137,7 @@ export class PluginWatcher {
     }
 
     // Apply to all active transports
+    let anyTransportFailed = false;
     for (const transport of this.transports) {
       try {
         transport.deregisterToolsByPrefix(old.manifest.toolNamePrefix);
@@ -144,6 +145,7 @@ export class PluginWatcher {
           transport.replaceTool(t.schema, t.handler, t.timeoutMs);
         }
       } catch (err) {
+        anyTransportFailed = true;
         this.logger.warn(
           `[plugin-watch] Failed to patch transport for "${fresh.manifest.name}": ${err instanceof Error ? err.message : String(err)}; attempting rollback`,
         );
@@ -162,6 +164,20 @@ export class PluginWatcher {
           );
         }
       }
+    }
+
+    // Only advance the canonical registry when every live transport actually
+    // took `fresh`. Committing it unconditionally used to leak a broken
+    // reload into `getTools()`/`pluginTools` — every EXISTING session had
+    // correctly rolled back to `old.tools` above, but any NEW session
+    // connecting afterwards (new IDE window, new HTTP session, WS
+    // reconnect) was seeded from `loadedPlugins`, which still pointed at
+    // the version that just failed to apply everywhere.
+    if (anyTransportFailed) {
+      this.logger.warn(
+        `[plugin-watch] Not advancing registry for "${old.manifest.name}" — reload failed on at least one transport; new sessions will keep using the previous tools`,
+      );
+      return;
     }
 
     this.loadedPlugins.set(spec, fresh);
