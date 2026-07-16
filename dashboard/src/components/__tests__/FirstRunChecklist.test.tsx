@@ -134,6 +134,26 @@ describe("<FirstRunChecklist/>", () => {
     expect(c2.firstChild).toBeNull();
   });
 
+  it("suppresses itself when the bridge is unreachable (leaves it to BridgeOfflineBanner)", async () => {
+    // /api/bridge/status and /api/bridge/approvals both fail (no bridge
+    // running) — useBridgeStatus() should land on ok:false, degraded:false.
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/status") || url.includes("/api/bridge/approvals")) {
+        return new Response("Service Unavailable", { status: 503 });
+      }
+      // Recipe/run/inbox/connection probes would all report "empty" too,
+      // since a real 503 from the proxy looks the same to probeArray().
+      return new Response("[]", {
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    const { container } = render(<FirstRunChecklist />);
+    await waitFor(() => {
+      expect(container.firstChild).toBeNull();
+    });
+  });
+
   it("step CTAs link to the correct pages", async () => {
     global.fetch = makeFetch({
       "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [] },

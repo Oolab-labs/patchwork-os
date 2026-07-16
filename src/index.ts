@@ -107,6 +107,50 @@ const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
 const OPEN_VSX_PUBLISHER = "oolab-labs";
 const OPEN_VSX_NAME = "claude-ide-bridge-extension";
 
+/** True when running inside WSL (Windows Subsystem for Linux). */
+function detectWsl(): boolean {
+  return (
+    process.platform === "linux" &&
+    (process.env.WSL_DISTRO_NAME !== undefined ||
+      process.env.WSLENV !== undefined ||
+      (() => {
+        try {
+          return readFileSync("/proc/version", "utf-8")
+            .toLowerCase()
+            .includes("microsoft");
+        } catch {
+          return false;
+        }
+      })())
+  );
+}
+
+/**
+ * Actionable message for "no editor found on PATH" — the most common
+ * first-run cause is that VS Code IS installed but its `code` CLI shim was
+ * never added to PATH (macOS/Linux require running "Shell Command: Install
+ * 'code' command in PATH" from the Command Palette; this doesn't happen
+ * automatically). A bare "no editor found" error leaves a first-time user
+ * with no path forward.
+ */
+function editorNotFoundHint(): string {
+  const wslHint = detectWsl()
+    ? "WSL detected: ensure VS Code is installed on the Windows host and the\n" +
+      "Remote - WSL extension is active, then retry.\n" +
+      "Alternatively, pass the editor explicitly: claude-ide-bridge install-extension code\n\n"
+    : "";
+  return (
+    `No supported editor found on PATH (checked: code, cursor, windsurf, antigravity/ag).\n\n` +
+    `If VS Code is installed but not found, its 'code' CLI shim may not be on PATH:\n` +
+    `  1. Open VS Code\n` +
+    `  2. Cmd/Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"\n` +
+    `  3. Re-run this command\n\n` +
+    wslHint +
+    `Or specify the editor command explicitly: claude-ide-bridge install-extension <code|cursor|windsurf>\n` +
+    `Or install manually: https://open-vsx.org/extension/${OPEN_VSX_PUBLISHER}/${OPEN_VSX_NAME}\n`
+  );
+}
+
 // CLAUDE.md versioned-block patching moved to ./claudeMdPatch.ts so tests
 // can import the helpers without triggering the top-level CLI side effects
 // at the bottom of this file. Re-exported here for back-compat.
@@ -3737,32 +3781,15 @@ Steps performed:
 
   process.stderr.write("Claude IDE Bridge — setup\n\n");
 
-  // WSL detection: warn early if running in WSL without a detected editor
-  const isWsl =
-    process.platform === "linux" &&
-    (process.env.WSL_DISTRO_NAME !== undefined ||
-      process.env.WSLENV !== undefined ||
-      (() => {
-        try {
-          return readFileSync("/proc/version", "utf-8")
-            .toLowerCase()
-            .includes("microsoft");
-        } catch {
-          return false;
-        }
-      })());
-
   // Step 1: Install extension
   const editor = findEditor();
   if (!editor) {
-    const wslHint = isWsl
-      ? "\n         WSL detected: ensure VS Code is installed on the Windows host and\n" +
-        "         the Remote - WSL extension is active. Then re-run init.\n" +
-        "         Alternatively, pass the editor explicitly: claude-ide-bridge install-extension code\n"
-      : "";
-    process.stderr.write(
-      `  [skip] Extension install — no supported editor found on PATH.\n         Install manually: https://open-vsx.org/extension/${OPEN_VSX_PUBLISHER}/${OPEN_VSX_NAME}\n${wslHint}\n`,
-    );
+    const indented = editorNotFoundHint()
+      .trimEnd()
+      .split("\n")
+      .map((line) => `         ${line}`)
+      .join("\n");
+    process.stderr.write(`  [skip] Extension install —\n${indented}\n\n`);
   } else {
     process.stderr.write(`  Installing extension into ${editor}...\n`);
     const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
@@ -4381,9 +4408,7 @@ if (process.argv[2] === "orchestrator") {
   }
   const editor = process.argv[3] || findEditor();
   if (!editor) {
-    process.stderr.write(
-      "Error: No editor found. Specify the editor command: claude-ide-bridge install-extension <code|cursor|windsurf>\n",
-    );
+    process.stderr.write(`Error: ${editorNotFoundHint()}`);
     process.exit(1);
   }
 

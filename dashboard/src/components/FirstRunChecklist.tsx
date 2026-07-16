@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useBridgeStatus } from "@/hooks/useBridgeStatus";
 import { apiPath } from "@/lib/api";
 
 /**
@@ -89,6 +90,7 @@ function writeDismissed() {
 export function FirstRunChecklist() {
   const [status, setStatus] = useState<Status>(emptyStatus);
   const [dismissed, setDismissed] = useState(false);
+  const bridgeStatus = useBridgeStatus();
 
   useEffect(() => {
     setDismissed(readDismissed());
@@ -144,6 +146,19 @@ export function FirstRunChecklist() {
 
   if (dismissed) return null;
   if (!status.loaded) return null;
+  // Bridge unreachable — probeArray() treats a 503 ("no bridge running") the
+  // same as "reachable, zero items", so without this check a first-time user
+  // with no bridge running sees a misleading "0 of 4 done" checklist whose
+  // CTAs all lead to more silent dead ends. BridgeOfflineBanner (rendered in
+  // Shell) already tells them how to fix it (`patchwork start`); don't
+  // duplicate/contradict that here. Gate on lastAttemptAt so this doesn't
+  // flash-suppress the checklist before the first status poll resolves.
+  if (
+    bridgeStatus.lastAttemptAt !== undefined &&
+    !bridgeStatus.ok &&
+    !bridgeStatus.degraded
+  )
+    return null;
 
   const allDone =
     status.recipes.done &&
