@@ -895,7 +895,9 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
             {" — "}
             {u.reason === "truncated"
               ? "output >8 KB, will fire real tool"
-              : "no capture"}
+              : u.reason === "positional-id"
+                ? "no stable id (add into:), will fire real tool"
+                : "no capture"}
           </li>
         ))}
         {preflight.unmocked.length > 8 && (
