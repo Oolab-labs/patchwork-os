@@ -28,6 +28,18 @@ interface Props {
   connectors?: string[];
   networkAccess?: boolean;
   fileAccess?: boolean;
+  /**
+   * True when the recipe's actual YAML (fetched live from GitHub)
+   * contradicts the registry's self-reported risk metadata above — e.g.
+   * `risk_level: "low"` but the YAML contains high-risk file/network
+   * steps (see `detectTrustDivergence` in TrustDivergenceNotice.tsx).
+   * The registry is community-maintained and unsigned, so a stale or
+   * dishonest entry could otherwise get a bare one-click Install button
+   * while the contradiction warning renders further down the same page,
+   * after the button the user already clicked. Any divergence forces the
+   * confirm dialog regardless of what the metadata alone would allow.
+   */
+  hasTrustDivergence?: boolean;
 }
 
 // Three-state instead of boolean — distinguishes 401 (logged-out
@@ -47,6 +59,7 @@ export default function InstallPanel({
   connectors,
   networkAccess,
   fileAccess,
+  hasTrustDivergence,
 }: Props) {
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
   const [installed, setInstalled] = useState(false);
@@ -70,11 +83,12 @@ export default function InstallPanel({
   // is exactly ONE definition of "needs confirmation". Only bypass the
   // dialog when the recipe EXPLICITLY claims low risk AND disclaims
   // network + file access; anything missing those flags fails closed.
-  const elevated = requiresElevatedConfirm({
-    risk_level: riskLevel,
-    network_access: networkAccess,
-    file_access: fileAccess,
-  });
+  const elevated =
+    requiresElevatedConfirm({
+      risk_level: riskLevel,
+      network_access: networkAccess,
+      file_access: fileAccess,
+    }) || !!hasTrustDivergence;
 
   useEffect(() => {
     let cancelled = false;
