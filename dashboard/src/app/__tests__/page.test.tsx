@@ -1495,6 +1495,82 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(screen.queryByText("Undo")).toBeNull();
   });
 
+  // Regression: installGeneratedRecipe's disabling PATCH (the only thing
+  // enforcing "a copilot-installed recipe always lands disabled") was
+  // fire-and-forget — its response was never checked. If it failed, the
+  // code still recorded a decision trace claiming success and navigated
+  // away, even though the recipe compiler defaults enabled:true and the
+  // recipe could be left live.
+  it("surfaces an error instead of claiming success when the post-install disable PATCH fails", async () => {
+    const traceMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/bridge/copilot/message")) {
+        return jsonResponse({
+          reply: "Here's a draft.",
+          action: { kind: "create_recipe", goal: "summarize slack threads" },
+        });
+      }
+      if (method === "POST" && url.includes("/api/bridge/recipes/generate")) {
+        return jsonResponse({
+          ok: true,
+          yaml: "name: slack-summary\ntrigger:\n  type: manual\nsteps: []\n",
+        });
+      }
+      if (method === "PUT" && url.includes("/api/bridge/recipes/slack-summary")) {
+        return jsonResponse({ ok: true });
+      }
+      if (method === "PATCH" && url.includes("/api/bridge/recipes/slack-summary")) {
+        return jsonResponse({ error: "bridge busy" }, 500);
+      }
+      if (method === "POST" && url.includes("/api/bridge/traces/decision")) {
+        return traceMock(init);
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      typeIntoInput(input as HTMLInputElement, "create a recipe that summarizes slack threads");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const confirmBtn = await screen.findByText("Confirm");
+    await act(async () => {
+      confirmBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const installBtn = await screen.findByText("Install (disabled)");
+    await act(async () => {
+      installBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    // The bridge's own PATCH error message ("bridge busy") is surfaced,
+    // not swallowed — this is the failure the pre-fix code let through
+    // silently (no error, decision trace recorded as if it succeeded).
+    await waitFor(() => {
+      expect(screen.getByText("bridge busy")).toBeTruthy();
+    });
+    // The decision trace claims success — it must NOT fire when the
+    // disable PATCH failed, since the recipe may actually be live/enabled.
+    expect(traceMock).not.toHaveBeenCalled();
+  });
+
   it("audit regression: a stale background poll landing right after Confirm does not clobber the optimistic state, so Undo still flips the right direction", async () => {
     // Simulates the exact race an audit found: the page's 5s poll always
     // returns the recipe as `enabled: true` here (as if fetched before the

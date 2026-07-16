@@ -1693,11 +1693,39 @@ export default function HomePage() {
         return;
       }
       // Force disabled regardless of whatever the fresh save defaulted to.
-      await fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}`), {
+      // The response MUST be checked — the recipe compiler defaults
+      // `enabled: true` unless the YAML explicitly opts out, and LLM-
+      // generated YAML has no guarantee of including `enabled: false`.
+      // This PATCH is the only thing enforcing "install always lands
+      // disabled" for copilot-authored content; silently proceeding to
+      // claim success on a failed PATCH would leave a live, enabled
+      // recipe able to fire autonomously with no human review.
+      const disableRes = await fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: false }),
       });
+      if (!disableRes.ok) {
+        const disableResult = (await disableRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setCopilotMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id && m.action
+              ? {
+                  ...m,
+                  action: {
+                    ...m.action,
+                    generatedError:
+                      disableResult.error ??
+                      `"${name}" was saved but could not be forced disabled (HTTP ${disableRes.status}) — it may be live and enabled. Check /recipes/${name} before trusting it.`,
+                  },
+                }
+              : m,
+          ),
+        );
+        return;
+      }
       recordCopilotDecisionTrace(action, `Installed "${name}" (disabled) via copilot.`);
       router.push(`/recipes/${encodeURIComponent(name)}`);
     } catch (e) {
