@@ -1568,15 +1568,26 @@ export class McpTransport {
                     decision === "cancelled" ||
                     decision === "policy_denied"
                   ) {
-                    // Clamp: detach() may have reset activeToolCalls to 0 if
-                    // the WS dropped mid-approval. See line 1478 for the
-                    // matching pattern on the resolved-tool path.
-                    this.activeToolCalls = Math.max(
-                      0,
-                      this.activeToolCalls - 1,
+                    // Generation-guarded like the gateErr catch above and the
+                    // resolved-tool finally below: detach() clears
+                    // inFlightControllers and resets activeToolCalls for hard
+                    // reconnects. Without this check, a rejection/expiry that
+                    // resolves after the WS already reconnected (new
+                    // generation) would decrement the NEW generation's
+                    // activeToolCalls and delete its inFlightControllers/
+                    // inFlightToolNames entries if the new connection reused
+                    // the same JSON-RPC id — corrupting live call tracking.
+                    const wasSoftPreserved = this.detachSoftInflight.delete(
+                      msg.id,
                     );
-                    this.inFlightToolNames.delete(msg.id);
-                    this.inFlightControllers.delete(msg.id);
+                    if (gen === this.generation || wasSoftPreserved) {
+                      this.activeToolCalls = Math.max(
+                        0,
+                        this.activeToolCalls - 1,
+                      );
+                      this.inFlightToolNames.delete(msg.id);
+                      this.inFlightControllers.delete(msg.id);
+                    }
                     // Approval rejections/expiries/policy denials are NOT tool
                     // failures — track them on a dedicated counter and record
                     // a lifecycle event (not a tool entry) so stats()

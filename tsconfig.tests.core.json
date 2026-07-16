@@ -28,6 +28,7 @@
     "src/__tests__/streamableHttp.test.ts",
     "src/__tests__/tokenEfficiency.test.ts",
     "src/__tests__/transport-ajv.test.ts",
+    "src/__tests__/transport-approval-generation-leak.test.ts",
     "src/__tests__/transport-detachSoft-leak.test.ts",
     "src/__tests__/transport-tools-list.test.ts",
     "src/__tests__/transport.test.ts",
