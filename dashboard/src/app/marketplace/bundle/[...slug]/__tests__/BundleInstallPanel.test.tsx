@@ -233,6 +233,74 @@ describe("BundleInstallPanel — install action", () => {
     ).toBeInTheDocument();
   });
 
+  // Regression: the bridge's bundle installer has no skip-if-already-installed
+  // check — every /recipes/install call re-installs (or replaces) every
+  // manifest recipe and returns ALL of them in installed[], not just the ones
+  // newly installed by that call. Retrying after a partial failure used to
+  // add the full retry response length on top of the earlier partial count,
+  // overshooting recipes.length and getting the panel stuck unable to reach
+  // either the "all installed" or "partial" copy.
+  it("does not double-count recipes on retry after a partial failure (regression)", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { recipes: [] })) // status poll
+      .mockResolvedValueOnce(
+        // First install attempt: 2 succeed, 1 fails.
+        jsonResponse(200, {
+          ok: true,
+          kind: "bundle",
+          installed: [
+            { name: "a-recipe", action: "created" },
+            { name: "b-recipe", action: "created" },
+          ],
+          failures: [{ name: "c-recipe", error: "Upstream returned 500" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        // Retry: bridge re-installs/replaces ALL 3 recipes (not just the
+        // one that failed before) and reports all 3 as installed.
+        jsonResponse(200, {
+          ok: true,
+          kind: "bundle",
+          installed: [
+            { name: "a-recipe", action: "replaced" },
+            { name: "b-recipe", action: "replaced" },
+            { name: "c-recipe", action: "created" },
+          ],
+          failures: [],
+        }),
+      );
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Install bundle/i }),
+      ).toBeInTheDocument(),
+    );
+
+    // First attempt — partial.
+    fireEvent.click(screen.getByRole("button", { name: /Install bundle/i }));
+    let confirmBtns = screen.getAllByRole("button", { name: /Install bundle/i });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+    await waitFor(() =>
+      expect(screen.getByText(/2 of 3 recipes already installed/i)).toBeInTheDocument(),
+    );
+
+    // Retry — all 3 now succeed.
+    fireEvent.click(screen.getByRole("button", { name: /Install bundle/i }));
+    confirmBtns = screen.getAllByRole("button", { name: /Install bundle/i });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() =>
+      expect(screen.getByText(/All 3 recipes installed/i)).toBeInTheDocument(),
+    );
+    // The stale "N of 3" partial copy and the Install button must both be
+    // gone — pre-fix, the count overshot to 5 and neither the "all
+    // installed" nor "partial" branch matched, so the panel fell through
+    // to showing the Install button again forever.
+    expect(
+      screen.queryByRole("button", { name: /Install bundle/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("surfaces an error banner when bridge returns 502 with no installed[]", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, { recipes: [] }))
