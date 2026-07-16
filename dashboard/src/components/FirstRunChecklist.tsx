@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import type { BridgeStatus } from "@/hooks/useBridgeStatus";
 import { apiPath } from "@/lib/api";
 
 /**
@@ -86,7 +87,18 @@ function writeDismissed() {
   }
 }
 
-export function FirstRunChecklist() {
+export function FirstRunChecklist({
+  bridgeStatus,
+}: {
+  /**
+   * Passed down from the page rather than calling useBridgeStatus() here
+   * directly — HomePage already polls /api/bridge/status via its own
+   * useBridgeStatus() instance; a second independent instance in this
+   * component would double real polling traffic on every page load where
+   * the checklist is visible (each instance opens its own fetch interval).
+   */
+  bridgeStatus: BridgeStatus;
+}) {
   const [status, setStatus] = useState<Status>(emptyStatus);
   const [dismissed, setDismissed] = useState(false);
 
@@ -144,6 +156,19 @@ export function FirstRunChecklist() {
 
   if (dismissed) return null;
   if (!status.loaded) return null;
+  // Bridge unreachable — probeArray() treats a 503 ("no bridge running") the
+  // same as "reachable, zero items", so without this check a first-time user
+  // with no bridge running sees a misleading "0 of 4 done" checklist whose
+  // CTAs all lead to more silent dead ends. BridgeOfflineBanner (rendered in
+  // Shell) already tells them how to fix it (`patchwork start`); don't
+  // duplicate/contradict that here. Gate on lastAttemptAt so this doesn't
+  // flash-suppress the checklist before the first status poll resolves.
+  if (
+    bridgeStatus.lastAttemptAt !== undefined &&
+    !bridgeStatus.ok &&
+    !bridgeStatus.degraded
+  )
+    return null;
 
   const allDone =
     status.recipes.done &&
