@@ -6,7 +6,7 @@
  * over the raw request body, bypassing the bearer-token gate. Bearer
  * access continues to work — HMAC is additive, not a replacement.
  */
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import http from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Logger } from "../logger.js";
@@ -19,14 +19,14 @@ const SECRET =
 
 let server: Server | null = null;
 let port = 0;
-let calls: Array<{ path: string; payload: unknown }>;
+let calls: Array<{ path: string; payload: unknown; deliveryId?: string }>;
 
 async function startServer(opts: { secret: string | null }): Promise<void> {
   calls = [];
   server = new Server(TOKEN, logger);
   server.webhookSecret = opts.secret;
-  server.webhookFn = async (path, payload) => {
-    calls.push({ path, payload });
+  server.webhookFn = async (path, payload, deliveryId) => {
+    calls.push({ path, payload, deliveryId });
     return { ok: true, name: "stub-recipe", taskId: "task-1" };
   };
   port = await server.findAndListen(null);
@@ -236,5 +236,92 @@ describe("readSingleSignatureHeader — H6 multi-valued rejection", () => {
     expect(
       readSingleSignatureHeader("sha256=invalid1, sha256=invalid2"),
     ).toBeNull();
+  });
+});
+
+// Webhook redelivery dedup — deliveryId derivation passed to webhookFn.
+// A sender's own delivery-id header (GitHub's X-GitHub-Delivery, a UUID
+// unique per delivery attempt, including retries of the SAME delivery)
+// should produce a stable, deterministic deliveryId so a recipe's
+// write-effect ledger can dedup a redelivered webhook against a run that
+// already executed its writes before a crash/restart mid-run. Senders with
+// no delivery header fall back to a hash of the raw body.
+describe("POST /hooks/* — deliveryId derivation for webhook redelivery dedup", () => {
+  it("derives deliveryId from X-GitHub-Delivery when present", async () => {
+    await startServer({ secret: null });
+    const body = JSON.stringify({ action: "opened" });
+    const deliveryHeader = "12345678-1234-1234-1234-123456789012";
+    const { status } = await postHooks(body, {
+      Authorization: `Bearer ${TOKEN}`,
+      "X-GitHub-Delivery": deliveryHeader,
+    });
+    expect(status).toBe(200);
+    expect(calls).toHaveLength(1);
+    const expected = createHash("sha256")
+      .update(deliveryHeader)
+      .digest("hex")
+      .slice(0, 32);
+    expect(calls[0]!.deliveryId).toBe(expected);
+  });
+
+  it("two deliveries with the SAME X-GitHub-Delivery produce the SAME deliveryId (redelivery dedup)", async () => {
+    await startServer({ secret: null });
+    const deliveryHeader = "same-delivery-id-retried-once";
+    await postHooks(JSON.stringify({ n: 1 }), {
+      Authorization: `Bearer ${TOKEN}`,
+      "X-GitHub-Delivery": deliveryHeader,
+    });
+    // Sender retries the identical delivery (e.g. bridge timed out the
+    // first response) — same delivery id, possibly identical or retried body.
+    await postHooks(JSON.stringify({ n: 1 }), {
+      Authorization: `Bearer ${TOKEN}`,
+      "X-GitHub-Delivery": deliveryHeader,
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.deliveryId).toBe(calls[1]!.deliveryId);
+  });
+
+  it("falls back to a hash of the raw body when no delivery header is present", async () => {
+    await startServer({ secret: null });
+    const body = JSON.stringify({ action: "opened" });
+    const { status } = await postHooks(body, {
+      Authorization: `Bearer ${TOKEN}`,
+    });
+    expect(status).toBe(200);
+    const expected = createHash("sha256")
+      .update(Buffer.from(body, "utf-8"))
+      .digest("hex")
+      .slice(0, 32);
+    expect(calls[0]!.deliveryId).toBe(expected);
+  });
+
+  it("different bodies with no delivery header produce different deliveryIds", async () => {
+    await startServer({ secret: null });
+    await postHooks(JSON.stringify({ a: 1 }), {
+      Authorization: `Bearer ${TOKEN}`,
+    });
+    await postHooks(JSON.stringify({ a: 2 }), {
+      Authorization: `Bearer ${TOKEN}`,
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.deliveryId).not.toBe(calls[1]!.deliveryId);
+  });
+
+  it("ignores a spoofed multi-valued X-GitHub-Delivery header and falls back to the body hash", async () => {
+    // Same H6 rejection pattern as X-Hub-Signature-256: a multi-valued
+    // delivery header (duplicate lines, comma-joined by Node, or an
+    // upstream proxy handing us a string[]) must not be trusted verbatim.
+    await startServer({ secret: null });
+    const body = JSON.stringify({ action: "opened" });
+    const { status } = await postHooks(body, {
+      Authorization: `Bearer ${TOKEN}`,
+      "X-GitHub-Delivery": "id-one, id-two",
+    });
+    expect(status).toBe(200);
+    const expected = createHash("sha256")
+      .update(Buffer.from(body, "utf-8"))
+      .digest("hex")
+      .slice(0, 32);
+    expect(calls[0]!.deliveryId).toBe(expected);
   });
 });
