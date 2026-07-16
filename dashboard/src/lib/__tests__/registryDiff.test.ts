@@ -76,6 +76,46 @@ describe("previewMockedReplay — truncated path", () => {
   });
 });
 
+describe("previewMockedReplay — positional step ids (auto-generated `step_N`)", () => {
+  // Regression: the bridge's FLAT-recipe replay (buildFlatMockedOutputs in
+  // src/recipes/replayRun.ts) always forces a step with no explicit `into:`
+  // name to real execution — its id ("step_3") isn't stable across a
+  // recipe edit, so replaying a captured output under it risks matching a
+  // DIFFERENT step post-edit. previewMockedReplay had no knowledge of this
+  // rule: a positional-id step with a normal (non-truncated) captured
+  // output was marked "mocked", so the dashboard told the user "no
+  // external API calls" right before the bridge fired that step for real.
+  it("flags a step with an auto-generated positional id as unmocked even though it has a usable capture", () => {
+    const out = previewMockedReplay([
+      {
+        id: "step_3",
+        status: "ok",
+        tool: "slack.postMessage",
+        output: "posted",
+      },
+    ]);
+    expect(out.mocked).toEqual([]);
+    expect(out.unmocked).toEqual([
+      { id: "step_3", tool: "slack.postMessage", reason: "positional-id" },
+    ]);
+  });
+
+  it("still mocks a step with an explicit `into:`-derived id", () => {
+    const out = previewMockedReplay([
+      { id: "fetchIssue", status: "ok", output: "issue body" },
+    ]);
+    expect(out.mocked).toEqual(["fetchIssue"]);
+    expect(out.unmocked).toEqual([]);
+  });
+
+  it("does not misclassify an id that merely contains 'step_' as a substring", () => {
+    const out = previewMockedReplay([
+      { id: "step_3_retry", status: "ok", output: "ok" },
+    ]);
+    expect(out.mocked).toEqual(["step_3_retry"]);
+  });
+});
+
 describe("diffSnapshots", () => {
   it("treats every key in current as added when prev is undefined", () => {
     expect(diffSnapshots(undefined, { a: 1, b: 2 })).toEqual({

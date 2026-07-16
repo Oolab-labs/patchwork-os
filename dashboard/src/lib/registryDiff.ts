@@ -24,16 +24,39 @@ export interface StepForReplayPreflight {
 }
 
 /**
+ * Auto-generated positional step id (yamlRunner.ts: `step.into ?? "step_${n}"`).
+ * Mirrors `POSITIONAL_STEP_ID` in `src/recipes/replayRun.ts` — kept in
+ * sync manually since the two live in separate packages (dashboard vs
+ * bridge) with no shared module. A step with no explicit `into:`/`id:`
+ * name isn't stable across a recipe edit, so the bridge's FLAT-recipe
+ * replay path (`buildFlatMockedOutputs`) always forces it to real
+ * execution regardless of whether a capture exists. Applied
+ * unconditionally here (not just for flat recipes) because the
+ * dashboard has no cheap way to know a run's chained-vs-flat shape
+ * before replay, and it's a safe over-approximation either way: a
+ * chained recipe's step ids are mandatory/explicit, so a real collision
+ * with this pattern is rare, and misclassifying a chained step as
+ * "will run for real" only over-warns — it never falsely promises "no
+ * side effects" for a step that actually fires for real, which is the
+ * dangerous direction for a safety preflight.
+ */
+const POSITIONAL_STEP_ID = /^step_\d+$/;
+
+/**
  * Pre-flight a mocked replay: classify each step into "mocked" (will
  * return its captured output) vs "unmocked" (will fall through to REAL
  * execution because we have no usable capture). Mirrors `buildMockedOutputs`
- * in `src/recipes/replayRun.ts` so the dashboard can show the user
- * up-front what side effects to expect, instead of warning after the
- * fact (BUG-3 from the post-merge dogfood).
+ * / `buildFlatMockedOutputs` in `src/recipes/replayRun.ts` so the dashboard
+ * can show the user up-front what side effects to expect, instead of
+ * warning after the fact (BUG-3 from the post-merge dogfood).
  */
 export interface ReplayPreflight {
   mocked: string[];
-  unmocked: Array<{ id: string; tool?: string; reason: "no-capture" | "truncated" }>;
+  unmocked: Array<{
+    id: string;
+    tool?: string;
+    reason: "no-capture" | "truncated" | "positional-id";
+  }>;
 }
 
 export function previewMockedReplay(
@@ -43,6 +66,14 @@ export function previewMockedReplay(
   const unmocked: ReplayPreflight["unmocked"] = [];
   for (const s of steps) {
     if (s.status === "skipped") continue; // skipped steps aren't replayed
+    if (POSITIONAL_STEP_ID.test(s.id)) {
+      unmocked.push({
+        id: s.id,
+        ...(s.tool !== undefined && { tool: s.tool }),
+        reason: "positional-id",
+      });
+      continue;
+    }
     if (s.output === undefined) {
       unmocked.push({
         id: s.id,
