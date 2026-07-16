@@ -100,6 +100,11 @@ export default function TransactionsPage() {
   );
   const [busy, setBusy] = useState<Record<string, "rolling-back" | string>>({});
   const [confirmingExpired, setConfirmingExpired] = useState(false);
+  // Guards discardAllExpired against a second bulk pass firing while the
+  // first is still running (see discardAllExpired's comment). Distinct
+  // from per-row `busy` — this locks the BULK button/confirm affordance
+  // itself, not an individual transaction row.
+  const [bulkDiscarding, setBulkDiscarding] = useState(false);
   const transactions = data?.transactions ?? [];
   const toast = useToast();
 
@@ -139,17 +144,28 @@ export default function TransactionsPage() {
   }, [expiredIds.length]);
 
   async function discardAllExpired() {
-    if (expiredIds.length === 0) return;
+    if (expiredIds.length === 0 || bulkDiscarding) return;
     if (!confirmingExpired) {
       setConfirmingExpired(true);
       return;
     }
     setConfirmingExpired(false);
-    // Serial to keep rate-limiting predictable and to make the UI state
-    // changes visible row-by-row rather than as one giant flicker.
-    for (const id of expiredIds) {
-      // eslint-disable-next-line no-await-in-loop
-      await rollback(id);
+    // Without this lock, confirmingExpired flips back to false immediately
+    // (above) while expiredIds still lists the same ids for the duration
+    // of the loop below — the "Discard expired (N)" button re-arms and a
+    // second click re-fires the same rollback POSTs concurrently with the
+    // first pass. Every per-row Discard button has this exact guard via
+    // `busy`; the bulk action had none.
+    setBulkDiscarding(true);
+    try {
+      // Serial to keep rate-limiting predictable and to make the UI state
+      // changes visible row-by-row rather than as one giant flicker.
+      for (const id of expiredIds) {
+        // eslint-disable-next-line no-await-in-loop
+        await rollback(id);
+      }
+    } finally {
+      setBulkDiscarding(false);
     }
   }
 
@@ -209,9 +225,10 @@ export default function TransactionsPage() {
               type="button"
               className="btn sm"
               onClick={() => void discardAllExpired()}
+              disabled={bulkDiscarding}
               title={`Discard ${expiredIds.length} expired transaction${expiredIds.length === 1 ? "" : "s"}`}
             >
-              Discard expired ({expiredIds.length})
+              {bulkDiscarding ? "Discarding…" : `Discard expired (${expiredIds.length})`}
             </button>
           )}
           {confirmingExpired && (
@@ -223,6 +240,7 @@ export default function TransactionsPage() {
                 type="button"
                 className="btn sm danger"
                 onClick={() => void discardAllExpired()}
+                disabled={bulkDiscarding}
               >
                 Confirm
               </button>
@@ -230,6 +248,7 @@ export default function TransactionsPage() {
                 type="button"
                 className="btn sm ghost"
                 onClick={() => setConfirmingExpired(false)}
+                disabled={bulkDiscarding}
               >
                 Cancel
               </button>
