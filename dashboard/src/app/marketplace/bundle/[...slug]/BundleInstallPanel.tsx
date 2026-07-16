@@ -73,7 +73,19 @@ export default function BundleInstallPanel({
   fileAccess,
 }: Props) {
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
-  const [installedCount, setInstalledCount] = useState(0);
+  // Tracks WHICH manifest recipes are confirmed installed, not just a
+  // count. The bridge's bundle installer has no skip-if-already-installed
+  // check — every /recipes/install call re-installs (or replaces) every
+  // recipe named in the manifest and returns all of them in `installed[]`,
+  // regardless of whether they succeeded on a prior call. Accumulating
+  // `prev + body.installed.length` across retries double-counted recipes
+  // that were already installed before the retry, permanently overshooting
+  // recipes.length and getting the panel stuck out of both the "all
+  // installed" and "partial" states. A Set keyed by recipe name is
+  // idempotent across repeated installs of the same recipe.
+  const [installedNames, setInstalledNames] = useState<Set<string>>(
+    new Set(),
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<BundleInstallResponse | null>(null);
@@ -102,7 +114,7 @@ export default function BundleInstallPanel({
           : Array.isArray(data?.recipes)
             ? data.recipes
             : [];
-        const installedNames = new Set<string>(
+        const bridgeInstalledNames = new Set<string>(
           list
             .map((x: { name?: string }) => x.name)
             .filter((n: string | undefined): n is string => Boolean(n)),
@@ -110,11 +122,11 @@ export default function BundleInstallPanel({
         // Bundle manifest entries may be scoped (`@scope/name`); the
         // bridge writes recipes under their unscoped YAML `name:`. Strip
         // the scope before comparing.
-        const count = recipes.filter((r) =>
-          installedNames.has(shortName(r)),
-        ).length;
+        const matched = recipes.filter((r) =>
+          bridgeInstalledNames.has(shortName(r)),
+        );
         setBridgeStatus("online");
-        setInstalledCount(count);
+        setInstalledNames(new Set(matched));
       })
       .catch(() => {
         if (!cancelled) setBridgeStatus("offline");
@@ -151,13 +163,25 @@ export default function BundleInstallPanel({
         if (res.status === 401) setBridgeStatus("unauth");
         else if (res.status >= 500) setBridgeStatus("offline");
         setErr(body.error ?? `Install failed (HTTP ${res.status})`);
-        // Still bump the count when partial — those recipes ARE
-        // installed even if the bundle as a whole errored.
+        // Still record the installs when partial — those recipes ARE
+        // installed even if the bundle as a whole errored. Merge into
+        // the Set rather than adding a count — the bridge re-installs
+        // every manifest recipe on every call (no skip-if-installed
+        // check), so `installed[]` may re-list recipes from a prior
+        // successful call.
         if (hasInstalled) {
-          setInstalledCount((prev) => prev + body.installed!.length);
+          setInstalledNames((prev) => {
+            const next = new Set(prev);
+            for (const item of body.installed!) next.add(item.name);
+            return next;
+          });
         }
       } else if (hasInstalled) {
-        setInstalledCount((prev) => prev + body.installed!.length);
+        setInstalledNames((prev) => {
+          const next = new Set(prev);
+          for (const item of body.installed!) next.add(item.name);
+          return next;
+        });
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -177,6 +201,10 @@ export default function BundleInstallPanel({
     }
   }
 
+  // Intersect against `recipes` (not just installedNames.size) so a stray
+  // name in the Set that no longer matches the current manifest can never
+  // inflate the count past recipes.length.
+  const installedCount = recipes.filter((r) => installedNames.has(r)).length;
   const allInstalled = installedCount === recipes.length && recipes.length > 0;
   const partialInstalled = installedCount > 0 && installedCount < recipes.length;
 
