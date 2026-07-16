@@ -28,6 +28,18 @@ import InstallPanel from "./InstallPanel";
 // minutes ago but still 404" surprise.
 export const revalidate = 60;
 
+// Next's per-fetch data cache (the `next: { revalidate }` option each
+// fetchGithubFile() call sets) is a SEPARATE cache from the route
+// segment's ISR `revalidate` above — matching the constant here doesn't
+// happen automatically. Without this, fetchRegistry/fetchManifest/
+// fetchRecipeYaml below fell back to fetchGithubFile's own 300s default,
+// so the route segment could re-render every 60s while still being
+// served a manifest/YAML fetch cached for up to 5x longer — quietly
+// undercutting the very freshness this page's revalidate=60 change was
+// written to guarantee, and specifically weakening the trust-divergence
+// gate (#1185/#1186) that depends on fetching the CURRENT YAML.
+const FETCH_OPTS = { revalidate };
+
 interface PageProps {
   // Next 15: dynamic route params are Promise-typed.
   params: Promise<{ slug: string[] }>;
@@ -36,7 +48,7 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
   const fullName = decodeURIComponent(slug.join("/"));
-  const registry = await fetchRegistry();
+  const registry = await fetchRegistry(FETCH_OPTS);
   // Don't mislabel a registry-down page as 404 — separate title makes
   // tab-history and SEO crawlers distinguish the two states.
   if (!registry) {
@@ -69,7 +81,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
   const { slug } = await params;
   const fullName = decodeURIComponent(slug.join("/"));
 
-  const registry = await fetchRegistry();
+  const registry = await fetchRegistry(FETCH_OPTS);
   // Distinguish "registry unreachable" (CDN failure, transient network
   // issue) from "recipe genuinely missing" — pre-fix both collapsed into
   // notFound(), so every detail-page URL 404'd whenever the CDN was down.
@@ -87,14 +99,14 @@ export default async function RecipeDetailPage({ params }: PageProps) {
   // than throwing a 500 the user can't recover from.
   if (src) {
     try {
-      manifest = await fetchManifest(src);
+      manifest = await fetchManifest(src, FETCH_OPTS);
     } catch {
       manifest = null;
     }
     const main = manifest?.recipes?.main;
     if (main) {
       try {
-        yaml = await fetchRecipeYaml(src, main);
+        yaml = await fetchRecipeYaml(src, main, FETCH_OPTS);
       } catch {
         yaml = null;
       }
