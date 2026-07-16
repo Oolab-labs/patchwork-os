@@ -324,6 +324,18 @@ interface HttpSession {
    * insufficient.
    */
   ownershipToken: string;
+  /**
+   * Whether `checkOwnership` must reject requests that omit
+   * `Mcp-Session-Token` entirely, not just ones that present a wrong
+   * value. True only for sessions created while OAuth mode is active
+   * (`resolveScopeFn` configured) — the multi-client-shared-bridge
+   * scenario the token was introduced to protect. False for the
+   * single-user local/VPS bearer-token deployment, where standard MCP
+   * clients (Gemini CLI, Codex) that never send the header must keep
+   * working and no other client realistically has visibility into this
+   * bridge's session IDs.
+   */
+  requireOwnershipToken: boolean;
 }
 
 /** Constant-time hex-string comparison; both inputs must be same length. */
@@ -340,18 +352,22 @@ function hexEquals(a: string, b: string): boolean {
 /**
  * Verifies the `Mcp-Session-Token` header matches the session's ownership
  * token. Returns `true` if authorized.
- * The header is optional — standard MCP clients (Gemini CLI, Codex, etc.)
- * don't send it and the Bearer token already authenticated them. The check
- * only applies when the header is present, preventing session-ID hijacking
- * in shared-bridge-token / OAuth deployments where multiple clients share a
- * single Bearer token and could theoretically know each other's session IDs.
+ *
+ * For most sessions the header is optional — standard MCP clients (Gemini
+ * CLI, Codex, etc.) don't send it and the Bearer token already
+ * authenticated them, so a missing header is allowed. But when
+ * `session.requireOwnershipToken` is set (OAuth mode — multiple distinct
+ * clients share visibility of the same bridge and could plausibly learn
+ * each other's session IDs), a missing header is REJECTED, not allowed:
+ * an attacker who simply omits the header would otherwise defeat the
+ * entire point of the token by not presenting one at all.
  */
 function checkOwnership(
   req: http.IncomingMessage,
-  session: { ownershipToken: string },
+  session: { ownershipToken: string; requireOwnershipToken: boolean },
 ): boolean {
   const presented = req.headers["mcp-session-token"];
-  if (typeof presented !== "string") return true; // header absent → allowed
+  if (typeof presented !== "string") return !session.requireOwnershipToken;
   return hexEquals(presented, session.ownershipToken);
 }
 
@@ -831,6 +847,12 @@ export class StreamableHttpHandler {
       inFlight: 0,
       claudeCodeSessionId: null,
       ownershipToken,
+      // Gated on OAuth mode being active for this bridge instance (not on
+      // whether this particular token happens to carry a scope) — even a
+      // full-access OAuth token still shares the bridge with other OAuth
+      // clients, which is the multi-client-visibility risk the token
+      // exists to close.
+      requireOwnershipToken: this.resolveScopeFn !== null,
     } as HttpSession;
     const adapter = new HttpAdapter(
       (msg) => this.logger.warn(msg),
