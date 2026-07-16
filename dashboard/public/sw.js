@@ -123,6 +123,24 @@ self.addEventListener("push", (event) => {
     return;
   }
 
+  // Cancel pushes tell us to dismiss a previously-shown approval card —
+  // fired when the operator downgrades the approval gate to "off" or the
+  // bridge shuts down while a request is still pending, so the phone
+  // isn't left with a stale "tap to approve" button whose token the
+  // bridge has already invalidated server-side. Close by tag; no-op if
+  // the notification was already dismissed or never arrived on this
+  // device.
+  if (data.kind === "cancel") {
+    event.waitUntil(
+      self.registration
+        .getNotifications({ tag: `approval-${data.callId}` })
+        .then((notifications) => {
+          for (const n of notifications) n.close();
+        }),
+    );
+    return;
+  }
+
   // Branch on payload kind. Approval pushes (no kind, legacy shape)
   // and halt pushes (kind === "halt") render different notifications
   // and have different click targets.

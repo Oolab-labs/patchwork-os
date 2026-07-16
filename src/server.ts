@@ -12,7 +12,11 @@ import {
   getTelemetryPrefs,
   setTelemetryPrefs,
 } from "./analyticsPrefs.js";
-import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
+import {
+  dispatchCancelPush,
+  handleApprovalsStream,
+  routeApprovalRequest,
+} from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
 import {
@@ -2243,10 +2247,20 @@ export class Server extends EventEmitter<ServerEvents> {
               // and any pending phone notification reflects reality.
               if (gateRaw === "off" && prevGate !== "off") {
                 const cancelled = getApprovalQueue().cancelAll();
-                if (cancelled > 0) {
+                if (cancelled.length > 0) {
                   this.logger.info(
-                    `[/settings] approvalGate → off; cancelled ${cancelled} pending entr${cancelled === 1 ? "y" : "ies"}`,
+                    `[/settings] approvalGate → off; cancelled ${cancelled.length} pending entr${cancelled.length === 1 ? "y" : "ies"}`,
                   );
+                  if (this.pushServiceUrl && this.pushServiceToken) {
+                    for (const callId of cancelled) {
+                      dispatchCancelPush(
+                        this.pushServiceUrl,
+                        this.pushServiceToken,
+                        callId,
+                        this.pushServiceAllowPrivate,
+                      ).catch(() => {});
+                    }
+                  }
                 }
               }
             }

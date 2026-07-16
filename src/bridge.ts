@@ -7,7 +7,10 @@ import { ActivityLog } from "./activityLog.js";
 import { buildSummary } from "./analyticsAggregator.js";
 import { getAnalyticsPref, getAnalyticsSalt } from "./analyticsPrefs.js";
 import { sendAnalytics } from "./analyticsSend.js";
-import { enqueueApprovalWithDispatch } from "./approvalHttp.js";
+import {
+  dispatchCancelPush,
+  enqueueApprovalWithDispatch,
+} from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { loadOrCreateBridgeToken } from "./bridgeToken.js";
@@ -2385,7 +2388,19 @@ export class Bridge {
     // connection drops, an ungraceful teardown instead of the graceful
     // `cancelled` semantics this queue already has a dedicated discriminant
     // for. Resolve them here, while the transport is still reachable.
-    getApprovalQueue().cancelAll();
+    const cancelledOnShutdown = getApprovalQueue().cancelAll();
+    const shutdownPushUrl = this.server.pushServiceUrl;
+    const shutdownPushToken = this.server.pushServiceToken;
+    if (shutdownPushUrl && shutdownPushToken) {
+      for (const callId of cancelledOnShutdown) {
+        dispatchCancelPush(
+          shutdownPushUrl,
+          shutdownPushToken,
+          callId,
+          this.server.pushServiceAllowPrivate ?? false,
+        ).catch(() => {});
+      }
+    }
     try {
       await this.server.close();
     } catch {

@@ -24,6 +24,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 
+vi.mock("../approvalHttp.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../approvalHttp.js")>();
+  return { ...actual, dispatchCancelPush: vi.fn(async () => {}) };
+});
+
 // Stub loadPatchworkConfig / savePatchworkConfig so the handler doesn't need a
 // real ~/.patchwork directory.
 vi.mock("../patchworkConfig.js", async (importOriginal) => {
@@ -757,6 +762,79 @@ describe("POST /settings — kill-switch gate", () => {
     } finally {
       setFlag(KILL_SWITCH_WRITES, false);
     }
+  });
+});
+
+describe("POST /settings — approvalGate downgrade dismisses stale phone pushes", () => {
+  // Regression: cancelAll() resolving a pending entry with "cancelled" only
+  // updates in-memory state — nothing tells the phone to close the "tap to
+  // approve" notification it already received. Before the fix, that card
+  // sat on the lock screen forever pointing at a now-invalidated token.
+  afterEach(async () => {
+    const { resetApprovalQueueForTests } = await import("../approvalQueue.js");
+    resetApprovalQueueForTests();
+  });
+
+  it("calls dispatchCancelPush once per cancelled callId when gate drops to off", async () => {
+    const { dispatchCancelPush } = await import("../approvalHttp.js");
+    const { getApprovalQueue } = await import("../approvalQueue.js");
+    vi.mocked(dispatchCancelPush).mockClear();
+
+    server!.approvalGate = "high";
+    server!.pushServiceUrl = "https://relay.example.com";
+    server!.pushServiceToken = "tok_abc";
+
+    const queue = getApprovalQueue();
+    const { callId } = queue.request({
+      toolName: "Bash",
+      params: {},
+      tier: "high",
+    });
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalGate: "off" }),
+    );
+    expect(status).toBe(200);
+    expect(dispatchCancelPush).toHaveBeenCalledTimes(1);
+    expect(dispatchCancelPush).toHaveBeenCalledWith(
+      "https://relay.example.com",
+      "tok_abc",
+      callId,
+      false,
+    );
+  });
+
+  it("does not call dispatchCancelPush when no push service is configured", async () => {
+    const { dispatchCancelPush } = await import("../approvalHttp.js");
+    const { getApprovalQueue } = await import("../approvalQueue.js");
+    vi.mocked(dispatchCancelPush).mockClear();
+
+    server!.approvalGate = "high";
+    server!.pushServiceUrl = undefined;
+    server!.pushServiceToken = undefined;
+
+    getApprovalQueue().request({ toolName: "Bash", params: {}, tier: "high" });
+
+    await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalGate: "off" }),
+    );
+    expect(dispatchCancelPush).not.toHaveBeenCalled();
   });
 });
 

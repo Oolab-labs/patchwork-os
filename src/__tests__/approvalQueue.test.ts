@@ -215,23 +215,23 @@ describe("ApprovalQueue — cancellation", () => {
     expect(q.cancel("not-a-real-id")).toBe(false);
   });
 
-  it("cancelAll resolves every pending promise with 'cancelled' and returns the count", async () => {
+  it("cancelAll resolves every pending promise with 'cancelled' and returns the cancelled callIds", async () => {
     const q = new ApprovalQueue();
     const a = q.request({ toolName: "x", params: { i: 1 }, tier: "high" });
     const b = q.request({ toolName: "y", params: { i: 2 }, tier: "high" });
     const c = q.request({ toolName: "z", params: { i: 3 }, tier: "high" });
     expect(q.size()).toBe(3);
-    const n = q.cancelAll();
-    expect(n).toBe(3);
+    const cancelled = q.cancelAll();
+    expect(cancelled.sort()).toEqual([a.callId, b.callId, c.callId].sort());
     expect(q.size()).toBe(0);
     await expect(a.promise).resolves.toBe("cancelled");
     await expect(b.promise).resolves.toBe("cancelled");
     await expect(c.promise).resolves.toBe("cancelled");
   });
 
-  it("cancelAll on an empty queue is a no-op returning 0", () => {
+  it("cancelAll on an empty queue is a no-op returning []", () => {
     const q = new ApprovalQueue();
-    expect(q.cancelAll()).toBe(0);
+    expect(q.cancelAll()).toEqual([]);
   });
 
   it("AbortSignal on request() resolves the promise with 'cancelled'", async () => {
