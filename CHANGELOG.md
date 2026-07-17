@@ -6,6 +6,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0-beta.4] — 2026-07-17
+
+Five new trust-architecture layers (deterministic policy enforcement, circuit breakers, ephemeral rollback, flight-recorder replay for flat recipes) plus dashboard/copilot recipe & worker creation, followed by a 20-pass bug-mining sweep that found and fixed 28 defects — most in a recurring class: a safety gate, audit-reason capture, cache-freshness rule, or response-check present on one code path but silently absent from a logically-identical sibling (single-item vs. bulk action, one dashboard entry point vs. another, one write chokepoint vs. another).
+
+### Added
+
+- **Policy engine**: deterministic `patchwork.policy.yml` enforcement (forbidden path globs, network host allowlist, command allowlist, per-worker tool allowlist) checked *before* the trust/approval gate — a policy violation is refused outright, independent of earned worker trust. Gated behind `FLAG_ENFORCE_POLICY` (#1157, #1158, #1159).
+- **Circuit breaker**: general-purpose CLOSED→OPEN→HALF-OPEN breaker for recipe tool calls, keyed per `(recipeName, toolId)`, so a cron/webhook recipe hitting a dead dependency stops hammering it instead of re-failing forever. Gated behind `FLAG_CIRCUIT_BREAKER` (#1160).
+- **Ephemeral rollback**: `patchwork recipe rollback <name> --attempt <id> --ledger-dir <path>` undoes a recipe attempt's `file.write`/`file.append` side effects from a disk-backed pre-image log (#1161).
+- **Flight-recorder replay for flat recipes**: manual/cron/webhook recipes now capture per-step output and support `POST /runs/:seq/replay` the same way chained recipes already did — previously hard-errored with `replay_only_supported_for_chained_recipes` (#1162).
+- **Dashboard/copilot recipe & worker creation**: copilot chat and the dashboard can now create recipes (always saved disabled, pending review) and hand off worker creation to a new `/workers/new` wizard (owns-checklist + conservative default autonomy ceiling) instead of refusing (#1166).
+
+### Fixed
+
+#### Policy / security / recipe runtime hardening
+A 4-dimension adversarial review of #1157–#1162 surfaced 17 defects (#1163), the most serious being policy checks silently skipped for any recipe without an owning worker manifest, and a fan_out tool-dispatch path bypassing the circuit breaker entirely. Also:
+- Captured step output was stripped by a hand-picked field whitelist before ever reaching disk, making flight-recorder replay completely inert for any real (non-test) run (#1165).
+- Kill switch is now re-checked immediately before each of 11 connector write call sites, not just once at the top of `execute()` (#1176).
+- Recipe installs now stage into a sibling directory and atomically rename in, so a crash mid-copy can't leave a live, incomplete recipe running (#1179).
+- Redelivered webhooks are deduped against the write-effect ledger by a stable per-delivery id, closing a double-write window on retried deliveries to a bridge that crashed mid-execution (#1178).
+
+#### Bridge / transport / sessions
+- OAuth mode now rejects a *missing* `Mcp-Session-Token` the same way it already rejected a wrong one — previously the header's absence was treated as automatically authorized, defeating the exact session-hijacking attacker it exists to stop (#1182).
+- DNS-rebinding IP-pinning silently no-op'd for any webhook URL with an uppercase hostname, reopening the TOCTOU window it was written to close (#1183).
+- Pending approvals now resolve as `cancelled` on bridge shutdown instead of vanishing with no decision ever reaching the caller (#1177).
+- Generation-guarded the approval-decision cleanup path — a stale decision resolving after a WS reconnect could corrupt the new generation's in-flight call tracking (#1175).
+- Bridge no longer accepts sessions until plugin loading finishes, closing a window where early connections silently got a tool list missing every plugin tool (#1173).
+- A failed plugin hot-reload no longer gets committed as canonical for new sessions even though every existing session correctly rolled back (#1181).
+- `extensionProtocolMismatch` now resets on connection replace, not just on disconnect (#1174).
+- Oversized lock-file cleanup (>4096 bytes) now respects PID liveness instead of unconditionally deleting — could otherwise delete a live sibling bridge's lock file (#1170).
+
+#### Dashboard — the recurring gap-on-a-sibling-path class
+- Bulk "Reject selected" now reuses `decide()` so it gets the same audit-reason capture and 409-as-success handling as single-item reject (#1191).
+- Bulk "Discard expired" now locks against a second concurrent pass while the first is still running, same guard every per-row Discard button already had (#1192).
+- AI-generated recipes are now force-disabled on save from the `/recipes/new` "Generate with AI" flow, matching the fix already applied to copilot chat's install path (#1189, #1190).
+- The copilot-install disable PATCH's response is now checked before claiming success — a failed PATCH previously left a recipe live and enabled while the UI reported "Installed (disabled)" (#1189).
+- One-click marketplace install is now gated on YAML-vs-registry-metadata trust divergence on both the detail page (#1185) and the browse-grid cards (#1186), not just self-reported registry metadata.
+- Bundle-install panel no longer double-counts recipes across a retry after a partial failure (#1184).
+- Marketplace detail pages' fetch-cache revalidate window now matches their route-segment ISR window, so an edited recipe YAML doesn't take up to 5x longer to become visible to the trust-divergence gate than the surrounding page (#1187).
+- Replay preflight now flags auto-generated positional step ids as unmocked, matching the bridge's actual replay behavior instead of promising "no external calls" for a step that will run for real (#1188).
+- First-run onboarding gives an actionable path forward: `install-extension` explains the common "VS Code installed but `code` CLI not on PATH" cause, and the dashboard checklist no longer shows a misleading "0 of 4 done" when the bridge is simply unreachable (#1169).
+
+#### CLI / extension / cross-platform
+- Extension: workspace-path lock-file matching is now case-folded on Windows, fixing spurious duplicate-bridge spawns from NTFS's case-insensitive paths (#1168).
+- Extension: `--workspace` argument is now validated for shell metacharacters before a `shell:true` bridge spawn, matching the existing check on the binary path (#1172).
+- Dashboard's own bridge-lock discovery now matches the CLI's: EPERM is treated as "alive" (not dead), and `CLAUDE_CONFIG_DIR` is respected instead of hardcoding `~/.claude/ide` (#1167).
+- `--watch` supervisor no longer crashes silently when the child process fails to spawn at all (`ENOENT` emits `'error'`, not `'exit'`) — both now route through the same restart/backoff logic (#1171).
+
+### Dependencies
+
+- Bumped `websocket-driver` 0.7.4 → 0.7.5 in `services/push-relay` (#1193).
+
+### Extension
+
+- Bumped to 1.4.25 — #1168 and #1172 changed extension handler code (`bridgeProcess.ts`, `lockfiles.ts`) without a version bump.
+
 ## [1.1.0-beta.3] — 2026-07-11
 
 Phone-path push notifications for approval-gate events, two recovered security fixes, and a worker-autonomy dogfood review pass.
