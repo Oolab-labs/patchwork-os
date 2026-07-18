@@ -111,3 +111,6 @@ intellij-plugin/.gradle/
 # Codex CLI scaffolding (different coding agent tool, not used for this repo)
 /.codex/
 /AGENTS.md
+
+# Local VPS backup snapshots pulled down for inspection — never repo content.
+/vps-backups/
