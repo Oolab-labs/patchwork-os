@@ -219,10 +219,21 @@ export class Bridge {
     const configDir =
       process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
     this.authToken = config.fixedToken ?? loadOrCreateBridgeToken(configDir);
+    // The Host allowlist (Server's allowedHosts) is built from corsOrigins —
+    // but an OAuth-mode deployment's own issuer hostname is the bridge's own
+    // public domain, and operators reliably forget to also pass it via
+    // --cors-origin (see deploy/bootstrap-vps.sh, which sets --issuer-url
+    // https://${DOMAIN} but only --cors-origin https://claude.ai). Without
+    // this, the bridge's own legitimate inbound traffic gets rejected with
+    // 403 "Invalid Host header" — a self-inflicted outage. Always include
+    // the issuer's own hostname regardless of what --cors-origin specifies.
+    const serverCorsOrigins = config.issuerUrl
+      ? [...config.corsOrigins, config.issuerUrl]
+      : config.corsOrigins;
     this.server = new Server(
       this.authToken,
       this.logger,
-      config.corsOrigins,
+      serverCorsOrigins,
       undefined,
       config.trustedProxies,
     );

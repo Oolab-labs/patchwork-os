@@ -165,6 +165,31 @@ describe("Bridge activation metrics", () => {
     }
   });
 
+  it("adds the OAuth issuer's own hostname to the Host allowlist even when --cors-origin omits it", async () => {
+    // Regression guard: deploy/bootstrap-vps.sh's generated systemd unit sets
+    // --issuer-url https://${DOMAIN} but only --cors-origin https://claude.ai
+    // (never the bridge's own domain). The Host allowlist (server.ts's
+    // allowedHosts) was built purely from corsOrigins, so the bridge's own
+    // legitimate inbound traffic (Host: ${DOMAIN}) got rejected with 403
+    // "Invalid Host header" — a self-inflicted outage for any OAuth-mode
+    // deployment that doesn't separately remember to add its own domain to
+    // --cors-origin. The issuer's hostname must always be reachable
+    // regardless of what --cors-origin was (or wasn't) given.
+    const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-issuer-"));
+    const cfg = makeConfig(workspace);
+    cfg.issuerUrl = "https://bridge.example.com";
+    cfg.corsOrigins = ["https://claude.ai"]; // deliberately omits the issuer's own host
+    const bridge = new Bridge(cfg);
+    try {
+      const allowedHosts = (
+        bridge as unknown as { server: { allowedHosts: Set<string> } }
+      ).server.allowedHosts;
+      expect(allowedHosts.has("bridge.example.com")).toBe(true);
+    } finally {
+      await bridge.stop();
+    }
+  });
+
   it("wires sessionDetailFn in start() so GET /sessions/:id is not a dead endpoint (audit 2026-06-08 server-1)", async () => {
     // Regression guard for the same class as the sessionsFn bug: the Fn was
     // declared on Server but never assigned in bridge.ts, so /sessions/:id
