@@ -64,8 +64,16 @@ class TestConnector extends BaseConnector {
     this.auth = auth;
   }
 
+  getAuth(): AuthContext | null {
+    return this.auth;
+  }
+
   callRefreshDeduped() {
     return this.refreshTokenDeduped();
+  }
+
+  callClearTokens() {
+    return this.clearTokens();
   }
 }
 
@@ -172,5 +180,83 @@ describe("BaseConnector.refreshTokenDeduped()", () => {
     const second = await c.callRefreshDeduped();
     expect(second?.token).toBe("at_new");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("BaseConnector — disconnect race with an in-flight refresh (diagnostic-report triage)", () => {
+  // A refresh that's already in flight when the user disconnects previously
+  // committed its result unconditionally on resolution: `this.auth = newAuth`
+  // + `saveTokens()` ran with no idea `clearTokens()` had already wiped both
+  // in-memory state and secure storage moments earlier. The disconnect
+  // appeared to succeed, then the connector silently reappeared as
+  // "connected" once the stale fetch resolved — persisting credentials the
+  // user just explicitly removed.
+  it("does not resurrect credentials when clearTokens() runs while a refresh is in flight", async () => {
+    const c = new TestConnector();
+    c.setAuth({
+      token: "at_old",
+      refreshToken: "rt_v1",
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    let resolveFetch!: (v: Response) => void;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const refreshPromise = c.callRefreshDeduped();
+
+    // User disconnects WHILE the refresh above is still awaiting the IdP.
+    await c.callClearTokens();
+    expect(c.getAuth()).toBeNull();
+    expect(deleteTokens).toHaveBeenCalledTimes(1);
+
+    // The stale refresh now resolves successfully — must NOT resurrect auth.
+    resolveFetch(
+      new Response(
+        JSON.stringify({
+          access_token: "at_new",
+          refresh_token: "rt_v2",
+          expires_in: 3600,
+          token_type: "Bearer",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    const result = await refreshPromise;
+
+    expect(result).toBeNull();
+    expect(c.getAuth()).toBeNull();
+    // The resurrecting persist call must never have happened.
+    expect(storeTokens).not.toHaveBeenCalled();
+  });
+
+  it("still commits normally when no disconnect races the refresh", async () => {
+    // Sanity check: the epoch guard must not break the ordinary path.
+    const c = new TestConnector();
+    c.setAuth({
+      token: "at_old",
+      refreshToken: "rt_v1",
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          access_token: "at_new",
+          expires_in: 3600,
+          token_type: "Bearer",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const result = await c.callRefreshDeduped();
+    expect(result?.token).toBe("at_new");
+    expect(c.getAuth()?.token).toBe("at_new");
+    expect(storeTokens).toHaveBeenCalledTimes(1);
   });
 });
