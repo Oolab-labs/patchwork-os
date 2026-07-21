@@ -375,6 +375,45 @@ describe("loadPlugins", () => {
     ).toBe(true);
   });
 
+  // Regression (diagnostic-report triage): documents/plugin-authoring.md
+  // previously documented an imperative "Option B: ctx.registerTool()" API
+  // (and its "Complete Example") — but PluginContext (src/plugin.ts) never
+  // implemented a `registerTool` method, and the loader's contract (see the
+  // "returns wrong shape" test above) requires `register()` to RETURN
+  // `{ tools: [...] }`. A plugin author following that documented pattern
+  // got `ctx.registerTool is not a function` and their plugin silently
+  // skipped. Pins that this exact documented (now-removed) pattern still
+  // fails to load, so the docs fix (removing Option B) doesn't quietly
+  // regress back to describing a nonexistent API.
+  it("warns and skips a plugin using the (unsupported) ctx.registerTool() pattern", async () => {
+    const pluginDir = path.join(tmpDir, "imperative-registertool");
+    fs.mkdirSync(pluginDir);
+    writePlugin(
+      pluginDir,
+      makeManifest(),
+      `export function register(ctx) {
+        ctx.registerTool({
+          schema: {
+            name: "testPlugin_doSomething",
+            description: "Does something",
+            inputSchema: { type: "object", properties: {} },
+          },
+          handler: async () => ({ content: [{ type: "text", text: "ok" }] }),
+        });
+      }`,
+    );
+
+    const log = makeLogger();
+    const tools = await loadPlugins([pluginDir], makeConfig(), log);
+
+    expect(tools).toEqual([]);
+    expect(
+      log.calls.some(
+        (c) => c.level === "warn" && c.msg.includes("register() threw"),
+      ),
+    ).toBe(true);
+  });
+
   it("warns but still loads when register() returns 0 tools", async () => {
     const pluginDir = path.join(tmpDir, "zero-tools");
     fs.mkdirSync(pluginDir);

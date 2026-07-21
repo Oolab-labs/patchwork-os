@@ -152,10 +152,52 @@ function auditCoverageThresholds() {
   }
 }
 
+// ── 3. Plugin API drift ──────────────────────────────────────────────────────
+//
+// Session-review finding: documents/plugin-authoring.md and
+// documents/live-toolsmithing.md both documented an imperative
+// `ctx.registerTool()` API for plugin authors, but PluginContext
+// (src/plugin.ts) never implemented it — a plugin author following that
+// documented pattern got `ctx.registerTool is not a function` and their
+// plugin was silently skipped (see src/__tests__/pluginLoader.test.ts's
+// regression test pinning that failure). Docs were fixed to describe only
+// the actually-supported return-value shape (`register(ctx)` returns
+// `{ tools: [...] }`); this check keeps that fix from silently regressing
+// if `ctx.registerTool` — or `PluginContext`'s `registerTool` — is
+// reintroduced into docs without ever landing in the real type.
+
+function auditPluginApiDrift() {
+  const pluginSrc = read("src/plugin.ts");
+  const hasRegisterToolMethod = /\bregisterTool\s*\(/.test(pluginSrc);
+
+  for (const doc of [
+    "documents/plugin-authoring.md",
+    "documents/live-toolsmithing.md",
+  ]) {
+    const text = read(doc);
+    const mentionsRegisterTool = /\bregisterTool\s*\(/.test(text);
+    if (mentionsRegisterTool && !hasRegisterToolMethod) {
+      drift.push(
+        `plugin-api: ${doc} mentions "registerTool(" but src/plugin.ts's PluginContext does not implement a registerTool method — this describes an API that does not exist. Either implement PluginContext.registerTool, or remove/rewrite the doc example to use the return-value \`register(ctx) => { tools: [...] }\` shape (the only currently-supported contract).`,
+      );
+    } else if (mentionsRegisterTool) {
+      notes.push(
+        `plugin-api: ${doc} mentions "registerTool(" and src/plugin.ts now implements it — docs and code agree.`,
+      );
+    }
+  }
+  if (drift.every((d) => !d.startsWith("plugin-api:"))) {
+    notes.push(
+      "plugin-api: no documented-but-nonexistent registerTool() reference found",
+    );
+  }
+}
+
 // ── run ──────────────────────────────────────────────────────────────────────
 
 auditToolCount();
 auditCoverageThresholds();
+auditPluginApiDrift();
 
 for (const n of notes) console.log(`  ℹ ${n}`);
 if (drift.length > 0) {

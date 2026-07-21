@@ -31,9 +31,10 @@ Three concrete capabilities make this loop work:
   schema.
 - **Tools register at runtime, not compile time.** `register(ctx)` is
   called when the bridge loads the plugin and gets a context object with
-  `workspace`, `workspaceFolders`, `config`, and `logger`. Each tool is
-  a `{ name, description, inputSchema, handler }` object pushed onto
-  `ctx.registerTool(...)`. No type generation, no rebuild.
+  `workspace`, `workspaceFolders`, `config`, and `logger`. It returns
+  `{ tools: [...] }`, where each tool is a
+  `{ schema: { name, description, inputSchema }, handler }` object. No
+  type generation, no rebuild.
 - **The bridge watches plugin paths.** Pass `--plugin-watch` at startup
   and any change under a registered plugin directory triggers an atomic
   re-register: tools defined by the old version are unregistered, the
