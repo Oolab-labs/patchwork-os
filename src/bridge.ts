@@ -317,6 +317,21 @@ export class Bridge {
           this.logger.event("session_resumed", { sessionId: clientSessionId });
           // Re-attach close/error handlers to the new WebSocket
           ws.on("close", (code: number, reason: Buffer) => {
+            // Identity check: a THIRD connection could have reattached to
+            // this same session id (superseding this one) before this ws
+            // closes. Without this, this stale close event would look up
+            // the session by id, find the NEWER connection's session
+            // object, and schedule teardown (grace timer → cleanupSession)
+            // for a session that is still actively in use — killing the
+            // replacement based on an event from a connection it already
+            // replaced.
+            const current = this.sessions.get(clientSessionId);
+            if (current && current.ws !== ws) {
+              this.logger.info(
+                `Stale connection closed for session ${clientSessionId.slice(0, 8)} — a newer connection already replaced it; ignoring`,
+              );
+              return;
+            }
             this.lastDisconnectAt = new Date().toISOString();
             this.lastDisconnectCode = code;
             this.lastDisconnectReason = reason.toString() || null;
@@ -329,7 +344,7 @@ export class Bridge {
             this.logger.event("claude_disconnected", {
               sessionId: clientSessionId,
             });
-            const s = this.sessions.get(clientSessionId);
+            const s = current;
             if (s && !s.graceTimer) {
               s.graceTimer = setTimeout(() => {
                 this.cleanupSession(clientSessionId);
@@ -598,6 +613,20 @@ export class Bridge {
       }
 
       ws.on("close", (code: number, reason: Buffer) => {
+        // Identity check: two connections presenting the same
+        // X-Claude-Code-Session-Id (a duplicate/racing client) can both
+        // land here — the second overwrites this.sessions.get(sessionId)
+        // with ITS session object at the `this.sessions.set` above. When
+        // the FIRST (now-superseded) connection's socket later closes,
+        // this handler must not tear down the second connection's still-
+        // live session just because the map key matches.
+        const current = this.sessions.get(sessionId);
+        if (current && current.ws !== ws) {
+          this.logger.info(
+            `Stale connection closed for session ${sessionId.slice(0, 8)} — a newer connection already replaced it; ignoring`,
+          );
+          return;
+        }
         this.lastDisconnectAt = new Date().toISOString();
         this.lastDisconnectCode = code;
         this.lastDisconnectReason = reason.toString() || null;
@@ -608,7 +637,7 @@ export class Bridge {
           sessionId,
         });
         this.logger.event("claude_disconnected", { sessionId });
-        const s = this.sessions.get(sessionId);
+        const s = current;
         if (s && !s.graceTimer) {
           s.graceTimer = setTimeout(() => {
             this.cleanupSession(sessionId);
