@@ -596,12 +596,12 @@ export interface RunnerDeps {
   /** Optional local LLM caller (Ollama / LM Studio) for agent steps with driver: local or model: local. */
   localFn?: (prompt: string, model: string) => Promise<string | AgentResult>;
   /**
-   * Optional provider driver invoker for agent steps with driver: openai|grok|gemini.
+   * Optional provider driver invoker for agent steps with driver: openai|grok|gemini|codex.
    * Dispatches to src/drivers/* under the hood. If not provided, the runner will
    * lazily construct a driver via createDriver() from drivers/index.js.
    */
   providerDriverFn?: (
-    driverName: "openai" | "grok" | "gemini" | "gemini-api",
+    driverName: "openai" | "grok" | "gemini" | "gemini-api" | "codex",
     prompt: string,
     model: string | undefined,
     providerOptions?: Record<string, unknown>,
@@ -3452,14 +3452,14 @@ export function resolveRouting(
 
 /** Returns a providerDriverFn with a per-run driver cache (not shared across runs). */
 export function makeProviderDriverFn(): (
-  driverName: "openai" | "grok" | "gemini" | "gemini-api",
+  driverName: "openai" | "grok" | "gemini" | "gemini-api" | "codex",
   prompt: string,
   model: string | undefined,
   providerOptions?: Record<string, unknown>,
 ) => Promise<string | AgentResult> {
   const cache = new Map<string, import("../drivers/types.js").ProviderDriver>();
   return async function defaultProviderDriverFn(
-    driverName: "openai" | "grok" | "gemini" | "gemini-api",
+    driverName: "openai" | "grok" | "gemini" | "gemini-api" | "codex",
     prompt: string,
     model: string | undefined,
     providerOptions?: Record<string, unknown>,

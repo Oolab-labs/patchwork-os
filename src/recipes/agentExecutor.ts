@@ -43,9 +43,9 @@ export interface AgentResult {
 
 export interface AgentExecutorDeps {
   anthropicFn: (prompt: string, model: string) => Promise<AgentResult>;
-  /** Handles openai, grok, gemini, gemini-api — passes driver name through. */
+  /** Handles openai, grok, gemini, gemini-api, codex — passes driver name through. */
   providerDriverFn: (
-    driver: "openai" | "grok" | "gemini" | "gemini-api",
+    driver: "openai" | "grok" | "gemini" | "gemini-api" | "codex",
     prompt: string,
     model: string | undefined,
     /** Opaque per-call driver options (e.g. responseFormat for constrained
@@ -205,7 +205,8 @@ export async function executeAgent(
     driver === "openai" ||
     driver === "grok" ||
     driver === "gemini" ||
-    driver === "gemini-api"
+    driver === "gemini-api" ||
+    driver === "codex"
   ) {
     return stamp(
       driver,

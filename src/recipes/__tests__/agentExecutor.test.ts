@@ -128,6 +128,33 @@ describe('driver:"gemini-api"', () => {
   });
 });
 
+// ── 3c. Explicit driver:"codex" ──────────────────────────────────────────────
+// createDriver() supports "codex" (CodexDriver, spawns `codex exec` under the
+// user's ChatGPT subscription) and routes through providerDriverFn exactly
+// like gemini/gemini-api — not the sandboxed subprocess/claude-code path
+// (CodexDriver has no --disallowed-tools equivalent to enforce a worker sandbox).
+describe('driver:"codex"', () => {
+  it("routes through providerDriverFn with codex; servedBy=codex", async () => {
+    const deps = makeDeps();
+    const result = await executeAgent(
+      { driver: "codex", prompt: "hello", model: "gpt-5-codex" },
+      deps,
+    );
+    expect(result.text).toBe("codex-result");
+    expect(result.servedBy).toEqual({
+      driver: "codex",
+      model: "gpt-5-codex",
+    });
+    expect(deps.providerDriverFn).toHaveBeenCalledWith(
+      "codex",
+      "hello",
+      "gpt-5-codex",
+    );
+    expect(deps.anthropicFn).not.toHaveBeenCalled();
+    expect(deps.claudeCliFn).not.toHaveBeenCalled();
+  });
+});
+
 // ── 4. Explicit driver:"subprocess" ─────────────────────────────────────────
 
 describe('driver:"subprocess"', () => {
@@ -310,6 +337,7 @@ describe("enforceSandbox (worker autonomy never-widen guard)", () => {
     "openai",
     "grok",
     "gemini",
+    "codex",
     "local",
   ])("refuses to run on non-subprocess driver %s; no driver fn called", async (driver) => {
     const deps = makeDeps();
