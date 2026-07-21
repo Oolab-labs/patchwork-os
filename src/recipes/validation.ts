@@ -23,6 +23,7 @@ const DOWNSHIFT_KNOWN_DRIVERS = new Set([
   "grok",
   "gemini",
   "anthropic",
+  "codex",
   "local",
 ]);
 

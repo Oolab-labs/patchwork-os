@@ -481,6 +481,7 @@ function generateRecipeSchema(
           "grok",
           "gemini",
           "anthropic",
+          "codex",
           // `local` (self-hosted Ollama / LM Studio) is a fully implemented
           // runtime driver and already valid in the downshift enum below and in
           // DOWNSHIFT_KNOWN_DRIVERS — omitting it here made FLAG_SCHEMA_LINT
@@ -557,6 +558,7 @@ function generateRecipeSchema(
                 "grok",
                 "gemini",
                 "anthropic",
+                "codex",
                 "local",
               ],
             },
@@ -583,6 +585,7 @@ function generateRecipeSchema(
                 "grok",
                 "gemini",
                 "anthropic",
+                "codex",
                 "local",
               ],
             },

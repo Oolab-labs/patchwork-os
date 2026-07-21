@@ -4,10 +4,17 @@
   "title": "Patchwork Recipe",
   "description": "YAML recipe schema for Patchwork automation",
   "x-taplo": {
-    "file-patterns": ["*.patchwork.yaml", "*.patchwork.yml"]
+    "file-patterns": [
+      "*.patchwork.yaml",
+      "*.patchwork.yml"
+    ]
   },
   "type": "object",
-  "required": ["name", "trigger", "steps"],
+  "required": [
+    "name",
+    "trigger",
+    "steps"
+  ],
   "properties": {
     "name": {
       "type": "string",
@@ -19,7 +26,8 @@
       "description": "Human-readable description of what this recipe does"
     },
     "maxConcurrency": {
-      "type": "number",
+      "type": "integer",
+      "minimum": 1,
       "description": "Maximum number of chained steps that may execute in parallel"
     },
     "maxDepth": {
@@ -34,13 +42,17 @@
     "apiVersion": {
       "type": "string",
       "description": "Patchwork API version",
-      "enum": ["patchwork.sh/v1"],
+      "enum": [
+        "patchwork.sh/v1"
+      ],
       "default": "patchwork.sh/v1"
     },
     "trigger": {
       "type": "object",
       "description": "When to run this recipe",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
           "type": "string",
@@ -66,12 +78,72 @@
         },
         "on": {
           "type": "string",
-          "enum": ["post-commit", "pre-push", "post-merge"],
+          "enum": [
+            "post-commit",
+            "pre-push",
+            "post-merge"
+          ],
           "description": "Git hook event (for git_hook trigger)"
         },
         "filter": {
           "type": "string",
-          "description": "File filter pattern (for file_watch trigger)"
+          "description": "File filter pattern (for file_watch trigger). For on_test_run triggers, one of: any | failure | pass-after-fail."
+        },
+        "vars": {
+          "type": "array",
+          "description": "Declared input variables resolvable as {{name}} in steps. Place declared variables here (NOT at recipe root — top-level vars are ignored at runtime).",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+                "description": "Variable name (letter/underscore start; letters, digits, underscores; max 64 chars)."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the variable must be supplied."
+              },
+              "default": {
+                "description": "Default value when not supplied."
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable description of the variable."
+              }
+            }
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "description": "Alias for trigger.vars — declared input variables resolvable as {{name}} in steps.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+                "description": "Variable name (letter/underscore start; letters, digits, underscores; max 64 chars)."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the variable must be supplied."
+              },
+              "default": {
+                "description": "Default value when not supplied."
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable description of the variable."
+              }
+            }
+          }
         },
         "eventSource": {
           "type": "string",
@@ -98,39 +170,10 @@
         },
         "legacyType": {
           "type": "string",
-          "enum": ["event"],
+          "enum": [
+            "event"
+          ],
           "description": "Original trigger type preserved during legacy normalization"
-        },
-        "vars": {
-          "type": "array",
-          "description": "Caller-supplied variables. Referenced in step prompts as {{NAME}}.",
-          "items": {
-            "type": "object",
-            "required": ["name"],
-            "properties": {
-              "name": {
-                "type": "string",
-                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
-                "description": "Variable identifier — letters, digits, underscores only. Must start with a letter or underscore."
-              },
-              "description": {
-                "type": "string"
-              },
-              "required": {
-                "type": "boolean"
-              },
-              "default": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "inputs": {
-          "type": "array",
-          "description": "Alias of `vars` accepted by the runtime. Same shape, same semantics.",
-          "items": {
-            "$ref": "#/properties/trigger/properties/vars/items"
-          }
         }
       }
     },
@@ -139,11 +182,16 @@
       "description": "Context blocks to load before running steps",
       "items": {
         "type": "object",
-        "required": ["type"],
+        "required": [
+          "type"
+        ],
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["file", "env"]
+            "enum": [
+              "file",
+              "env"
+            ]
           },
           "path": {
             "type": "string"
@@ -164,7 +212,9 @@
         "oneOf": [
           {
             "type": "object",
-            "required": ["agent"],
+            "required": [
+              "agent"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -187,7 +237,11 @@
               },
               "risk": {
                 "type": "string",
-                "enum": ["low", "medium", "high"],
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
                 "description": "Risk level for this step"
               },
               "transform": {
@@ -202,9 +256,54 @@
                 "type": "number",
                 "description": "Milliseconds to wait between retries (default 1000)"
               },
+              "timeout_ms": {
+                "type": "number",
+                "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+              },
+              "expect": {
+                "type": "object",
+                "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                "properties": {
+                  "schema": {
+                    "type": "object",
+                    "description": "JSON Schema validated against the step output via AJV"
+                  },
+                  "equals": {
+                    "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                  },
+                  "matches": {
+                    "type": "string",
+                    "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                  },
+                  "contains": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ],
+                    "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                  },
+                  "on_fail": {
+                    "type": "string",
+                    "enum": [
+                      "halt",
+                      "warn"
+                    ],
+                    "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                  }
+                }
+              },
               "agent": {
                 "type": "object",
-                "required": ["prompt"],
+                "required": [
+                  "prompt"
+                ],
                 "description": "Agent step configuration",
                 "properties": {
                   "prompt": {
@@ -215,15 +314,6 @@
                     "type": "string",
                     "description": "Model to use for the agent step"
                   },
-                  "kind": {
-                    "type": "string",
-                    "enum": ["agent", "judge"],
-                    "description": "Step kind. 'agent' (default) runs the prompt as a normal agent step. 'judge' runs a cold-eyes review of another step's output and attaches a structured verdict (approve / request_changes / unparseable). Augment-only: a 'request_changes' verdict adds signal but does not halt the run. Pair with 'reviews: <stepId>'."
-                  },
-                  "reviews": {
-                    "type": "string",
-                    "description": "Step id whose output the judge should review. Required when kind = 'judge'."
-                  },
                   "driver": {
                     "type": "string",
                     "enum": [
@@ -233,13 +323,117 @@
                       "openai",
                       "grok",
                       "gemini",
-                      "anthropic"
+                      "anthropic",
+                      "codex",
+                      "local"
                     ],
                     "description": "Driver for agent execution"
                   },
                   "into": {
                     "type": "string",
                     "description": "Variable name to store output in context"
+                  },
+                  "mcpAccess": {
+                    "type": "boolean",
+                    "description": "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps."
+                  },
+                  "tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
+                  },
+                  "sandbox": {
+                    "type": "boolean",
+                    "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
+                  },
+                  "disallowedTools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Deny rules applied via --disallowed-tools regardless of sandbox mode."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "judge"
+                    ],
+                    "description": "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log."
+                  },
+                  "reviews": {
+                    "type": "string",
+                    "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop."
+                  },
+                  "max_revisions": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
+                  },
+                  "on_exhausted": {
+                    "type": "string",
+                    "enum": [
+                      "halt",
+                      "proceed"
+                    ],
+                    "description": "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft."
+                  },
+                  "downshift": {
+                    "type": "array",
+                    "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent → preferred model always used.",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "minProperties": 1,
+                      "properties": {
+                        "driver": {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "claude-code",
+                            "api",
+                            "openai",
+                            "grok",
+                            "gemini",
+                            "anthropic",
+                            "codex",
+                            "local"
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "escalate": {
+                    "type": "array",
+                    "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge→refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model — start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "minProperties": 1,
+                      "properties": {
+                        "driver": {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "claude-code",
+                            "api",
+                            "openai",
+                            "grok",
+                            "gemini",
+                            "anthropic",
+                            "codex",
+                            "local"
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -247,7 +441,9 @@
           },
           {
             "type": "object",
-            "required": ["tool"],
+            "required": [
+              "tool"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -270,7 +466,11 @@
               },
               "risk": {
                 "type": "string",
-                "enum": ["low", "medium", "high"],
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
                 "description": "Risk level for this step"
               },
               "transform": {
@@ -284,6 +484,49 @@
               "retryDelay": {
                 "type": "number",
                 "description": "Milliseconds to wait between retries (default 1000)"
+              },
+              "timeout_ms": {
+                "type": "number",
+                "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+              },
+              "expect": {
+                "type": "object",
+                "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                "properties": {
+                  "schema": {
+                    "type": "object",
+                    "description": "JSON Schema validated against the step output via AJV"
+                  },
+                  "equals": {
+                    "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                  },
+                  "matches": {
+                    "type": "string",
+                    "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                  },
+                  "contains": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ],
+                    "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                  },
+                  "on_fail": {
+                    "type": "string",
+                    "enum": [
+                      "halt",
+                      "warn"
+                    ],
+                    "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                  }
+                }
               },
               "tool": {
                 "type": "string",
@@ -300,10 +543,14 @@
             "type": "object",
             "anyOf": [
               {
-                "required": ["recipe"]
+                "required": [
+                  "recipe"
+                ]
               },
               {
-                "required": ["chain"]
+                "required": [
+                  "chain"
+                ]
               }
             ],
             "properties": {
@@ -328,7 +575,11 @@
               },
               "risk": {
                 "type": "string",
-                "enum": ["low", "medium", "high"],
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
                 "description": "Risk level for this step"
               },
               "transform": {
@@ -342,6 +593,49 @@
               "retryDelay": {
                 "type": "number",
                 "description": "Milliseconds to wait between retries (default 1000)"
+              },
+              "timeout_ms": {
+                "type": "number",
+                "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+              },
+              "expect": {
+                "type": "object",
+                "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                "properties": {
+                  "schema": {
+                    "type": "object",
+                    "description": "JSON Schema validated against the step output via AJV"
+                  },
+                  "equals": {
+                    "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                  },
+                  "matches": {
+                    "type": "string",
+                    "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                  },
+                  "contains": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ],
+                    "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                  },
+                  "on_fail": {
+                    "type": "string",
+                    "enum": [
+                      "halt",
+                      "warn"
+                    ],
+                    "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                  }
+                }
               },
               "recipe": {
                 "type": "string",
@@ -366,7 +660,9 @@
           },
           {
             "type": "object",
-            "required": ["parallel"],
+            "required": [
+              "parallel"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -380,210 +676,939 @@
                 }
               },
               "parallel": {
-                "type": "array",
-                "description": "Run these steps concurrently. All must finish before later steps that await this group.",
-                "items": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "required": ["agent"],
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "description": "Unique chained step identifier used for outputs and dependencies"
-                        },
-                        "awaits": {
-                          "type": "array",
-                          "description": "Step IDs that must complete before this step runs",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "when": {
-                          "type": "string",
-                          "description": "Template condition that controls whether this step runs"
-                        },
-                        "optional": {
-                          "type": "boolean",
-                          "description": "Whether step failure should be tolerated"
-                        },
-                        "risk": {
-                          "type": "string",
-                          "enum": ["low", "medium", "high"],
-                          "description": "Risk level for this step"
-                        },
-                        "transform": {
-                          "type": "string",
-                          "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
-                        },
-                        "retry": {
-                          "type": "number",
-                          "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
-                        },
-                        "retryDelay": {
-                          "type": "number",
-                          "description": "Milliseconds to wait between retries (default 1000)"
-                        },
-                        "agent": {
+                "description": "Run these steps concurrently. Array form: steps run in parallel. Object form: map-reduce — each item in `each` is bound to `as` and the steps array runs once per item.",
+                "oneOf": [
+                  {
+                    "type": "array",
+                    "description": "Run these steps concurrently.",
+                    "items": {
+                      "oneOf": [
+                        {
                           "type": "object",
-                          "required": ["prompt"],
-                          "description": "Agent step configuration",
+                          "required": [
+                            "agent"
+                          ],
                           "properties": {
-                            "prompt": {
-                              "type": "string"
-                            },
-                            "model": {
-                              "type": "string"
-                            },
-                            "kind": {
+                            "id": {
                               "type": "string",
-                              "enum": ["agent", "judge"],
-                              "description": "Step kind. 'agent' (default) runs the prompt as a normal agent step. 'judge' runs a cold-eyes review of another step's output. Pair with 'reviews: <stepId>'."
+                              "description": "Unique chained step identifier used for outputs and dependencies"
                             },
-                            "reviews": {
+                            "awaits": {
+                              "type": "array",
+                              "description": "Step IDs that must complete before this step runs",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "when": {
                               "type": "string",
-                              "description": "Step id whose output the judge should review. Required when kind = 'judge'."
+                              "description": "Template condition that controls whether this step runs"
                             },
-                            "driver": {
+                            "optional": {
+                              "type": "boolean",
+                              "description": "Whether step failure should be tolerated"
+                            },
+                            "risk": {
                               "type": "string",
                               "enum": [
-                                "claude",
-                                "claude-code",
-                                "api",
-                                "openai",
-                                "grok",
-                                "gemini",
-                                "anthropic"
-                              ]
+                                "low",
+                                "medium",
+                                "high"
+                              ],
+                              "description": "Risk level for this step"
+                            },
+                            "transform": {
+                              "type": "string",
+                              "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                            },
+                            "retry": {
+                              "type": "number",
+                              "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                            },
+                            "retryDelay": {
+                              "type": "number",
+                              "description": "Milliseconds to wait between retries (default 1000)"
+                            },
+                            "timeout_ms": {
+                              "type": "number",
+                              "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+                            },
+                            "expect": {
+                              "type": "object",
+                              "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                              "properties": {
+                                "schema": {
+                                  "type": "object",
+                                  "description": "JSON Schema validated against the step output via AJV"
+                                },
+                                "equals": {
+                                  "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                                },
+                                "matches": {
+                                  "type": "string",
+                                  "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                                },
+                                "contains": {
+                                  "oneOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  ],
+                                  "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                                },
+                                "on_fail": {
+                                  "type": "string",
+                                  "enum": [
+                                    "halt",
+                                    "warn"
+                                  ],
+                                  "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                                }
+                              }
+                            },
+                            "agent": {
+                              "type": "object",
+                              "required": [
+                                "prompt"
+                              ],
+                              "description": "Agent step configuration",
+                              "properties": {
+                                "prompt": {
+                                  "type": "string",
+                                  "description": "Prompt to send to the AI (supports {{templates}})"
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "description": "Model to use for the agent step"
+                                },
+                                "driver": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claude",
+                                    "claude-code",
+                                    "api",
+                                    "openai",
+                                    "grok",
+                                    "gemini",
+                                    "anthropic",
+                                    "codex",
+                                    "local"
+                                  ],
+                                  "description": "Driver for agent execution"
+                                },
+                                "into": {
+                                  "type": "string",
+                                  "description": "Variable name to store output in context"
+                                },
+                                "mcpAccess": {
+                                  "type": "boolean",
+                                  "description": "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps."
+                                },
+                                "tools": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
+                                },
+                                "sandbox": {
+                                  "type": "boolean",
+                                  "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
+                                },
+                                "disallowedTools": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Deny rules applied via --disallowed-tools regardless of sandbox mode."
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "judge"
+                                  ],
+                                  "description": "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log."
+                                },
+                                "reviews": {
+                                  "type": "string",
+                                  "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop."
+                                },
+                                "max_revisions": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "description": "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
+                                },
+                                "on_exhausted": {
+                                  "type": "string",
+                                  "enum": [
+                                    "halt",
+                                    "proceed"
+                                  ],
+                                  "description": "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft."
+                                },
+                                "downshift": {
+                                  "type": "array",
+                                  "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent → preferred model always used.",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "minProperties": 1,
+                                    "properties": {
+                                      "driver": {
+                                        "type": "string",
+                                        "enum": [
+                                          "claude",
+                                          "claude-code",
+                                          "api",
+                                          "openai",
+                                          "grok",
+                                          "gemini",
+                                          "anthropic",
+                                          "codex",
+                                          "local"
+                                        ]
+                                      },
+                                      "model": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                },
+                                "escalate": {
+                                  "type": "array",
+                                  "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge→refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model — start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "minProperties": 1,
+                                    "properties": {
+                                      "driver": {
+                                        "type": "string",
+                                        "enum": [
+                                          "claude",
+                                          "claude-code",
+                                          "api",
+                                          "openai",
+                                          "grok",
+                                          "gemini",
+                                          "anthropic",
+                                          "codex",
+                                          "local"
+                                        ]
+                                      },
+                                      "model": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "tool"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "Unique chained step identifier used for outputs and dependencies"
+                            },
+                            "awaits": {
+                              "type": "array",
+                              "description": "Step IDs that must complete before this step runs",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "when": {
+                              "type": "string",
+                              "description": "Template condition that controls whether this step runs"
+                            },
+                            "optional": {
+                              "type": "boolean",
+                              "description": "Whether step failure should be tolerated"
+                            },
+                            "risk": {
+                              "type": "string",
+                              "enum": [
+                                "low",
+                                "medium",
+                                "high"
+                              ],
+                              "description": "Risk level for this step"
+                            },
+                            "transform": {
+                              "type": "string",
+                              "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                            },
+                            "retry": {
+                              "type": "number",
+                              "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                            },
+                            "retryDelay": {
+                              "type": "number",
+                              "description": "Milliseconds to wait between retries (default 1000)"
+                            },
+                            "timeout_ms": {
+                              "type": "number",
+                              "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+                            },
+                            "expect": {
+                              "type": "object",
+                              "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                              "properties": {
+                                "schema": {
+                                  "type": "object",
+                                  "description": "JSON Schema validated against the step output via AJV"
+                                },
+                                "equals": {
+                                  "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                                },
+                                "matches": {
+                                  "type": "string",
+                                  "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                                },
+                                "contains": {
+                                  "oneOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  ],
+                                  "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                                },
+                                "on_fail": {
+                                  "type": "string",
+                                  "enum": [
+                                    "halt",
+                                    "warn"
+                                  ],
+                                  "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                                }
+                              }
+                            },
+                            "tool": {
+                              "type": "string",
+                              "not": {
+                                "enum": []
+                              }
                             },
                             "into": {
                               "type": "string"
                             }
                           }
-                        }
-                      }
-                    },
-                    {
-                      "type": "object",
-                      "required": ["tool"],
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "description": "Unique chained step identifier used for outputs and dependencies"
-                        },
-                        "awaits": {
-                          "type": "array",
-                          "description": "Step IDs that must complete before this step runs",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "when": {
-                          "type": "string",
-                          "description": "Template condition that controls whether this step runs"
-                        },
-                        "optional": {
-                          "type": "boolean",
-                          "description": "Whether step failure should be tolerated"
-                        },
-                        "risk": {
-                          "type": "string",
-                          "enum": ["low", "medium", "high"],
-                          "description": "Risk level for this step"
-                        },
-                        "transform": {
-                          "type": "string",
-                          "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
-                        },
-                        "retry": {
-                          "type": "number",
-                          "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
-                        },
-                        "retryDelay": {
-                          "type": "number",
-                          "description": "Milliseconds to wait between retries (default 1000)"
-                        },
-                        "tool": {
-                          "type": "string",
-                          "not": {
-                            "enum": []
-                          }
-                        },
-                        "into": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    {
-                      "type": "object",
-                      "anyOf": [
-                        {
-                          "required": ["recipe"]
                         },
                         {
-                          "required": ["chain"]
-                        }
-                      ],
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "description": "Unique chained step identifier used for outputs and dependencies"
-                        },
-                        "awaits": {
-                          "type": "array",
-                          "description": "Step IDs that must complete before this step runs",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "when": {
-                          "type": "string",
-                          "description": "Template condition that controls whether this step runs"
-                        },
-                        "optional": {
-                          "type": "boolean",
-                          "description": "Whether step failure should be tolerated"
-                        },
-                        "risk": {
-                          "type": "string",
-                          "enum": ["low", "medium", "high"],
-                          "description": "Risk level for this step"
-                        },
-                        "transform": {
-                          "type": "string",
-                          "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
-                        },
-                        "retry": {
-                          "type": "number",
-                          "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
-                        },
-                        "retryDelay": {
-                          "type": "number",
-                          "description": "Milliseconds to wait between retries (default 1000)"
-                        },
-                        "recipe": {
-                          "type": "string",
-                          "description": "Nested recipe name or path"
-                        },
-                        "chain": {
-                          "type": "string",
-                          "description": "Alias for nested recipe name or path"
-                        },
-                        "vars": {
                           "type": "object",
-                          "description": "Template variables passed into a nested recipe step",
-                          "additionalProperties": {
-                            "type": "string"
+                          "anyOf": [
+                            {
+                              "required": [
+                                "recipe"
+                              ]
+                            },
+                            {
+                              "required": [
+                                "chain"
+                              ]
+                            }
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "description": "Unique chained step identifier used for outputs and dependencies"
+                            },
+                            "awaits": {
+                              "type": "array",
+                              "description": "Step IDs that must complete before this step runs",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "when": {
+                              "type": "string",
+                              "description": "Template condition that controls whether this step runs"
+                            },
+                            "optional": {
+                              "type": "boolean",
+                              "description": "Whether step failure should be tolerated"
+                            },
+                            "risk": {
+                              "type": "string",
+                              "enum": [
+                                "low",
+                                "medium",
+                                "high"
+                              ],
+                              "description": "Risk level for this step"
+                            },
+                            "transform": {
+                              "type": "string",
+                              "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                            },
+                            "retry": {
+                              "type": "number",
+                              "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                            },
+                            "retryDelay": {
+                              "type": "number",
+                              "description": "Milliseconds to wait between retries (default 1000)"
+                            },
+                            "timeout_ms": {
+                              "type": "number",
+                              "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+                            },
+                            "expect": {
+                              "type": "object",
+                              "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                              "properties": {
+                                "schema": {
+                                  "type": "object",
+                                  "description": "JSON Schema validated against the step output via AJV"
+                                },
+                                "equals": {
+                                  "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                                },
+                                "matches": {
+                                  "type": "string",
+                                  "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                                },
+                                "contains": {
+                                  "oneOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  ],
+                                  "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                                },
+                                "on_fail": {
+                                  "type": "string",
+                                  "enum": [
+                                    "halt",
+                                    "warn"
+                                  ],
+                                  "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                                }
+                              }
+                            },
+                            "recipe": {
+                              "type": "string",
+                              "description": "Nested recipe name or path"
+                            },
+                            "chain": {
+                              "type": "string",
+                              "description": "Alias for nested recipe name or path"
+                            },
+                            "vars": {
+                              "type": "object",
+                              "description": "Template variables passed into a nested recipe step",
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "output": {
+                              "type": "string",
+                              "description": "Output key for the nested recipe result"
+                            }
                           }
-                        },
-                        "output": {
-                          "type": "string",
-                          "description": "Output key for the nested recipe result"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "description": "Map-reduce form — iterate over a collection and run steps once per item.",
+                    "required": [
+                      "each",
+                      "steps"
+                    ],
+                    "properties": {
+                      "each": {
+                        "type": "string",
+                        "description": "Template expression that resolves to an array of items to iterate over (e.g. '{{outputs.list}}')."
+                      },
+                      "as": {
+                        "type": "string",
+                        "description": "Variable name each item is bound to inside the steps (default: 'item')."
+                      },
+                      "steps": {
+                        "type": "array",
+                        "description": "Steps to run for each item in the collection.",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "agent"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "description": "Unique chained step identifier used for outputs and dependencies"
+                                },
+                                "awaits": {
+                                  "type": "array",
+                                  "description": "Step IDs that must complete before this step runs",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "when": {
+                                  "type": "string",
+                                  "description": "Template condition that controls whether this step runs"
+                                },
+                                "optional": {
+                                  "type": "boolean",
+                                  "description": "Whether step failure should be tolerated"
+                                },
+                                "risk": {
+                                  "type": "string",
+                                  "enum": [
+                                    "low",
+                                    "medium",
+                                    "high"
+                                  ],
+                                  "description": "Risk level for this step"
+                                },
+                                "transform": {
+                                  "type": "string",
+                                  "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                                },
+                                "retry": {
+                                  "type": "number",
+                                  "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                                },
+                                "retryDelay": {
+                                  "type": "number",
+                                  "description": "Milliseconds to wait between retries (default 1000)"
+                                },
+                                "timeout_ms": {
+                                  "type": "number",
+                                  "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+                                },
+                                "expect": {
+                                  "type": "object",
+                                  "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                                  "properties": {
+                                    "schema": {
+                                      "type": "object",
+                                      "description": "JSON Schema validated against the step output via AJV"
+                                    },
+                                    "equals": {
+                                      "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                                    },
+                                    "matches": {
+                                      "type": "string",
+                                      "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                                    },
+                                    "contains": {
+                                      "oneOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      ],
+                                      "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                                    },
+                                    "on_fail": {
+                                      "type": "string",
+                                      "enum": [
+                                        "halt",
+                                        "warn"
+                                      ],
+                                      "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                                    }
+                                  }
+                                },
+                                "agent": {
+                                  "type": "object",
+                                  "required": [
+                                    "prompt"
+                                  ],
+                                  "description": "Agent step configuration",
+                                  "properties": {
+                                    "prompt": {
+                                      "type": "string",
+                                      "description": "Prompt to send to the AI (supports {{templates}})"
+                                    },
+                                    "model": {
+                                      "type": "string",
+                                      "description": "Model to use for the agent step"
+                                    },
+                                    "driver": {
+                                      "type": "string",
+                                      "enum": [
+                                        "claude",
+                                        "claude-code",
+                                        "api",
+                                        "openai",
+                                        "grok",
+                                        "gemini",
+                                        "anthropic",
+                                        "codex",
+                                        "local"
+                                      ],
+                                      "description": "Driver for agent execution"
+                                    },
+                                    "into": {
+                                      "type": "string",
+                                      "description": "Variable name to store output in context"
+                                    },
+                                    "mcpAccess": {
+                                      "type": "boolean",
+                                      "description": "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps."
+                                    },
+                                    "tools": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
+                                    },
+                                    "sandbox": {
+                                      "type": "boolean",
+                                      "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
+                                    },
+                                    "disallowedTools": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "description": "Deny rules applied via --disallowed-tools regardless of sandbox mode."
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "judge"
+                                      ],
+                                      "description": "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log."
+                                    },
+                                    "reviews": {
+                                      "type": "string",
+                                      "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop."
+                                    },
+                                    "max_revisions": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "description": "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
+                                    },
+                                    "on_exhausted": {
+                                      "type": "string",
+                                      "enum": [
+                                        "halt",
+                                        "proceed"
+                                      ],
+                                      "description": "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft."
+                                    },
+                                    "downshift": {
+                                      "type": "array",
+                                      "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent → preferred model always used.",
+                                      "items": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "minProperties": 1,
+                                        "properties": {
+                                          "driver": {
+                                            "type": "string",
+                                            "enum": [
+                                              "claude",
+                                              "claude-code",
+                                              "api",
+                                              "openai",
+                                              "grok",
+                                              "gemini",
+                                              "anthropic",
+                                              "codex",
+                                              "local"
+                                            ]
+                                          },
+                                          "model": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "escalate": {
+                                      "type": "array",
+                                      "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge→refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model — start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
+                                      "items": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "minProperties": 1,
+                                        "properties": {
+                                          "driver": {
+                                            "type": "string",
+                                            "enum": [
+                                              "claude",
+                                              "claude-code",
+                                              "api",
+                                              "openai",
+                                              "grok",
+                                              "gemini",
+                                              "anthropic",
+                                              "codex",
+                                              "local"
+                                            ]
+                                          },
+                                          "model": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "required": [
+                                "tool"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "description": "Unique chained step identifier used for outputs and dependencies"
+                                },
+                                "awaits": {
+                                  "type": "array",
+                                  "description": "Step IDs that must complete before this step runs",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "when": {
+                                  "type": "string",
+                                  "description": "Template condition that controls whether this step runs"
+                                },
+                                "optional": {
+                                  "type": "boolean",
+                                  "description": "Whether step failure should be tolerated"
+                                },
+                                "risk": {
+                                  "type": "string",
+                                  "enum": [
+                                    "low",
+                                    "medium",
+                                    "high"
+                                  ],
+                                  "description": "Risk level for this step"
+                                },
+                                "transform": {
+                                  "type": "string",
+                                  "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                                },
+                                "retry": {
+                                  "type": "number",
+                                  "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                                },
+                                "retryDelay": {
+                                  "type": "number",
+                                  "description": "Milliseconds to wait between retries (default 1000)"
+                                },
+                                "timeout_ms": {
+                                  "type": "number",
+                                  "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+                                },
+                                "expect": {
+                                  "type": "object",
+                                  "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                                  "properties": {
+                                    "schema": {
+                                      "type": "object",
+                                      "description": "JSON Schema validated against the step output via AJV"
+                                    },
+                                    "equals": {
+                                      "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                                    },
+                                    "matches": {
+                                      "type": "string",
+                                      "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                                    },
+                                    "contains": {
+                                      "oneOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      ],
+                                      "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                                    },
+                                    "on_fail": {
+                                      "type": "string",
+                                      "enum": [
+                                        "halt",
+                                        "warn"
+                                      ],
+                                      "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                                    }
+                                  }
+                                },
+                                "tool": {
+                                  "type": "string",
+                                  "not": {
+                                    "enum": []
+                                  }
+                                },
+                                "into": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "anyOf": [
+                                {
+                                  "required": [
+                                    "recipe"
+                                  ]
+                                },
+                                {
+                                  "required": [
+                                    "chain"
+                                  ]
+                                }
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "description": "Unique chained step identifier used for outputs and dependencies"
+                                },
+                                "awaits": {
+                                  "type": "array",
+                                  "description": "Step IDs that must complete before this step runs",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "when": {
+                                  "type": "string",
+                                  "description": "Template condition that controls whether this step runs"
+                                },
+                                "optional": {
+                                  "type": "boolean",
+                                  "description": "Whether step failure should be tolerated"
+                                },
+                                "risk": {
+                                  "type": "string",
+                                  "enum": [
+                                    "low",
+                                    "medium",
+                                    "high"
+                                  ],
+                                  "description": "Risk level for this step"
+                                },
+                                "transform": {
+                                  "type": "string",
+                                  "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                                },
+                                "retry": {
+                                  "type": "number",
+                                  "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                                },
+                                "retryDelay": {
+                                  "type": "number",
+                                  "description": "Milliseconds to wait between retries (default 1000)"
+                                },
+                                "timeout_ms": {
+                                  "type": "number",
+                                  "description": "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout."
+                                },
+                                "expect": {
+                                  "type": "object",
+                                  "description": "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+                                  "properties": {
+                                    "schema": {
+                                      "type": "object",
+                                      "description": "JSON Schema validated against the step output via AJV"
+                                    },
+                                    "equals": {
+                                      "description": "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form."
+                                    },
+                                    "matches": {
+                                      "type": "string",
+                                      "description": "Regex (string source, no flags) matched against the stringified output. Max 500 chars."
+                                    },
+                                    "contains": {
+                                      "oneOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      ],
+                                      "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
+                                    },
+                                    "on_fail": {
+                                      "type": "string",
+                                      "enum": [
+                                        "halt",
+                                        "warn"
+                                      ],
+                                      "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
+                                    }
+                                  }
+                                },
+                                "recipe": {
+                                  "type": "string",
+                                  "description": "Nested recipe name or path"
+                                },
+                                "chain": {
+                                  "type": "string",
+                                  "description": "Alias for nested recipe name or path"
+                                },
+                                "vars": {
+                                  "type": "object",
+                                  "description": "Template variables passed into a nested recipe step",
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  }
+                                },
+                                "output": {
+                                  "type": "string",
+                                  "description": "Output key for the nested recipe result"
+                                }
+                              }
+                            }
+                          ]
                         }
                       }
                     }
-                  ]
-                }
+                  }
+                ]
               }
             }
           }
@@ -606,7 +1631,10 @@
           }
         },
         "errorMessage": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Expected final error message, or null for a clean run"
         },
         "context": {
@@ -628,15 +1656,6 @@
         }
       }
     },
-    "allowWrites": {
-      "type": "array",
-      "description": "Acknowledge write-tool steps so preflight does not flag them. Each entry is a tool id (e.g. \"file.write\") or a namespace (e.g. \"slack\" to acknowledge every slack.* tool). Equivalent to passing --allow-write on the CLI; the recipe-level list and the CLI list are merged.",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      },
-      "uniqueItems": true
-    },
     "on_error": {
       "type": "object",
       "description": "Error handling policy",
@@ -653,14 +1672,54 @@
         },
         "fallback": {
           "type": "string",
-          "enum": ["log_only", "abort", "deliver_original"],
+          "enum": [
+            "log_only",
+            "abort",
+            "deliver_original"
+          ],
           "description": "log_only / deliver_original: treat step failure as non-fatal (like optional); fail-open. abort (default): propagate failure."
         },
         "notify": {
           "type": "boolean",
-          "description": "Reserved. yamlRunner currently posts Slack notifications on any step failure when slack is connected; gating on this flag is not yet wired.",
+          "description": "When false, suppresses Slack notifications on step failure even when a Slack connector is connected.",
           "default": true
         }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "description": "Per-recipe budget. Set tokensMax and/or usdMax; on breach the run halts with budget_exceeded (or warns). Enforced for API drivers that report token usage and (for usdMax) have a price-table entry; subscription drivers (Claude CLI) report no tokens and are skipped (fail-open with a one-time warning).",
+      "properties": {
+        "tokensMax": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Cumulative input + output tokens allowed across the whole run"
+        },
+        "usdMax": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Cumulative USD allowed across the whole run, priced from token usage via the model price table. Unpriced models / subscription drivers fail open (never halt on them)."
+        },
+        "estimateUnmeasured": {
+          "type": "boolean",
+          "description": "OPT-IN (default false). Estimate the notional list-price USD an unmeasured/subscription call would have cost and surface a ≈$ figure. Label only — never counted toward usdMax, never halts. Requires usdMax."
+        },
+        "onBreach": {
+          "type": "string",
+          "enum": [
+            "halt",
+            "warn"
+          ],
+          "description": "halt (default): stop run on next admission check. warn: continue but record the breach in the run log. Applies to both tokensMax and usdMax.",
+          "default": "halt"
+        }
+      }
+    },
+    "servers": {
+      "type": "array",
+      "description": "Plugin package specifiers (npm package names or file paths) whose tools are loaded and available to steps in this recipe. Loaded once at run start.",
+      "items": {
+        "type": "string"
       }
     }
   }
