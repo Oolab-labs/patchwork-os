@@ -49,21 +49,14 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "id",
-          "type"
-        ],
+        "required": ["id", "type"],
         "properties": {
           "id": {
             "type": "string"
           },
           "type": {
             "type": "string",
-            "enum": [
-              "tool",
-              "agent",
-              "recipe"
-            ]
+            "enum": ["tool", "agent", "recipe"]
           },
           "tool": {
             "type": "string"
@@ -95,11 +88,7 @@
           },
           "risk": {
             "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ]
+            "enum": ["low", "medium", "high"]
           },
           "isWrite": {
             "type": "boolean"

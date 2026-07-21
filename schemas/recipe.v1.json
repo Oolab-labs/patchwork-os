@@ -4,17 +4,10 @@
   "title": "Patchwork Recipe",
   "description": "YAML recipe schema for Patchwork automation",
   "x-taplo": {
-    "file-patterns": [
-      "*.patchwork.yaml",
-      "*.patchwork.yml"
-    ]
+    "file-patterns": ["*.patchwork.yaml", "*.patchwork.yml"]
   },
   "type": "object",
-  "required": [
-    "name",
-    "trigger",
-    "steps"
-  ],
+  "required": ["name", "trigger", "steps"],
   "properties": {
     "name": {
       "type": "string",
@@ -42,17 +35,13 @@
     "apiVersion": {
       "type": "string",
       "description": "Patchwork API version",
-      "enum": [
-        "patchwork.sh/v1"
-      ],
+      "enum": ["patchwork.sh/v1"],
       "default": "patchwork.sh/v1"
     },
     "trigger": {
       "type": "object",
       "description": "When to run this recipe",
-      "required": [
-        "type"
-      ],
+      "required": ["type"],
       "properties": {
         "type": {
           "type": "string",
@@ -78,11 +67,7 @@
         },
         "on": {
           "type": "string",
-          "enum": [
-            "post-commit",
-            "pre-push",
-            "post-merge"
-          ],
+          "enum": ["post-commit", "pre-push", "post-merge"],
           "description": "Git hook event (for git_hook trigger)"
         },
         "filter": {
@@ -94,9 +79,7 @@
           "description": "Declared input variables resolvable as {{name}} in steps. Place declared variables here (NOT at recipe root — top-level vars are ignored at runtime).",
           "items": {
             "type": "object",
-            "required": [
-              "name"
-            ],
+            "required": ["name"],
             "properties": {
               "name": {
                 "type": "string",
@@ -122,9 +105,7 @@
           "description": "Alias for trigger.vars — declared input variables resolvable as {{name}} in steps.",
           "items": {
             "type": "object",
-            "required": [
-              "name"
-            ],
+            "required": ["name"],
             "properties": {
               "name": {
                 "type": "string",
@@ -170,9 +151,7 @@
         },
         "legacyType": {
           "type": "string",
-          "enum": [
-            "event"
-          ],
+          "enum": ["event"],
           "description": "Original trigger type preserved during legacy normalization"
         }
       }
@@ -182,16 +161,11 @@
       "description": "Context blocks to load before running steps",
       "items": {
         "type": "object",
-        "required": [
-          "type"
-        ],
+        "required": ["type"],
         "properties": {
           "type": {
             "type": "string",
-            "enum": [
-              "file",
-              "env"
-            ]
+            "enum": ["file", "env"]
           },
           "path": {
             "type": "string"
@@ -212,9 +186,7 @@
         "oneOf": [
           {
             "type": "object",
-            "required": [
-              "agent"
-            ],
+            "required": ["agent"],
             "properties": {
               "id": {
                 "type": "string",
@@ -237,11 +209,7 @@
               },
               "risk": {
                 "type": "string",
-                "enum": [
-                  "low",
-                  "medium",
-                  "high"
-                ],
+                "enum": ["low", "medium", "high"],
                 "description": "Risk level for this step"
               },
               "transform": {
@@ -291,19 +259,14 @@
                   },
                   "on_fail": {
                     "type": "string",
-                    "enum": [
-                      "halt",
-                      "warn"
-                    ],
+                    "enum": ["halt", "warn"],
                     "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                   }
                 }
               },
               "agent": {
                 "type": "object",
-                "required": [
-                  "prompt"
-                ],
+                "required": ["prompt"],
                 "description": "Agent step configuration",
                 "properties": {
                   "prompt": {
@@ -357,9 +320,7 @@
                   },
                   "kind": {
                     "type": "string",
-                    "enum": [
-                      "judge"
-                    ],
+                    "enum": ["judge"],
                     "description": "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log."
                   },
                   "reviews": {
@@ -373,10 +334,7 @@
                   },
                   "on_exhausted": {
                     "type": "string",
-                    "enum": [
-                      "halt",
-                      "proceed"
-                    ],
+                    "enum": ["halt", "proceed"],
                     "description": "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft."
                   },
                   "downshift": {
@@ -441,9 +399,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "tool"
-            ],
+            "required": ["tool"],
             "properties": {
               "id": {
                 "type": "string",
@@ -466,11 +422,7 @@
               },
               "risk": {
                 "type": "string",
-                "enum": [
-                  "low",
-                  "medium",
-                  "high"
-                ],
+                "enum": ["low", "medium", "high"],
                 "description": "Risk level for this step"
               },
               "transform": {
@@ -520,10 +472,7 @@
                   },
                   "on_fail": {
                     "type": "string",
-                    "enum": [
-                      "halt",
-                      "warn"
-                    ],
+                    "enum": ["halt", "warn"],
                     "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                   }
                 }
@@ -543,14 +492,10 @@
             "type": "object",
             "anyOf": [
               {
-                "required": [
-                  "recipe"
-                ]
+                "required": ["recipe"]
               },
               {
-                "required": [
-                  "chain"
-                ]
+                "required": ["chain"]
               }
             ],
             "properties": {
@@ -575,11 +520,7 @@
               },
               "risk": {
                 "type": "string",
-                "enum": [
-                  "low",
-                  "medium",
-                  "high"
-                ],
+                "enum": ["low", "medium", "high"],
                 "description": "Risk level for this step"
               },
               "transform": {
@@ -629,10 +570,7 @@
                   },
                   "on_fail": {
                     "type": "string",
-                    "enum": [
-                      "halt",
-                      "warn"
-                    ],
+                    "enum": ["halt", "warn"],
                     "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                   }
                 }
@@ -660,9 +598,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "parallel"
-            ],
+            "required": ["parallel"],
             "properties": {
               "id": {
                 "type": "string",
@@ -685,9 +621,7 @@
                       "oneOf": [
                         {
                           "type": "object",
-                          "required": [
-                            "agent"
-                          ],
+                          "required": ["agent"],
                           "properties": {
                             "id": {
                               "type": "string",
@@ -710,11 +644,7 @@
                             },
                             "risk": {
                               "type": "string",
-                              "enum": [
-                                "low",
-                                "medium",
-                                "high"
-                              ],
+                              "enum": ["low", "medium", "high"],
                               "description": "Risk level for this step"
                             },
                             "transform": {
@@ -764,19 +694,14 @@
                                 },
                                 "on_fail": {
                                   "type": "string",
-                                  "enum": [
-                                    "halt",
-                                    "warn"
-                                  ],
+                                  "enum": ["halt", "warn"],
                                   "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                                 }
                               }
                             },
                             "agent": {
                               "type": "object",
-                              "required": [
-                                "prompt"
-                              ],
+                              "required": ["prompt"],
                               "description": "Agent step configuration",
                               "properties": {
                                 "prompt": {
@@ -830,9 +755,7 @@
                                 },
                                 "kind": {
                                   "type": "string",
-                                  "enum": [
-                                    "judge"
-                                  ],
+                                  "enum": ["judge"],
                                   "description": "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log."
                                 },
                                 "reviews": {
@@ -846,10 +769,7 @@
                                 },
                                 "on_exhausted": {
                                   "type": "string",
-                                  "enum": [
-                                    "halt",
-                                    "proceed"
-                                  ],
+                                  "enum": ["halt", "proceed"],
                                   "description": "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft."
                                 },
                                 "downshift": {
@@ -914,9 +834,7 @@
                         },
                         {
                           "type": "object",
-                          "required": [
-                            "tool"
-                          ],
+                          "required": ["tool"],
                           "properties": {
                             "id": {
                               "type": "string",
@@ -939,11 +857,7 @@
                             },
                             "risk": {
                               "type": "string",
-                              "enum": [
-                                "low",
-                                "medium",
-                                "high"
-                              ],
+                              "enum": ["low", "medium", "high"],
                               "description": "Risk level for this step"
                             },
                             "transform": {
@@ -993,10 +907,7 @@
                                 },
                                 "on_fail": {
                                   "type": "string",
-                                  "enum": [
-                                    "halt",
-                                    "warn"
-                                  ],
+                                  "enum": ["halt", "warn"],
                                   "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                                 }
                               }
@@ -1016,14 +927,10 @@
                           "type": "object",
                           "anyOf": [
                             {
-                              "required": [
-                                "recipe"
-                              ]
+                              "required": ["recipe"]
                             },
                             {
-                              "required": [
-                                "chain"
-                              ]
+                              "required": ["chain"]
                             }
                           ],
                           "properties": {
@@ -1048,11 +955,7 @@
                             },
                             "risk": {
                               "type": "string",
-                              "enum": [
-                                "low",
-                                "medium",
-                                "high"
-                              ],
+                              "enum": ["low", "medium", "high"],
                               "description": "Risk level for this step"
                             },
                             "transform": {
@@ -1102,10 +1005,7 @@
                                 },
                                 "on_fail": {
                                   "type": "string",
-                                  "enum": [
-                                    "halt",
-                                    "warn"
-                                  ],
+                                  "enum": ["halt", "warn"],
                                   "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                                 }
                               }
@@ -1137,10 +1037,7 @@
                   {
                     "type": "object",
                     "description": "Map-reduce form — iterate over a collection and run steps once per item.",
-                    "required": [
-                      "each",
-                      "steps"
-                    ],
+                    "required": ["each", "steps"],
                     "properties": {
                       "each": {
                         "type": "string",
@@ -1157,9 +1054,7 @@
                           "oneOf": [
                             {
                               "type": "object",
-                              "required": [
-                                "agent"
-                              ],
+                              "required": ["agent"],
                               "properties": {
                                 "id": {
                                   "type": "string",
@@ -1182,11 +1077,7 @@
                                 },
                                 "risk": {
                                   "type": "string",
-                                  "enum": [
-                                    "low",
-                                    "medium",
-                                    "high"
-                                  ],
+                                  "enum": ["low", "medium", "high"],
                                   "description": "Risk level for this step"
                                 },
                                 "transform": {
@@ -1236,19 +1127,14 @@
                                     },
                                     "on_fail": {
                                       "type": "string",
-                                      "enum": [
-                                        "halt",
-                                        "warn"
-                                      ],
+                                      "enum": ["halt", "warn"],
                                       "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                                     }
                                   }
                                 },
                                 "agent": {
                                   "type": "object",
-                                  "required": [
-                                    "prompt"
-                                  ],
+                                  "required": ["prompt"],
                                   "description": "Agent step configuration",
                                   "properties": {
                                     "prompt": {
@@ -1302,9 +1188,7 @@
                                     },
                                     "kind": {
                                       "type": "string",
-                                      "enum": [
-                                        "judge"
-                                      ],
+                                      "enum": ["judge"],
                                       "description": "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log."
                                     },
                                     "reviews": {
@@ -1318,10 +1202,7 @@
                                     },
                                     "on_exhausted": {
                                       "type": "string",
-                                      "enum": [
-                                        "halt",
-                                        "proceed"
-                                      ],
+                                      "enum": ["halt", "proceed"],
                                       "description": "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft."
                                     },
                                     "downshift": {
@@ -1386,9 +1267,7 @@
                             },
                             {
                               "type": "object",
-                              "required": [
-                                "tool"
-                              ],
+                              "required": ["tool"],
                               "properties": {
                                 "id": {
                                   "type": "string",
@@ -1411,11 +1290,7 @@
                                 },
                                 "risk": {
                                   "type": "string",
-                                  "enum": [
-                                    "low",
-                                    "medium",
-                                    "high"
-                                  ],
+                                  "enum": ["low", "medium", "high"],
                                   "description": "Risk level for this step"
                                 },
                                 "transform": {
@@ -1465,10 +1340,7 @@
                                     },
                                     "on_fail": {
                                       "type": "string",
-                                      "enum": [
-                                        "halt",
-                                        "warn"
-                                      ],
+                                      "enum": ["halt", "warn"],
                                       "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                                     }
                                   }
@@ -1488,14 +1360,10 @@
                               "type": "object",
                               "anyOf": [
                                 {
-                                  "required": [
-                                    "recipe"
-                                  ]
+                                  "required": ["recipe"]
                                 },
                                 {
-                                  "required": [
-                                    "chain"
-                                  ]
+                                  "required": ["chain"]
                                 }
                               ],
                               "properties": {
@@ -1520,11 +1388,7 @@
                                 },
                                 "risk": {
                                   "type": "string",
-                                  "enum": [
-                                    "low",
-                                    "medium",
-                                    "high"
-                                  ],
+                                  "enum": ["low", "medium", "high"],
                                   "description": "Risk level for this step"
                                 },
                                 "transform": {
@@ -1574,10 +1438,7 @@
                                     },
                                     "on_fail": {
                                       "type": "string",
-                                      "enum": [
-                                        "halt",
-                                        "warn"
-                                      ],
+                                      "enum": ["halt", "warn"],
                                       "description": "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings."
                                     }
                                   }
@@ -1631,10 +1492,7 @@
           }
         },
         "errorMessage": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "description": "Expected final error message, or null for a clean run"
         },
         "context": {
@@ -1672,11 +1530,7 @@
         },
         "fallback": {
           "type": "string",
-          "enum": [
-            "log_only",
-            "abort",
-            "deliver_original"
-          ],
+          "enum": ["log_only", "abort", "deliver_original"],
           "description": "log_only / deliver_original: treat step failure as non-fatal (like optional); fail-open. abort (default): propagate failure."
         },
         "notify": {
@@ -1706,10 +1560,7 @@
         },
         "onBreach": {
           "type": "string",
-          "enum": [
-            "halt",
-            "warn"
-          ],
+          "enum": ["halt", "warn"],
           "description": "halt (default): stop run on next admission check. warn: continue but record the breach in the run log. Applies to both tokensMax and usdMax.",
           "default": "halt"
         }
