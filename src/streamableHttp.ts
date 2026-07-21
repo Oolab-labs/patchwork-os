@@ -315,27 +315,34 @@ interface HttpSession {
   claudeCodeSessionId: string | null;
   /**
    * Per-session ownership secret returned in the initialize response as
-   * `Mcp-Session-Token`. Subsequent POST/GET/DELETE requests must echo it
-   * in the same header. Closes the session-takeover hole where any caller
-   * with a valid bridge bearer plus a known `Mcp-Session-Id` could DELETE
-   * the session, hijack its SSE stream via GET, or impersonate POST
-   * traffic. 32 bytes hex (256-bit). Necessary because the bridge often
-   * runs with a single shared bearer token, so bearer-binding alone is
-   * insufficient.
+   * `Mcp-Session-Token`. Subsequent POST/GET/DELETE requests MAY echo it in
+   * the same header for an extra check, but it is never required — no MCP
+   * spec header exists for this, and standard clients (Gemini CLI, Codex,
+   * ChatGPT's connector) never send it. Real session-hijacking protection
+   * in OAuth mode comes from `ownerTokenHash` below, not this field.
    */
   ownershipToken: string;
   /**
-   * Whether `checkOwnership` must reject requests that omit
-   * `Mcp-Session-Token` entirely, not just ones that present a wrong
-   * value. True only for sessions created while OAuth mode is active
-   * (`resolveScopeFn` configured) — the multi-client-shared-bridge
-   * scenario the token was introduced to protect. False for the
-   * single-user local/VPS bearer-token deployment, where standard MCP
-   * clients (Gemini CLI, Codex) that never send the header must keep
-   * working and no other client realistically has visibility into this
-   * bridge's session IDs.
+   * SHA-256 hex digest of the raw bearer token presented at `initialize`,
+   * recorded only for sessions created while OAuth mode is active
+   * (`resolveScopeFn` configured) — the multi-client-shared-bridge scenario
+   * where distinct clients could plausibly learn each other's
+   * `Mcp-Session-Id` and attempt to hijack it. `null` for non-OAuth
+   * sessions (single shared bearer token — every caller already possesses
+   * the one credential that matters, so per-session principal binding adds
+   * nothing there).
+   *
+   * `verifyPrincipal` re-hashes the bearer presented on every subsequent
+   * POST/GET/DELETE and compares — a caller must possess the SAME bearer
+   * token the session was created with, not merely guess a valid
+   * `Mcp-Session-Id`. Unlike the old `Mcp-Session-Token` header
+   * requirement (reverted — see `checkOwnership`), this needs no
+   * non-standard header: every MCP client already sends `Authorization`
+   * on every request as its baseline auth, so this closes the same
+   * session-takeover hole while working identically for every client,
+   * standard or not.
    */
-  requireOwnershipToken: boolean;
+  ownerTokenHash: string | null;
 }
 
 /** Constant-time hex-string comparison; both inputs must be same length. */
@@ -349,26 +356,60 @@ function hexEquals(a: string, b: string): boolean {
   }
 }
 
+/** SHA-256 hex digest of a bearer token — used for principal binding, never
+ * for comparing against a stored bearer token directly (avoids keeping a
+ * copy of the raw credential in memory longer than the initialize call). */
+export function hashBearer(bearer: string): string {
+  return crypto.createHash("sha256").update(bearer).digest("hex");
+}
+
 /**
- * Verifies the `Mcp-Session-Token` header matches the session's ownership
- * token. Returns `true` if authorized.
+ * Verifies the OPTIONAL `Mcp-Session-Token` header, if present, matches the
+ * session's ownership token. Returns `true` if authorized.
  *
- * For most sessions the header is optional — standard MCP clients (Gemini
- * CLI, Codex, etc.) don't send it and the Bearer token already
- * authenticated them, so a missing header is allowed. But when
- * `session.requireOwnershipToken` is set (OAuth mode — multiple distinct
- * clients share visibility of the same bridge and could plausibly learn
- * each other's session IDs), a missing header is REJECTED, not allowed:
- * an attacker who simply omits the header would otherwise defeat the
- * entire point of the token by not presenting one at all.
+ * The header is always optional — there is no MCP spec header for this, and
+ * standard clients (Gemini CLI, Codex, ChatGPT's connector) never send it.
+ * A missing header is allowed unconditionally; only a WRONG value (header
+ * present but mismatched) is rejected, as one extra signal on top of
+ * `verifyPrincipal`'s bearer-hash check below. Previously (until 2026-07)
+ * this was hard-required in OAuth mode — reverted after confirming no
+ * standard MCP client sends it, which made every OAuth-mode session
+ * unreachable by a spec-compliant client. Real hijacking protection in
+ * OAuth mode is `verifyPrincipal`, not this header.
  */
 function checkOwnership(
   req: http.IncomingMessage,
-  session: { ownershipToken: string; requireOwnershipToken: boolean },
+  session: { ownershipToken: string },
 ): boolean {
   const presented = req.headers["mcp-session-token"];
-  if (typeof presented !== "string") return !session.requireOwnershipToken;
+  if (typeof presented !== "string") return true;
   return hexEquals(presented, session.ownershipToken);
+}
+
+/**
+ * Verifies the caller's bearer token matches the one the session was
+ * created with, for OAuth-mode sessions (`ownerTokenHash !== null`).
+ * Returns `true` unconditionally for non-OAuth sessions — every caller
+ * already possesses the single shared bearer token in that deployment
+ * shape, so per-session principal binding adds nothing there.
+ *
+ * This is the actual session-hijacking defense for OAuth-mode deployments
+ * (multiple distinct clients sharing visibility of one bridge, each with
+ * their own OAuth-issued access token): a caller who merely learns another
+ * client's `Mcp-Session-Id` cannot touch that session without ALSO
+ * possessing the exact bearer token it was created with. Uses info every
+ * MCP client already sends on every request (`Authorization`), unlike the
+ * old `Mcp-Session-Token` header requirement this replaces.
+ */
+export function verifyPrincipal(
+  req: http.IncomingMessage,
+  session: { ownerTokenHash: string | null },
+): boolean {
+  if (session.ownerTokenHash === null) return true;
+  const authHeader = req.headers.authorization ?? "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!bearer) return false;
+  return hexEquals(hashBearer(bearer), session.ownerTokenHash);
 }
 
 /** Handles POST/GET/DELETE /mcp for all HTTP sessions. */
@@ -565,12 +606,12 @@ export class StreamableHttpHandler {
       }
       // Resolve OAuth scope from bearer token (if a resolver is configured)
       let sessionScope: string | null = null;
-      if (this.resolveScopeFn) {
-        const authHeader = req.headers.authorization ?? "";
-        const bearer = authHeader.startsWith("Bearer ")
-          ? authHeader.slice(7)
-          : "";
-        if (bearer) sessionScope = this.resolveScopeFn(bearer);
+      const initAuthHeader = req.headers.authorization ?? "";
+      const initBearer = initAuthHeader.startsWith("Bearer ")
+        ? initAuthHeader.slice(7)
+        : "";
+      if (this.resolveScopeFn && initBearer) {
+        sessionScope = this.resolveScopeFn(initBearer);
       }
       // Parse X-Bridge-Deny-Tools header: comma-separated tool names to block for this session.
       const denyHeader = req.headers["x-bridge-deny-tools"];
@@ -588,7 +629,11 @@ export class StreamableHttpHandler {
           }
         }
       }
-      session = await this.createSession(sessionScope, denyTools);
+      session = await this.createSession(
+        sessionScope,
+        denyTools,
+        initBearer || null,
+      );
       sessionIsNew = true;
       const ccSessionId = req.headers["x-claude-code-session-id"];
       if (typeof ccSessionId === "string" && SESSION_ID_RE.test(ccSessionId)) {
@@ -627,10 +672,11 @@ export class StreamableHttpHandler {
         );
         return;
       }
-      // Verify the caller owns this session (Mcp-Session-Token header
-      // matches what was returned in the initialize response).
-      // The header is optional — absent means allowed (see checkOwnership).
-      if (!checkOwnership(req, session)) {
+      // Verify the caller owns this session: the optional Mcp-Session-Token
+      // header if present must match (checkOwnership), AND — the real
+      // defense in OAuth mode — the bearer token must match the one the
+      // session was created with (verifyPrincipal).
+      if (!checkOwnership(req, session) || !verifyPrincipal(req, session)) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -746,7 +792,7 @@ export class StreamableHttpHandler {
       res.end("Session not found");
       return;
     }
-    if (!checkOwnership(req, session)) {
+    if (!checkOwnership(req, session) || !verifyPrincipal(req, session)) {
       res.writeHead(403, { "Content-Type": "text/plain" });
       res.end("Mcp-Session-Token invalid");
       return;
@@ -803,7 +849,7 @@ export class StreamableHttpHandler {
       res.end("Session not found");
       return;
     }
-    if (!checkOwnership(req, session)) {
+    if (!checkOwnership(req, session) || !verifyPrincipal(req, session)) {
       res.writeHead(403, { "Content-Type": "text/plain" });
       res.end("Mcp-Session-Token invalid");
       return;
@@ -821,10 +867,11 @@ export class StreamableHttpHandler {
   private async createSession(
     scope: string | null = null,
     denyTools: Set<string> = new Set(),
+    ownerBearer: string | null = null,
   ): Promise<HttpSession> {
     this.pendingSessionCreates++;
     try {
-      return await this.createSessionImpl(scope, denyTools);
+      return await this.createSessionImpl(scope, denyTools, ownerBearer);
     } finally {
       this.pendingSessionCreates--;
     }
@@ -833,6 +880,7 @@ export class StreamableHttpHandler {
   private async createSessionImpl(
     scope: string | null,
     denyTools: Set<string>,
+    ownerBearer: string | null,
   ): Promise<HttpSession> {
     const id = crypto.randomUUID();
     const ownershipToken = crypto.randomBytes(32).toString("hex");
@@ -850,9 +898,12 @@ export class StreamableHttpHandler {
       // Gated on OAuth mode being active for this bridge instance (not on
       // whether this particular token happens to carry a scope) — even a
       // full-access OAuth token still shares the bridge with other OAuth
-      // clients, which is the multi-client-visibility risk the token
-      // exists to close.
-      requireOwnershipToken: this.resolveScopeFn !== null,
+      // clients, which is the multi-client-visibility risk principal
+      // binding exists to close.
+      ownerTokenHash:
+        this.resolveScopeFn !== null && ownerBearer
+          ? hashBearer(ownerBearer)
+          : null,
     } as HttpSession;
     const adapter = new HttpAdapter(
       (msg) => this.logger.warn(msg),
