@@ -8,6 +8,13 @@
  * 6.5  POST /oauth/token exchanges code+verifier for access_token
  * 6.6  Access token authorizes MCP WS request
  * 6.7  POST /oauth/revoke invalidates token (MCP WS rejects afterward)
+ * 6.8  A standard MCP client (Bearer only, no Mcp-Session-Token) can use an
+ *      OAuth-mode session end-to-end — the actual compatibility fix this
+ *      category exists to prove.
+ * 6.9  A second, genuinely distinct OAuth client's access token cannot
+ *      touch the first client's session even if it learns the session ID
+ *      — real proof of bearer-hash principal binding (verifyPrincipal),
+ *      using two real issued tokens, not a simulated/mocked pair.
  *
  * Spawns its own isolated bridge with --issuer-url so main bridge is unaffected.
  * Usage: node cat6-oauth.mjs
@@ -154,6 +161,70 @@ async function httpPostJson(url, json, headers = {}) {
     req.write(body);
     req.end();
   });
+}
+
+/** Full register → authorize → token PKCE flow for one client, returning
+ * its distinct access_token. Used both for the primary flow (6.2-6.5) and
+ * to mint a genuinely separate, second OAuth client's token for 6.9. */
+async function getAccessToken(clientName) {
+  const reg = await httpPostJson(`${ISSUER}/oauth/register`, {
+    client_name: clientName,
+    redirect_uris: [REDIRECT_URI],
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code"],
+    response_types: ["code"],
+  });
+  const cid = reg.body?.client_id;
+  const { verifier, challenge } = makeVerifier();
+  const authParams = new URLSearchParams({
+    response_type: "code",
+    client_id: cid,
+    redirect_uri: REDIRECT_URI,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    scope: "mcp",
+    state: "state123",
+  });
+  const getAuthResp = await httpGet(`${ISSUER}/oauth/authorize?${authParams}`);
+  const nonceMatch = getAuthResp.body.match(
+    /name="csrf_nonce"\s+value="([^"]+)"/,
+  );
+  const flowIdMatch = getAuthResp.body.match(
+    /name="flow_id"\s+value="([^"]+)"/,
+  );
+  const csrfNonce = nonceMatch?.[1];
+  const flowId = flowIdMatch?.[1];
+  const postAuthResp = await httpPostForm(`${ISSUER}/oauth/authorize`, {
+    action: "approve",
+    client_id: cid,
+    redirect_uri: REDIRECT_URI,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    bridge_token: BRIDGE_TOKEN,
+    scope: "mcp",
+    state: "state123",
+    csrf_nonce: csrfNonce,
+    flow_id: flowId,
+  });
+  const location = postAuthResp.headers.location ?? "";
+  const redirectUrl = new URL(
+    location.startsWith("http") ? location : `http://localhost${location}`,
+  );
+  const authCode = redirectUrl.searchParams.get("code");
+  const tokenResp = await httpPostForm(`${ISSUER}/oauth/token`, {
+    grant_type: "authorization_code",
+    client_id: cid,
+    redirect_uri: REDIRECT_URI,
+    code: authCode,
+    code_verifier: verifier,
+  });
+  let tokenBody;
+  try {
+    tokenBody = JSON.parse(tokenResp.body);
+  } catch {
+    tokenBody = {};
+  }
+  return { clientId: cid, accessToken: tokenBody.access_token };
 }
 
 try {
@@ -329,6 +400,50 @@ try {
   assert(
     Array.isArray(toolsHttpResp.body?.result?.tools),
     "6.6 tools/list via OAuth HTTP session returns tools array",
+  );
+
+  // ── 6.8 Standard MCP client compat: Bearer only, no Mcp-Session-Token ─────────
+  // This is the actual thing the 2026-07 Mcp-Session-Token → verifyPrincipal
+  // migration exists to fix: standard MCP clients (Gemini CLI, Codex,
+  // ChatGPT's connector) never send this non-spec header. Before the fix,
+  // this exact request pattern was hard-rejected with 403 in OAuth mode.
+  const standardClientResp = await httpPostJson(
+    `${ISSUER}/mcp`,
+    { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} },
+    { ...CT_JSON, ...BEARER, "Mcp-Session-Id": sessionId }, // no Mcp-Session-Token
+  );
+  assert(
+    standardClientResp.status === 200,
+    `6.8 standard client (no Mcp-Session-Token) can use an OAuth-mode session (got ${standardClientResp.status})`,
+  );
+
+  // ── 6.9 Cross-client session isolation (real principal-binding proof) ────────
+  // A second, genuinely distinct OAuth client — its own registration, its
+  // own PKCE flow, its own issued access_token — must not be able to touch
+  // the first client's session, even presenting its correctly-formatted
+  // Mcp-Session-Id. This is verifyPrincipal's actual security property,
+  // proven here with two real tokens rather than simulated/mocked ones.
+  const clientB = await getAccessToken("smoke-test-client-b");
+  assert(
+    typeof clientB.accessToken === "string" && clientB.accessToken.length > 0,
+    "6.9 second OAuth client obtains its own distinct access_token",
+  );
+  assert(
+    clientB.accessToken !== accessToken,
+    "6.9 client B's token is genuinely different from client A's",
+  );
+  const hijackAttempt = await httpPostJson(
+    `${ISSUER}/mcp`,
+    { jsonrpc: "2.0", id: 4, method: "tools/list", params: {} },
+    {
+      ...CT_JSON,
+      Authorization: `Bearer ${clientB.accessToken}`,
+      "Mcp-Session-Id": sessionId, // client A's session ID
+    },
+  );
+  assert(
+    hijackAttempt.status === 403,
+    `6.9 client B's token cannot use client A's session (got ${hijackAttempt.status})`,
   );
 
   // ── 6.7 Revoke token — HTTP MCP rejects afterward ─────────────────────────────

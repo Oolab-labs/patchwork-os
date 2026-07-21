@@ -328,13 +328,20 @@ describe("Streamable HTTP: per-session ownership token", () => {
   });
 });
 
-// Regression: checkOwnership() previously allowed ANY request that simply
-// omitted Mcp-Session-Token, even in OAuth mode — the exact deployment the
-// token exists to protect, where multiple distinct clients share visibility
-// of the bridge and could plausibly learn each other's Mcp-Session-Id. An
-// attacker who knew a victim's session ID could hijack it by never sending
-// the header at all. Sessions created while OAuth mode is active
-// (resolveScopeFn configured) now require the header.
+// History: checkOwnership() previously allowed ANY request that simply
+// omitted Mcp-Session-Token in non-OAuth mode, but was made HARD-REQUIRED
+// in OAuth mode (PR #1182) to protect the multi-client-shared-bridge
+// scenario — the exact deployment where distinct clients could plausibly
+// learn each other's Mcp-Session-Id. That fix broke every standards-only
+// MCP client (Gemini CLI, Codex, ChatGPT's connector — none send this
+// non-spec header), making OAuth-mode sessions unreachable by them.
+//
+// 2026-07: replaced with `verifyPrincipal` — bearer-token-hash binding
+// (`HttpSession.ownerTokenHash`) using the `Authorization` header every
+// client already sends on every request, no custom header required.
+// `Mcp-Session-Token` reverts to fully optional in every mode (see
+// `checkOwnership`'s current doc comment); it's still honored as an extra
+// signal when present, just never mandatory.
 describe("Streamable HTTP: per-session ownership token — OAuth mode enforcement", () => {
   let oauthHandler: StreamableHttpHandler | null = null;
   let oauthPort: number;
@@ -367,10 +374,10 @@ describe("Streamable HTTP: per-session ownership token — OAuth mode enforcemen
     await s?.close();
   });
 
-  it("DELETE without Mcp-Session-Token is REJECTED (403) in OAuth mode", async () => {
+  it("DELETE without Mcp-Session-Token succeeds in OAuth mode — same bearer as initialize, header no longer required", async () => {
     const { sid } = await initSession(oauthPort);
-    const res = await httpReq(oauthPort, "DELETE", sid); // no token
-    expect(res.status).toBe(403);
+    const res = await httpReq(oauthPort, "DELETE", sid); // no token, but same bearer (TOKEN) as initialize
+    expect(res.status).toBe(204);
   });
 
   it("DELETE with the correct Mcp-Session-Token still succeeds in OAuth mode", async () => {
@@ -379,21 +386,21 @@ describe("Streamable HTTP: per-session ownership token — OAuth mode enforcemen
     expect(res.status).toBe(204);
   });
 
-  it("DELETE with a wrong Mcp-Session-Token is rejected (403) in OAuth mode", async () => {
+  it("DELETE with a wrong Mcp-Session-Token is rejected (403) in OAuth mode — honored as an extra signal when present", async () => {
     const { sid } = await initSession(oauthPort);
     const wrongToken = "0".repeat(64);
     const res = await httpReq(oauthPort, "DELETE", sid, wrongToken);
     expect(res.status).toBe(403);
   });
 
-  it("POST without Mcp-Session-Token is REJECTED (403) in OAuth mode", async () => {
+  it("POST without Mcp-Session-Token succeeds in OAuth mode — same bearer as initialize, header no longer required", async () => {
     const { sid } = await initSession(oauthPort);
     const res = await post(
       oauthPort,
       { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
-      sid, // no token
+      sid, // no token, but same bearer (TOKEN) as initialize
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it("session A's token cannot DELETE session B (cross-session takeover)", async () => {
@@ -401,6 +408,65 @@ describe("Streamable HTTP: per-session ownership token — OAuth mode enforcemen
     const b = await initSession(port);
     const res = await httpReq(port, "DELETE", b.sid, a.token);
     expect(res.status).toBe(403);
+  });
+});
+
+// ── Principal binding (verifyPrincipal) ─────────────────────────────────────────
+//
+// The actual OAuth-mode hijacking defense: a session records the SHA-256
+// hash of the bearer token presented at initialize; every subsequent
+// request must present a bearer that hashes to the same value. Tested
+// directly against the pure function rather than through the full HTTP
+// stack, because this test file's Server has no real OAuthServerImpl
+// wired — every request that reaches it must present the exact same
+// static TOKEN to pass Server's own bearer gate at all, so two genuinely
+// different-but-both-valid bearer tokens can't be constructed at the HTTP
+// level here (see scripts/smoke/cat6-oauth.mjs for that end-to-end proof
+// using two real, distinct OAuth-issued access tokens).
+
+describe("Streamable HTTP: verifyPrincipal (bearer-hash session binding)", () => {
+  function fakeReq(bearer: string | null): http.IncomingMessage {
+    return {
+      headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
+    } as http.IncomingMessage;
+  }
+
+  it("allows any bearer for a non-OAuth session (ownerTokenHash null)", async () => {
+    const { verifyPrincipal } = await import("../streamableHttp.js");
+    expect(verifyPrincipal(fakeReq("anything"), { ownerTokenHash: null })).toBe(
+      true,
+    );
+    expect(verifyPrincipal(fakeReq(null), { ownerTokenHash: null })).toBe(true);
+  });
+
+  it("allows the exact bearer the session was created with", async () => {
+    const { verifyPrincipal, hashBearer } = await import(
+      "../streamableHttp.js"
+    );
+    const ownerTokenHash = hashBearer("client-a-token");
+    expect(verifyPrincipal(fakeReq("client-a-token"), { ownerTokenHash })).toBe(
+      true,
+    );
+  });
+
+  it("rejects a DIFFERENT valid-shaped bearer — the actual session-hijack defense", async () => {
+    const { verifyPrincipal, hashBearer } = await import(
+      "../streamableHttp.js"
+    );
+    const ownerTokenHash = hashBearer("client-a-token");
+    // client-b-token never authenticated this session, but is presented on
+    // a request carrying client-a's known Mcp-Session-Id — must be rejected.
+    expect(verifyPrincipal(fakeReq("client-b-token"), { ownerTokenHash })).toBe(
+      false,
+    );
+  });
+
+  it("rejects a request with no bearer at all against an OAuth-mode session", async () => {
+    const { verifyPrincipal, hashBearer } = await import(
+      "../streamableHttp.js"
+    );
+    const ownerTokenHash = hashBearer("client-a-token");
+    expect(verifyPrincipal(fakeReq(null), { ownerTokenHash })).toBe(false);
   });
 });
 
