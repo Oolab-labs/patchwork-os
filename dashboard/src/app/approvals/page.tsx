@@ -913,11 +913,43 @@ function ApprovalsContent() {
   const selectedInView = filtered.filter((p) => selected.has(p.callId));
 
   async function batchDecide(decision: "approve" | "reject") {
-    const ids = selectedInView.map((p) => p.callId);
+    const allIds = selectedInView.map((p) => p.callId);
+    // Evidence gate (irreversible only) applies to bulk approve too — same
+    // predicate the single-item Approve button (evidenceLocked) and the `E`
+    // keyboard shortcut already enforce. Previously this approved every
+    // selected id unconditionally, so a multi-select including an
+    // unreviewed irreversible action (e.g. a destructive shell command)
+    // could be approved via "Approve selected" without the reviewer ever
+    // having opened its evidence/diff — the same class of gap
+    // #1185/#1186/#1191/#1192 closed on other paths, just not this one.
+    let lockedIds: string[] = [];
+    let ids = allIds;
+    if (decision === "approve") {
+      lockedIds = selectedInView
+        .filter((p) => {
+          const cls = classifyPendingAction(p.toolName);
+          return (
+            cls?.reversibility === "irreversible" &&
+            !evidenceOpenedIds.has(p.callId)
+          );
+        })
+        .map((p) => p.callId);
+      if (lockedIds.length > 0) {
+        ids = allIds.filter((id) => !lockedIds.includes(id));
+      }
+    }
+    if (ids.length === 0) {
+      setBatchErr(
+        `Approve locked for ${lockedIds.length} item${lockedIds.length === 1 ? "" : "s"} — open the evidence/diff first.`,
+      );
+      return;
+    }
     // Confirm gate is tier-weighted: any high-risk selection demands a
     // confirm even for a batch of 1; non-high batches keep the historical
     // ≥3 threshold so the prompt doesn't become noise for tidy reviews.
-    const highCount = selectedInView.filter((p) => p.tier === "high").length;
+    const highCount = selectedInView.filter(
+      (p) => ids.includes(p.callId) && p.tier === "high",
+    ).length;
     const needsConfirm = highCount > 0 || ids.length >= 3;
     if (needsConfirm) {
       const verb = decision === "approve" ? "Approve" : "Reject";
@@ -961,8 +993,17 @@ function ApprovalsContent() {
           }),
         ),
       );
-      if (failedIds.length > 0) {
-        setBatchErr(`${decision} failed for: ${failedIds.join(", ")}`);
+      if (failedIds.length > 0 || lockedIds.length > 0) {
+        const parts: string[] = [];
+        if (failedIds.length > 0) {
+          parts.push(`${decision} failed for: ${failedIds.join(", ")}`);
+        }
+        if (lockedIds.length > 0) {
+          parts.push(
+            `${lockedIds.length} locked — open the evidence/diff first`,
+          );
+        }
+        setBatchErr(parts.join("; "));
       }
     } catch (e) {
       setBatchErr(e instanceof Error ? e.message : `${decision} request failed`);
