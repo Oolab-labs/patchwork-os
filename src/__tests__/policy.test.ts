@@ -61,6 +61,37 @@ describe("parsePolicy", () => {
       /workers\.w1/,
     );
   });
+
+  // Regression: a malformed `defaults:` value (present but not a mapping)
+  // must fail closed like every other structural error here — silently
+  // treating it as "no restrictions" would make a policy-file typo
+  // indistinguishable from "no policy configured", contradicting this
+  // module's own fail-closed guarantee (see file header comment).
+  it("rejects a non-object `defaults` value instead of silently ignoring it", () => {
+    expect(() =>
+      parsePolicy({ version: 1, defaults: "not-a-mapping" }),
+    ).toThrow(/defaults/);
+    expect(() => parsePolicy({ version: 1, defaults: [1, 2] })).toThrow(
+      /defaults/,
+    );
+    expect(() => parsePolicy({ version: 1, defaults: null })).toThrow(
+      /defaults/,
+    );
+  });
+
+  // Regression: same fail-closed guarantee for `workers:`.
+  it("rejects a non-object `workers` value instead of silently ignoring it", () => {
+    expect(() => parsePolicy({ version: 1, workers: "not-a-mapping" })).toThrow(
+      /workers/,
+    );
+    expect(() => parsePolicy({ version: 1, workers: [1, 2] })).toThrow(
+      /workers/,
+    );
+    // An empty string has zero iterable entries, so the old code's
+    // accidental "throw during iteration" fail-closed behavior for workers
+    // didn't cover this case — it silently produced {} (no restrictions).
+    expect(() => parsePolicy({ version: 1, workers: "" })).toThrow(/workers/);
+  });
 });
 
 describe("loadPolicyFile", () => {
@@ -159,6 +190,49 @@ describe("checkPolicy", () => {
       const result = checkPolicy(policy, {
         toolName: "file.read",
         params: { path: "/repo/src/index.ts" },
+      });
+      expect(result.allowed).toBe(true);
+    });
+  });
+
+  describe("forbidden paths — REGRESSION: array-valued path params", () => {
+    // Bug found in session-review: extractPathCandidates only inspected a
+    // handful of top-level SCALAR keys, so a tool whose path input is an
+    // array — `files: string[]` (generateAPIDocumentation, findFiles,
+    // gitWrite, searchAndReplace, transaction) or `items[].filePath`
+    // (batchLsp's batch* tools) — bypassed forbiddenPaths entirely.
+    const policy = parsePolicy({
+      version: 1,
+      defaults: { forbiddenPaths: ["secrets/**"] },
+    });
+
+    it("blocks a forbidden path inside a bare string array param (files: string[])", () => {
+      const result = checkPolicy(policy, {
+        toolName: "generateAPIDocumentation",
+        params: { files: ["src/index.ts", "secrets/keys.pem"] },
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toMatch(/secrets/);
+    });
+
+    it("blocks a forbidden path nested inside an array of objects (items[].filePath)", () => {
+      const result = checkPolicy(policy, {
+        toolName: "batchGetHover",
+        params: {
+          items: [
+            { filePath: "src/index.ts", line: 1, column: 1 },
+            { filePath: "secrets/keys.pem", line: 1, column: 1 },
+          ],
+        },
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toMatch(/secrets/);
+    });
+
+    it("allows an array param with no forbidden entries", () => {
+      const result = checkPolicy(policy, {
+        toolName: "generateAPIDocumentation",
+        params: { files: ["src/index.ts", "src/other.ts"] },
       });
       expect(result.allowed).toBe(true);
     });
