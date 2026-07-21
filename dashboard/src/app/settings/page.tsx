@@ -1132,10 +1132,12 @@ export default function SettingsPage() {
                     Safety
                   </h2>
                   <div className="stg-card-subtitle">
-                    Global write-tier kill switch. When engaged, every
+                    Write-tier kill switch for this bridge. When engaged, every
                     recipe step + connector tool tagged write-tier
-                    refuses to run on every running bridge. Use during
-                    an incident; release when safe.
+                    refuses to run on the bridge this dashboard is connected
+                    to. Use during an incident; release when safe. If you run
+                    multiple bridges, each has its own kill switch — this
+                    only affects the one this dashboard talks to.
                   </div>
                 </div>
               </div>
@@ -1147,7 +1149,7 @@ export default function SettingsPage() {
                       ? "Kill switch — ENGAGED (writes blocked)"
                       : "Kill switch — released (writes allowed)"
                   }
-                  help="Equivalent to running `patchwork kill-switch engage` / `release` from the CLI. Fans out to every running bridge."
+                  help="Equivalent to running `patchwork kill-switch engage` / `release` from the CLI. Affects only the single bridge this dashboard is connected to — a bridge on another host keeps running normally."
                   checked={ksEngaged}
                   disabled={ksLocked || ksSaving}
                   disabledReason={
