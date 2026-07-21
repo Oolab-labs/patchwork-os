@@ -270,6 +270,31 @@ describe("disallowedToolsForAgentStep (agent-bypass sandbox)", () => {
     }
   });
 
+  // Regression (diagnostic-report triage): the deny-list "universe" is built
+  // from two static maps (TIER_MAP ∪ DOMAIN_BY_TOOL) — a tool absent from
+  // BOTH is never even considered, no matter what classifyTool() would infer
+  // for it. `runVSCodeTask` runs an arbitrary VS Code task from tasks.json
+  // (equivalent to runCommand/runInTerminal, already "high") but was missing
+  // from both maps, so an L0 worker could invoke it uncontested through an
+  // agent step even though the SAME classifyTool() heuristic already treats
+  // it as high risk everywhere else in the codebase. spawnWorkspace (spawns
+  // an arbitrary child process) and launchQuickTask/cancelClaudeTask (thin
+  // wrappers around runClaudeTask/resumeClaudeTask, already "high") had the
+  // identical gap.
+  it("blocks destructive tools that classifyTool already infers as high-risk but were missing from the enumerable universe", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    const blocked = disallowedToolsForAgentStep(w, new WorkerLevelStore());
+    for (const destructive of [
+      "runVSCodeTask",
+      "spawnWorkspace",
+      "launchQuickTask",
+      "cancelClaudeTask",
+    ]) {
+      expect(blocked).toContain(destructive);
+      expect(blocked).toContain(`mcp__patchwork__${destructive}`);
+    }
+  });
+
   it("does NOT block a risky tool the worker has EARNED autonomy on", () => {
     // owns vcs-push + earned L4 on gitPush → the agent may use it.
     const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
