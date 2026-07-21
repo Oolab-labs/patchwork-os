@@ -1943,6 +1943,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 "grok",
                 "gemini",
                 "gemini-api",
+                "codex",
                 "local",
                 "none",
               ];

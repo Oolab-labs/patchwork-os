@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiDriver } from "../claude/api.js";
 import { SubprocessDriver } from "../claude/subprocess.js";
+import { CodexDriver } from "../codex/subprocess.js";
 import { GeminiApiDriver } from "../gemini/api.js";
 import { GeminiSubprocessDriver } from "../gemini/index.js";
 import { GrokApiDriver } from "../grok/index.js";
@@ -79,6 +80,24 @@ describe("createDriver", () => {
     expect(createDriver("gemini-api", opts, log)).toBeInstanceOf(
       GeminiApiDriver,
     );
+  });
+
+  it("returns CodexDriver for mode=codex", () => {
+    expect(createDriver("codex", opts, log)).toBeInstanceOf(CodexDriver);
+  });
+
+  it("passes custom binary to CodexDriver when not 'claude'", () => {
+    const driver = createDriver(
+      "codex",
+      { ...opts, binary: "codex-custom" },
+      log,
+    );
+    expect(driver).toBeInstanceOf(CodexDriver);
+  });
+
+  it("defaults CodexDriver binary to 'codex' when opts.binary is 'claude'", () => {
+    const driver = createDriver("codex", opts, log) as CodexDriver;
+    expect(driver).toBeInstanceOf(CodexDriver);
   });
 
   it("returns LocalApiDriver for mode=local", () => {

@@ -69,6 +69,7 @@ describe("driver env parity — subprocess drivers route through sanitizeEnv", (
   const SUBPROCESS_DRIVERS = [
     { name: "claude", file: "claude/subprocess.ts" },
     { name: "gemini", file: "gemini/index.ts" },
+    { name: "codex", file: "codex/subprocess.ts" },
   ];
 
   for (const d of SUBPROCESS_DRIVERS) {
