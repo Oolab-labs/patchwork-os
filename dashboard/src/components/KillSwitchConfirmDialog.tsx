@@ -7,12 +7,13 @@ import { Dialog } from "@/components/Dialog";
  *   - KillSwitchBanner (release-only, shown when the switch is engaged)
  *   - settings/page.tsx Safety card ToggleRow (both engage + release)
  *
- * The kill-switch fans out to every connected bridge and blocks/unblocks
- * ALL write-tier tool calls — engaging or releasing it with a single
- * accidental click had no confirmation anywhere in the dashboard. This
- * dialog is an additional gate in front of the existing
- * `POST /api/bridge/kill-switch` call; it does not change that call's
- * shape or the locked/lockedReason handling.
+ * The kill-switch blocks/unblocks ALL write-tier tool calls on the single
+ * bridge this dashboard is connected to (see dashboard/src/lib/bridge.ts's
+ * findBridge() — one discovered bridge per dashboard instance, never a
+ * fan-out) — engaging or releasing it with a single accidental click had
+ * no confirmation anywhere in the dashboard. This dialog is an additional
+ * gate in front of the existing `POST /api/bridge/kill-switch` call; it
+ * does not change that call's shape or the locked/lockedReason handling.
  *
  * Renders nothing when `open=false`; consumers control open/close via state.
  */
@@ -30,12 +31,12 @@ const COPY: Record<
 > = {
   engage: {
     title: "Engage the kill-switch?",
-    body: "This disables ALL writes across every connected bridge — recipe runs, git pushes, file edits, everything — until released.",
+    body: "This disables ALL writes on this bridge — recipe runs, git pushes, file edits, everything — until released. If you run other bridges, they are unaffected.",
     confirmLabel: "Engage kill-switch",
   },
   release: {
     title: "Release the kill-switch?",
-    body: "This re-enables all writes across every connected bridge immediately.",
+    body: "This re-enables all writes on this bridge immediately.",
     confirmLabel: "Release kill-switch",
   },
 };

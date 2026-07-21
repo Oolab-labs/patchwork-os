@@ -4,21 +4,29 @@ import { describe, expect, it, vi } from "vitest";
 import { KillSwitchConfirmDialog } from "@/components/KillSwitchConfirmDialog";
 
 describe("<KillSwitchConfirmDialog/>", () => {
-  it("shows engage-specific copy", () => {
+  // Regression (diagnostic-report triage): the dialog previously claimed the
+  // kill-switch "fans out to every connected bridge" — but the dashboard
+  // proxy (dashboard/src/lib/bridge.ts's findBridge()) discovers and talks
+  // to exactly ONE bridge, never a fan-out. Pinning the corrected,
+  // single-bridge-scoped copy so this can't silently regress back to
+  // overstating the scope.
+  it("shows engage-specific copy scoped to this single bridge (not 'every connected bridge')", () => {
     render(<KillSwitchConfirmDialog open onClose={vi.fn()} onConfirm={vi.fn()} direction="engage" />);
     expect(screen.getByText("Engage the kill-switch?")).toBeInTheDocument();
     expect(
-      screen.getByText(/disables ALL writes across every connected bridge/i),
+      screen.getByText(/disables ALL writes on this bridge/i),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/every connected bridge/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Engage kill-switch" })).toBeInTheDocument();
   });
 
-  it("shows release-specific copy", () => {
+  it("shows release-specific copy scoped to this single bridge (not 'every connected bridge')", () => {
     render(<KillSwitchConfirmDialog open onClose={vi.fn()} onConfirm={vi.fn()} direction="release" />);
     expect(screen.getByText("Release the kill-switch?")).toBeInTheDocument();
     expect(
-      screen.getByText(/re-enables all writes across every connected bridge/i),
+      screen.getByText(/re-enables all writes on this bridge/i),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/every connected bridge/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Release kill-switch" })).toBeInTheDocument();
   });
 
