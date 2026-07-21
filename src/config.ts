@@ -32,6 +32,7 @@ export interface Config {
     | "grok"
     | "gemini"
     | "gemini-api"
+    | "codex"
     | "local"
     | "none";
   claudeBinary: string;
@@ -281,6 +282,7 @@ interface ConfigFile {
     | "grok"
     | "gemini"
     | "gemini-api"
+    | "codex"
     | "local"
     | "none";
   claudeBinary?: string;
@@ -531,6 +533,7 @@ export function parseConfig(argv: string[]): Config {
     "grok",
     "gemini",
     "gemini-api",
+    "codex",
     "local",
     "none",
   ] as const;
@@ -552,6 +555,7 @@ export function parseConfig(argv: string[]): Config {
     | "grok"
     | "gemini"
     | "gemini-api"
+    | "codex"
     | "local"
     | "none" = fileConfig.driver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
@@ -755,11 +759,12 @@ export function parseConfig(argv: string[]): Config {
           driverVal !== "grok" &&
           driverVal !== "gemini" &&
           driverVal !== "gemini-api" &&
+          driverVal !== "codex" &&
           driverVal !== "local" &&
           driverVal !== "none"
         ) {
           throw new Error(
-            `Invalid --driver value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", "gemini-api", "local", or "none".`,
+            `Invalid --driver value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", "gemini-api", "codex", "local", or "none".`,
           );
         }
         driver = driverVal;
@@ -993,7 +998,7 @@ Patchwork:
                             access to /hooks/* still works. Env: BRIDGE_WEBHOOK_SECRET
 
 Automation:
-  --driver <mode>           AI driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "gemini-api" | "local" | "none" (default: "none")
+  --driver <mode>           AI driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "gemini-api" | "codex" | "local" | "none" (default: "none")
   --claude-binary <path>    Path to claude binary (default: "claude")
   --automation              Enable event-driven automation hooks (requires --driver != none and --automation-policy)
   --automation-policy <path>  Path to JSON automation policy file

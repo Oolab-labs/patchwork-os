@@ -1,5 +1,6 @@
 import { ApiDriver } from "./claude/api.js";
 import { SubprocessDriver } from "./claude/subprocess.js";
+import { CodexDriver } from "./codex/subprocess.js";
 import { GeminiApiDriver } from "./gemini/api.js";
 import { GeminiSubprocessDriver } from "./gemini/index.js";
 import { GrokApiDriver } from "./grok/index.js";
@@ -14,6 +15,7 @@ export type DriverMode =
   | "grok"
   | "gemini"
   | "gemini-api"
+  | "codex"
   | "local"
   | "none";
 
@@ -51,12 +53,18 @@ export function createDriver(
       opts.bridgeMcp,
     );
   if (mode === "gemini-api") return new GeminiApiDriver(log);
+  if (mode === "codex")
+    return new CodexDriver(
+      opts.binary === "claude" ? "codex" : opts.binary,
+      log,
+    );
   if (mode === "local") return new LocalApiDriver(log);
   throw new Error(`Unknown driver mode: ${mode}`);
 }
 
 export { ApiDriver } from "./claude/api.js";
 export { SubprocessDriver } from "./claude/subprocess.js";
+export { CodexDriver } from "./codex/subprocess.js";
 export { GeminiApiDriver } from "./gemini/api.js";
 export { GeminiSubprocessDriver } from "./gemini/index.js";
 export { GrokApiDriver } from "./grok/index.js";
