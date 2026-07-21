@@ -101,6 +101,15 @@ export abstract class BaseConnector {
    * refresh token — fatal on IdPs that rotate refresh tokens (Google).
    */
   private refreshInflight: Promise<AuthContext | null> | null = null;
+  /**
+   * Bumped by `clearTokens()`. `refreshToken()` snapshots this at entry and
+   * refuses to commit a fetched token if it has changed by the time the IdP
+   * responds — otherwise a refresh in flight when the user disconnects can
+   * finish AFTER `clearTokens()` already wiped storage and `this.auth`, and
+   * unconditionally overwrite both with a freshly rotated token, silently
+   * resurrecting credentials the user just explicitly removed.
+   */
+  private tokenEpoch = 0;
 
   abstract readonly providerName: string;
 
@@ -164,6 +173,7 @@ export abstract class BaseConnector {
     const { deleteTokens } = await import("./tokenStorage.js");
     await deleteTokens(this.providerName);
     this.auth = null;
+    this.tokenEpoch++;
   }
 
   /**
@@ -188,6 +198,8 @@ export abstract class BaseConnector {
    */
   protected async refreshToken(): Promise<AuthContext | null> {
     if (!this.auth?.refreshToken) return null;
+    // Snapshot BEFORE the network round-trip — see `tokenEpoch`'s doc comment.
+    const epochAtStart = this.tokenEpoch;
 
     const config = this.getOAuthConfig();
     if (!config) return null;
@@ -276,6 +288,14 @@ export abstract class BaseConnector {
         return null;
       }
       expiresAt = new Date(Date.now() + seconds * 1000);
+    }
+
+    // The user may have disconnected (clearTokens()) while the fetch above
+    // was in flight. Committing this fetched token now would resurrect
+    // credentials the user just explicitly removed — refuse instead.
+    // `this.auth` can also be null here for the same reason; guard both.
+    if (this.tokenEpoch !== epochAtStart || !this.auth) {
+      return null;
     }
 
     const newAuth: AuthContext = {
