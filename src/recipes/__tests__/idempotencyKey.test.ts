@@ -207,6 +207,54 @@ describe("WriteEffectLedger.getOrExecute", () => {
     expect(ledger.size()).toBe(1);
   });
 
+  it("does not cache a bare {error} result with no ok field — retry re-executes", async () => {
+    // Regression (diagnostic-report triage): several connectors (Linear,
+    // Jira, Google Drive, gmail, confluence, ...) catch a failure and RETURN
+    // `JSON.stringify({error: msg})` — no `ok` field at all — rather than
+    // the `{ok:false, error}` shape the ledger was built to recognize. That
+    // bare-{error} failure was previously indistinguishable from a genuine
+    // success and got cached, so a retry after reconnecting/fixing the
+    // underlying issue replayed the cached failure forever instead of
+    // re-executing.
+    const ledger = new WriteEffectLedger();
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      if (calls === 1) {
+        return JSON.stringify({ error: "Linear not connected" });
+      }
+      return JSON.stringify({ id: "issue_1" });
+    };
+
+    const first = await ledger.getOrExecute("k", fn);
+    expect(JSON.parse(first as string).error).toBe("Linear not connected");
+    expect(ledger.has("k")).toBe(false);
+    expect(ledger.size()).toBe(0);
+
+    const second = await ledger.getOrExecute("k", fn);
+    expect(JSON.parse(second as string).id).toBe("issue_1");
+    expect(calls).toBe(2);
+    expect(ledger.has("k")).toBe(true);
+  });
+
+  it("caches a result with an explicit {ok:true} even if it also carries an `error` field", async () => {
+    // A step that explicitly asserts ok:true must be respected as a genuine
+    // success even if it incidentally carries an `error` key (e.g. a
+    // partial-success/warning payload) — bare-{error} detection must not
+    // override an explicit ok:true.
+    const ledger = new WriteEffectLedger();
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      return JSON.stringify({ ok: true, error: "non-fatal warning" });
+    };
+    await ledger.getOrExecute("k", fn);
+    const second = await ledger.getOrExecute("k", fn);
+    expect(JSON.parse(second as string).ok).toBe(true);
+    expect(calls).toBe(1);
+    expect(ledger.has("k")).toBe(true);
+  });
+
   it("caches a genuine {ok:true} success — fn runs once", async () => {
     const ledger = new WriteEffectLedger();
     let calls = 0;
