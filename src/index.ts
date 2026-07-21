@@ -254,6 +254,7 @@ const KNOWN_SUBCOMMANDS = [
   "judgments",
   "analytics",
   "doctor",
+  "codex",
   "shadow-scan",
   "workers",
   "approvals",
@@ -4703,6 +4704,58 @@ if (process.argv[2] === "doctor") {
 
       const { runDoctor } = await import("./commands/doctor.js");
       const result = await runDoctor({ workspace, port, json: jsonFlag });
+
+      if (jsonFlag) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        for (const check of result.checks) {
+          const icon =
+            check.status === "ok" ? "✓" : check.status === "warn" ? "⚠" : "✗";
+          const detail = check.detail ? `  ${check.detail}` : "";
+          process.stdout.write(`  ${icon} ${check.name}${detail}\n`);
+          if (check.suggestion) {
+            process.stdout.write(`      → ${check.suggestion}\n`);
+          }
+        }
+      }
+
+      process.exit(result.ok ? 0 : 1);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// `patchwork codex doctor` — diagnose whether ~/.codex/config.toml is
+// correctly (and currently) wired up to this bridge.
+if (process.argv[2] === "codex" && process.argv[3] === "doctor") {
+  const args = process.argv.slice(4);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork codex doctor [--config <path>] [--json]\n\n" +
+        "Diagnoses ~/.codex/config.toml: does it exist, does it have a\n" +
+        "[mcp_servers.claude-ide-bridge] entry, and — if a bridge is\n" +
+        "currently running — do the config's port and Bearer token still\n" +
+        "match the live bridge's lock file? A bridge restart rotates its\n" +
+        "port/token, silently staling a previously-generated config.\n" +
+        "Exits 1 if any check fails.\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    try {
+      const configIdx = args.indexOf("--config");
+      const configPath =
+        configIdx !== -1 && args[configIdx + 1]
+          ? args[configIdx + 1]
+          : undefined;
+      const jsonFlag = args.includes("--json");
+
+      const { runCodexDoctor } = await import("./commands/codexDoctor.js");
+      const result = await runCodexDoctor({ configPath });
 
       if (jsonFlag) {
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
