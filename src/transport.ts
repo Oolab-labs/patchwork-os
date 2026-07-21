@@ -982,6 +982,19 @@ export class McpTransport {
         // `countRequestInRateLimit = false` to skip the write.
         let countRequestInRateLimit = true;
 
+        // Set true only when this request's completion was carried across a
+        // grace-period reconnect (detachSoft() preserved its in-flight id —
+        // see `wasSoftPreserved` in the tools/call case below). In that case
+        // the closed-over `ws` from THIS listener invocation is the now-dead
+        // socket; the reconnected client is listening on `this.activeWs`. A
+        // hard reconnect (unrelated new client, detach() cleared the
+        // preserved-id set) must NOT redirect here — that would leak this
+        // call's response to a different client's session — so this stays
+        // false in every case except the grace-period resumption it exists
+        // for. Mirrors the same-purpose `this.activeWs` redirect the dynamic
+        // tool-dispatch branch already does (see setImmediate above).
+        let respondViaActiveWs = false;
+
         let response: JsonRpcResponse = {
           jsonrpc: "2.0",
           // biome-ignore lint/style/noNonNullAssertion: only reachable for requests (not notifications), which always have an id
@@ -1552,6 +1565,7 @@ export class McpTransport {
                     const wasSoftPreserved = this.detachSoftInflight.delete(
                       msg.id,
                     );
+                    if (wasSoftPreserved) respondViaActiveWs = true;
                     if (gen === this.generation || wasSoftPreserved) {
                       this.inFlightControllers.delete(msg.id);
                       this.inFlightToolNames.delete(msg.id);
@@ -1580,6 +1594,7 @@ export class McpTransport {
                     const wasSoftPreserved = this.detachSoftInflight.delete(
                       msg.id,
                     );
+                    if (wasSoftPreserved) respondViaActiveWs = true;
                     if (gen === this.generation || wasSoftPreserved) {
                       this.activeToolCalls = Math.max(
                         0,
@@ -1772,6 +1787,10 @@ export class McpTransport {
                   const wasSoftPreserved = this.detachSoftInflight.delete(
                     msg.id,
                   );
+                  // This call's completion must reach the reconnected
+                  // client's CURRENT socket, not the stale `ws` this listener
+                  // closed over — see `respondViaActiveWs`'s declaration.
+                  if (wasSoftPreserved) respondViaActiveWs = true;
                   if (gen === this.generation || wasSoftPreserved) {
                     this.inFlightControllers.delete(msg.id);
                     this.inFlightToolNames.delete(msg.id);
@@ -2007,7 +2026,18 @@ export class McpTransport {
         }
 
         this.logger.debug(`--> response for ${safeMethod(msg.method)}`);
-        const sent = await safeSend(ws, JSON.stringify(response), this.logger);
+        // A grace-period reconnect during this call means `ws` (closed over
+        // when this listener was attached) is now the dead socket — the
+        // reconnected client is listening on `this.activeWs`. Redirect ONLY
+        // for that specific case (see `respondViaActiveWs`'s declaration);
+        // otherwise send on `ws` exactly as before.
+        const responseTarget =
+          respondViaActiveWs && this.activeWs ? this.activeWs : ws;
+        const sent = await safeSend(
+          responseTarget,
+          JSON.stringify(response),
+          this.logger,
+        );
         if (!sent) {
           this.logger.warn(
             `Response for ${safeMethod(msg.method)} (id=${msg.id}) dropped — socket closed`,
