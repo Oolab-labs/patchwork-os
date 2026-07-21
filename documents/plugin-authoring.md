@@ -70,9 +70,7 @@ All fields unless marked optional are required.
 
 ## Entrypoint
 
-Your entrypoint module must export a `register` function — either named or default export. It receives a `PluginContext`.
-
-### Option A: Return a `PluginRegistration` object
+Your entrypoint module must export a `register` function — either named or default export. It receives a `PluginContext` and must RETURN a `PluginRegistration` object (`{ tools: [...] }`) — this is the only supported shape; there is no imperative alternative.
 
 ```js
 // index.mjs
@@ -122,31 +120,6 @@ export function register(ctx) {
 }
 ```
 
-### Option B: Use `ctx.registerTool()` imperatively
-
-```js
-export function register(ctx) {
-  ctx.registerTool({
-    schema: {
-      name: "myOrg_doSomething",
-      description: "Does something useful",
-      inputSchema: {
-        type: "object",
-        properties: {
-          input: { type: "string", description: "Input text" },
-        },
-        required: ["input"],
-      },
-    },
-    handler: async (args) => {
-      return { content: [{ type: "text", text: `Result: ${args.input}` }] };
-    },
-  });
-}
-```
-
-Both styles are supported. Mixing them in the same `register` call is also fine — return value tools and `ctx.registerTool()` calls are merged.
-
 ### TypeScript
 
 Install the bridge as a peer dev dependency and import types:
@@ -181,9 +154,6 @@ interface PluginContext {
     error(msg: string, data?: Record<string, unknown>): void;
     debug(msg: string, data?: Record<string, unknown>): void;
   };
-
-  /** Register a tool imperatively (alternative to returning PluginRegistration). */
-  registerTool(tool: { schema: PluginToolSchema; handler: ToolHandler }): void;
 }
 ```
 
@@ -238,52 +208,56 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 export function register(ctx) {
-  ctx.registerTool({
-    schema: {
-      name: "myOrg_listTodos",
-      description: "Find all TODO/FIXME comments in the workspace",
-      inputSchema: {
-        type: "object",
-        properties: {
-          pattern: {
-            type: "string",
-            description: "Regex to match (default: TODO|FIXME)",
+  return {
+    tools: [
+      {
+        schema: {
+          name: "myOrg_listTodos",
+          description: "Find all TODO/FIXME comments in the workspace",
+          inputSchema: {
+            type: "object",
+            properties: {
+              pattern: {
+                type: "string",
+                description: "Regex to match (default: TODO|FIXME)",
+              },
+              maxResults: {
+                type: "number",
+                description: "Maximum number of results (default: 50)",
+              },
+            },
           },
-          maxResults: {
-            type: "number",
-            description: "Maximum number of results (default: 50)",
-          },
+          annotations: { readOnlyHint: true },
+        },
+        handler: async (args) => {
+          const pattern = (args.pattern ?? "TODO|FIXME");
+          const max = args.maxResults ?? 50;
+
+          let output;
+          try {
+            const result = await execFileAsync(
+              "grep",
+              ["-rn", "--include=*.ts", "--include=*.js", "-E", pattern, ctx.workspace],
+              { maxBuffer: 1024 * 1024 },
+            );
+            output = result.stdout;
+          } catch (err) {
+            // grep exits 1 when no matches — not a real error
+            output = err.stdout ?? "";
+          }
+
+          const lines = output.trim().split("\n").filter(Boolean).slice(0, max);
+
+          if (lines.length === 0) {
+            return { content: [{ type: "text", text: "No TODOs found." }] };
+          }
+
+          const text = lines.join("\n");
+          return { content: [{ type: "text", text }] };
         },
       },
-      annotations: { readOnlyHint: true },
-    },
-    handler: async (args) => {
-      const pattern = (args.pattern ?? "TODO|FIXME");
-      const max = args.maxResults ?? 50;
-
-      let output;
-      try {
-        const result = await execFileAsync(
-          "grep",
-          ["-rn", "--include=*.ts", "--include=*.js", "-E", pattern, ctx.workspace],
-          { maxBuffer: 1024 * 1024 },
-        );
-        output = result.stdout;
-      } catch (err) {
-        // grep exits 1 when no matches — not a real error
-        output = err.stdout ?? "";
-      }
-
-      const lines = output.trim().split("\n").filter(Boolean).slice(0, max);
-
-      if (lines.length === 0) {
-        return { content: [{ type: "text", text: "No TODOs found." }] };
-      }
-
-      const text = lines.join("\n");
-      return { content: [{ type: "text", text }] };
-    },
-  });
+    ],
+  };
 }
 ```
 
