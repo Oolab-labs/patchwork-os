@@ -26,11 +26,13 @@
  *   - Records only on successful execution; failures don't pollute the
  *     ledger, so retry-after-failure still re-executes (correct: if the
  *     tool failed, we can't assume the side effect happened). A failure
- *     is EITHER a thrown/rejected error OR a resolved JSON `{ok:false}`
- *     envelope — connector write tools (e.g. asana.create_task) catch
- *     transient errors and RETURN `JSON.stringify({ok:false, error})`
- *     rather than throwing, and that return-value failure must also skip
- *     the cache (see `isReturnValueFailure` + `getOrExecute`).
+ *     is EITHER a thrown/rejected error OR a resolved JSON `{ok:false}` /
+ *     bare `{error}` envelope — connector write tools catch transient
+ *     errors and RETURN `JSON.stringify({ok:false, error})` (e.g.
+ *     asana.create_task) or just `JSON.stringify({error})` (e.g.
+ *     linear.createIssue) rather than throwing, and either return-value
+ *     failure shape must skip the cache (see `isReturnValueFailure` +
+ *     `getOrExecute`).
  *   - No cross-run persistence — that's PR5b (disk-backed effect ledger).
  *   - No retry-time idempotency on partial-failure cases (Slack posted
  *     but HTTP timed out); that needs tool-side support and is a future
@@ -236,10 +238,20 @@ function assertSafeLedgerDir(dir: string): void {
  * in the effect ledger (the side effect didn't happen, so retry should
  * re-execute).
  *
- * Robustness: only a JSON object literal with an explicit `ok === false`
- * counts as a failure. `null`, non-JSON strings (`JSON.parse` throws),
- * JSON primitives/arrays, and objects without `ok === false` (e.g.
- * `{ok:true}`) are all treated as genuine successes and cache normally.
+ * Also recognizes a BARE `{error: "..."}` result with no `ok` field at
+ * all — several connectors (Linear, Jira, Google Drive, gmail, confluence,
+ * ...) catch a failure and return just `{error: msg}` rather than the
+ * `{ok:false, error}` shape, and that failure was previously
+ * indistinguishable from a genuine success (getting cached and replayed
+ * forever on retry instead of re-executing). An explicit `ok === true`
+ * always wins over a merely-present `error` field — a step that asserts
+ * success must not be overridden just because it also carries an
+ * incidental `error`/warning key.
+ *
+ * Robustness: only a JSON object literal counts. `null`, non-JSON strings
+ * (`JSON.parse` throws), JSON primitives/arrays, and objects with neither
+ * `ok === false` nor a non-empty string `error` (e.g. `{ok:true}`, `{id:1}`)
+ * are all treated as genuine successes and cache normally.
  */
 export function isReturnValueFailure(result: string | null): boolean {
   if (result === null) return false;
@@ -250,12 +262,13 @@ export function isReturnValueFailure(result: string | null): boolean {
     // Non-JSON string output — a genuine success (e.g. "Posted to #x").
     return false;
   }
-  return (
-    typeof parsed === "object" &&
-    parsed !== null &&
-    !Array.isArray(parsed) &&
-    (parsed as Record<string, unknown>).ok === false
-  );
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return false;
+  }
+  const obj = parsed as Record<string, unknown>;
+  if (obj.ok === true) return false; // explicit success always wins
+  if (obj.ok === false) return true;
+  return typeof obj.error === "string" && obj.error.length > 0;
 }
 
 export class WriteEffectLedger {
