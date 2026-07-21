@@ -337,9 +337,8 @@ describe("enforceSandbox (worker autonomy never-widen guard)", () => {
     "openai",
     "grok",
     "gemini",
-    "codex",
     "local",
-  ])("refuses to run on non-subprocess driver %s; no driver fn called", async (driver) => {
+  ])("refuses to run on non-subprocess/non-codex driver %s; no driver fn called", async (driver) => {
     const deps = makeDeps();
     const result = await executeAgent(
       { driver, prompt: "hi", enforceSandbox: true, disallowedTools: ["x"] },
@@ -392,6 +391,63 @@ describe("enforceSandbox (worker autonomy never-widen guard)", () => {
     );
     expect(result.servedBy?.driver).toBe("subprocess");
     expect(deps.claudeCliFn).toHaveBeenCalled();
+  });
+
+  // ── codex: coarse lockdown, not granular refusal ──────────────────────────
+  // CodexDriver has no --disallowed-tools equivalent, so it can't honour the
+  // per-tool deny list the subprocess driver does. Instead of refusing outright
+  // (which would permanently block worker-owned recipes from ever using codex),
+  // executeAgent forces CodexDriver's own coarsest lockdown — see
+  // CODEX_WORKER_SANDBOX_LOCKDOWN — and OVERRIDES any providerOptions the step
+  // itself requested, so a worker-owned step can't negotiate its own escape
+  // hatch (e.g. driver:codex with providerOptions:{sandboxMode:"danger-full-access"}).
+  it("ALLOWS the codex driver and forces the sandbox lockdown, overriding step providerOptions", async () => {
+    const deps = makeDeps();
+    const result = await executeAgent(
+      {
+        driver: "codex",
+        prompt: "hi",
+        model: "gpt-5-codex",
+        enforceSandbox: true,
+        disallowedTools: ["gitPush"], // ignored by codex — no per-tool mechanism
+        providerOptions: { sandboxMode: "danger-full-access" }, // must be overridden
+      },
+      deps,
+    );
+    expect(result.text).toBe("codex-result");
+    expect(result.servedBy).toEqual({ driver: "codex", model: "gpt-5-codex" });
+    expect(deps.providerDriverFn).toHaveBeenCalledWith(
+      "codex",
+      "hi",
+      "gpt-5-codex",
+      {
+        sandboxMode: "read-only",
+        approvalMode: "never",
+        networkAccess: false,
+        webSearch: false,
+      },
+    );
+    expect(deps.claudeCliFn).not.toHaveBeenCalled();
+  });
+
+  it("does NOT apply the codex lockdown when enforceSandbox is false", async () => {
+    const deps = makeDeps();
+    const result = await executeAgent(
+      {
+        driver: "codex",
+        prompt: "hi",
+        model: "gpt-5-codex",
+        providerOptions: { sandboxMode: "danger-full-access" },
+      },
+      deps,
+    );
+    expect(result.text).toBe("codex-result");
+    expect(deps.providerDriverFn).toHaveBeenCalledWith(
+      "codex",
+      "hi",
+      "gpt-5-codex",
+      { sandboxMode: "danger-full-access" },
+    );
   });
 });
 

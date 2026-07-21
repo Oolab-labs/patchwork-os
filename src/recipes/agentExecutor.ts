@@ -112,25 +112,58 @@ export interface AgentExecutorInput {
 export const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
 /**
- * Will `executeAgent` route this call to the subprocess (`claude -p`) driver —
- * the ONLY driver that enforces `--disallowed-tools`? Mirrors the dispatch in
- * `executeAgent` exactly (explicit driver, then pwCfg, then auto-detect) so the
- * worker-sandbox guard agrees with where the call actually lands. `probeClaudeCli`
- * / `loadPatchworkConfig` are cheap + idempotent, so calling them here too is fine.
+ * How (if at all) `executeAgent` can enforce a worker-mandated tool sandbox on
+ * this call. Mirrors the dispatch in `executeAgent` exactly (explicit driver,
+ * then pwCfg, then auto-detect) so the worker-sandbox guard agrees with where
+ * the call actually lands. `probeClaudeCli` / `loadPatchworkConfig` are cheap
+ * + idempotent, so calling them here too is fine.
+ *
+ *   "granular"       — the subprocess (`claude -p`) driver, which honours a
+ *                       per-tool `--disallowed-tools` deny list exactly.
+ *   "codex-lockdown"  — the codex driver, which has NO per-tool granularity at
+ *                       all (no `--disallowed-tools` equivalent). The only
+ *                       defensible translation is Codex's own coarsest
+ *                       lockdown (read-only sandbox, no network, no approval
+ *                       escalation) — see CODEX_WORKER_SANDBOX_LOCKDOWN.
+ *   "none"            — no enforcement mechanism; enforceSandbox must refuse.
  */
-function resolvesToSubprocessDriver(
+type SandboxEnforcement = "granular" | "codex-lockdown" | "none";
+
+function resolveSandboxEnforcement(
   driver: string | undefined,
   deps: AgentExecutorDeps,
-): boolean {
-  if (driver === "subprocess" || driver === "claude-code") return true;
-  if (driver !== undefined) return false; // anthropic/claude/openai/grok/gemini*/local
+): SandboxEnforcement {
+  if (driver === "subprocess" || driver === "claude-code") return "granular";
+  if (driver === "codex") return "codex-lockdown";
+  if (driver !== undefined) return "none"; // anthropic/claude/openai/grok/gemini*/local
   const pwCfg = deps.loadPatchworkConfig();
-  if (pwCfg.model === "local") return false;
+  if (pwCfg.model === "local") return "none";
   if (pwCfg.driver === "subprocess" || pwCfg.driver === "claude-code")
-    return true;
-  if (process.env.ANTHROPIC_API_KEY) return false; // auto-detect → anthropic API
-  return deps.probeClaudeCli(); // CLI present → subprocess; else falls back to API
+    return "granular";
+  if (process.env.ANTHROPIC_API_KEY) return "none"; // auto-detect → anthropic API
+  return deps.probeClaudeCli() ? "granular" : "none"; // CLI present → subprocess; else falls back to API
 }
+
+/**
+ * CodexDriver's coarsest lockdown — read-only filesystem, no network, no
+ * interactive approval escalation (see src/drivers/codex/subprocess.ts's
+ * SandboxMode/ApprovalMode). This is the ONLY translation available for a
+ * worker-mandated tool sandbox on the codex driver: Codex has no per-tool
+ * `--disallowed-tools` equivalent, so we cannot allow-list individual tools
+ * the way the subprocess driver does. Strictly safer than the granular
+ * sandbox (blocks everything it would ALSO block, plus more) at the cost of
+ * blocking some tools the granular sandbox would still permit (harmless
+ * reads). Deliberately OVERRIDES — never merges with — whatever
+ * providerOptions the step itself requested: a worker-owned step must never
+ * be able to negotiate its own escape hatch (e.g. `danger-full-access`) out
+ * from under the gate.
+ */
+const CODEX_WORKER_SANDBOX_LOCKDOWN: Record<string, unknown> = {
+  sandboxMode: "read-only",
+  approvalMode: "never",
+  networkAccess: false,
+  webSearch: false,
+};
 
 export async function executeAgent(
   input: AgentExecutorInput,
@@ -148,15 +181,17 @@ export async function executeAgent(
     enforceSandbox,
   } = input;
 
-  // NEVER-WIDEN guard. A worker-mandated sandbox is enforceable only on the
-  // subprocess driver; on any other driver the deny list is silently dropped and
-  // the worker's agent step could perform exactly the risky action the gate
-  // believed it sandboxed. Fail closed: refuse to run rather than run un-gated.
-  // The "[agent step failed:" prefix is the marker the runners already treat as a
-  // step failure (halting non-optional steps), so the agent never executes.
-  if (enforceSandbox && !resolvesToSubprocessDriver(driver, deps)) {
+  // NEVER-WIDEN guard. A worker-mandated sandbox is enforceable only on drivers
+  // resolveSandboxEnforcement recognizes; on any other driver the deny list is
+  // silently dropped and the worker's agent step could perform exactly the risky
+  // action the gate believed it sandboxed. Fail closed: refuse to run rather than
+  // run un-gated. The "[agent step failed:" prefix is the marker the runners
+  // already treat as a step failure (halting non-optional steps), so the agent
+  // never executes.
+  const sandboxEnforcement = resolveSandboxEnforcement(driver, deps);
+  if (enforceSandbox && sandboxEnforcement === "none") {
     return {
-      text: "[agent step failed: worker autonomy requires the subprocess driver to enforce its tool sandbox — set the agent step (or recipe) driver to `subprocess`/`claude-code`; refusing to run un-sandboxed]",
+      text: "[agent step failed: worker autonomy requires the subprocess or codex driver to enforce its tool sandbox — set the agent step (or recipe) driver to `subprocess`/`claude-code`/`codex`; refusing to run un-sandboxed]",
       servedBy: { driver: driver ?? "auto" },
     };
   }
@@ -208,13 +243,19 @@ export async function executeAgent(
     driver === "gemini-api" ||
     driver === "codex"
   ) {
+    // A worker-mandated sandbox on the codex driver overrides — never merges
+    // with — the step's own providerOptions. See CODEX_WORKER_SANDBOX_LOCKDOWN.
+    const effectiveProviderOptions =
+      driver === "codex" && enforceSandbox
+        ? CODEX_WORKER_SANDBOX_LOCKDOWN
+        : providerOptions;
     return stamp(
       driver,
       model,
       // Only pass the 4th arg when set so the common (unconstrained) call keeps
       // its 3-arg shape — backward-compatible with callers/mocks.
-      providerOptions
-        ? deps.providerDriverFn(driver, prompt, model, providerOptions)
+      effectiveProviderOptions
+        ? deps.providerDriverFn(driver, prompt, model, effectiveProviderOptions)
         : deps.providerDriverFn(driver, prompt, model),
     );
   }
