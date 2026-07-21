@@ -73,6 +73,37 @@ await httpPost(
   assert(Array.isArray(body.result?.tools), "5.2 tools/list returns array");
 }
 
+// 5.2b tools/call over the same session — this is the exact request shape
+// remote MCP clients over Streamable HTTP use (Codex CLI's
+// `scripts/gen-mcp-config.sh codex` target and claude.ai both connect this
+// way, per CLAUDE.md's transport table). Prior to this test, cat5 only
+// exercised initialize + tools/list — tools/call had zero coverage on this
+// transport, only on the WS path (cat4/cat7/cat8/cat10), so a regression
+// specific to the HTTP tools/call dispatch path could ship unnoticed.
+{
+  const r = await httpPost(
+    `${BASE}/mcp`,
+    {
+      jsonrpc: "2.0",
+      id: 21,
+      method: "tools/call",
+      params: { name: "getBridgeStatus", arguments: {} },
+    },
+    { ...AUTH, ...CT_JSON, ...SESSION_HEADERS },
+  );
+  assertEq(r.status, 200, "5.2b tools/call → 200");
+  const body = JSON.parse(r.body);
+  assert(
+    !body.error,
+    `5.2b no JSON-RPC error (got ${JSON.stringify(body.error)})`,
+  );
+  const content = body.result?.content ?? [];
+  assert(
+    Array.isArray(content) && content.length > 0,
+    "5.2b tools/call returns non-empty content",
+  );
+}
+
 // 5.3 GET /mcp → SSE stream headers
 {
   // Just check response headers — don't consume the stream
