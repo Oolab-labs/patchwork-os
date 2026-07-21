@@ -39,6 +39,10 @@ import type { BudgetPolicy } from "./schema.js";
  * (self-hosted Ollama / LM Studio) DOES report usage but costs no real money,
  * so it must not be priced at notional API rates and halted on spend that
  * never happened. Anything not in this set fails open with a one-time notice.
+ *
+ * `codex` is deliberately absent — like the Claude/Gemini subprocess drivers,
+ * it spawns a CLI under the user's own ChatGPT subscription auth, not a
+ * per-token API key, so its spend is notional rather than real money out.
  */
 const BILLABLE_DRIVERS = new Set([
   "anthropic",
