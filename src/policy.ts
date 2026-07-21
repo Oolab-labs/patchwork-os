@@ -72,6 +72,14 @@ export function parsePolicy(raw: unknown): PatchworkPolicy {
     );
   }
 
+  if (
+    obj.defaults !== undefined &&
+    (obj.defaults === null ||
+      typeof obj.defaults !== "object" ||
+      Array.isArray(obj.defaults))
+  ) {
+    throw new Error("defaults must be a mapping");
+  }
   const defaultsRaw = (obj.defaults ?? {}) as Record<string, unknown>;
   const defaults: PatchworkPolicyDefaults = {
     forbiddenPaths: asStringArray(
@@ -88,6 +96,14 @@ export function parsePolicy(raw: unknown): PatchworkPolicy {
     ),
   };
 
+  if (
+    obj.workers !== undefined &&
+    (obj.workers === null ||
+      typeof obj.workers !== "object" ||
+      Array.isArray(obj.workers))
+  ) {
+    throw new Error("workers must be a mapping");
+  }
   const workersRaw = (obj.workers ?? {}) as Record<string, unknown>;
   const workers: Record<string, PatchworkWorkerPolicy> = {};
   for (const [workerId, w] of Object.entries(workersRaw)) {
@@ -155,14 +171,53 @@ const PATH_PARAM_KEYS = [
   "cwd",
   "workdir",
   "directory",
+  // Plural / array-shaped variants — several tools take a batch of paths
+  // rather than one (generateAPIDocumentation/findFiles/gitWrite/
+  // searchAndReplace/transaction's `files: string[]`).
+  "files",
+  "paths",
+  "filePaths",
 ];
+
+/**
+ * Recursively walk a tool call's params looking for path-shaped VALUES,
+ * i.e. any string reachable under a PATH_PARAM_KEYS key — no matter how
+ * deeply nested inside arrays/objects. A single top-level scan (the
+ * original implementation) missed:
+ *   - a bare array of path strings under a path-like key
+ *     (`files: string[]`)
+ *   - a path-like key nested inside an array of objects
+ *     (`items: [{filePath, line, column}, ...]`, as batchLsp's batch*
+ *     tools use)
+ * Recursing into every array/object (regardless of whether ITS OWN key
+ * matched) is what reaches the second case; only a string whose immediate
+ * parent key is path-like is ever collected, so this can't accidentally
+ * flag e.g. `items[].line`.
+ */
+function collectPathCandidates(
+  value: unknown,
+  parentKeyIsPathLike: boolean,
+  out: string[],
+): void {
+  if (typeof value === "string") {
+    if (parentKeyIsPathLike && value.length > 0) out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value)
+      collectPathCandidates(item, parentKeyIsPathLike, out);
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      collectPathCandidates(v, PATH_PARAM_KEYS.includes(key), out);
+    }
+  }
+}
 
 function extractPathCandidates(params: Record<string, unknown>): string[] {
   const out: string[] = [];
-  for (const key of PATH_PARAM_KEYS) {
-    const v = params[key];
-    if (typeof v === "string" && v.length > 0) out.push(v);
-  }
+  collectPathCandidates(params, false, out);
   return out;
 }
 
