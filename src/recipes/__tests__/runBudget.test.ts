@@ -213,6 +213,21 @@ describe("RunBudget — usdMax (cost-routing Phase 3)", () => {
     ).toBe(true);
   });
 
+  it("does not enforce usd for the codex driver (ChatGPT subscription, not metered API billing)", () => {
+    // Regression: `codex` spawns under the user's own ChatGPT-subscription CLI
+    // auth, same as the Claude/Gemini subprocess drivers — not a per-token API
+    // key. Even a model id that happens to collide with a priced entry must
+    // not be charged notional $.
+    const b = new RunBudget({ usdMax: 0.5 }, TABLE);
+    b.reconcile(
+      "codex",
+      { inputTokens: 9_000_000, outputTokens: 9_000_000 },
+      "m1",
+    );
+    expect(b.totals().usd).toBe(0);
+    expect(b.admit().admitted).toBe(true);
+  });
+
   it("never poisons usd accounting for a prototype-key model name", () => {
     // Regression: a model id colliding with an Object.prototype key
     // ("__proto__", "constructor", …) must resolve to unpriced (undefined),
@@ -258,6 +273,8 @@ describe("RunBudget — routing helpers (cost-routing Phase 4)", () => {
     expect(b.quoteUsd(undefined, "m1", 1_000_000, 0)).toBeCloseTo(1, 6);
     // non-billable driver (local) → undefined (free, never enforced).
     expect(b.quoteUsd("local", "m1", 1_000_000, 1_000_000)).toBeUndefined();
+    // non-billable driver (codex — ChatGPT subscription, not metered) → undefined.
+    expect(b.quoteUsd("codex", "m1", 1_000_000, 1_000_000)).toBeUndefined();
     // unpriced model → undefined.
     expect(b.quoteUsd("openai", "nope", 1_000_000, 1_000_000)).toBeUndefined();
     // openai with missing model → undefined (provider default unknown here).

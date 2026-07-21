@@ -1014,6 +1014,8 @@ export async function loadRecipeServers(specs: string[]): Promise<void> {
  * Mirrors `BILLABLE_DRIVERS` in runBudget.ts (kept local — that set is private
  * and runBudget.ts is enforcement-critical / must not be modified for P1).
  * `local` reports usage but costs no real money, so it is NOT billable.
+ * `codex` is deliberately absent too — ChatGPT-subscription CLI auth, not a
+ * per-token API key (same reasoning as the Claude/Gemini subprocess drivers).
  */
 const COST_BILLABLE_DRIVERS = new Set([
   "anthropic",
