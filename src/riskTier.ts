@@ -107,6 +107,16 @@ const TIER_MAP: Record<string, RiskTier> = {
   runClaudeTask: "high",
   resumeClaudeTask: "high",
   evaluateInDebugger: "high",
+  // Diagnostic-report finding (session-review): these classify as "high" via
+  // inferTierFromName's heuristic already, but the worker-autonomy agent-step
+  // sandbox (disallowedToolsForAgentStep, workerGate.ts) only enumerates tools
+  // present in TIER_MAP ∪ DOMAIN_BY_TOOL — a tool absent from BOTH is never
+  // even considered for blocking, regardless of what the heuristic would say.
+  // Adding them here explicitly closes that enumeration gap.
+  runVSCodeTask: "high", // runs an arbitrary VS Code task (tasks.json) — equivalent to runCommand/runInTerminal
+  spawnWorkspace: "high", // spawns an arbitrary child process (a new bridge instance)
+  launchQuickTask: "high", // thin wrapper around runClaudeTask/resumeClaudeTask
+  cancelClaudeTask: "high", // sibling of runClaudeTask/resumeClaudeTask, kept consistent with them
 };
 
 /**
