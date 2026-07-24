@@ -647,6 +647,14 @@ Glob specifiers (`Bash(npm run *)`) are matched via `evaluateRules` — never re
 | `high` | Queue only high-tier tools (`classifyTool` = `"high"`: writes, network, exec). |
 | `all` | Queue every tool that survives allow/deny short-circuits. |
 
+### Risk-tiered approval timeout
+
+A queued approval's auto-expiry TTL is per-`RiskTier` (`low`/`medium`/`high`), not one flat window — a short fail-fast timeout on a low-risk call defeats the point of the gate for a high-risk one (npm publish, PR merge, force-push), pressuring the reviewer into rubber-stamping to beat the clock. Config via `--approval-timeout-<low|medium|high> <duration>` (CLI) or `approvalTimeouts: {low, medium, high}` (ms) in `~/.patchwork/config.json`; duration accepts `"none"`/`"infinite"` (no expiry — held until a human decides), a bare millisecond integer, or `"30s"`/`"5m"`/`"2h"`.
+
+Defaults (`ApprovalQueue.DEFAULT_TTL_MS` in `src/approvalQueue.ts`): `low` = 5 min, `medium` = 60 min, `high` = 4 hours. A fired timer always resolves `"expired"` — timeouts never auto-*approve*, regardless of tier. `expiresAt` on a pending entry is `null` only when the tier is explicitly configured with `0`/`"none"`/`"infinite"` (a true unbounded hold, opt-in); the dashboard renders a "No expiry" badge instead of a countdown in that case.
+
+**Compatibility note:** before this feature, every tier — including `high` — shared one flat 5-minute TTL. The `high` tier's *default* is now 4 hours instead of 5 minutes, a deliberate fail-safe tradeoff: long enough that a reviewer isn't pressured into rubber-stamping a high-risk action, but still bounded so an unattended approval eventually fails closed rather than hanging forever. Set `--approval-timeout-high none` to opt into a genuinely unbounded hold instead. `parseApprovalTimeout` (and the patchwork-config-file loader) reject/clamp any configured value above ~24.8 days (`Number`'s ceiling for Node's `setTimeout`), since Node silently fires the timer almost immediately past that instead of waiting.
+
 ### Risk signals
 
 High-tier queued items carry `riskSignals` — advisory badges surfaced in the dashboard. Detected patterns:
@@ -699,7 +707,7 @@ When `pushServiceUrl` is configured, the bridge dispatches a push notification a
 | `pushServiceToken` | `PATCHWORK_PUSH_TOKEN` | Bearer token for relay auth |
 | `pushServiceBaseUrl` | `PATCHWORK_PUSH_BASE_URL` | Public HTTPS URL of this bridge (phone calls back here) |
 
-**Phone-path auth:** each queued call gets a per-callId `approvalToken` (256-bit hex, single-use, timing-safe) delivered in the push payload. The phone POSTs to `POST /approve/:callId` or `POST /reject/:callId` with an `x-approval-token` header — no bridge bearer token needed. Token expires with the queue TTL (default 5 min).
+**Phone-path auth:** each queued call gets a per-callId `approvalToken` (256-bit hex, single-use, timing-safe) delivered in the push payload. The phone POSTs to `POST /approve/:callId` or `POST /reject/:callId` with an `x-approval-token` header — no bridge bearer token needed. Token expires with the queue entry, whose TTL is now per-`RiskTier` (see "Risk-tiered approval timeout" above) — not a flat 5 min for every tier.
 
 **Invariants:**
 - `approvalToken` is never returned by `GET /approvals` — only via push.

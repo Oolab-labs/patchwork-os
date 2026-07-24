@@ -135,7 +135,7 @@ Add a per-callId approval token issued at queue time and delivered in the push n
 
 ### Security properties
 
-- Short-lived: expires with the queue TTL (5 min default).
+- Short-lived: expires with the queue TTL — per-risk-tier since the [risk-tiered timeout amendment](adr/0006-approval-gate-design.md) (was a flat 5 min for every tier at MVP time).
 - Single-use: prevents replay after approval/rejection.
 - Not guessable: 256-bit random, timing-safe comparison.
 - Separate from bridge token: phone never receives the master bridge token.

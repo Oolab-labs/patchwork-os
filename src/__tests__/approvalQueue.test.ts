@@ -183,6 +183,89 @@ describe("ApprovalQueue", () => {
     q.clear();
     await expect(promise).resolves.toBe("expired");
   });
+
+  it("per-tier ttlMs applies a different window per RiskTier", async () => {
+    vi.useFakeTimers();
+    try {
+      const q = new ApprovalQueue({ ttlMs: { low: 1000, medium: 5000 } });
+      const low = q.request({ toolName: "a", params: {}, tier: "low" });
+      const medium = q.request({ toolName: "b", params: {}, tier: "medium" });
+
+      vi.advanceTimersByTime(1500);
+      await expect(low.promise).resolves.toBe("expired");
+      expect(q.size()).toBe(1); // medium entry still pending
+
+      vi.advanceTimersByTime(4000);
+      await expect(medium.promise).resolves.toBe("expired");
+      expect(q.size()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a tier with ttlMs 0 never auto-expires (held until decided)", async () => {
+    vi.useFakeTimers();
+    try {
+      const q = new ApprovalQueue({ ttlMs: { high: 0 } });
+      const { callId, promise } = q.request({
+        toolName: "gitPush",
+        params: {},
+        tier: "high",
+      });
+
+      vi.advanceTimersByTime(365 * 24 * 60 * 60 * 1000); // a full year
+      expect(q.size()).toBe(1);
+
+      q.approve(callId);
+      await expect(promise).resolves.toBe("approved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("defaults to DEFAULT_TTL_MS per tier when no ttlMs override given", () => {
+    const q = new ApprovalQueue();
+    // high defaults to a long-but-bounded window (4h), not unbounded — see
+    // the compatibility note on ApprovalQueue.DEFAULT_TTL_MS.
+    const high = q.request({ toolName: "gitPush", params: {}, tier: "high" });
+    const highExpiresAt = q.peek(high.callId)?.expiresAt;
+    expect(highExpiresAt).not.toBeNull();
+    expect(highExpiresAt).toBeGreaterThan(
+      Date.now() + 3 * 60 * 60_000, // well past 3h out
+    );
+
+    const low = q.request({ toolName: "a", params: {}, tier: "low" });
+    expect(q.peek(low.callId)?.expiresAt).toBeGreaterThan(Date.now());
+  });
+
+  it("an explicit ttlMs of 0 for a tier (e.g. --approval-timeout-high none) opts into true unbounded hold", async () => {
+    vi.useFakeTimers();
+    try {
+      const q = new ApprovalQueue({ ttlMs: { high: 0 } });
+      const { callId } = q.request({
+        toolName: "gitPush",
+        params: {},
+        tier: "high",
+      });
+      expect(q.peek(callId)?.expiresAt).toBeNull();
+      vi.advanceTimersByTime(365 * 24 * 60 * 60 * 1000);
+      expect(q.size()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a bare number ttlMs still applies uniformly to every tier (back-compat)", async () => {
+    vi.useFakeTimers();
+    try {
+      const q = new ApprovalQueue({ ttlMs: 1000 });
+      const high = q.request({ toolName: "gitPush", params: {}, tier: "high" });
+      vi.advanceTimersByTime(1500);
+      await expect(high.promise).resolves.toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ─── Cancellation — audit 2026-05-17 ────────────────────────────────────────

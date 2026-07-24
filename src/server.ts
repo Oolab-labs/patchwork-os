@@ -24,7 +24,7 @@ import {
   handleClaudeAuthComplete,
   handleClaudeAuthStart,
 } from "./claudeAuthHttp.js";
-import { saveBridgeConfigDriver } from "./config.js";
+import { MAX_APPROVAL_TIMEOUT_MS, saveBridgeConfigDriver } from "./config.js";
 import {
   tryHandleConnectorRoute,
   tryHandlePublicConnectorRoute,
@@ -445,6 +445,16 @@ export class Server extends EventEmitter<ServerEvents> {
   public webhookSecret: string | null = null;
   /** Patchwork: live approval gate level — mutated by POST /settings, read by bridge per-session setup. */
   public approvalGate: "off" | "high" | "all" = "off";
+  /**
+   * Patchwork: live per-risk-tier approval timeout override — mutated by
+   * POST /settings, pushed into the shared ApprovalQueue via
+   * `setTtlByTier()`. `undefined` per-tier falls back to
+   * `ApprovalQueue.DEFAULT_TTL_MS`. Only affects entries queued AFTER the
+   * change; already-pending entries keep their originally-computed deadline.
+   */
+  public approvalTimeouts:
+    | Partial<Record<"low" | "medium" | "high", number>>
+    | undefined = undefined;
   /** Patchwork: outbound webhook URL for approval notifications (from dashboard.webhookUrl in config). */
   public approvalWebhookUrl: string | undefined = undefined;
   /** Patchwork: push relay service URL — when set, per-callId approval tokens are generated. */
@@ -1843,6 +1853,7 @@ export class Server extends EventEmitter<ServerEvents> {
         const parsed = await readJsonBody<{
           webhookUrl?: string;
           approvalGate?: string;
+          approvalTimeouts?: Record<string, unknown>;
           enableTimeOfDayAnomaly?: boolean;
           driver?: string;
           model?: string;
@@ -1872,6 +1883,7 @@ export class Server extends EventEmitter<ServerEvents> {
               respondIfUnknownBodyKeys(res, body, [
                 "webhookUrl",
                 "approvalGate",
+                "approvalTimeouts",
                 "enableTimeOfDayAnomaly",
                 "driver",
                 "model",
@@ -1922,6 +1934,61 @@ export class Server extends EventEmitter<ServerEvents> {
             ) {
               respond400('approvalGate must be "off", "high", or "all"');
               return;
+            }
+
+            // approvalTimeouts — per-tier override, ms. Unlike the lenient
+            // sanitizer used when reading a possibly-stale config file
+            // (src/config.ts's sanitizeApprovalTimeouts, which drops bad
+            // entries with a warning), a live /settings POST is rejected
+            // outright on any invalid entry — Phase 1's "reject before any
+            // side effect" contract applies to this field too.
+            const timeoutsRaw = body.approvalTimeouts;
+            // A tier's value of `null` explicitly clears that tier's
+            // override (delete the key so it falls back to
+            // ApprovalQueue.DEFAULT_TTL_MS) — distinct from omitting the
+            // key entirely, which means "leave whatever is already saved
+            // for this tier untouched". Without this, the dashboard would
+            // have no way to un-set an override once saved.
+            let approvalTimeoutsValidated:
+              | Partial<Record<"low" | "medium" | "high", number | null>>
+              | undefined;
+            if (timeoutsRaw !== undefined) {
+              if (typeof timeoutsRaw !== "object" || timeoutsRaw === null) {
+                respond400("approvalTimeouts must be an object");
+                return;
+              }
+              const allowedTiers = ["low", "medium", "high"] as const;
+              const unknownTierKey = Object.keys(timeoutsRaw).find(
+                (k) =>
+                  !allowedTiers.includes(k as (typeof allowedTiers)[number]),
+              );
+              if (unknownTierKey) {
+                respond400(
+                  `approvalTimeouts has unknown key "${unknownTierKey}" — only low/medium/high allowed`,
+                );
+                return;
+              }
+              approvalTimeoutsValidated = {};
+              for (const tier of allowedTiers) {
+                const v = (timeoutsRaw as Record<string, unknown>)[tier];
+                if (v === undefined) continue;
+                if (v === null) {
+                  approvalTimeoutsValidated[tier] = null;
+                  continue;
+                }
+                if (
+                  typeof v !== "number" ||
+                  !Number.isInteger(v) ||
+                  v < 0 ||
+                  v > MAX_APPROVAL_TIMEOUT_MS
+                ) {
+                  respond400(
+                    `approvalTimeouts.${tier} must be an integer ms between 0 and ${MAX_APPROVAL_TIMEOUT_MS} (0 = no expiry), or null to clear the override`,
+                  );
+                  return;
+                }
+                approvalTimeoutsValidated[tier] = v;
+              }
             }
 
             // enableTimeOfDayAnomaly
@@ -2124,6 +2191,26 @@ export class Server extends EventEmitter<ServerEvents> {
             if (gateRaw !== undefined) {
               cfg.approvalGate = gateRaw as "off" | "high" | "all";
             }
+            if (approvalTimeoutsValidated !== undefined) {
+              // Merge into the existing per-tier map — same convention as
+              // `cfg.dashboard` above (partial updates preserve untouched
+              // keys). A dashboard control that only lets the user edit one
+              // tier must not silently reset the other two to their default.
+              const merged: Partial<Record<"low" | "medium" | "high", number>> =
+                { ...cfg.approvalTimeouts };
+              for (const [tier, v] of Object.entries(
+                approvalTimeoutsValidated,
+              )) {
+                const key = tier as "low" | "medium" | "high";
+                if (v === null) {
+                  delete merged[key]; // explicit clear → fall back to DEFAULT_TTL_MS
+                } else if (v !== undefined) {
+                  merged[key] = v;
+                }
+              }
+              cfg.approvalTimeouts =
+                Object.keys(merged).length > 0 ? merged : undefined;
+            }
             if (body.enableTimeOfDayAnomaly !== undefined) {
               cfg.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
             }
@@ -2265,6 +2352,15 @@ export class Server extends EventEmitter<ServerEvents> {
                 }
               }
             }
+            if (approvalTimeoutsValidated !== undefined) {
+              // Push the merged (not delta) map read back from `cfg` so
+              // live state and disk agree, then apply it to the shared
+              // queue — only entries request()-ed from here on are
+              // affected; already-pending ones keep their computed
+              // deadline (see setTtlByTier's doc comment).
+              this.approvalTimeouts = cfg.approvalTimeouts;
+              getApprovalQueue().setTtlByTier(cfg.approvalTimeouts ?? null);
+            }
             if (body.enableTimeOfDayAnomaly !== undefined) {
               this.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
             }
@@ -2312,6 +2408,8 @@ export class Server extends EventEmitter<ServerEvents> {
               const changes: Record<string, unknown> = {};
               if (hasWebhookUpdate) changes.webhookUrl = webhookRaw || "";
               if (gateRaw !== undefined) changes.approvalGate = gateRaw;
+              if (approvalTimeoutsValidated !== undefined)
+                changes.approvalTimeouts = approvalTimeoutsValidated;
               if (body.enableTimeOfDayAnomaly !== undefined)
                 changes.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
               if (driverRaw !== undefined) changes.driver = driverRaw;

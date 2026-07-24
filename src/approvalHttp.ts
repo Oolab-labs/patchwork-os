@@ -505,7 +505,8 @@ async function dispatchApprovalWebhook(
     tier: string;
     callId: string;
     requestedAt: number;
-    expiresAt: number;
+    /** `null` when this tier has no configured expiry. */
+    expiresAt: number | null;
     summary?: string;
   },
 ): Promise<void> {
@@ -543,7 +544,10 @@ async function dispatchApprovalWebhook(
       body: JSON.stringify({
         ...payload,
         requestedAt: new Date(payload.requestedAt).toISOString(),
-        expiresAt: new Date(payload.expiresAt).toISOString(),
+        expiresAt:
+          payload.expiresAt === null
+            ? null
+            : new Date(payload.expiresAt).toISOString(),
       }),
       signal: controller.signal,
     });
@@ -573,7 +577,8 @@ async function dispatchPushNotification(
     tier: string;
     callId: string;
     requestedAt: number;
-    expiresAt: number;
+    /** `null` when this tier has no configured expiry. */
+    expiresAt: number | null;
     summary?: string;
     riskSignals?: RiskSignal[];
     approvalToken: string;
@@ -914,13 +919,24 @@ export function enqueueApprovalWithDispatch(
   );
   recordApprovalPrompted();
 
+  // Read back the entry's actual resolved deadline rather than assuming a
+  // fixed 5-minute window — tiers can have different (or no) timeout per
+  // the risk-tiered approval config. `null` means "no expiry" for this tier.
+  //
+  // Safe against the entry expiring between request() and this peek(): this
+  // function is synchronous end-to-end (no `await` before this line), and
+  // an entry's setTimeout callback cannot fire mid-synchronous-execution —
+  // it needs an event-loop turn. If an `await` is ever introduced above
+  // this line, that guarantee breaks and this comment must move with it.
+  const expiresAt = deps.queue.peek(callId)?.expiresAt ?? null;
+
   if (deps.webhookUrl) {
     dispatchApprovalWebhook(deps.webhookUrl, {
       toolName,
       tier,
       callId,
       requestedAt: now,
-      expiresAt: now + 5 * 60_000,
+      expiresAt,
       summary,
     }).catch(() => {});
   }
@@ -934,7 +950,7 @@ export function enqueueApprovalWithDispatch(
         tier,
         callId,
         requestedAt: now,
-        expiresAt: now + 5 * 60_000,
+        expiresAt,
         summary,
         riskSignals,
         approvalToken,
