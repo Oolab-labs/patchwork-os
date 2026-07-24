@@ -29,6 +29,11 @@ const mockedExecFileSync = vi.mocked(execFileSync);
 
 afterEach(() => {
   vi.clearAllMocks();
+  // sanitizeApprovalTimeouts' tests spy on console.warn — restore it here
+  // too so a failing test can't leave console.warn silenced for the rest
+  // of the file (the inline warn.mockRestore() already does this on the
+  // happy path, but this is the backstop).
+  vi.restoreAllMocks();
 });
 
 describe("findEditor", () => {

@@ -42,6 +42,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     automationAllowPrivateWebhooks: false,
     toolRateLimit: 60,
     approvalGate: "off",
+    approvalTimeouts: null,
     enableTimeOfDayAnomaly: false,
     managedSettingsPath: null,
     approvalWebhookUrl: null,
