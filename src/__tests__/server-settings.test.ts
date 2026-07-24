@@ -1078,3 +1078,296 @@ describe("POST /settings — push/ntfy persistence", () => {
     expect(persisted.pushServiceBaseUrl).toBe("https://bridge.example.com");
   });
 });
+
+describe("POST /settings — approvalTimeouts", () => {
+  afterEach(async () => {
+    const { resetApprovalQueueForTests } = await import("../approvalQueue.js");
+    resetApprovalQueueForTests();
+  });
+
+  it("rejects a non-object value", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalTimeouts: "banana" }),
+    );
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/must be an object/);
+  });
+
+  it("rejects an unknown tier key", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalTimeouts: { extreme: 1000 } }),
+    );
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/unknown key "extreme"/);
+  });
+
+  it("rejects a negative, decimal, or oversized per-tier value", async () => {
+    for (const bad of [-1, 1.5, 2_147_483_648]) {
+      const { status, body } = await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ approvalTimeouts: { low: bad } }),
+      );
+      expect(status).toBe(400);
+      expect(JSON.parse(body).error).toMatch(/approvalTimeouts\.low/);
+    }
+  });
+
+  it("does not require a restart (live-mutated field)", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalTimeouts: { low: 30_000 } }),
+    );
+    expect(status).toBe(200);
+    expect(JSON.parse(body).restartRequired).toBe(false);
+  });
+
+  it("applies live to the shared ApprovalQueue — a fresh entry uses the new TTL", async () => {
+    vi.useFakeTimers();
+    try {
+      const { getApprovalQueue } = await import("../approvalQueue.js");
+
+      await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ approvalTimeouts: { low: 1000 } }),
+      );
+
+      const { promise } = getApprovalQueue().request({
+        toolName: "a",
+        params: {},
+        tier: "low",
+      });
+      vi.advanceTimersByTime(1500);
+      await expect(promise).resolves.toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retroactively change an already-pending entry's deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const { getApprovalQueue } = await import("../approvalQueue.js");
+      // Default `low` TTL is 5 min — enqueue before the settings change.
+      const { promise } = getApprovalQueue().request({
+        toolName: "a",
+        params: {},
+        tier: "low",
+      });
+
+      await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ approvalTimeouts: { low: 1000 } }),
+      );
+
+      // If the new 1s TTL applied retroactively, this would already be
+      // "expired" — it must still be pending at the ORIGINAL 5-min TTL.
+      vi.advanceTimersByTime(1500);
+      expect(getApprovalQueue().size()).toBe(1);
+      vi.advanceTimersByTime(5 * 60_000);
+      await expect(promise).resolves.toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("merges into existing tiers rather than resetting untouched ones", async () => {
+    vi.useFakeTimers();
+    try {
+      const { getApprovalQueue } = await import("../approvalQueue.js");
+
+      await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ approvalTimeouts: { low: 1000 } }),
+      );
+      await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ approvalTimeouts: { high: 2000 } }),
+      );
+
+      // `low` from the first call must survive the second call, which only
+      // touched `high`.
+      const low = getApprovalQueue().request({
+        toolName: "a",
+        params: {},
+        tier: "low",
+      });
+      vi.advanceTimersByTime(1500);
+      await expect(low.promise).resolves.toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an explicit null clears a tier's override back to DEFAULT_TTL_MS", async () => {
+    vi.useFakeTimers();
+    try {
+      const { getApprovalQueue } = await import("../approvalQueue.js");
+
+      await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ approvalTimeouts: { low: 1000 } }),
+      );
+      // Confirm the override is live before clearing it.
+      const before = getApprovalQueue().request({
+        toolName: "a",
+        params: {},
+        tier: "low",
+      });
+      vi.advanceTimersByTime(1500);
+      await expect(before.promise).resolves.toBe("expired");
+
+      const { status } = await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ approvalTimeouts: { low: null } }),
+      );
+      expect(status).toBe(200);
+
+      // Back to the 5-min default — must NOT expire at the old 1s override.
+      const after = getApprovalQueue().request({
+        toolName: "a",
+        params: {},
+        tier: "low",
+      });
+      vi.advanceTimersByTime(1500);
+      expect(getApprovalQueue().size()).toBe(1);
+      void after;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects a non-number, non-null tier value", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalTimeouts: { medium: "1h" } }),
+    );
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/approvalTimeouts\.medium/);
+  });
+
+  it("persists to patchwork config and appears in the audit log", async () => {
+    const pw = await import("../patchworkConfig.js");
+    const saveSpy = vi.mocked(pw.saveConfig);
+    saveSpy.mockClear();
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    server!.activityLog = log;
+    const events: Array<{
+      event: string;
+      metadata?: Record<string, unknown>;
+    }> = [];
+    log.subscribe((_kind, entry) => {
+      if ("event" in entry) {
+        events.push({ event: entry.event, metadata: entry.metadata });
+      }
+    });
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalTimeouts: { medium: 45_000 } }),
+    );
+
+    expect(status).toBe(200);
+    const persisted = saveSpy.mock.calls[0]![0] as unknown as Record<
+      string,
+      unknown
+    >;
+    // toMatchObject, not toEqual: the mocked loadConfig() returns the same
+    // shared object reference across tests in this file (not a fresh
+    // per-call read like the real disk-backed loader), so earlier tests'
+    // merged tiers can still be present here — this test only cares that
+    // ITS tier made it into the persisted payload.
+    expect(persisted.approvalTimeouts).toMatchObject({ medium: 45_000 });
+
+    const change = events.find((e) => e.event === "settings.change");
+    expect(change).toBeDefined();
+    const fields = change!.metadata?.fields as string[];
+    expect(fields).toContain("approvalTimeouts");
+  });
+});

@@ -1,14 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 
-export function CountdownTimer({ expiresAt }: { expiresAt: number }) {
+export function CountdownTimer({ expiresAt }: { expiresAt: number | null }) {
   const [remaining, setRemaining] = useState(() =>
-    Math.max(0, expiresAt - Date.now()),
+    expiresAt === null ? null : Math.max(0, expiresAt - Date.now()),
   );
 
   useEffect(() => {
-    // Don't start the interval when expiresAt is falsy (0 or not set) or
-    // already expired — remaining was initialised to 0 and nothing will change.
+    // No deadline for this tier — nothing to count down. Distinct from
+    // `remaining === 0` ("Expired"): a null-expiry high-risk approval must
+    // never render as expired just because it has no timer.
+    if (expiresAt === null) {
+      setRemaining(null);
+      return;
+    }
+    // Don't start the interval when expiresAt is falsy (0) or already
+    // expired — remaining was initialised to 0 and nothing will change.
     if (!expiresAt || expiresAt <= Date.now()) return;
 
     const id = setInterval(() => {
@@ -20,6 +27,14 @@ export function CountdownTimer({ expiresAt }: { expiresAt: number }) {
     }, 1000);
     return () => clearInterval(id);
   }, [expiresAt]);
+
+  if (remaining === null) {
+    return (
+      <span className="countdown" title="No approval deadline for this risk tier">
+        No expiry
+      </span>
+    );
+  }
 
   if (remaining === 0) {
     return (
@@ -58,7 +73,9 @@ export function CountdownTimer({ expiresAt }: { expiresAt: number }) {
             ? { color: "var(--warn)", fontWeight: 600 }
             : undefined
       }
-      title={`Expires at ${new Date(expiresAt).toLocaleTimeString()}`}
+      // Reached only when `remaining` is a positive number, which is only
+      // ever derived from a non-null `expiresAt` — safe to assert here.
+      title={`Expires at ${new Date(expiresAt as number).toLocaleTimeString()}`}
     >
       {label}
     </span>

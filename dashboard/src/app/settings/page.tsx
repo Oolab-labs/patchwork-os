@@ -20,6 +20,7 @@ interface StatusResponse {
     port?: number;
     workspace?: string;
     approvalGate?: string;
+    approvalTimeouts?: Partial<Record<"low" | "medium" | "high", number>> | null;
     enableTimeOfDayAnomaly?: boolean;
     fullMode?: boolean;
     driver?: string;
@@ -45,6 +46,59 @@ interface StatusResponse {
 }
 
 type ApiKeyProvider = "anthropic" | "openai" | "google" | "xai";
+
+type ApprovalTier = "low" | "medium" | "high";
+
+// Mirrors ApprovalQueue.DEFAULT_TTL_MS in src/approvalQueue.ts — shown as
+// the placeholder for an un-overridden tier. Not read from the server on
+// every keystroke; if the bridge's actual defaults ever diverge from this,
+// the placeholder is cosmetic only (the backend is the source of truth).
+const APPROVAL_TIER_DEFAULT_DISPLAY: Record<ApprovalTier, string> = {
+  low: "5m",
+  medium: "1h",
+  high: "4h",
+};
+
+/** Render an ms value the same way the CLI duration syntax reads: "none" for no expiry, else the largest clean unit. */
+function msToDurationDraft(ms: number): string {
+  if (ms === 0) return "none";
+  if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
+  if (ms % 60_000 === 0) return `${ms / 60_000}m`;
+  if (ms % 1_000 === 0) return `${ms / 1_000}s`;
+  return String(ms);
+}
+
+const MAX_APPROVAL_TIMEOUT_MS = 2_147_483_647; // Node's setTimeout ceiling — mirrors src/config.ts
+
+/**
+ * Parse one tier's draft text field. Empty string means "no override
+ * entered" — send `null` (this tier had a saved override the user just
+ * cleared) or omit the key (never had one) depending on the caller's dirty
+ * check. `"none"`/`"infinite"` = no expiry (`0`). Mirrors
+ * src/config.ts's `parseApprovalTimeout`, duplicated here rather than
+ * imported since that module pulls in Node-only deps (node:child_process)
+ * unsuitable for a browser bundle.
+ */
+function parseTierDraft(
+  raw: string,
+): { ok: true; ms: number } | { ok: false; error: string } {
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "none" || trimmed === "infinite") return { ok: true, ms: 0 };
+  const m = /^(\d+)(s|m|h)?$/.exec(trimmed);
+  if (!m) {
+    return {
+      ok: false,
+      error: 'must be "none", an integer (ms), or e.g. "30s"/"5m"/"2h"',
+    };
+  }
+  const n = Number(m[1]);
+  const unitMs = { s: 1_000, m: 60_000, h: 3_600_000 } as const;
+  const ms = m[2] ? n * unitMs[m[2] as "s" | "m" | "h"] : n;
+  if (ms > MAX_APPROVAL_TIMEOUT_MS) {
+    return { ok: false, error: "exceeds the max representable timeout (~24.8 days)" };
+  }
+  return { ok: true, ms };
+}
 
 type SectionId =
   | "s-bridge"
@@ -202,6 +256,44 @@ export default function SettingsPage() {
   const [gateSaving, setGateSaving] = useState(false);
   const [gateSaveMsg, setGateSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Risk-tiered approval timeouts. Each field is a free-text draft in the
+  // same duration syntax as the CLI (`--approval-timeout-<tier>`): "none",
+  // a bare ms integer, or "30s"/"5m"/"2h". Empty = "no override" (falls
+  // back to ApprovalQueue.DEFAULT_TTL_MS); saving an emptied field that
+  // WAS previously overridden sends an explicit `null` to clear it.
+  const [tmoDraft, setTmoDraft] = useState<Record<ApprovalTier, string>>({
+    low: "",
+    medium: "",
+    high: "",
+  });
+  // Two separate refs, exactly mirroring gateValueRef (latest server
+  // truth, always overwritten) / gatePendingRef (the user's live draft,
+  // never touched by the sync effect) — NOT one conflated ref. Mutating a
+  // single ref for both roles inside the sync path made the dirty check
+  // compare a draft against a baseline that had already been silently
+  // rebased to the new server value in the same tick, defeating the
+  // "leave an in-progress edit alone" guarantee.
+  //
+  // tmoDraftRef mirrors tmoDraft state via the effect below (read-only
+  // snapshot for the poll tick, which can't safely read component state
+  // inside a plain callback without going stale). tmoServerRef mirrors the
+  // last value read from /status, independent of what the user is typing.
+  const tmoDraftRef = useRef<Record<ApprovalTier, string>>({
+    low: "",
+    medium: "",
+    high: "",
+  });
+  const tmoServerRef = useRef<Record<ApprovalTier, string>>({
+    low: "",
+    medium: "",
+    high: "",
+  });
+  useEffect(() => {
+    tmoDraftRef.current = tmoDraft;
+  }, [tmoDraft]);
+  const [tmoSaving, setTmoSaving] = useState(false);
+  const [tmoMsg, setTmoMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   const [todayAnomaly, setTodayAnomaly] = useState(false);
   const [todayAnomalySaving, setTodayAnomalySaving] = useState(false);
   const [todayAnomalyErr, setTodayAnomalyErr] = useState<string | null>(null);
@@ -279,6 +371,46 @@ export default function SettingsPage() {
         // their draft alone — they're mid-edit.
         if (gatePendingRef.current === prevGateValue) {
           setGatePending(gv);
+        }
+
+        {
+          // Plain reads/writes on refs, computed BEFORE any setState call —
+          // deliberately not done inside a setTmoDraft functional updater.
+          // React may invoke an updater more than once (StrictMode dev
+          // double-invoke, or a bailed-out replay), and mutating a ref as
+          // a side effect of an "impure" updater can silently rebase the
+          // dirty-check baseline against itself on a second invocation,
+          // masking a concurrent edit. Doing it here, once, in the plain
+          // effect body, has no such hazard.
+          const serverTimeouts = data.patchwork?.approvalTimeouts ?? null;
+          const tiers: ApprovalTier[] = ["low", "medium", "high"];
+          const prevServer = tmoServerRef.current;
+          const currentDraft = tmoDraftRef.current;
+          const nextDraft = { ...currentDraft };
+          let changed = false;
+          const nextServer: Record<ApprovalTier, string> = {
+            low: "",
+            medium: "",
+            high: "",
+          };
+          for (const tier of tiers) {
+            const ms = serverTimeouts?.[tier];
+            const synced = ms === undefined ? "" : msToDurationDraft(ms);
+            nextServer[tier] = synced;
+            // Same dirty check as the gate control: only adopt the new
+            // server value if the draft still matches the PREVIOUS server
+            // value (i.e. the user hasn't typed anything since the last
+            // sync) — mirrors `gatePendingRef.current === prevGateValue`.
+            if (currentDraft[tier] === prevServer[tier] && nextDraft[tier] !== synced) {
+              nextDraft[tier] = synced;
+              changed = true;
+            }
+          }
+          tmoServerRef.current = nextServer;
+          if (changed) {
+            tmoDraftRef.current = nextDraft;
+            setTmoDraft(nextDraft);
+          }
         }
 
         setTodayAnomaly(Boolean(data.patchwork?.enableTimeOfDayAnomaly));
@@ -585,6 +717,70 @@ export default function SettingsPage() {
       setGateSaveMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setGateSaving(false);
+    }
+  }
+
+  /**
+   * Save every tier whose draft has diverged from what was last synced.
+   * An emptied field that HAD a synced value sends `null` (explicit clear
+   * → falls back to ApprovalQueue.DEFAULT_TTL_MS server-side); an emptied
+   * field that never had one is simply omitted — no-op, not a payload key.
+   * Aborts before sending anything if any dirty field fails to parse, so a
+   * typo in one tier can't silently drop the others.
+   */
+  async function saveApprovalTimeouts() {
+    const tiers: ApprovalTier[] = ["low", "medium", "high"];
+    const payload: Partial<Record<ApprovalTier, number | null>> = {};
+    for (const tier of tiers) {
+      const draft = tmoDraft[tier];
+      const synced = tmoServerRef.current[tier];
+      if (draft === synced) continue; // untouched
+      if (draft.trim() === "") {
+        payload[tier] = null; // explicit clear
+        continue;
+      }
+      const parsed = parseTierDraft(draft);
+      if (!parsed.ok) {
+        setTmoMsg({ ok: false, text: `${tier}: ${parsed.error}` });
+        return;
+      }
+      payload[tier] = parsed.ms;
+    }
+    if (Object.keys(payload).length === 0) {
+      setTmoMsg({ ok: false, text: "No changes to save." });
+      return;
+    }
+
+    setTmoSaving(true);
+    setTmoMsg(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/settings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalTimeouts: payload }),
+        signal: abortRef.current?.signal,
+      });
+      if (res.ok) {
+        // Adopt the saved drafts as the new synced baseline — normalizes
+        // e.g. "5M" → the canonical "5m" on the next /status tick instead
+        // of leaving the raw typed text as a false "still dirty" state.
+        for (const tier of Object.keys(payload) as ApprovalTier[]) {
+          const v = payload[tier];
+          const display = v === null || v === undefined ? "" : msToDurationDraft(v);
+          tmoServerRef.current = { ...tmoServerRef.current, [tier]: display };
+          setTmoDraft((prev) => ({ ...prev, [tier]: display }));
+        }
+        setTmoMsg({ ok: true, text: "Saved." });
+        flashSaved();
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setTmoMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      if (isAbortError(e)) return;
+      setTmoMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTmoSaving(false);
     }
   }
 
@@ -1058,6 +1254,67 @@ export default function SettingsPage() {
                   {gateSaveMsg && (
                     <span className="stg-msg" data-ok={String(gateSaveMsg.ok)}>
                       {gateSaveMsg.text}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="stg-section-padded">
+                <label htmlFor="approval-timeout-low" className="stg-label">
+                  Approval timeouts
+                </label>
+                <p className="stg-help">
+                  How long a queued approval waits before it auto-expires,
+                  per risk tier. A short timeout on a high-risk action
+                  pressures the reviewer to rubber-stamp it — set a longer
+                  window, or <code>none</code> to hold until decided.
+                  Accepts <code>none</code>, an integer (ms), or{" "}
+                  <code>30s</code>/<code>5m</code>/<code>2h</code>. Leave
+                  blank to use the default. Takes effect for approvals
+                  queued after saving — anything already pending keeps its
+                  original deadline.
+                </p>
+                {(["low", "medium", "high"] as ApprovalTier[]).map((tier) => (
+                  <div className="stg-gate-row" key={tier}>
+                    <label
+                      htmlFor={`approval-timeout-${tier}`}
+                      style={{ minWidth: "5rem", textTransform: "capitalize" }}
+                    >
+                      {tier}
+                    </label>
+                    <input
+                      id={`approval-timeout-${tier}`}
+                      type="text"
+                      className="stg-input"
+                      disabled={tmoSaving}
+                      value={tmoDraft[tier]}
+                      placeholder={`default: ${APPROVAL_TIER_DEFAULT_DISPLAY[tier]}`}
+                      onChange={(e) => {
+                        setTmoMsg(null);
+                        const v = e.target.value;
+                        setTmoDraft((prev) => ({ ...prev, [tier]: v }));
+                      }}
+                    />
+                  </div>
+                ))}
+                <div className="stg-gate-row">
+                  <button
+                    type="button"
+                    disabled={
+                      tmoSaving ||
+                      (["low", "medium", "high"] as ApprovalTier[]).every(
+                        (tier) => tmoDraft[tier] === tmoServerRef.current[tier],
+                      )
+                    }
+                    onClick={saveApprovalTimeouts}
+                    className="stg-save-btn"
+                    aria-label="Save approval timeouts"
+                  >
+                    {tmoSaving ? "Saving…" : "Save"}
+                  </button>
+                  {tmoMsg && (
+                    <span className="stg-msg" data-ok={String(tmoMsg.ok)}>
+                      {tmoMsg.text}
                     </span>
                   )}
                 </div>
