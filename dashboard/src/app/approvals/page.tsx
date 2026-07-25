@@ -58,7 +58,8 @@ interface Pending {
   summary?: string;
   params?: Record<string, unknown>;
   sessionId?: string;
-  expiresAt?: number;
+  /** `null` = this tier has no configured expiry (e.g. high-risk by default) — never counts as "Expired". `undefined` = older payload shape, fall back to the low-tier default window. */
+  expiresAt?: number | null;
   riskSignals?: RiskSignal[];
   personalSignals?: PersonalSignal[];
 }
@@ -192,7 +193,12 @@ const ApprovalCard = memo(function ApprovalCard({
     clearTimeout(paramsCopyTimerRef.current);
   }, []);
 
-  const expires = p.expiresAt ?? p.requestedAt + DEFAULT_TTL_MS;
+  // `null` is an explicit "no expiry" from the backend (e.g. high-tier by
+  // default) — must NOT fall back to DEFAULT_TTL_MS, or a no-deadline
+  // high-risk approval would show a fake 5-minute countdown and pressure
+  // the reviewer into rubber-stamping it. Only genuinely missing
+  // (`undefined`, an older payload shape) falls back.
+  const expires = p.expiresAt === undefined ? p.requestedAt + DEFAULT_TTL_MS : p.expiresAt;
   const primary = primaryParam(p.toolName, p.params);
   const hasParams = p.params && Object.keys(p.params).length > 0;
   const match = matchRule(p.toolName, rules);
@@ -217,9 +223,11 @@ const ApprovalCard = memo(function ApprovalCard({
   // to re-render every second even though the countdown UI is owned by
   // a leaf <CountdownTimer> that ticks itself. Now a single setTimeout
   // schedules the boolean flip and unmounts. Perf audit 2026-05-19.
-  const [expired, setExpired] = useState(() => Date.now() >= expires);
+  const [expired, setExpired] = useState(
+    () => expires !== null && Date.now() >= expires,
+  );
   useEffect(() => {
-    if (expired) return;
+    if (expired || expires === null) return;
     const remaining = expires - Date.now();
     if (remaining <= 0) {
       setExpired(true);

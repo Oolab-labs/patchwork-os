@@ -19,7 +19,9 @@ import {
   findEditor,
   ideNameFromEditor,
   isInterpreterCommand,
+  parseApprovalTimeout,
   parseConfig,
+  sanitizeApprovalTimeouts,
   saveBridgeConfigDriver,
 } from "../config.js";
 
@@ -27,6 +29,11 @@ const mockedExecFileSync = vi.mocked(execFileSync);
 
 afterEach(() => {
   vi.clearAllMocks();
+  // sanitizeApprovalTimeouts' tests spy on console.warn — restore it here
+  // too so a failing test can't leave console.warn silenced for the rest
+  // of the file (the inline warn.mockRestore() already does this on the
+  // happy path, but this is the backstop).
+  vi.restoreAllMocks();
 });
 
 describe("findEditor", () => {
@@ -566,5 +573,110 @@ describe("parseConfig --automation-allow-private-webhooks", () => {
       "--automation-allow-private-webhooks",
     );
     expect(config.automationAllowPrivateWebhooks).toBe(true);
+  });
+});
+
+describe("parseApprovalTimeout", () => {
+  it("parses a bare millisecond integer", () => {
+    expect(parseApprovalTimeout("1500", "--x")).toBe(1500);
+  });
+
+  it("parses s/m/h duration suffixes", () => {
+    expect(parseApprovalTimeout("30s", "--x")).toBe(30_000);
+    expect(parseApprovalTimeout("5m", "--x")).toBe(5 * 60_000);
+    expect(parseApprovalTimeout("2h", "--x")).toBe(2 * 3_600_000);
+  });
+
+  it('"none" and "infinite" both mean no expiry (0)', () => {
+    expect(parseApprovalTimeout("none", "--x")).toBe(0);
+    expect(parseApprovalTimeout("infinite", "--x")).toBe(0);
+    expect(parseApprovalTimeout("NONE", "--x")).toBe(0);
+  });
+
+  it("rejects garbage with the flag name in the error", () => {
+    expect(() =>
+      parseApprovalTimeout("banana", "--approval-timeout-high"),
+    ).toThrow(/--approval-timeout-high/);
+  });
+
+  it("rejects negative numbers, decimals, and whitespace-only input", () => {
+    expect(() => parseApprovalTimeout("-5", "--x")).toThrow();
+    expect(() => parseApprovalTimeout("5.5m", "--x")).toThrow();
+    expect(() => parseApprovalTimeout("   ", "--x")).toThrow();
+    expect(() => parseApprovalTimeout("", "--x")).toThrow();
+  });
+
+  it("rejects a duration exceeding Node's setTimeout max (~24.8 days)", () => {
+    expect(() => parseApprovalTimeout("30d", "--x")).toThrow(); // "d" unit unsupported anyway
+    expect(() => parseApprovalTimeout("2147483648", "--x")).toThrow(
+      /exceeds the max/,
+    );
+    // Just at the boundary is fine.
+    expect(parseApprovalTimeout("2147483647", "--x")).toBe(2_147_483_647);
+  });
+});
+
+describe("parseConfig --approval-timeout-<tier>", () => {
+  it("defaults approvalTimeouts to null when no flags are passed", () => {
+    const config = cfg("--workspace", "/tmp");
+    expect(config.approvalTimeouts).toBeNull();
+  });
+
+  it("sets a single tier's override", () => {
+    const config = cfg("--workspace", "/tmp", "--approval-timeout-low", "30s");
+    expect(config.approvalTimeouts).toEqual({ low: 30_000 });
+  });
+
+  it("accumulates multiple tier overrides", () => {
+    const config = cfg(
+      "--workspace",
+      "/tmp",
+      "--approval-timeout-low",
+      "30s",
+      "--approval-timeout-high",
+      "none",
+    );
+    expect(config.approvalTimeouts).toEqual({ low: 30_000, high: 0 });
+  });
+
+  it("throws on an invalid duration", () => {
+    expect(() =>
+      cfg("--workspace", "/tmp", "--approval-timeout-medium", "banana"),
+    ).toThrow(/--approval-timeout-medium/);
+  });
+});
+
+describe("sanitizeApprovalTimeouts", () => {
+  it("passes through valid integer ms values", () => {
+    expect(sanitizeApprovalTimeouts({ low: 1000, high: 0 })).toEqual({
+      low: 1000,
+      high: 0,
+    });
+  });
+
+  it("drops non-numeric, negative, decimal, and oversized values, keeping the rest", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(
+        sanitizeApprovalTimeouts({
+          low: 1000,
+          medium: "not a number",
+          high: -1,
+        }),
+      ).toEqual({ low: 1000 });
+      expect(
+        sanitizeApprovalTimeouts({ low: 1.5, medium: 2_147_483_648 }),
+      ).toBeNull();
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("returns null for non-object / empty input", () => {
+    expect(sanitizeApprovalTimeouts(null)).toBeNull();
+    expect(sanitizeApprovalTimeouts(undefined)).toBeNull();
+    expect(sanitizeApprovalTimeouts("garbage")).toBeNull();
+    expect(sanitizeApprovalTimeouts({})).toBeNull();
   });
 });

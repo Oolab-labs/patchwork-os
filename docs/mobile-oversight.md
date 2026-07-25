@@ -204,7 +204,11 @@ When Claude Code queues a tool call:
    can review risk signals and params before deciding.
 
 The approval token embedded in the notification is **single-use** and expires with the queue
-TTL (default 5 minutes). After expiry, the call is automatically rejected.
+entry. The TTL is per risk tier, not a flat window — defaults are 5 min (low), 60 min (medium),
+4 hours (high), configurable via `--approval-timeout-<tier>` or the settings dashboard; see
+[ADR-0006's risk-tiered timeout amendment](adr/0006-approval-gate-design.md). After expiry, the
+call resolves as `"expired"` and does not execute — expiry never auto-approves, regardless of
+tier.
 
 ---
 

@@ -39,6 +39,15 @@
     },
     "recipesDir": { "type": "string" },
     "approvalGate": { "type": "string", "enum": ["off", "high", "all"] },
+    "approvalTimeouts": {
+      "type": "object",
+      "properties": {
+        "low": { "type": "integer", "minimum": 0 },
+        "medium": { "type": "integer", "minimum": 0 },
+        "high": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
     "enableTimeOfDayAnomaly": { "type": "boolean" },
     "managedSettingsPath": { "type": "string" },
     "recipes": {

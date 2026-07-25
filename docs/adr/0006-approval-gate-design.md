@@ -142,7 +142,8 @@ gains an optional `approvalToken` (256-bit hex, `crypto.randomBytes(32)`):
 - Delivered in the push notification payload.
 - Single-use: cleared from the queue entry after first validation, regardless of outcome.
 - Validated with `crypto.timingSafeEqual` (timing-safe).
-- Expires when the queue entry expires (default 5 min TTL).
+- Expires when the queue entry expires (per-tier TTL — see the risk-tiered
+  timeout amendment below; no longer a single flat 5 min for every tier).
 
 ### Phone-path bearer bypass
 
@@ -157,3 +158,120 @@ on these two paths, bearer auth is skipped and token validation is delegated to
 - The push notification call is fire-and-forget: it never delays or blocks the approval flow.
 - Disabling `pushServiceUrl` at runtime drops token generation for new requests immediately.
 - Phone-path tokens and bridge tokens are independent — compromise of one does not affect the other.
+
+## Amendment: Risk-Tiered Approval Timeout (2026-07-24)
+
+### Problem
+
+Every queued approval — regardless of `RiskTier` — shared one flat 5-minute
+TTL (`ApprovalQueue`'s `setTimeout`, hardcoded). This is a documented
+anti-pattern ("approval fatigue"): a short countdown on a *high-risk* action
+(`gitPush`, `npm publish`, PR merge) pressures the reviewer into
+rubber-stamping to beat the clock, defeating the point of gating it at all.
+Conversely, a flat window that's too generous for *low-risk* reads wastes a
+queue slot needlessly. See `aipatternbook.com/approval-fatigue` and
+`developersdigest.tech`'s "Approval Fatigue Is an Agent Security Bug" for the
+broader pattern this follows.
+
+### Decision
+
+`ApprovalQueue` resolves its expiry TTL per `RiskTier` (`low`/`medium`/`high`)
+instead of one process-wide constant (`src/approvalQueue.ts`,
+`ApprovalQueue.DEFAULT_TTL_MS`):
+
+```
+low    → 5 min   (fail-fast — matches the pre-amendment behavior)
+medium → 60 min
+high   → 4 hours
+```
+
+A tier's configured value of `0` (or CLI/config `"none"`/`"infinite"`) means
+**no expiry** — the entry is held until a human explicitly approves/rejects
+or the originating caller cancels. **A fired timer always resolves
+`"expired"`, never `"approved"`** — timeouts cannot silently escalate
+privilege regardless of tier; "no expiry" only removes the forced-fail path,
+it never adds a forced-allow path.
+
+**Compatibility note:** before this amendment, `high` shared the same 5-min
+window as everything else — an unattended high-risk approval failed closed
+quickly. The new 4-hour default is a deliberate fail-safe tradeoff: long
+enough to not pressure a reviewer, still bounded so an unattended approval
+eventually fails closed rather than hanging forever by default. Operators
+who want a genuinely unbounded hold opt in explicitly via
+`--approval-timeout-high none` (or the equivalent dashboard/config value).
+
+### Configuration surfaces
+
+- **CLI**: `--approval-timeout-<low|medium|high> <duration>` at bridge
+  startup. Duration accepts `"none"`/`"infinite"`, a bare ms integer, or
+  `"30s"`/`"5m"`/`"2h"`. Rejected above ~24.8 days
+  (`MAX_APPROVAL_TIMEOUT_MS`, Node's `setTimeout` ceiling) — Node silently
+  fires a timer immediately past that instead of waiting, which would
+  otherwise silently defeat a long intended window.
+- **`~/.patchwork/config.json`**: `approvalTimeouts: {low, medium, high}`
+  (ms). Loaded non-fatally — a corrupted/malformed value is dropped per-tier
+  with a warning (`sanitizeApprovalTimeouts`, `src/config.ts`) rather than
+  crashing the bridge, since this file is dashboard-writable.
+- **`POST /settings`** (runtime, no restart): `{ approvalTimeouts: {low?,
+  medium?, high?} }`, same validation as the CLI plus one addition — a
+  tier's value of **`null`** explicitly clears that tier's override back to
+  `DEFAULT_TTL_MS` (distinct from omitting the key, which leaves whatever is
+  already saved untouched). Merges into the existing per-tier map rather
+  than replacing it wholesale, mirroring `cfg.dashboard`'s existing
+  partial-update convention. Applied live via `ApprovalQueue.setTtlByTier()`
+  — **only affects entries queued after the change**; anything already
+  pending keeps the deadline it was given at enqueue time. Dashboard control
+  lives in the "Approval policy" settings card, same duration syntax as the
+  CLI, with the same in-progress-edit-survives-a-poll dirty-tracking the
+  `approvalGate` select already uses.
+
+### Consequences
+
+**Positive:**
+
+- Matches documented best practice for risk-tiered HITL timeouts — not
+  novel, catching up to how GitHub Actions environment-protection wait
+  timers and similar agent-oversight guides already recommend tiering.
+- `expiresAt` on a pending entry (`src/approvalQueue.ts`) is now a real
+  computed field (`number | null`), not implicitly re-derived at every call
+  site — webhook/push payloads and the dashboard countdown all read the
+  same value instead of three independently-hardcoded `+5min` assumptions
+  (one of which, in the dashboard, was found to be actively wrong for `null`
+  during this work — see below).
+
+**Negative / risks accepted:**
+
+- **A no-expiry (`0`/`"none"`) high-tier approval can sit indefinitely** if
+  the reviewer walks away and never decides. Accepted tradeoff — the kill
+  switch (ADR-0013) remains the fail-safe of last resort for "operator is
+  gone and something sensitive is open," and the *default* is bounded (4h),
+  so this only bites operators who explicitly opted into unbounded holds.
+- **Dashboard `expiresAt === null` handling was a live bug during
+  development**, not just a design risk: the countdown component's `??`
+  fallback treated an explicit "no expiry" `null` the same as "missing
+  field," rendering a fake 5-minute countdown for every high-tier approval
+  and immediately reading "Expired" (since `Math.max(0, null - Date.now())`
+  coerces to `0`). Fixed by threading `number | null` through
+  `CountdownTimer`, `approvals/page.tsx`, and `approvals/[callId]/page.tsx`
+  explicitly, with a distinct "No expiry" badge state.
+- **Settings-page dirty-tracking pitfall**: an early version of the
+  dashboard's per-tier duration inputs mutated a ref as a side effect
+  inside a `setState` functional updater to track "last synced from
+  server" vs. "user's in-progress draft" in one combined ref. Since React
+  may invoke a state updater more than once (dev double-invoke, bailed-out
+  replays), this could rebase the dirty-check baseline against itself
+  mid-edit and silently drop or misapply a concurrent change. Fixed by
+  splitting into two refs — mirroring the existing `gateValueRef` /
+  `gatePendingRef` split for the `approvalGate` control exactly — and doing
+  the ref mutation as a plain statement outside any updater callback.
+
+### Audit rules (new)
+
+- Any new call site that computes an approval's display deadline must read
+  `PendingApproval.expiresAt` (or `ApprovalQueue.peek()`) rather than
+  re-deriving `requestedAt + <assumed constant>` — the constant is
+  config-dependent per tier and can be `null`.
+- Any new per-tier config surface (CLI, config file, or `/settings`) must
+  reject/clamp values above `MAX_APPROVAL_TIMEOUT_MS`, not just type-check
+  them — Node's `setTimeout` fails silently (fires immediately), not with a
+  thrown error, above that ceiling.

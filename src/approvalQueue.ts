@@ -36,6 +36,14 @@ export interface PendingApproval {
   params: Record<string, unknown>;
   tier: RiskTier;
   requestedAt: number;
+  /**
+   * Wall-clock deadline for auto-`"expired"` resolution, or `null` when this
+   * tier has no configured expiry (entry is held until a human decides).
+   * Computed once at enqueue time from the resolved per-tier TTL — callers
+   * (webhook/push dispatch, dashboard) should read this rather than
+   * re-deriving a timeout, since the actual value is config-dependent.
+   */
+  expiresAt: number | null;
   sessionId?: string;
   summary?: string;
   riskSignals?: RiskSignal[];
@@ -90,7 +98,8 @@ export type ApprovalDecision =
 
 interface Entry extends PendingApproval {
   resolve: (d: ApprovalDecision) => void;
-  timer: ReturnType<typeof setTimeout>;
+  /** Null when the resolved TTL for this entry's tier is "no expiry" (held until decided). */
+  timer: ReturnType<typeof setTimeout> | null;
   /**
    * Stable key derived from `(sessionId, toolName, params)`. Multiple `request()`
    * calls with the same key share the entry's promise instead of creating a
@@ -191,11 +200,66 @@ export class ApprovalQueue {
     string,
     { decision: ApprovalDecision; at: number }
   >();
-  private readonly ttlMs: number;
+  /**
+   * Per-tier approval timeout, ms. A tier's value of `0` means "no expiry" —
+   * the entry is held (never auto-`"expired"`) until a human decides or the
+   * caller cancels. Defaults follow the risk-tiered-timeout design: short
+   * fail-fast window for low-risk calls, longer window for medium, and a
+   * long-but-bounded window for high-risk calls (npm publish, PR merge,
+   * force-push) so a slow reviewer isn't pressured into rubber-stamping.
+   * Never auto-*approves* on timeout regardless of tier — a fired timer
+   * always resolves "expired".
+   *
+   * COMPATIBILITY NOTE: before risk-tiered timeouts existed, every tier
+   * (including high) shared one flat 5-minute TTL. This raises the *default*
+   * high-tier window to 4 hours — a deliberate fail-safe tradeoff (a
+   * high-risk approval left unattended still eventually fails closed,
+   * rather than either rubber-stamping under a 5-min countdown or hanging
+   * forever by default). Operators who want a genuinely unbounded hold can
+   * opt in explicitly via `--approval-timeout-high none`.
+   */
+  private ttlByTier: Record<RiskTier, number>;
   private readonly listeners = new Set<() => void>();
 
-  constructor(opts: { ttlMs?: number } = {}) {
-    this.ttlMs = opts.ttlMs ?? 5 * 60_000;
+  static readonly DEFAULT_TTL_MS: Record<RiskTier, number> = {
+    low: 5 * 60_000,
+    medium: 60 * 60_000,
+    high: 4 * 60 * 60_000,
+  };
+
+  constructor(
+    opts: { ttlMs?: number | Partial<Record<RiskTier, number>> } = {},
+  ) {
+    if (typeof opts.ttlMs === "number") {
+      // Back-compat: a bare number applies uniformly to every tier, matching
+      // the pre-risk-tiered-timeout behavior exactly.
+      this.ttlByTier = {
+        low: opts.ttlMs,
+        medium: opts.ttlMs,
+        high: opts.ttlMs,
+      };
+    } else {
+      this.ttlByTier = { ...ApprovalQueue.DEFAULT_TTL_MS, ...opts.ttlMs };
+    }
+  }
+
+  /** Resolved timeout in ms for a tier, or `0` meaning "no expiry". */
+  private resolveTtl(tier: RiskTier): number {
+    return this.ttlByTier[tier] ?? ApprovalQueue.DEFAULT_TTL_MS[tier];
+  }
+
+  /**
+   * Replace the per-tier timeout overrides at runtime (e.g. from
+   * `POST /settings`). Takes the same shape as the constructor's object
+   * form — tiers not present fall back to `DEFAULT_TTL_MS`, not to
+   * whatever was previously configured, so the caller's `overrides` is
+   * always the complete authoritative desired state (pass `null` to reset
+   * every tier to its default). Only affects entries `request()`-ed after
+   * this call; already-pending entries keep their already-computed
+   * `expiresAt` and running timer.
+   */
+  setTtlByTier(overrides: Partial<Record<RiskTier, number>> | null): void {
+    this.ttlByTier = { ...ApprovalQueue.DEFAULT_TTL_MS, ...(overrides ?? {}) };
   }
 
   /** Subscribe to queue changes (enqueue + resolve). Returns unsubscribe fn. */
@@ -215,7 +279,7 @@ export class ApprovalQueue {
   }
 
   request(
-    input: Omit<PendingApproval, "callId" | "requestedAt">,
+    input: Omit<PendingApproval, "callId" | "requestedAt" | "expiresAt">,
     opts: { withToken?: boolean; signal?: AbortSignal } = {},
   ): {
     callId: string;
@@ -266,20 +330,29 @@ export class ApprovalQueue {
     const promise = new Promise<ApprovalDecision>((res) => {
       resolveFn = res;
     });
-    const timer = setTimeout(() => {
-      const entry = this.entries.get(callId);
-      if (!entry) return;
-      this.entries.delete(callId);
-      this.inflight.delete(entry.inflightKey);
-      entry.resolve("expired");
-      for (const r of entry.pendingPromises) r("expired");
-      this.notify();
-    }, this.ttlMs);
-    if (typeof timer === "object" && "unref" in timer) timer.unref();
+    const ttl = this.resolveTtl(input.tier);
+    // ttl === 0 means "no expiry" for this tier (opt-in only — no tier
+    // defaults to this) — hold the entry until a human decides or the
+    // caller cancels. Never auto-approve; the only way off this path is
+    // cancel()/approve()/reject().
+    const timer =
+      ttl > 0
+        ? setTimeout(() => {
+            const entry = this.entries.get(callId);
+            if (!entry) return;
+            this.entries.delete(callId);
+            this.inflight.delete(entry.inflightKey);
+            entry.resolve("expired");
+            for (const r of entry.pendingPromises) r("expired");
+            this.notify();
+          }, ttl)
+        : null;
+    if (timer && typeof timer === "object" && "unref" in timer) timer.unref();
 
     this.entries.set(callId, {
       callId,
       requestedAt,
+      expiresAt: ttl > 0 ? requestedAt + ttl : null,
       resolve: resolveFn,
       timer,
       approvalToken,
@@ -416,6 +489,7 @@ export class ApprovalQueue {
         params: e.params,
         tier: e.tier,
         requestedAt: e.requestedAt,
+        expiresAt: e.expiresAt,
         sessionId: e.sessionId,
         summary: e.summary,
         riskSignals: e.riskSignals,
@@ -430,10 +504,28 @@ export class ApprovalQueue {
     return this.entries.size;
   }
 
+  /** Look up a single pending entry's public fields (e.g. for webhook/push payloads that need `expiresAt`). */
+  peek(callId: string): PendingApproval | undefined {
+    const e = this.entries.get(callId);
+    if (!e) return undefined;
+    return {
+      callId: e.callId,
+      toolName: e.toolName,
+      params: e.params,
+      tier: e.tier,
+      requestedAt: e.requestedAt,
+      expiresAt: e.expiresAt,
+      sessionId: e.sessionId,
+      summary: e.summary,
+      riskSignals: e.riskSignals,
+      personalSignals: e.personalSignals,
+    };
+  }
+
   /** Clear all pending entries (test hook, also on bridge shutdown). */
   clear(): void {
     for (const entry of this.entries.values()) {
-      clearTimeout(entry.timer);
+      if (entry.timer) clearTimeout(entry.timer);
       entry.resolve("expired");
       // Wake up any duplicate callers who joined this entry via dedup —
       // their promises would otherwise hang forever after shutdown /
@@ -451,7 +543,7 @@ export class ApprovalQueue {
   private resolveEntry(callId: string, decision: ApprovalDecision): boolean {
     const entry = this.entries.get(callId);
     if (!entry) return false;
-    clearTimeout(entry.timer);
+    if (entry.timer) clearTimeout(entry.timer);
     this.entries.delete(callId);
     this.inflight.delete(entry.inflightKey);
     // Record the decision in the short-lived `recentlyDecided` map so a
@@ -501,8 +593,28 @@ const RECENTLY_DECIDED_TTL_MS = 60_000;
 
 /** Process-wide singleton — dashboard + bridge share one queue. */
 let singleton: ApprovalQueue | undefined;
-export function getApprovalQueue(): ApprovalQueue {
-  if (!singleton) singleton = new ApprovalQueue();
+/**
+ * `opts` only takes effect the first time this is called for the process
+ * (i.e. when the singleton is constructed) — later calls ignore it and
+ * return the existing instance. `Bridge`'s constructor calls this with the
+ * resolved `config.approvalTimeouts` before any other code path can reach a
+ * bare `getApprovalQueue()`, so the configured timeouts always win.
+ */
+export function getApprovalQueue(opts?: {
+  ttlMs?: Partial<Record<RiskTier, number>>;
+}): ApprovalQueue {
+  if (!singleton) {
+    singleton = new ApprovalQueue(opts);
+  } else if (opts?.ttlMs) {
+    // Not a bug today — Bridge's constructor is the only caller that ever
+    // passes `opts`, and it runs before any other code path can reach
+    // getApprovalQueue(). But if that invariant ever breaks (a second entry
+    // point, an import-order change), silently discarding a caller's
+    // configured timeouts would be a confusing way to find out. Surface it.
+    console.warn(
+      "[approvalQueue] getApprovalQueue() called with ttlMs after the singleton already exists — ignoring; the queue's timeouts were already fixed by an earlier caller.",
+    );
+  }
   return singleton;
 }
 

@@ -7,6 +7,76 @@ import {
   defaultConfigPath as patchworkConfigPath,
 } from "./patchworkConfig.js";
 
+/**
+ * Node's setTimeout silently fires almost immediately (with a runtime
+ * warning) for any delay exceeding a signed 32-bit int of ms (~24.8 days) —
+ * it does NOT throw or clamp to "wait longer". A configured tier timeout
+ * above this would silently defeat the operator's intent to give a
+ * long-lived review window; reject it at parse time instead. Use
+ * `"none"`/`"infinite"` for genuinely unbounded holds.
+ */
+export const MAX_APPROVAL_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * Unlike the CLI flag path (`parseApprovalTimeout`, which throws on bad
+ * input), `approvalTimeouts` loaded from `~/.patchwork/config.json` is
+ * dashboard-writable and read at every startup — a malformed or corrupted
+ * value there must not crash the bridge. Drop invalid per-tier entries
+ * (logging why) rather than let a bad float/negative/oversized number reach
+ * `ApprovalQueue`'s raw `setTimeout` call.
+ */
+export function sanitizeApprovalTimeouts(
+  raw: unknown,
+): Partial<Record<"low" | "medium" | "high", number>> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const out: Partial<Record<"low" | "medium" | "high", number>> = {};
+  for (const tier of ["low", "medium", "high"] as const) {
+    const v = (raw as Record<string, unknown>)[tier];
+    if (v === undefined) continue;
+    if (
+      typeof v !== "number" ||
+      !Number.isInteger(v) ||
+      v < 0 ||
+      v > MAX_APPROVAL_TIMEOUT_MS
+    ) {
+      console.warn(
+        `[config] Ignoring invalid approvalTimeouts.${tier} in patchwork config (must be an integer ms between 0 and ${MAX_APPROVAL_TIMEOUT_MS}): ${JSON.stringify(v)}`,
+      );
+      continue;
+    }
+    out[tier] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * Parse a `--approval-timeout-<tier>` CLI value into ms. `0` means "no
+ * expiry" for that tier — never auto-expire the held approval.
+ *
+ * Accepts: `"none"` / `"infinite"` (no expiry), a bare integer (ms), or a
+ * duration string with a single `s`/`m`/`h` suffix (e.g. `"30s"`, `"5m"`,
+ * `"2h"`).
+ */
+export function parseApprovalTimeout(raw: string, flagName: string): number {
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "none" || trimmed === "infinite") return 0;
+  const match = /^(\d+)(s|m|h)?$/.exec(trimmed);
+  if (!match) {
+    throw new Error(
+      `${flagName} must be "none", "infinite", a millisecond integer, or a duration like "30s"/"5m"/"2h" (got "${raw}")`,
+    );
+  }
+  const n = Number(match[1]);
+  const unitMs = { s: 1_000, m: 60_000, h: 3_600_000 } as const;
+  const ms = match[2] ? n * unitMs[match[2] as "s" | "m" | "h"] : n;
+  if (ms > MAX_APPROVAL_TIMEOUT_MS) {
+    throw new Error(
+      `${flagName} exceeds the max representable timeout (~24.8 days / ${MAX_APPROVAL_TIMEOUT_MS}ms) — Node's setTimeout fires almost immediately past this, silently defeating a longer intended window. Use "none"/"infinite" for an unbounded hold instead (got "${raw}").`,
+    );
+  }
+  return ms;
+}
+
 export interface Config {
   workspace: string;
   workspaceFolders: string[];
@@ -61,6 +131,17 @@ export interface Config {
   managedSettingsPath: string | null;
   /** Patchwork: outbound webhook URL for approval queue notifications (from dashboard.webhookUrl in patchwork config). */
   approvalWebhookUrl: string | null;
+  /**
+   * Patchwork: per-risk-tier approval timeout override, in ms. A tier's
+   * value of `0` means "no expiry" — the queued approval is held until a
+   * human decides (never auto-approved). Tiers not present here fall back
+   * to `ApprovalQueue.DEFAULT_TTL_MS` (low=5min, medium=60min, high=4h).
+   * Set per-tier via `--approval-timeout-<low|medium|high> <dur>`
+   * (accepts `"none"`/`"infinite"` for no expiry, a bare ms integer, or a
+   * duration like `30s`/`5m`/`2h`) or `approvalTimeouts` in
+   * `~/.patchwork/config.json`. See docs on risk-tiered approval timeouts.
+   */
+  approvalTimeouts: Partial<Record<"low" | "medium" | "high", number>> | null;
   /**
    * Patchwork mobile-oversight push relay (FCM/APNS gateway). Seeded from
    * `~/.patchwork/config.json`; previously only set by POST /settings, so
@@ -568,6 +649,11 @@ export function parseConfig(argv: string[]): Config {
   let approvalGate: "off" | "high" | "all" =
     (fileConfig as { approvalGate?: "off" | "high" | "all" }).approvalGate ??
     "off";
+  let approvalTimeouts: Partial<
+    Record<"low" | "medium" | "high", number>
+  > | null = sanitizeApprovalTimeouts(
+    (fileConfig as { approvalTimeouts?: unknown }).approvalTimeouts,
+  );
   let enableTimeOfDayAnomaly: boolean =
     (fileConfig as { enableTimeOfDayAnomaly?: boolean })
       .enableTimeOfDayAnomaly ?? false;
@@ -588,6 +674,12 @@ export function parseConfig(argv: string[]): Config {
         !(fileConfig as { approvalGate?: string }).approvalGate
       ) {
         approvalGate = pw.approvalGate;
+      }
+      if (
+        pw.approvalTimeouts &&
+        !(fileConfig as { approvalTimeouts?: unknown }).approvalTimeouts
+      ) {
+        approvalTimeouts = sanitizeApprovalTimeouts(pw.approvalTimeouts);
       }
       pushServiceUrl = pw.pushServiceUrl ?? null;
       pushServiceToken = pw.pushServiceToken ?? null;
@@ -788,6 +880,24 @@ export function parseConfig(argv: string[]): Config {
           );
         }
         approvalGate = val;
+        break;
+      }
+      case "--approval-timeout-low":
+      case "--approval-timeout-medium":
+      case "--approval-timeout-high": {
+        // args[i] matched one of the three case labels above, so it's
+        // always a string here; requireArg needs the flag name for its
+        // own error message before we've consumed the value arg.
+        const flagName = args[i] ?? "--approval-timeout";
+        const tier = flagName.slice("--approval-timeout-".length) as
+          | "low"
+          | "medium"
+          | "high";
+        const val = requireArg(args, ++i, flagName);
+        approvalTimeouts = {
+          ...approvalTimeouts,
+          [tier]: parseApprovalTimeout(val, flagName),
+        };
         break;
       }
       case "--enable-time-of-day-anomaly": {
@@ -1196,6 +1306,7 @@ Environment Variables:
     automationPolicyPath,
     automationAllowPrivateWebhooks,
     approvalGate,
+    approvalTimeouts,
     enableTimeOfDayAnomaly,
     managedSettingsPath,
     approvalWebhookUrl,

@@ -50,6 +50,14 @@ export interface PatchworkConfig {
   /** Approval gate level — mirrors CLI --approval-gate. Persisted so dashboard changes survive restart. */
   approvalGate?: "off" | "high" | "all";
   /**
+   * Per-risk-tier approval timeout override, in ms — mirrors CLI
+   * `--approval-timeout-<low|medium|high>`. A tier's value of `0` means
+   * "no expiry" (held until a human decides). Unset tiers fall back to
+   * `ApprovalQueue.DEFAULT_TTL_MS`. Persisted so dashboard changes survive
+   * restart.
+   */
+  approvalTimeouts?: Partial<Record<"low" | "medium" | "high", number>>;
+  /**
    * Opt-in toggle for personalSignals heuristic 10 (time-of-day anomaly).
    * Mirrors CLI --enable-time-of-day-anomaly. Persisted so dashboard
    * changes survive restart. Default false — h10 is off until the user

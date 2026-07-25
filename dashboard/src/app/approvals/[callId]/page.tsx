@@ -34,7 +34,8 @@ interface PendingRecord {
   summary?: string;
   params?: Record<string, unknown>;
   sessionId?: string;
-  expiresAt?: number;
+  /** `null` = no configured expiry for this tier. */
+  expiresAt?: number | null;
   riskSignals?: RiskSignal[];
   personalSignals?: PersonalSignal[];
 }

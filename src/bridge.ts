@@ -214,6 +214,12 @@ export class Bridge {
   private tokenUsageTracker: TokenUsageTracker;
 
   constructor(private config: Config) {
+    // Seed the process-wide ApprovalQueue singleton with the configured
+    // per-risk-tier timeouts before any other code path can reach a bare
+    // getApprovalQueue() (which would otherwise lock in the hardcoded
+    // defaults). Must be the first call in the constructor — see
+    // getApprovalQueue()'s doc comment in approvalQueue.ts.
+    getApprovalQueue({ ttlMs: config.approvalTimeouts ?? undefined });
     this.logger = new Logger(config.verbose, config.jsonl);
     this.lockFile = new LockFileManager(this.logger);
     const configDir =
@@ -1745,6 +1751,7 @@ export class Bridge {
     this.server.managedSettingsPath =
       this.config.managedSettingsPath ?? undefined;
     this.server.approvalGate = this.config.approvalGate ?? "off";
+    this.server.approvalTimeouts = this.config.approvalTimeouts ?? undefined;
     this.server.approvalWebhookUrl =
       this.config.approvalWebhookUrl ?? undefined;
     this.server.onApprovalDecision = (event, meta) =>
@@ -1877,6 +1884,7 @@ export class Bridge {
           return {
             workspace: this.config.workspace,
             approvalGate: this.server.approvalGate,
+            approvalTimeouts: this.server.approvalTimeouts ?? null,
             enableTimeOfDayAnomaly: this.server.enableTimeOfDayAnomaly,
             fullMode: this.config.fullMode,
             driver: this.config.driver,
