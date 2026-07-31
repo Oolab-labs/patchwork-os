@@ -303,6 +303,17 @@ export class OAuthServerImpl implements OAuthServer {
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: SUPPORTED_SCOPES,
+      // RFC 9207 — we always echo `iss` on the authorization response (both the
+      // approve and deny paths). Advertising it lets a conformant client *reject*
+      // a response that arrives without `iss`, which is what actually closes the
+      // AS mix-up attack; emitting it silently does nothing for clients that
+      // can't tell whether its absence is meaningful.
+      authorization_response_iss_parameter_supported: true,
+      // SEP-991 Client ID Metadata Documents. `handleAuthorize` resolves an
+      // https:// client_id via `fetchCimd`, so clients need not pre-register.
+      // Unadvertised, a conformant client skips CIMD and falls back to RFC 7591
+      // dynamic registration — which is deprecated as of MCP 2026-07-28.
+      client_id_metadata_document_supported: true,
     });
   }
 

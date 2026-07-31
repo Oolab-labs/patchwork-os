@@ -203,6 +203,22 @@ describe("OAuthServerImpl — discovery", () => {
     expect(body.grant_types_supported).toContain("authorization_code");
     expect(body.response_types_supported).toContain("code");
   });
+
+  it("advertises RFC 9207 iss echo, which handleAuthorize actually emits", () => {
+    const oauth = makeOAuth();
+    const res = new MockResponse();
+    oauth.handleDiscovery(res as unknown as http.ServerResponse);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.authorization_response_iss_parameter_supported).toBe(true);
+  });
+
+  it("advertises CIMD support (SEP-991) so clients skip deprecated DCR", () => {
+    const oauth = makeOAuth();
+    const res = new MockResponse();
+    oauth.handleDiscovery(res as unknown as http.ServerResponse);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.client_id_metadata_document_supported).toBe(true);
+  });
 });
 
 // ── GET /oauth/authorize ──────────────────────────────────────────────────────
