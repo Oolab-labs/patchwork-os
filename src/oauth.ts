@@ -309,11 +309,17 @@ export class OAuthServerImpl implements OAuthServer {
       // AS mix-up attack; emitting it silently does nothing for clients that
       // can't tell whether its absence is meaningful.
       authorization_response_iss_parameter_supported: true,
-      // SEP-991 Client ID Metadata Documents. `handleAuthorize` resolves an
-      // https:// client_id via `fetchCimd`, so clients need not pre-register.
-      // Unadvertised, a conformant client skips CIMD and falls back to RFC 7591
-      // dynamic registration — which is deprecated as of MCP 2026-07-28.
-      client_id_metadata_document_supported: true,
+      // NOT advertised: `client_id_metadata_document_supported`. CIMD is
+      // implemented (`fetchCimd`) but `isValidCimdRedirectUri` rejects
+      // non-https redirect_uris, while `handleRegister` deliberately permits
+      // loopback http (RFC 8252). Advertising CIMD makes a conformant client
+      // prefer it over dynamic registration, so a native/CLI client whose only
+      // redirect_uri is `http://127.0.0.1/...` would get its doc filtered to
+      // empty and fail with invalid_client instead of registering successfully.
+      // Two unmet spec MUSTs also block it: `fetchCimd` never checks that the
+      // document's own `client_id` equals the fetch URL, nor that the client_id
+      // has a path component. Fix those and reconcile the two redirect-uri
+      // policies before advertising this.
     });
   }
 
