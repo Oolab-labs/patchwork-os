@@ -415,6 +415,21 @@ export class McpTransport {
    * @param message Human-readable question shown to the user.
    * @param requestedSchema JSON Schema describing the shape of the expected response.
    * @param timeoutMs Maximum time to wait for a response (default: 5 minutes).
+   *
+   * NO IN-REPO CALLER — deliberate, do not "clean up". Audited 2026-08-01:
+   * `git grep '\.elicit('` matches only this definition. The implementation is
+   * complete and works if called; it is unused, not rotted. Deleting it would
+   * also orphan the client half we ship — `claude-ide-bridge-plugin/hooks/
+   * hooks.json` + `scripts/elicitation.sh`, which pre-answer file/path fields
+   * from the active editor — plus the advertisements at :1035 and
+   * `src/mcpRoutes.ts:63` and three docs. Wiring a caller (e.g. the recipe
+   * approval prompt, today a dashboard/phone round-trip) is tracked in #1217.
+   * Note this path is WS-only: it requires
+   * `activeWs`, so Streamable-HTTP and stdio sessions can never use it.
+   *
+   * The `elicitation: {}` capability we advertise is a CLIENT capability in
+   * MCP — a server declaring it is ignored, not a false claim. No client was
+   * ever observed changing behaviour on it, in either direction.
    */
   async elicit(
     message: string,
