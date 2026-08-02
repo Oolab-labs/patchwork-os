@@ -33,10 +33,15 @@ skills-lock.json
 
 # Local MCP config and project memory (machine-specific, not for version control)
 .mcp.json
+# ...but the plugin ships its own .mcp.json as an artifact — CI asserts it exists.
+!claude-ide-bridge-plugin/.mcp.json
 memory/
 
 # Gemini CLI local config (machine-specific)
-.gemini/
+# (`.gemini/*` not `.gemini/` — git will not descend into an excluded
+# directory, so a negation inside it can never re-include the one file we keep.)
+.gemini/*
+!.gemini/settings.json
 
 # macOS
 .DS_Store
