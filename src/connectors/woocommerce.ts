@@ -198,6 +198,22 @@ export function clearTokens(): void {
  * Verify an incoming WooCommerce webhook.
  * WooCommerce signs with HMAC-SHA256 over the raw body using the webhook secret,
  * then base64-encodes the digest. Delivered in X-WC-Webhook-Signature header.
+ *
+ * NO INGRESS PATH — deliberate, do not "clean up". Audited 2026-08-02 (#1216):
+ * this function is complete and correct, but nothing in `src/` outside this
+ * file calls it. `POST /hooks/*` (`src/server.ts`) accepts exactly two
+ * credentials — a Bearer token, or `X-Hub-Signature-256` HMAC'd with the
+ * bridge's own `--webhook-secret` — and never reads `x-wc-webhook-signature`.
+ * A provider signs with ITS secret under ITS header, so its delivery is
+ * rejected at the outer gate before this could ever run. That is a feature
+ * gap, not a hole: the gate fails closed, nothing is accepted-but-unverified.
+ *
+ * Wiring it up needs per-connector signing-secret storage (today there is one
+ * global `--webhook-secret`), header dispatch in the gate with the same
+ * multi-value/missing fail-closed handling as `readSingleSignatureHeader`,
+ * raw-body preservation per route, and a decision on whether provider
+ * verification replaces or supplements the bearer gate. Deferred until a user
+ * actually wants this provider's webhooks; do one connector end-to-end first.
  */
 export function verifyWooCommerceWebhook(
   rawBody: string | Buffer,
