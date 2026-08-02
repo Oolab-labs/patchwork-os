@@ -160,6 +160,7 @@
     "{src,vscode-extension/src,scripts,deploy}/**/*.{ts,js,mjs,cjs,json}": "biome check --no-errors-on-unmatched"
   },
   "overrides": {
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "postcss": "^8.5.25"
   }
 }
