@@ -14,7 +14,6 @@ import { parseStreamLine, splitLines } from "./streamParser.js";
 const OUTPUT_CAP = 50 * 1024; // 50KB — matches the Claude subprocess driver's cap
 
 type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
-type ApprovalMode = "untrusted" | "on-request" | "never";
 
 /**
  * Scrub secrets from a string before storing or surfacing it. Same patterns
@@ -44,7 +43,6 @@ export function scrubSecrets(text: string): string {
  * explicitly escalates via providerOptions:
  *
  *   sandboxMode:    "read-only" (default) | "workspace-write" | "danger-full-access"
- *   approvalMode:   "never" (default) | "on-request" | "untrusted"
  *   networkAccess:  false (default) — passed as `-c sandbox.network_access=false`
  *   webSearch:      false (default) — omitting --search leaves Codex's own
  *                   default ("cached"); NOT the same as fully disabled, but
@@ -85,10 +83,6 @@ export class CodexDriver implements ProviderDriver {
       opts.sandboxMode === "danger-full-access"
         ? opts.sandboxMode
         : "read-only";
-    const approvalMode: ApprovalMode =
-      opts.approvalMode === "on-request" || opts.approvalMode === "untrusted"
-        ? opts.approvalMode
-        : "never";
     const networkAccess = opts.networkAccess === true;
     const webSearch = opts.webSearch === true;
 
@@ -98,8 +92,6 @@ export class CodexDriver implements ProviderDriver {
       "--json",
       "--sandbox",
       sandboxMode,
-      "--ask-for-approval",
-      approvalMode,
       "--ignore-user-config",
       "--ignore-rules",
       "--skip-git-repo-check",

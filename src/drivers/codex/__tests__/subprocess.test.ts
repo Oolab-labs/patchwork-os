@@ -95,8 +95,7 @@ describe("CodexDriver: fail-closed defaults (no providerOptions)", () => {
     expect(args).toContain("--json");
     expect(args).toContain("--sandbox");
     expect(args[args.indexOf("--sandbox") + 1]).toBe("read-only");
-    expect(args).toContain("--ask-for-approval");
-    expect(args[args.indexOf("--ask-for-approval") + 1]).toBe("never");
+    expect(args).not.toContain("--ask-for-approval");
     expect(args).toContain("--ignore-user-config");
     expect(args).toContain("--ignore-rules");
     expect(args).toContain("--skip-git-repo-check");
@@ -144,7 +143,7 @@ describe("CodexDriver: explicit escalation via providerOptions", () => {
     expect(args[args.indexOf("--sandbox") + 1]).toBe("read-only");
   });
 
-  it("escalates approvalMode when explicitly requested", async () => {
+  it("does not pass the unsupported approvalMode flag", async () => {
     const driver = newDriver();
     await finishRun(
       driver.run(
@@ -152,7 +151,7 @@ describe("CodexDriver: explicit escalation via providerOptions", () => {
       ),
     );
     const args = spawnMock.mock.calls[0]![1] as string[];
-    expect(args[args.indexOf("--ask-for-approval") + 1]).toBe("on-request");
+    expect(args).not.toContain("--ask-for-approval");
   });
 
   it("enables network access only when explicitly requested", async () => {
