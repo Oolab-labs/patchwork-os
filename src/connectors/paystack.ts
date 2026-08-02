@@ -562,6 +562,22 @@ class PaystackApiError extends Error {
  * @param signature  Value of the `x-paystack-signature` header
  * @param secretKey  Paystack secret key used to sign events
  * @returns true if the signature matches, false otherwise
+ *
+ * NO INGRESS PATH — deliberate, do not "clean up". Audited 2026-08-02 (#1216):
+ * this function is complete and correct, but nothing in `src/` outside this
+ * file calls it. `POST /hooks/*` (`src/server.ts`) accepts exactly two
+ * credentials — a Bearer token, or `X-Hub-Signature-256` HMAC'd with the
+ * bridge's own `--webhook-secret` — and never reads `x-paystack-signature`. A
+ * provider signs with ITS secret under ITS header, so its delivery is rejected
+ * at the outer gate before this could ever run. That is a feature gap, not a
+ * hole: the gate fails closed, nothing is accepted-but-unverified.
+ *
+ * Wiring it up needs per-connector signing-secret storage (today there is one
+ * global `--webhook-secret`), header dispatch in the gate with the same
+ * multi-value/missing fail-closed handling as `readSingleSignatureHeader`,
+ * raw-body preservation per route, and a decision on whether provider
+ * verification replaces or supplements the bearer gate. Deferred until a user
+ * actually wants this provider's webhooks; do one connector end-to-end first.
  */
 export function verifyPaystackWebhook(
   rawBody: Buffer | string,
