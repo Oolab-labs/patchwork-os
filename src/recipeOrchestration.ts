@@ -13,6 +13,10 @@ import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { truncateUtf8Bytes } from "./drivers/outputCap.js";
 import { loadConfig } from "./patchworkConfig.js";
 import { getConfigDisabledNames } from "./recipes/disabledMarkers.js";
+import {
+  elicitMissingVars,
+  type MissingVarDeclaration,
+} from "./recipes/elicitMissingVars.js";
 import { summariseHalts } from "./recipes/haltCategory.js";
 import { summariseJudgments } from "./recipes/judgeSummary.js";
 import type { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
@@ -956,11 +960,41 @@ export class RecipeOrchestration {
       // Enforce required vars server-side. Browser-side HTML `required` attr is
       // bypassable (webhooks, scheduler, direct API calls). Return named missing
       // vars so the dashboard can surface them without parsing the YAML itself.
-      const missingRequired = checkRequiredVars(ymlPath, mergedVars);
-      if (missingRequired.length > 0) {
+      let effectiveVars = mergedVars;
+      let missingDeclarations = missingRequiredVarDeclarations(
+        ymlPath,
+        effectiveVars,
+      );
+
+      // #1217: before halting, offer the operator an inline prompt over MCP
+      // elicitation. Strictly additive — `elicit()` is WS-only, so this does
+      // nothing for Streamable-HTTP/stdio clients, dashboard POSTs, webhooks or
+      // the scheduler, all of which fall through to the halt below exactly as
+      // before. `elicitMissingVars` can only ADD human-typed values and never
+      // throws, so the halt stays fail-closed: a var nobody answered is still
+      // missing on the recheck.
+      if (missingDeclarations.length > 0 && server.elicitFn) {
+        const supplied = await elicitMissingVars({
+          recipeName: name,
+          declarations: missingDeclarations,
+          elicit: server.elicitFn,
+          onWarn: (msg) => this.deps.logger?.warn?.(msg),
+        });
+        if (Object.keys(supplied).length > 0) {
+          effectiveVars = { ...effectiveVars, ...supplied };
+          missingDeclarations = missingRequiredVarDeclarations(
+            ymlPath,
+            effectiveVars,
+          );
+        }
+      }
+
+      if (missingDeclarations.length > 0) {
         return {
           ok: false,
-          error: `missing_required_vars:${missingRequired.join(",")}`,
+          error: `missing_required_vars:${missingDeclarations
+            .map((d) => d.name)
+            .join(",")}`,
         };
       }
 
@@ -970,7 +1004,7 @@ export class RecipeOrchestration {
         taskIdPrefix: `yaml-recipe-${name}`,
         triggerSourceSuffix: `recipe:${name}`,
         logLabel: `"${name}"`,
-        seedContext: mergedVars,
+        seedContext: effectiveVars,
       });
     };
   }
@@ -1884,10 +1918,19 @@ export function collectUnknownToolIds(yaml: string): string[] {
 // back-compat with existing import sites (e.g. commands/recipe.ts).
 export { applyTriggerInputDefaults };
 
-function checkRequiredVars(
+/**
+ * Required vars the caller did not supply, with each var's declared
+ * `description` where the recipe gave one.
+ *
+ * Returning declarations rather than bare names is what lets the elicitation
+ * prompt (#1217) show the author's own wording for a var instead of just its
+ * key. The halt message below maps these back down to bare names, which is
+ * the only shape the dashboard has ever parsed.
+ */
+export function missingRequiredVarDeclarations(
   ymlPath: string,
   vars?: Record<string, string>,
-): string[] {
+): MissingVarDeclaration[] {
   let parsed: unknown;
   try {
     parsed = parseYaml(readFileSync(ymlPath, "utf-8"));
@@ -1898,7 +1941,8 @@ function checkRequiredVars(
     | Record<string, unknown>
     | null
     | undefined;
-  const missing: string[] = [];
+  const missing: MissingVarDeclaration[] = [];
+  const seen = new Set<string>();
   for (const key of ["inputs", "vars"] as const) {
     const arr = trigger?.[key];
     if (!Array.isArray(arr)) continue;
@@ -1916,8 +1960,19 @@ function checkRequiredVars(
           required !== "");
       if (typeof name !== "string" || !isRequired) continue;
       const val = vars?.[name];
-      if (val === undefined || val === null || String(val).trim() === "")
-        missing.push(name);
+      if (val !== undefined && val !== null && String(val).trim() !== "")
+        continue;
+      // A var declared under BOTH inputs and vars must not be prompted twice —
+      // the elicitation schema would carry a duplicate required key.
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const description = (item as { description?: unknown }).description;
+      missing.push({
+        name,
+        ...(typeof description === "string" && description.trim() !== ""
+          ? { description }
+          : {}),
+      });
     }
   }
   return missing;

@@ -168,6 +168,20 @@ export class Bridge {
   private activityLog: ActivityLog;
   private authToken: string;
   private sessions = new Map<string, AgentSession>();
+
+  /**
+   * The most recently connected live WebSocket session, or null if there is
+   * none. Used to route `server.elicitFn` (#1217) — with several agents
+   * attached, the newest is the one a human is most likely sitting in front of.
+   */
+  private newestConnectedSession(): AgentSession | null {
+    let newest: AgentSession | null = null;
+    for (const session of this.sessions.values()) {
+      if (session.ws.readyState !== WebSocket.OPEN) continue;
+      if (!newest || session.connectedAt > newest.connectedAt) newest = session;
+    }
+    return newest;
+  }
   private fileLock = new FileLock();
   private probes: ProbeResults | null = null;
   private ready = false;
@@ -601,6 +615,18 @@ export class Bridge {
 
       transport.attach(ws);
       this.sessions.set(sessionId, session);
+      // #1217: expose an elicitation channel to the HTTP-side code (recipe
+      // orchestration) that has no transport of its own. Resolved lazily at
+      // call time rather than pinned to this session, so a reconnect or a
+      // second agent doesn't leave a stale closure pointing at a dead socket;
+      // `elicit()` itself rejects if the socket it picks isn't OPEN.
+      this.server.elicitFn = (message, requestedSchema) => {
+        const target = this.newestConnectedSession();
+        if (!target) {
+          return Promise.reject(new Error("No active MCP client connected"));
+        }
+        return target.transport.elicit(message, requestedSchema);
+      };
       this.logger.info(
         `Claude Code connected (session ${sessionId.slice(0, 8)}) — ${this.sessions.size} active session${this.sessions.size === 1 ? "" : "s"}`,
       );
@@ -1009,6 +1035,10 @@ export class Bridge {
     session.transport.detach();
     session.openedFiles.clear();
     this.sessions.delete(id);
+    // #1217: with no WS session left there is nobody to elicit from. Clearing
+    // this is what makes the recipe-orchestration caller fall straight through
+    // to its existing halt instead of waiting out an elicitation timeout.
+    if (!this.newestConnectedSession()) this.server.elicitFn = null;
 
     const errorPart =
       errorCount > 0
