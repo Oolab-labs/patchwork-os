@@ -209,6 +209,25 @@ export class Server extends EventEmitter<ServerEvents> {
   public setRecipeTrustFn:
     | ((name: string, level: string) => { ok: boolean; error?: string })
     | null = null;
+  /**
+   * Patchwork (#1217): ask the connected MCP client a question inline, via
+   * `McpTransport.elicit()`. Set by the bridge to resolve against the most
+   * recently connected WebSocket session, and left `null` whenever no such
+   * session exists — `elicit()` is WS-only, so Streamable-HTTP and stdio
+   * clients can never serve one.
+   *
+   * Every caller must treat this as a best-effort ADDITIONAL channel: a
+   * rejection (no client, declined, timed out) has to land in the same branch
+   * as never having asked. Today's only caller is the missing-required-vars
+   * prompt in `recipeOrchestration.ts`, deliberately chosen over the approval
+   * prompt because supplying an input carries no authority to approve.
+   */
+  public elicitFn:
+    | ((
+        message: string,
+        requestedSchema: Record<string, unknown>,
+      ) => Promise<unknown>)
+    | null = null;
   /** Patchwork: set by bridge to generate a recipe YAML draft from a natural-language prompt. */
   public generateRecipeFn:
     | ((prompt: string) => Promise<{

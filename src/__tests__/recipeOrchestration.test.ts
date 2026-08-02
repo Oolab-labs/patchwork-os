@@ -210,6 +210,113 @@ describe("RecipeOrchestration", () => {
     }
   });
 
+  // #1217 — inline elicitation for missing required vars. The halt above stays
+  // the fallback; these pin that the prompt can only ever ADD a human's answer.
+  const withRequiredVarRecipe = async (
+    run: (server: any, fireStub: any) => Promise<void>,
+  ) => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "ro-test-"));
+    const ymlPath = join(tmpDir, "bar.yaml");
+    writeFileSync(
+      ymlPath,
+      "trigger:\n  inputs:\n    - name: issueId\n      required: true\n      description: The issue to triage\nsteps: []\n",
+    );
+    try {
+      const { loadRecipePrompt, findYamlRecipePath } = await import(
+        "../recipesHttp.js"
+      );
+      vi.mocked(loadRecipePrompt).mockReturnValue(null as never);
+      vi.mocked(findYamlRecipePath).mockReturnValue(ymlPath as never);
+
+      const fireStub = vi.fn().mockResolvedValue({ ok: true, taskId: "y3" });
+      const server = makeServer();
+      const ro = new RecipeOrchestration({
+        server,
+        getOrchestrator: () => ({ enqueue: vi.fn(), runAndWait: vi.fn() }),
+        recipeOrchestrator: makeRecipeOrchestrator({ fire: fireStub }),
+        recipeRunLog: null,
+        workdir: "/tmp/ws",
+        logger: {},
+      });
+      ro.wireServerFns();
+      await run(server, fireStub);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  };
+
+  it("#1217: runRecipeFn fires when the operator supplies a missing var inline", async () => {
+    await withRequiredVarRecipe(async (server, fireStub) => {
+      server.elicitFn = vi.fn().mockResolvedValue({
+        action: "accept",
+        content: { issueId: "1217" },
+      });
+
+      const result = await (server.runRecipeFn as any)("bar");
+      expect(result).toEqual({ ok: true, taskId: "y3" });
+      // The answer must reach the run, not just unblock the gate.
+      expect(fireStub).toHaveBeenCalledWith(
+        expect.objectContaining({
+          seedContext: expect.objectContaining({ issueId: "1217" }),
+        }),
+      );
+      // The recipe author's own wording is what the operator sees.
+      const [, schema] = (server.elicitFn as any).mock.calls[0];
+      expect(schema.required).toEqual(["issueId"]);
+      expect(schema.properties.issueId.description).toBe("The issue to triage");
+    });
+  });
+
+  it("#1217: declining the prompt halts exactly as before", async () => {
+    await withRequiredVarRecipe(async (server, fireStub) => {
+      server.elicitFn = vi.fn().mockResolvedValue({ action: "decline" });
+      const result = await (server.runRecipeFn as any)("bar");
+      expect(result).toEqual({
+        ok: false,
+        error: "missing_required_vars:issueId",
+      });
+      expect(fireStub).not.toHaveBeenCalled();
+    });
+  });
+
+  it("#1217: a failing elicit (no WS client) halts rather than throwing", async () => {
+    await withRequiredVarRecipe(async (server, fireStub) => {
+      server.elicitFn = vi
+        .fn()
+        .mockRejectedValue(new Error("No active MCP client connected"));
+      const result = await (server.runRecipeFn as any)("bar");
+      expect(result).toEqual({
+        ok: false,
+        error: "missing_required_vars:issueId",
+      });
+      expect(fireStub).not.toHaveBeenCalled();
+    });
+  });
+
+  it("#1217: no elicitFn (HTTP/stdio/webhook/scheduler) is byte-identical to before", async () => {
+    await withRequiredVarRecipe(async (server, fireStub) => {
+      server.elicitFn = null;
+      const result = await (server.runRecipeFn as any)("bar");
+      expect(result).toEqual({
+        ok: false,
+        error: "missing_required_vars:issueId",
+      });
+      expect(fireStub).not.toHaveBeenCalled();
+    });
+  });
+
+  it("#1217: a caller-supplied var is never re-prompted", async () => {
+    await withRequiredVarRecipe(async (server, fireStub) => {
+      server.elicitFn = vi.fn();
+      const result = await (server.runRecipeFn as any)("bar", {
+        issueId: "already-set",
+      });
+      expect(result).toEqual({ ok: true, taskId: "y3" });
+      expect(server.elicitFn).not.toHaveBeenCalled();
+      expect(fireStub).toHaveBeenCalled();
+    });
+  });
+
   it('L5: runRecipeFn — required:"false" (string) must not block execution', async () => {
     // Bug: `!required` check treated the string "false" as truthy → vars
     // with required:"false" were incorrectly treated as mandatory.
