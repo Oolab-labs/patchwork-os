@@ -110,7 +110,7 @@ function RecipeRail({
   }, [name, connectors]);
 
   return (
-    <aside className="rd-rail card">
+    <aside className={`rd-rail card${isEditRoute || isPlanRoute ? " rd-rail-static" : ""}`}>
       <div>
         <div className="muted rd-crumb">
           <RecipeBreadcrumb name={name} />
