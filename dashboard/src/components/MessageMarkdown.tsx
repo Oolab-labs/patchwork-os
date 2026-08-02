@@ -9,6 +9,13 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 
+function stripFrontmatter(content: string): string {
+  return content.replace(
+    /^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/,
+    "",
+  );
+}
+
 export default function MessageMarkdown({
   content,
   components,
@@ -22,7 +29,7 @@ export default function MessageMarkdown({
       rehypePlugins={[rehypeSanitize]}
       components={components}
     >
-      {content}
+      {stripFrontmatter(content)}
     </ReactMarkdown>
   );
 }

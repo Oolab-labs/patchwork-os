@@ -8538,6 +8538,12 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   gap: 14px;
   animation: layoutHeadIn 200ms ease both;
 }
+/* Edit and Plan place the rail above a full-width body. It must scroll away
+   with that body; leaving the dossier's sticky positioning active turns the
+   full-width rail into an overlay that obscures the editor. */
+.rd-rail.rd-rail-static {
+  position: static;
+}
 .rd-crumb { margin-bottom: 6px; }
 .rd-rail .nm {
   font-size: var(--fs-2xl);

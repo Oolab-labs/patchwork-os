@@ -1,7 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { apiPath } from "@/lib/api";
 import { inboxItemKey } from "@/lib/entityKey";
@@ -10,6 +9,7 @@ import { EmptyState, ErrorState, HintCard, RelationStrip } from "@/components/pa
 import { RecipeChip, RunChip } from "@/components/patchwork/entity";
 import { SkeletonList } from "@/components/Skeleton";
 import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
+import MessageMarkdown from "@/components/MessageMarkdown";
 import { useToast } from "@/components/Toast";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useSearchHotkey } from "@/hooks/useSearchHotkey";
@@ -17,15 +17,6 @@ import { useSearchHotkey } from "@/hooks/useSearchHotkey";
 function isFilterCategory(v: string | null): v is FilterCategory {
   return v === "All" || v === "Morning Briefs" || v === "Recipe Outputs" || v === "Agent Reports";
 }
-
-// react-markdown + its rehype/remark plugins ship ~80KB gzipped of
-// mdast/hast/micromark machinery. They're only needed to render the
-// currently-selected message body — split into a lazy chunk so the
-// inbox list view loads without them.
-const MessageMarkdown = dynamic(() => import("@/components/MessageMarkdown"), {
-  ssr: false,
-  loading: () => <div aria-busy="true" />,
-});
 
 type FilterCategory = "All" | "Morning Briefs" | "Recipe Outputs" | "Agent Reports";
 
