@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
-import { OAuthServerImpl } from "../oauth.js";
+import { isValidCimdRedirectUri, OAuthServerImpl } from "../oauth.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -202,6 +202,31 @@ describe("OAuthServerImpl — discovery", () => {
     expect(body.code_challenge_methods_supported).toContain("S256");
     expect(body.grant_types_supported).toContain("authorization_code");
     expect(body.response_types_supported).toContain("code");
+  });
+
+  it("advertises RFC 9207 iss echo, which handleAuthorize actually emits", () => {
+    const oauth = makeOAuth();
+    const res = new MockResponse();
+    oauth.handleDiscovery(res as unknown as http.ServerResponse);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.authorization_response_iss_parameter_supported).toBe(true);
+  });
+
+  // Regression guard: do NOT advertise CIMD until `isValidCimdRedirectUri`
+  // accepts loopback http (which `handleRegister` already permits) and
+  // `fetchCimd` validates the doc's own client_id + path component. Advertising
+  // it early makes conformant clients prefer a path that 400s for every
+  // native/CLI client whose redirect_uri is http://127.0.0.1/...
+  it("does not advertise CIMD while loopback redirect_uris would be rejected", () => {
+    const oauth = makeOAuth();
+    const res = new MockResponse();
+    oauth.handleDiscovery(res as unknown as http.ServerResponse);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.client_id_metadata_document_supported).toBeUndefined();
+    // The asymmetry this guards against, asserted directly:
+    expect(isValidCimdRedirectUri("http://127.0.0.1:3000/callback")).toBe(
+      false,
+    );
   });
 });
 

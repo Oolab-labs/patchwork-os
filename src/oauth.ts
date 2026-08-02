@@ -303,6 +303,23 @@ export class OAuthServerImpl implements OAuthServer {
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: SUPPORTED_SCOPES,
+      // RFC 9207 — we always echo `iss` on the authorization response (both the
+      // approve and deny paths). Advertising it lets a conformant client *reject*
+      // a response that arrives without `iss`, which is what actually closes the
+      // AS mix-up attack; emitting it silently does nothing for clients that
+      // can't tell whether its absence is meaningful.
+      authorization_response_iss_parameter_supported: true,
+      // NOT advertised: `client_id_metadata_document_supported`. CIMD is
+      // implemented (`fetchCimd`) but `isValidCimdRedirectUri` rejects
+      // non-https redirect_uris, while `handleRegister` deliberately permits
+      // loopback http (RFC 8252). Advertising CIMD makes a conformant client
+      // prefer it over dynamic registration, so a native/CLI client whose only
+      // redirect_uri is `http://127.0.0.1/...` would get its doc filtered to
+      // empty and fail with invalid_client instead of registering successfully.
+      // Two unmet spec MUSTs also block it: `fetchCimd` never checks that the
+      // document's own `client_id` equals the fetch URL, nor that the client_id
+      // has a path component. Fix those and reconcile the two redirect-uri
+      // policies before advertising this.
     });
   }
 
