@@ -114,3 +114,13 @@ intellij-plugin/.gradle/
 
 # Local VPS backup snapshots pulled down for inspection — never repo content.
 /vps-backups/
+
+# Client demo bundles: source workbooks, deterministic extracts, and the recipe
+# templates that hard-reference them by path. Working material for showing the
+# local-model privacy story, not shipped repo content — the templates cannot be
+# split from demos/ because their input defaults point into it.
+/demos/
+/templates/recipes/aaro-consolidation-integrity-demo.yaml
+/templates/recipes/aaro-evidence-pack-demo.yaml
+/templates/recipes/aaro-import-difference-demo.yaml
+/templates/recipes/private-credit-review-demo.yaml
