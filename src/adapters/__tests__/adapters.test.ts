@@ -232,6 +232,32 @@ describe("OpenAIAdapter", () => {
 });
 
 describe("LocalAdapter (OpenAI-compat)", () => {
+  it("expands a dashboard-style /v1 endpoint to chat completions", async () => {
+    const fetchImpl = mockFetch({
+      choices: [
+        {
+          message: { role: "assistant", content: "ok" },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+    const a = createLocalAdapter({
+      endpoint: "http://127.0.0.1:11434/v1",
+      fetchImpl,
+    });
+
+    await a.complete({
+      systemPrompt: "",
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://127.0.0.1:11434/v1/chat/completions",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("does not require api key", async () => {
     const fetchImpl = mockFetch({
       choices: [

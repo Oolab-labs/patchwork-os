@@ -13,6 +13,10 @@ import { OpenAIAdapter } from "./openai.js";
 const DEFAULT_ENDPOINT = "http://localhost:11434/v1/chat/completions";
 const DEFAULT_MODEL = "llama3";
 
+function normalizeEndpoint(endpoint: string): string {
+  return endpoint.replace(/\/v1\/?$/, "/v1/chat/completions");
+}
+
 export function createLocalAdapter(opts: {
   endpoint?: string;
   defaultModel?: string;
@@ -21,7 +25,7 @@ export function createLocalAdapter(opts: {
 }): ModelAdapter {
   return new OpenAIAdapter({
     adapterName: "local",
-    baseURL: opts.endpoint ?? DEFAULT_ENDPOINT,
+    baseURL: normalizeEndpoint(opts.endpoint ?? DEFAULT_ENDPOINT),
     defaultModel: opts.defaultModel ?? DEFAULT_MODEL,
     apiKey: opts.apiKey,
     requireApiKey: false,
