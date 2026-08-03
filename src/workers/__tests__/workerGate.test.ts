@@ -376,3 +376,77 @@ describe("gateOutcomeFor (ADR-0017 forward compatibility)", () => {
     }
   });
 });
+
+// ── forbid: the third terminal state (ADR-0017) ─────────────────────────────
+
+describe("decideWorkerAction — forbidden actions", () => {
+  const w = () =>
+    parseWorker({ id: "w", name: "W", owns: ["fs-write", "vcs-push"] });
+  const store = () => new WorkerLevelStore();
+
+  it("is entirely opt-in — no rules means nothing is forbidden", () => {
+    const d = decideWorkerAction(w(), "gitPush", {}, store());
+    expect(d.action).not.toBe("forbid");
+    const d2 = decideWorkerAction(w(), "gitPush", {}, store(), {
+      forbidRules: [],
+    });
+    expect(d2.action).not.toBe("forbid");
+  });
+
+  it("forbids a matching action outright", () => {
+    const d = decideWorkerAction(w(), "gitPush", {}, store(), {
+      forbidRules: [
+        { match: "vcs-push", reason: "we never push from a worker" },
+      ],
+    });
+    expect(d.action).toBe("forbid");
+    expect(d.reason).toContain("we never push from a worker");
+    expect(d.reason).toContain("vcs-push");
+  });
+
+  it("forbids a REVERSIBLE action too — reversibility is not an escape hatch", () => {
+    // The reversible short-circuit runs before the trust maths, so if forbid
+    // did not precede it, an operator could not ban a reversible action at all.
+    const d = decideWorkerAction(w(), "editText", {}, store(), {
+      forbidRules: [{ match: "fs-write", reason: "read-only workspace" }],
+    });
+    expect(d.action).toBe("forbid");
+  });
+
+  it("forbids the agent step when a rule covers it — no carve-out survives", () => {
+    // Deliberate: a broad rule CAN stall every worker on its agent step. That
+    // failure is loud and names the rule. The alternative fails silently, by
+    // permitting something the operator said must never happen.
+    const ac = classifyActionClass("agent");
+    const d = decideWorkerAction(w(), "agent", {}, store(), {
+      forbidRules: [{ match: ac.domain, reason: "no reasoning steps here" }],
+    });
+    expect(d.action).toBe("forbid");
+  });
+
+  it("forbids regardless of earned trust — L4 does not unlock it", () => {
+    // This is what separates forbid from gate: gating is escapable by earning
+    // trust, forbidding is not.
+    const worker = w();
+    const s = storeWithL4(worker.id, "gitPush");
+    // Sanity: without the rule this worker's push is auto-allowed at L4.
+    expect(decideWorkerAction(worker, "gitPush", {}, s).action).toBe("allow");
+
+    const d = decideWorkerAction(worker, "gitPush", {}, s, {
+      forbidRules: [{ match: "vcs-push", reason: "never" }],
+    });
+    expect(d.action).toBe("forbid");
+    expect(d.earnedLevel).toBe(4);
+  });
+
+  it("leaves non-matching actions on their normal path", () => {
+    const d = decideWorkerAction(w(), "editText", {}, store(), {
+      forbidRules: [{ match: "vcs-push", reason: "not this one" }],
+    });
+    expect(d.action).toBe("allow");
+  });
+
+  it("routes a forbid decision to refuse, never to a human", () => {
+    expect(gateOutcomeFor("forbid")).toBe("refuse");
+  });
+});
