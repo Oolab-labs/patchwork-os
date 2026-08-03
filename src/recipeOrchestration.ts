@@ -48,6 +48,7 @@ import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./workers/outcomeStore.js";
 import { computePendingConfirmations } from "./workers/runWorkerShadow.js";
+import { gateOutcomeFor } from "./workers/workerGate.js";
 import {
   lintWorkerContent,
   listWorkers,
@@ -217,12 +218,20 @@ export async function buildWorkerAutonomyGate(
       } catch {
         /* never block the gate on a logging failure */
       }
+      // Route on the decision explicitly rather than `allow ? flow : queue`.
+      // The else-form is correct for exactly two actions and becomes a hole the
+      // moment there is a third: `forbid` (ADR-0017) would fall into it and be
+      // offered to a human as approvable. `gateOutcomeFor` refuses by default.
+      const outcome = gateOutcomeFor(decision.action);
       // allow → defer to the tier gate so we never DROP tier-policy protection
       // (floor composition). When no tier fn is injected (approvalGate off),
       // a worker `allow` means flow.
-      if (decision.action === "allow") {
+      if (outcome === "flow") {
         return tierApprovalFn ? tierApprovalFn(input) : true;
       }
+      // Unknown action → refuse without asking anyone. No human is recruited
+      // into approving something this build does not understand.
+      if (outcome === "refuse") return false;
       // gate → queue for human approval; fail-closed on reject / expire / cancel
       const { promise } = queue.request(
         {

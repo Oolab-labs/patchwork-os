@@ -378,10 +378,39 @@ export class WorkerGateDecisionLog {
  * because today the only way to read a decision is to know the JSONL schema
  * and grep the file by hand.
  */
+/**
+ * Render a decision's action for a human.
+ *
+ * Exhaustive by construction, with an explicit unknown branch. This log is
+ * append-only and read cross-process ([ADR-0007](../docs/adr/0007-multi-bridge-jsonl-concurrency.md)),
+ * so an older reader can meet a record written by a NEWER bridge — the
+ * hazardous direction, not the reverse.
+ *
+ * The previous form was `action === "allow" ? ALLOWED : GATED`. That never
+ * threw, which is why it looked safe; the actual failure was worse. An
+ * unrecognised action fell into the `else` and was reported as "GATED (asked
+ * for approval)" — telling an operator the action was awaiting a decision when,
+ * for the `forbid` state [ADR-0017](../docs/adr/0017-decision-record-actor-and-forbid.md)
+ * introduces, no approval can ever unlock it. A safety control that misreports
+ * itself in the permissive direction is worse than one that fails loudly.
+ *
+ * Ships ahead of `forbid` itself, per ADR-0017: the fallback must exist in
+ * readers before the first record carrying the new value is ever written.
+ */
+export function describeGateAction(action: string): string {
+  switch (action) {
+    case "allow":
+      return "ALLOWED";
+    case "gate":
+      return "GATED (asked for approval)";
+    default:
+      return `UNRECOGNISED ACTION "${action}" — this record was written by a newer Patchwork; upgrade to read it correctly`;
+  }
+}
+
 export function formatGateDecision(rec: GateDecisionRecord): string {
   const when = new Date(rec.decidedAt).toISOString();
-  const verb =
-    rec.action === "allow" ? "ALLOWED" : "GATED (asked for approval)";
+  const verb = describeGateAction(rec.action);
   const lines: string[] = [
     `${when} — ${rec.workerId} → ${rec.toolName} (${rec.classKey})`,
     `  Result: ${verb}`,
