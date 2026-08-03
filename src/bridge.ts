@@ -29,6 +29,7 @@ import {
   watchFlags,
 } from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
+import { describeRoster, loadRoster } from "./identity/roster.js";
 import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
 import { Logger } from "./logger.js";
@@ -1195,6 +1196,18 @@ export class Bridge {
       dir: patchworkDir,
       logger: this.logger,
     });
+
+    // Workspace membership. Read once at startup — a roster changes at human
+    // speed, and re-reading per request would put a file stat on every call for
+    // a file that is usually absent.
+    //
+    // Deliberately uses the identity module's own path resolution rather than
+    // `patchworkDir` above: `defaultRosterPath()` honours PATCHWORK_HOME, which
+    // most of this file's ~/.patchwork paths do not. That inconsistency
+    // predates this change and is not resolved here — but a roster ignoring the
+    // documented override would be a new instance of it.
+    this.server.roster = loadRoster();
+    this.logger.info(`[patchwork] ${describeRoster(this.server.roster)}`);
 
     // 2. Initialize Claude driver and orchestrator (if configured)
     if (this.config.driver !== "none") {
