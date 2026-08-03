@@ -37,8 +37,9 @@
  * that never happened.
  */
 
+import { classifyActionClass, knownActionTools } from "./actionClass.js";
 import type { ForbidRule } from "./forbidPolicy.js";
-import type { WorkerManifest } from "./worker.js";
+import { ownsAction, type WorkerManifest } from "./worker.js";
 import { decideWorkerAction, gateOutcomeFor } from "./workerGate.js";
 import type { WorkerLevelStore } from "./workerLevelStore.js";
 
@@ -130,4 +131,36 @@ export function previewActions(
 /** Total candidates evaluated — for a "N actions considered" caption. */
 export function boundarySize(b: ActionBoundary): number {
   return b.mayDoNow.length + b.needsApproval.length + b.notPermitted.length;
+}
+
+/**
+ * The default candidate set for a worker: every action-class tool it owns.
+ *
+ * A boundary screen needs something to evaluate. Making the caller always
+ * supply that list would mean the generic product has no default view, and the
+ * only way to see a worker's boundary would be to hand-write its actions —
+ * which is fine for a scripted walkthrough and useless for an operator asking
+ * "what can this thing actually do?".
+ *
+ * So the default is derived from the worker's own manifest: the tools the
+ * classifier knows (`knownActionTools`), filtered to the classes this worker
+ * `owns`. That is the honest answer to the question, because a worker's `owns`
+ * IS the declaration of what it is for.
+ *
+ * Deliberately NOT the whole tool registry. Showing every tool in the product
+ * would bury the handful that matter under a hundred rows the worker will never
+ * touch, and every one of them would land in "needs approval" — a screen that
+ * is technically true and tells an operator nothing.
+ *
+ * Callers with a specific set in mind (a case, a scripted scenario) pass their
+ * own candidates to `previewActions` instead. This is the default, not the
+ * only, list.
+ */
+export function defaultCandidatesFor(
+  worker: WorkerManifest,
+): CandidateAction[] {
+  return knownActionTools()
+    .filter((toolName) => ownsAction(worker, classifyActionClass(toolName)))
+    .sort()
+    .map((toolName) => ({ toolName }));
 }
