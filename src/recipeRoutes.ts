@@ -703,6 +703,15 @@ export interface RecipeRouteDeps {
         limit?: number;
       }) => import("./workerGateDecisionLog.js").GateDecisionRecord[])
     | null;
+  /** Resolves the control boundary for whichever worker owns a recipe. Backs
+   *  GET /workers/boundary. Read-only — no approval enqueued, nothing
+   *  recorded. Null when no worker owns the recipe (the honest "no boundary
+   *  to show" answer, distinct from an empty one). */
+  boundaryForRecipeFn:
+    | ((
+        recipeName: string,
+      ) => import("./workers/boundaryPreview.js").WorkerBoundary | null)
+    | null;
   /** Record a Decision Record trace over HTTP. Backs POST /traces/decision —
    *  the HTTP twin of the `ctxSaveTrace` MCP tool, same `DecisionTraceLog`
    *  writer. Throws on invalid input; route maps that to 400. */
@@ -1038,6 +1047,29 @@ export function tryHandleRecipeRoute(
         }) ?? [];
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ decisions }));
+    } catch (err) {
+      respond500(res, err);
+    }
+    return true;
+  }
+
+  // GET /workers/boundary?recipe=<name> — the control boundary for whichever
+  // worker owns `recipe`. Thin wrapper over boundaryForRecipe: read-only,
+  // takes no candidates of its own (defaultCandidatesFor decides those).
+  // Backs the dashboard ControlBoundary component.
+  if (parsedUrl.pathname === "/workers/boundary" && req.method === "GET") {
+    try {
+      const recipe = parsedUrl.searchParams.get("recipe");
+      if (!recipe) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({ ok: false, error: "recipe query param required" }),
+        );
+        return true;
+      }
+      const boundary = deps.boundaryForRecipeFn?.(recipe) ?? null;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ boundary }));
     } catch (err) {
       respond500(res, err);
     }

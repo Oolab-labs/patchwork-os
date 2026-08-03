@@ -46,6 +46,7 @@ import {
 } from "./recipesHttp.js";
 import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
+import { boundaryForRecipe } from "./workers/boundaryPreview.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./workers/outcomeStore.js";
 import { computePendingConfirmations } from "./workers/runWorkerShadow.js";
 import { gateOutcomeFor } from "./workers/workerGate.js";
@@ -623,6 +624,11 @@ export class RecipeOrchestration {
         ...(opts?.limit !== undefined && { limit: opts.limit }),
       });
     };
+
+    // Read-only control boundary for whichever worker owns a recipe. Backs
+    // GET /workers/boundary and the dashboard ControlBoundary component.
+    server.boundaryForRecipeFn = (recipeName: string) =>
+      boundaryForRecipe(recipeName);
 
     // Operator outcome dispositions (~/.patchwork/outcome-log.jsonl). Backs
     // GET/POST /outcomes + the dashboard confirm/reject panel — the HTTP twin

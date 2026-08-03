@@ -221,3 +221,72 @@ describe("GET /gate/decisions — Decision Record query route", () => {
     expect(JSON.parse(body)).toEqual({ decisions: [] });
   });
 });
+
+describe("GET /workers/boundary — control boundary route", () => {
+  it("forwards the recipe query param to boundaryForRecipeFn", async () => {
+    let received: unknown;
+    const deps = makeDeps({
+      boundaryForRecipeFn: (recipeName) => {
+        received = recipeName;
+        return {
+          workerId: "w1",
+          workerName: "release-notes",
+          recipeName,
+          boundary: { mayDoNow: [], needsApproval: [], notPermitted: [] },
+          enforced: true,
+        };
+      },
+    });
+    const req = makeReq("GET", "/workers/boundary?recipe=release-notes");
+    const { res, done } = makeRes();
+
+    const handled = tryHandleRecipeRoute(
+      req,
+      res,
+      new URL("http://x/workers/boundary?recipe=release-notes"),
+      deps,
+    );
+
+    expect(handled).toBe(true);
+    const { status, body } = await done;
+    expect(status).toBe(200);
+    expect(received).toBe("release-notes");
+    expect(JSON.parse(body)).toEqual({
+      boundary: {
+        workerId: "w1",
+        workerName: "release-notes",
+        recipeName: "release-notes",
+        boundary: { mayDoNow: [], needsApproval: [], notPermitted: [] },
+        enforced: true,
+      },
+    });
+  });
+
+  it("returns null boundary when boundaryForRecipeFn is null", async () => {
+    const deps = makeDeps({ boundaryForRecipeFn: null });
+    const req = makeReq("GET", "/workers/boundary?recipe=release-notes");
+    const { res, done } = makeRes();
+
+    tryHandleRecipeRoute(
+      req,
+      res,
+      new URL("http://x/workers/boundary?recipe=release-notes"),
+      deps,
+    );
+
+    const { status, body } = await done;
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({ boundary: null });
+  });
+
+  it("400s when the recipe query param is missing", async () => {
+    const deps = makeDeps({ boundaryForRecipeFn: null });
+    const req = makeReq("GET", "/workers/boundary");
+    const { res, done } = makeRes();
+
+    tryHandleRecipeRoute(req, res, new URL("http://x/workers/boundary"), deps);
+
+    const { status } = await done;
+    expect(status).toBe(400);
+  });
+});

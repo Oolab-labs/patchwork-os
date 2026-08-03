@@ -413,6 +413,14 @@ export class Server extends EventEmitter<ServerEvents> {
         limit?: number;
       }) => import("./workerGateDecisionLog.js").GateDecisionRecord[])
     | null = null;
+  /** Patchwork: resolves the control boundary for whichever worker owns a
+   *  recipe. Backs GET /workers/boundary and the dashboard ControlBoundary
+   *  component. Null when no worker owns the recipe. */
+  public boundaryForRecipeFn:
+    | ((
+        recipeName: string,
+      ) => import("./workers/boundaryPreview.js").WorkerBoundary | null)
+    | null = null;
   /** Patchwork: record a Decision Record trace over HTTP. Backs
    *  POST /traces/decision — the HTTP twin of the `ctxSaveTrace` MCP tool,
    *  wired directly to `DecisionTraceLog.record()` so both paths persist
@@ -1788,6 +1796,7 @@ export class Server extends EventEmitter<ServerEvents> {
           simulateFn: this.simulateFn,
           workerShadowFn: this.workerShadowFn,
           gateDecisionsFn: this.gateDecisionsFn,
+          boundaryForRecipeFn: this.boundaryForRecipeFn,
           saveDecisionTraceFn: this.saveDecisionTraceFn,
           outcomeStoreFn: this.outcomeStoreFn,
           pendingConfirmationsFn: this.pendingConfirmationsFn,
