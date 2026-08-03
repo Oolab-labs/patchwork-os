@@ -7,6 +7,7 @@ import {
   decideWorkerAction,
   disallowedToolsForAgentStep,
   flowsUngated,
+  gateOutcomeFor,
   mergeAgentDisallowedTools,
 } from "../workerGate.js";
 import { WorkerLevelStore } from "../workerLevelStore.js";
@@ -343,5 +344,35 @@ describe("mergeAgentDisallowedTools", () => {
       "b",
     ]);
     expect(mergeAgentDisallowedTools(["b", "a"], [])).toEqual(["b", "a"]);
+  });
+});
+
+// ── gateOutcomeFor — the third branch, added before there is a third action ──
+
+describe("gateOutcomeFor (ADR-0017 forward compatibility)", () => {
+  it("allow flows and gate queues", () => {
+    expect(gateOutcomeFor("allow")).toBe("flow");
+    expect(gateOutcomeFor("gate")).toBe("queue");
+  });
+
+  it("refuses an unknown action instead of queueing it for a human", () => {
+    // The hole this closes: `allow ? flow : queue` would offer a `forbid`
+    // decision to a human as approvable, and a human approving it would let
+    // through an action no approval may unlock.
+    expect(gateOutcomeFor("forbid")).toBe("refuse");
+  });
+
+  it("refuses anything it does not recognise, including junk", () => {
+    for (const junk of ["", "ALLOW", "deny", "queue", "unknown", "0"]) {
+      expect(gateOutcomeFor(junk)).toBe("refuse");
+    }
+  });
+
+  it("never returns queue for anything other than the literal 'gate'", () => {
+    // Pins the direction of the default. If someone later flips it to `queue`,
+    // this fails loudly rather than silently widening the gate.
+    for (const a of ["allow", "forbid", "nonsense", ""]) {
+      expect(gateOutcomeFor(a)).not.toBe("queue");
+    }
   });
 });
