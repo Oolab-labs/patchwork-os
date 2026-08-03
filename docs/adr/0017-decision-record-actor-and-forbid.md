@@ -148,9 +148,16 @@ reader-side fallback ships before the first `forbid` record — which it now has
 - Segregation of duties becomes expressible. It is not delivered by this ADR —
   this only makes the record able to hold the fact.
 - This does **not** make approvals durable. `ApprovalQueue` holds its entries in
-  an in-memory `Map` with a five-minute TTL, so an approver identity captured
-  there does not survive a restart. Durable approval storage is a separate
-  prerequisite, and until it lands the actor field is only as persistent as the
-  gate-decision log that carries it.
+  an in-memory `Map`, so an approver identity captured there does not survive a
+  restart. Durable approval storage is a separate prerequisite, and until it
+  lands the actor field is only as persistent as the gate-decision log that
+  carries it.
+
+  *(Corrected 2026-08-03: this bullet originally said "with a five-minute TTL".
+  That was already stale when written — #1214 replaced the flat 5-minute expiry
+  with risk-tiered, live-configurable timeouts, defaulting to low 5 min /
+  medium 1 h / high 4 h. The durability gap is real; the TTL characterisation
+  was not. The claim came from a planning note rather than from the code, which
+  is the mistake worth remembering.)*
 - `"worker-ramp-v1"` becomes the floor for any future gate-policy change; the
   next one bumps to `v2` rather than adding a second version field.
