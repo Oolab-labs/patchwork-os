@@ -4,6 +4,8 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { ApprovalPersistence } from "./approvalPersistence.js";
+import type { Logger } from "./logger.js";
 import type { RiskTier } from "./riskTier.js";
 
 /**
@@ -75,6 +77,16 @@ export interface PendingApproval {
    */
   runSeq?: number;
   recipeName?: string;
+  /**
+   * `false` for an entry restored from the durable log on restart (ADR-0018):
+   * no caller is waiting on it, so an approve/reject records a decision but
+   * performs nothing — the originating run must be re-run to act on it. Every
+   * entry created via a live `request()` call is `owned: true`. This must be
+   * visible everywhere a human can see the queue (dashboard, phone, CLI) —
+   * "approved" on an unowned entry means "recorded, not performed", and
+   * hiding that distinction would misrepresent whether the action happened.
+   */
+  owned: boolean;
 }
 
 /**
@@ -220,6 +232,8 @@ export class ApprovalQueue {
    */
   private ttlByTier: Record<RiskTier, number>;
   private readonly listeners = new Set<() => void>();
+  /** `undefined` when the queue was constructed with no `persistDir` — no durability, matches pre-ADR-0018 behaviour. */
+  private readonly persistence?: ApprovalPersistence;
 
   static readonly DEFAULT_TTL_MS: Record<RiskTier, number> = {
     low: 5 * 60_000,
@@ -228,7 +242,17 @@ export class ApprovalQueue {
   };
 
   constructor(
-    opts: { ttlMs?: number | Partial<Record<RiskTier, number>> } = {},
+    opts: {
+      ttlMs?: number | Partial<Record<RiskTier, number>>;
+      /**
+       * Directory for the durable event log (ADR-0018). Omitted ⇒ no
+       * persistence, no restore — the pre-durability in-memory-only
+       * behaviour (used by every existing test that doesn't care about
+       * restart survival).
+       */
+      persistDir?: string;
+      logger?: Logger;
+    } = {},
   ) {
     if (typeof opts.ttlMs === "number") {
       // Back-compat: a bare number applies uniformly to every tier, matching
@@ -240,6 +264,79 @@ export class ApprovalQueue {
       };
     } else {
       this.ttlByTier = { ...ApprovalQueue.DEFAULT_TTL_MS, ...opts.ttlMs };
+    }
+    if (opts.persistDir) {
+      this.persistence = new ApprovalPersistence({
+        dir: opts.persistDir,
+        logger: opts.logger,
+      });
+      this.restore();
+    }
+  }
+
+  /**
+   * Replay the durable log and restore every request that never got a
+   * matching decision as `pending, unowned` (ADR-0018 point 3). An entry
+   * whose `expiresAt` already passed while the process was down resolves as
+   * `expired` immediately — it never re-enters the live queue — exactly as
+   * it would have in-process, just late. A still-live one gets a fresh
+   * timer for its REMAINING time and sits in `entries` with a no-op
+   * `resolve` (nothing is awaiting it — `resolve`/`pendingPromises` exist
+   * only so `approve()`/`reject()`/`cancel()` can operate on it identically
+   * to a live entry; see point 5 — restored entries never auto-resolve to
+   * anything but their original, honestly-computed expiry).
+   */
+  private restore(): void {
+    const unresolved = this.persistence?.loadUnresolvedRequests() ?? [];
+    const now = Date.now();
+    for (const req of unresolved) {
+      if (req.expiresAt !== null && req.expiresAt <= now) {
+        // Already past its deadline while nobody could have decided it —
+        // resolve as expired now, matching what would have happened
+        // in-process, just late. Not added to `entries`: there is nothing
+        // live to show or act on.
+        this.persistence?.recordDecision(req.callId, "expired", now);
+        continue;
+      }
+      const inflightKey = createHash("sha256")
+        .update(req.sessionId ?? "")
+        .update("\0")
+        .update(req.toolName)
+        .update("\0")
+        .update(canonicalJson(req.params))
+        .digest("hex");
+      const timer =
+        req.expiresAt !== null
+          ? setTimeout(
+              () => {
+                this.resolveEntry(req.callId, "expired");
+              },
+              Math.max(0, req.expiresAt - now),
+            )
+          : null;
+      if (timer && typeof timer === "object" && "unref" in timer) timer.unref();
+      const entry: Entry = {
+        callId: req.callId,
+        toolName: req.toolName,
+        params: req.params,
+        tier: req.tier as RiskTier,
+        requestedAt: req.requestedAt,
+        expiresAt: req.expiresAt,
+        ...(req.sessionId !== undefined && { sessionId: req.sessionId }),
+        ...(req.summary !== undefined && { summary: req.summary }),
+        ...(req.recipeName !== undefined && { recipeName: req.recipeName }),
+        ...(req.runSeq !== undefined && { runSeq: req.runSeq }),
+        owned: false,
+        resolve: () => {
+          /* nobody is awaiting a restored entry — see class doc comment */
+        },
+        timer,
+        inflightKey,
+        pendingPromises: [],
+        tokenFailures: 0,
+      };
+      this.entries.set(req.callId, entry);
+      this.inflight.set(inflightKey, req.callId);
     }
   }
 
@@ -279,7 +376,10 @@ export class ApprovalQueue {
   }
 
   request(
-    input: Omit<PendingApproval, "callId" | "requestedAt" | "expiresAt">,
+    input: Omit<
+      PendingApproval,
+      "callId" | "requestedAt" | "expiresAt" | "owned"
+    >,
     opts: { withToken?: boolean; signal?: AbortSignal } = {},
   ): {
     callId: string;
@@ -349,7 +449,7 @@ export class ApprovalQueue {
         : null;
     if (timer && typeof timer === "object" && "unref" in timer) timer.unref();
 
-    this.entries.set(callId, {
+    const entry: Entry = {
       callId,
       requestedAt,
       expiresAt: ttl > 0 ? requestedAt + ttl : null,
@@ -359,9 +459,12 @@ export class ApprovalQueue {
       inflightKey,
       pendingPromises: [],
       tokenFailures: 0,
+      owned: true,
       ...input,
-    });
+    };
+    this.entries.set(callId, entry);
     this.inflight.set(inflightKey, callId);
+    this.persistence?.recordRequest(entry);
     this.notify();
 
     // Wire the originating caller's AbortSignal — when fired, the
@@ -494,6 +597,7 @@ export class ApprovalQueue {
         summary: e.summary,
         riskSignals: e.riskSignals,
         personalSignals: e.personalSignals,
+        owned: e.owned,
         // approvalToken intentionally omitted from list — never expose to untrusted callers
       });
     }
@@ -519,6 +623,7 @@ export class ApprovalQueue {
       summary: e.summary,
       riskSignals: e.riskSignals,
       personalSignals: e.personalSignals,
+      owned: e.owned,
     };
   }
 
@@ -550,8 +655,10 @@ export class ApprovalQueue {
     // concurrent counter-decision (dashboard denies while phone approves
     // in the same window) can be told "already decided as X" instead of
     // an indistinguishable 404 "unknown callId". Audit 2026-05-17.
-    this.recentlyDecided.set(callId, { decision, at: Date.now() });
+    const decidedAt = Date.now();
+    this.recentlyDecided.set(callId, { decision, at: decidedAt });
     this.pruneRecentlyDecided();
+    this.persistence?.recordDecision(callId, decision, decidedAt);
     entry.resolve(decision);
     // Wake up any duplicate callers who joined this entry via dedup.
     for (const r of entry.pendingPromises) r(decision);
@@ -602,6 +709,8 @@ let singleton: ApprovalQueue | undefined;
  */
 export function getApprovalQueue(opts?: {
   ttlMs?: Partial<Record<RiskTier, number>>;
+  persistDir?: string;
+  logger?: Logger;
 }): ApprovalQueue {
   if (!singleton) {
     singleton = new ApprovalQueue(opts);
