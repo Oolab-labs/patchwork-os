@@ -127,6 +127,29 @@ export function loadRoster(path = defaultRosterPath()): Roster {
   return { members, implicit: false, dropped };
 }
 
+/**
+ * One-line summary of a loaded roster, for the startup log.
+ *
+ * The `dropped` indices exist so an operator can be told which entries were
+ * rejected. Without something surfacing them, a typo silently removes a member
+ * — they simply never appear, with no error anywhere — which is the worst
+ * possible failure for a file that decides who may approve things.
+ */
+export function describeRoster(roster: Roster): string {
+  if (roster.implicit) {
+    return "no members.json — running as a single implicit owner";
+  }
+  const humans = roster.members.filter((m) => m.kind === "human").length;
+  const workers = roster.members.length - humans;
+  const parts = [`${humans} ${humans === 1 ? "person" : "people"}`];
+  if (workers > 0) parts.push(`${workers} worker${workers === 1 ? "" : "s"}`);
+  const base = `roster loaded: ${parts.join(", ")}`;
+  if (roster.dropped.length === 0) return base;
+  return `${base} — ${roster.dropped.length} entr${
+    roster.dropped.length === 1 ? "y" : "ies"
+  } REJECTED at position ${roster.dropped.join(", ")} (bad id, unknown role, or duplicate id)`;
+}
+
 /** Look a member up by id. */
 export function findMember(roster: Roster, id: string): Member | null {
   return roster.members.find((m) => m.id === id) ?? null;

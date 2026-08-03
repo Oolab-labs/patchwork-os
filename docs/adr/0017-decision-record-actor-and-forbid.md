@@ -102,6 +102,41 @@ record and forces exactly the backfill above.
 and rotates, so a single file can legitimately contain both shapes. Per-record
 versioning is the only thing that survives rotation.
 
+## Implementation note — 2026-08-03: the two halves version differently
+
+Implementing the actor field showed the "one migration, one version bump"
+decision above to be half right, and the ADR is corrected here rather than
+quietly diverged from.
+
+The hazard analysis in **Context** is about adding a *value to an existing
+enum*: a reader switching exhaustively on `"allow" | "gate"` falls through to
+its default. That is real, and it is why `forbid` needs a declared version to
+branch on.
+
+An **optional new field is not that**. `actor` is genuinely additive in the
+sense the log file header claims — an older reader parsing a record that
+carries it simply ignores the key. Nothing breaks, nothing is misreported, and
+no reader needs to know the version to read it correctly.
+
+Bumping `gatePolicyVersion` for the actor field would also be a *false signal*.
+Its documented meaning is the policy that produced the row — thresholds and the
+reversibility→level mapping — so that a decision can be replayed against the
+rules that applied. Adding a field changes no threshold. A replay tool reading
+`worker-ramp-v1` would correctly infer that the policy changed, and be wrong.
+(Verified at the time of writing: nothing branches on `gatePolicyVersion`; the
+only consumer renders it in `formatGateDecision`. So the false signal is
+currently harmless — which is an argument for not creating it, not for
+shrugging.)
+
+**Therefore:** the actor field ships at `worker-ramp-v0`, unversioned and
+additive. The bump to `worker-ramp-v1` lands with `forbid`, which is both an
+enum widening *and* a genuine policy change (a new terminal state the gate can
+reach). One bump, attached to the change that actually earns it.
+
+Everything else above stands: no backfill, absence stays meaningful, and the
+reader-side fallback ships before the first `forbid` record — which it now has
+(`describeGateAction`, `gateOutcomeFor`).
+
 ## Consequences
 
 - Old records stay readable by new code unconditionally. New records are

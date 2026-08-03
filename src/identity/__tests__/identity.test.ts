@@ -20,6 +20,7 @@ import {
 import { capabilitiesFor, isRole, ROLES, roleGrants } from "../roles.js";
 import {
   defaultRosterPath,
+  describeRoster,
   findMember,
   IMPLICIT_OWNER_ID,
   implicitOwner,
@@ -398,5 +399,49 @@ describe("findMember", () => {
     const r = { members: [member()], implicit: false, dropped: [] };
     expect(findMember(r, "anna")?.id).toBe("anna");
     expect(findMember(r, "nobody")).toBeNull();
+  });
+});
+
+describe("describeRoster", () => {
+  it("says so plainly when there is no roster file", () => {
+    expect(
+      describeRoster({
+        members: [implicitOwner()],
+        implicit: true,
+        dropped: [],
+      }),
+    ).toContain("single implicit owner");
+  });
+
+  it("counts people and workers separately", () => {
+    const r = {
+      members: [
+        member({ id: "a" }),
+        member({ id: "b" }),
+        member({
+          id: "bot",
+          kind: "worker" as const,
+          roles: ["worker" as const],
+        }),
+      ],
+      implicit: false,
+      dropped: [],
+    };
+    expect(describeRoster(r)).toBe("roster loaded: 2 people, 1 worker");
+  });
+
+  it("omits workers when there are none, and singularises", () => {
+    const r = { members: [member()], implicit: false, dropped: [] };
+    expect(describeRoster(r)).toBe("roster loaded: 1 person");
+  });
+
+  it("shouts about rejected entries and names their positions", () => {
+    // Without this, a typo silently removes a member — they never appear and
+    // nothing errors, which is the worst failure for a file deciding who may
+    // approve things.
+    const r = { members: [member()], implicit: false, dropped: [1, 3] };
+    const out = describeRoster(r);
+    expect(out).toContain("REJECTED");
+    expect(out).toContain("1, 3");
   });
 });

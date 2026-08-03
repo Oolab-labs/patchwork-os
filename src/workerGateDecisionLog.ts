@@ -43,6 +43,26 @@ import type { Reversibility } from "./workers/actionClass.js";
 
 export type GateAction = "allow" | "gate";
 
+/**
+ * Who allowed (or is accountable for) a decision — a SNAPSHOT, not a reference.
+ *
+ * Denormalised deliberately. The roster changes: people are renamed, change
+ * role, and are deactivated. A record that stored only an id and resolved it at
+ * read time would silently rewrite history — "approved by Anna Reyes (Auditor)"
+ * for a decision she made as an Approver two years earlier. An audit record has
+ * to stay true to the moment it describes, so it carries the name as it was.
+ *
+ * `id` is still the stable join key for "everything this member decided".
+ */
+export interface GateDecisionActor {
+  /** Stable member id from the workspace roster. */
+  id: string;
+  /** Human or worker at the time of the decision. */
+  kind: "human" | "worker";
+  /** Display name as it was when the decision was made. */
+  displayName?: string;
+}
+
 export interface GateDecisionRecord {
   /** Monotonic sequence id within the process — stable for pagination. */
   seq: number;
@@ -72,6 +92,18 @@ export interface GateDecisionRecord {
   contextRiskReasons?: string[];
   /** Human-readable rationale for the action. */
   reason: string;
+  /**
+   * Who this decision is attributed to (ADR-0017). Optional, and absent on
+   * every record written before actors existed — that absence is meaningful
+   * ("nobody recorded this") and must stay distinguishable from a synthesized
+   * "unknown", so it is never backfilled.
+   *
+   * For an autonomous allow this is the worker itself. For a gated decision it
+   * becomes the approving human once the approval path carries an identity —
+   * which it cannot yet, because `ApprovalQueue` holds its entries in memory
+   * with a 5-minute TTL.
+   */
+  actor?: GateDecisionActor;
   /** The gate-policy version (thresholds/constants) that produced this row.
    *  Replay is not reproducible without knowing which policy decided. */
   gatePolicyVersion: string;
@@ -155,6 +187,27 @@ export class WorkerGateDecisionLog {
       .filter((r) => r.length > 0)
       .slice(0, MAX_CONTEXT_REASONS);
 
+    // An actor with a blank id would attribute the decision to nobody while
+    // LOOKING attributed, which is worse than leaving it absent. Drop it.
+    const actor =
+      input.actor && String(input.actor.id).trim() !== ""
+        ? {
+            id: String(input.actor.id).trim(),
+            kind:
+              input.actor.kind === "worker"
+                ? ("worker" as const)
+                : ("human" as const),
+            ...(input.actor.displayName &&
+            String(input.actor.displayName).trim() !== ""
+              ? {
+                  displayName: String(input.actor.displayName)
+                    .trim()
+                    .slice(0, 200),
+                }
+              : {}),
+          }
+        : undefined;
+
     this.seq += 1;
     const rec: GateDecisionRecord = {
       seq: this.seq,
@@ -178,6 +231,7 @@ export class WorkerGateDecisionLog {
         contextRiskScore: input.contextRiskScore,
       }),
       ...(reasons.length > 0 && { contextRiskReasons: reasons }),
+      ...(actor && { actor }),
       reason: input.reason.slice(0, MAX_REASON_LEN),
       gatePolicyVersion: input.gatePolicyVersion,
     };
@@ -426,6 +480,16 @@ export function formatGateDecision(rec: GateDecisionRecord): string {
     if (rec.contextRiskReasons?.length) {
       lines.push(`    Reasons: ${rec.contextRiskReasons.join(", ")}`);
     }
+  }
+  if (rec.actor) {
+    const who = rec.actor.displayName
+      ? `${rec.actor.displayName} (${rec.actor.id})`
+      : rec.actor.id;
+    lines.push(`  Attributed to: ${who} — ${rec.actor.kind}`);
+  } else {
+    // Say it out loud. A record that simply omits the line reads as though
+    // attribution was not applicable, when in fact nobody recorded it.
+    lines.push("  Attributed to: not recorded (pre-dates actor attribution)");
   }
   lines.push(
     `  Effective level used for this decision: L${rec.effectiveLevel}`,
