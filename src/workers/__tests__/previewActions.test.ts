@@ -7,13 +7,15 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { classifyActionClass, knownActionTools } from "../actionClass.js";
 import type { GraduationConfig } from "../graduation.js";
 import {
   boundarySize,
   type CandidateAction,
+  defaultCandidatesFor,
   previewActions,
 } from "../previewActions.js";
-import { parseWorker } from "../worker.js";
+import { ownsAction, parseWorker } from "../worker.js";
 import { decideWorkerAction, gateOutcomeFor } from "../workerGate.js";
 import { WorkerLevelStore } from "../workerLevelStore.js";
 
@@ -145,5 +147,63 @@ describe("previewActions", () => {
         expect(expectedColumn.map((a) => a.toolName)).toContain(c.toolName);
       }
     }
+  });
+});
+
+describe("defaultCandidatesFor", () => {
+  it("returns the tools the worker owns, and nothing else", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    const cands = defaultCandidatesFor(w);
+    expect(cands.length).toBeGreaterThan(0);
+    for (const c of cands) {
+      expect(ownsAction(w, classifyActionClass(c.toolName))).toBe(true);
+    }
+  });
+
+  it("does not return the whole tool registry", () => {
+    // A screen listing every tool in the product buries the handful that matter
+    // and puts all of them in "needs approval" — technically true, useless.
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    expect(defaultCandidatesFor(w).length).toBeLessThan(
+      knownActionTools().length,
+    );
+  });
+
+  it("widens as the worker's ownership widens", () => {
+    const narrow = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    const wide = parseWorker({
+      id: "w",
+      name: "W",
+      owns: ["fs-write", "vcs-push"],
+    });
+    expect(defaultCandidatesFor(wide).length).toBeGreaterThan(
+      defaultCandidatesFor(narrow).length,
+    );
+  });
+
+  it("returns nothing for a worker that owns nothing", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: [] });
+    expect(defaultCandidatesFor(w)).toEqual([]);
+  });
+
+  it("is stable in order, so the screen does not reshuffle between loads", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    expect(defaultCandidatesFor(w)).toEqual(defaultCandidatesFor(w));
+  });
+
+  it("feeds previewActions without any external input", () => {
+    // The point of the default: a boundary is viewable for any worker with no
+    // caller-supplied list at all.
+    const w = parseWorker({
+      id: "w",
+      name: "W",
+      owns: ["fs-write", "vcs-push"],
+    });
+    const b = previewActions(
+      w,
+      defaultCandidatesFor(w),
+      new WorkerLevelStore(),
+    );
+    expect(boundarySize(b)).toBeGreaterThan(0);
   });
 });
