@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   diffGateDecisions,
   formatGateDecision,
   formatGateDecisionDiff,
   formatGateDecisionHistory,
   type GateDecisionRecord,
+  WorkerGateDecisionLog,
 } from "../workerGateDecisionLog.js";
 
 function rec(over: Partial<GateDecisionRecord> = {}): GateDecisionRecord {
@@ -203,5 +207,95 @@ describe("formatGateDecisionDiff", () => {
     const b = rec({ seq: 2 });
     const out = formatGateDecisionDiff(b, a);
     expect(out).toContain("No change — identical decision.");
+  });
+});
+
+// ── actor attribution (ADR-0017) ────────────────────────────────────────────
+
+describe("formatGateDecision — actor", () => {
+  it("names the actor when one is recorded", () => {
+    const out = formatGateDecision(
+      rec({ actor: { id: "anna", kind: "human", displayName: "Anna Reyes" } }),
+    );
+    expect(out).toContain("Attributed to: Anna Reyes (anna) — human");
+  });
+
+  it("falls back to the id when there is no display name", () => {
+    const out = formatGateDecision(
+      rec({ actor: { id: "anna", kind: "human" } }),
+    );
+    expect(out).toContain("Attributed to: anna — human");
+  });
+
+  it("says so explicitly when nobody was recorded", () => {
+    // Omitting the line entirely would read as "attribution not applicable".
+    // The honest signal is that nobody recorded it — which must stay
+    // distinguishable from a synthesized "unknown" (ADR-0017: no backfill).
+    expect(formatGateDecision(rec())).toContain("not recorded");
+  });
+});
+
+// ── record() actor validation ───────────────────────────────────────────────
+
+describe("WorkerGateDecisionLog.record — actor", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "gate-actor-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const base = () => ({
+    recipeName: "triage",
+    workerId: "w1",
+    toolName: "githubCreateIssue",
+    action: "gate" as const,
+    classKey: "issue:compensable:high",
+    domain: "issue",
+    owned: true,
+    blastTier: "high",
+    reversibility: "compensable" as const,
+    earnedLevel: 0,
+    autonomyCeiling: 4 as const,
+    effectiveLevel: 0,
+    reason: "gated",
+    gatePolicyVersion: "worker-ramp-v0",
+  });
+
+  it("stores an actor and round-trips it through the log", () => {
+    const log = new WorkerGateDecisionLog({ dir });
+    log.record({
+      ...base(),
+      actor: { id: "anna", kind: "human", displayName: "Anna Reyes" },
+    });
+    expect(log.query()[0]?.actor).toEqual({
+      id: "anna",
+      kind: "human",
+      displayName: "Anna Reyes",
+    });
+  });
+
+  it("omits the actor entirely when none is supplied", () => {
+    const log = new WorkerGateDecisionLog({ dir });
+    log.record(base());
+    expect(log.query()[0]).not.toHaveProperty("actor");
+  });
+
+  it("drops an actor with a blank id rather than storing a nameless one", () => {
+    // A blank id attributes the decision to nobody while LOOKING attributed,
+    // which is worse than leaving it absent.
+    const log = new WorkerGateDecisionLog({ dir });
+    log.record({ ...base(), actor: { id: "   ", kind: "human" } });
+    expect(log.query()[0]).not.toHaveProperty("actor");
+  });
+
+  it("defaults an unrecognised kind to human rather than inventing a third", () => {
+    const log = new WorkerGateDecisionLog({ dir });
+    log.record({
+      ...base(),
+      actor: { id: "x", kind: "robot" as unknown as "human" },
+    });
+    expect(log.query()[0]?.actor?.kind).toBe("human");
   });
 });
