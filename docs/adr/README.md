@@ -20,3 +20,4 @@ This directory contains Architecture Decision Records (ADRs) for claude-ide-brid
 - [ADR-0014: /tasks Pagination over Virtualization](0014-tasks-pagination-over-virtualization.md) — capped row render + "show more" instead of `react-virtual`
 - [ADR-0015: Cost-Aware Routing](0015-cost-aware-routing.md) — price table, `budget.usdMax` enforcement, per-step downshift gearbox
 - [ADR-0016: Approval Hook Fails Closed](0016-approval-hook-fail-closed.md) — `PreToolUse` hook denies on unreachable bridge; `PATCHWORK_APPROVAL_FAIL_OPEN` escape hatch
+- [ADR-0017: Decision Record Actor + `forbid`](0017-decision-record-actor-and-forbid.md) — one wire-format migration adding an actor field and a third terminal gate state; `gatePolicyVersion` → `worker-ramp-v1`
