@@ -355,6 +355,61 @@ value it does not understand to a human for approval.
 
 ---
 
+## 8. The control boundary — asking the gate prospectively (shipped 2026-08-03)
+
+`forbid` gave the gate a third answer. This is the screen that shows all three
+before anything is attempted.
+
+The gate is retrospective by construction: a call arrives, and it allows, gates
+or forbids. That is right for enforcement and wrong for showing somebody the
+boundary, which has to be answerable in advance.
+
+`previewActions` (`src/workers/previewActions.ts`) asks the same question ahead
+of time for a set of candidates and buckets the answers into three columns.
+
+### The property that makes it worth having
+
+It calls `decideWorkerAction` and routes through `gateOutcomeFor` — the exact
+code enforcement uses. `boundaryForRecipe` extends that a level up, resolving
+the worker and trust store via `loadWorkerTrustForRecipe`, the same resolution
+the live gate performs.
+
+Both are the same argument. **A preview with its own logic is worse than no
+preview.** It drifts, and it drifts silently in the permissive direction: a
+screen reading "not permitted" while the gate would in fact allow the action
+tells an operator they are protected when they are not. Trust in this screen is
+the product claim, so every layer of it has to be a *view of* the gate rather
+than a *description of* it. The final test in `previewActions.test.ts` asserts
+that agreement directly, for every candidate under several rule configurations.
+
+### Candidates
+
+`defaultCandidatesFor(worker)` derives the default set from the worker's `owns`,
+because a worker's ownership is its declaration of purpose. Deliberately not the
+whole tool registry: that buries the handful of actions that matter under rows
+the worker will never touch, and lands all of them in "needs approval" — a
+screen that is technically true and tells an operator nothing.
+
+A caller with a specific set in mind supplies its own. The generic derivation is
+in-repo; anything scenario-specific comes from outside it.
+
+### Inertness
+
+Previewing writes nothing. No approval is enqueued — opening a screen must not
+spam a human with requests nobody made — and no decision record is written,
+because a hypothetical is not a decision and recording one would pollute the
+audit trail with things that never happened. Both are pinned by tests.
+
+### Not-enforced is reported, not hidden
+
+When the `worker.autonomy` flag is off, the boundary is still a correct
+statement of policy but nothing enforces it. `boundaryForRecipe` returns
+`enforced: false` rather than refusing to answer: an operator asking what a
+worker may do should get the answer *and* be told it is not live. Hiding it
+leaves them with nothing, which is worse.
+
+---
+
 ## See also
 
 - [docs/runbooks/worker-autonomy-dogfood.md](runbooks/worker-autonomy-dogfood.md) — operator runbook for the live dogfood campaign
