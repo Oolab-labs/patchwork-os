@@ -30,9 +30,10 @@ function pending(over: Partial<PendingApproval> = {}): PendingApproval {
 describe("resolveApprovalLogDir", () => {
   it("honors PATCHWORK_HOME override", () => {
     const prior = process.env.PATCHWORK_HOME;
-    process.env.PATCHWORK_HOME = "/tmp/custom-home";
+    const customHome = path.join(os.tmpdir(), "pw-custom-home");
+    process.env.PATCHWORK_HOME = customHome;
     try {
-      expect(resolveApprovalLogDir()).toBe("/tmp/custom-home");
+      expect(resolveApprovalLogDir()).toBe(customHome);
     } finally {
       if (prior === undefined) delete process.env.PATCHWORK_HOME;
       else process.env.PATCHWORK_HOME = prior;
