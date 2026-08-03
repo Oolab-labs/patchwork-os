@@ -210,6 +210,20 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((name: string, level: string) => { ok: boolean; error?: string })
     | null = null;
   /**
+   * Patchwork: who may act in this workspace. Loaded once at startup by the
+   * bridge from `members.json`; null until then, and on any embedder that
+   * never calls `loadRoster`.
+   *
+   * A workspace with no roster file resolves to a single implicit owner, so
+   * once set this is never "nobody" — it is either the configured membership
+   * or the one-person default matching pre-identity behaviour.
+   *
+   * Nothing consults it for authorisation yet. It exists so the actor on a
+   * decision record has a real member to name (ADR-0017).
+   */
+  public roster: import("./identity/roster.js").Roster | null = null;
+
+  /**
    * Patchwork (#1217): ask the connected MCP client a question inline, via
    * `McpTransport.elicit()`. Set by the bridge to resolve against the most
    * recently connected WebSocket session, and left `null` whenever no such
