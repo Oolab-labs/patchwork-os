@@ -232,7 +232,7 @@ describe("GET /workers/boundary — control boundary route", () => {
           workerId: "w1",
           workerName: "release-notes",
           recipeName,
-          boundary: { allow: [], gate: [], forbid: [] },
+          boundary: { mayDoNow: [], needsApproval: [], notPermitted: [] },
           enforced: true,
         };
       },
@@ -256,7 +256,7 @@ describe("GET /workers/boundary — control boundary route", () => {
         workerId: "w1",
         workerName: "release-notes",
         recipeName: "release-notes",
-        boundary: { allow: [], gate: [], forbid: [] },
+        boundary: { mayDoNow: [], needsApproval: [], notPermitted: [] },
         enforced: true,
       },
     });
