@@ -24,6 +24,7 @@ import {
   riskColor,
   type SimulationReport,
 } from "@/lib/simulation";
+import { BoundaryPanel } from "./_components/BoundaryPanel";
 import { DoctorPanel } from "./_components/DoctorPanel";
 import { SimulatePanel } from "./_components/SimulatePanel";
 import { RailProvider, type RailData } from "./_components/RailContext";
@@ -1213,6 +1214,16 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
               A dry run — shows the steps and any writes it would make, without actually running.
             </div>
             <SimulatePanel recipeName={name} autoRun={autoDiagnose || simulateDeepLink} />
+          </PatchCard>
+          </div>
+
+          <div id="boundary" style={{ marginTop: "var(--s-5)" }}>
+          <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 300ms 200ms ease both", animationFillMode: "both" }}>
+            <SectionHeader>Control boundary</SectionHeader>
+            <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: "0 0 12px" }}>
+              What the worker that owns this recipe may do now, what needs a person, and what no approval unlocks.
+            </div>
+            <BoundaryPanel recipeName={name} />
           </PatchCard>
           </div>
         </div>
