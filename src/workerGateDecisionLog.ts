@@ -106,7 +106,9 @@ export interface GateDecisionRecord {
    * For an autonomous allow this is the worker itself. For a gated decision it
    * becomes the approving human once the approval path carries an identity —
    * which it cannot yet, because `ApprovalQueue` holds its entries in memory
-   * with a 5-minute TTL.
+   * and they do not survive a restart. (Its TTLs are risk-tiered and
+   * configurable since #1214 — low 5 min / medium 1 h / high 4 h — so expiry is
+   * not the blocker; durability is.)
    */
   actor?: GateDecisionActor;
   /** The gate-policy version (thresholds/constants) that produced this row.
