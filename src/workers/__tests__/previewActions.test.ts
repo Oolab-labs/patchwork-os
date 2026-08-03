@@ -8,7 +8,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { GraduationConfig } from "../graduation.js";
-import { boundarySize, previewActions } from "../previewActions.js";
+import {
+  boundarySize,
+  type CandidateAction,
+  previewActions,
+} from "../previewActions.js";
 import { parseWorker } from "../worker.js";
 import { decideWorkerAction, gateOutcomeFor } from "../workerGate.js";
 import { WorkerLevelStore } from "../workerLevelStore.js";
@@ -16,14 +20,12 @@ import { WorkerLevelStore } from "../workerLevelStore.js";
 const CFG: GraduationConfig = {
   dwellMs: 100,
   demoteCooldownMs: 100,
-  minOutcomes: 3,
-  lcb: { 1: 0.5, 2: 0.7, 3: 0.85, 4: 0.93 },
 };
 
 const worker = () =>
   parseWorker({ id: "w", name: "W", owns: ["fs-write", "vcs-push"] });
 
-const CANDIDATES = [
+const CANDIDATES: CandidateAction[] = [
   { toolName: "getGitStatus", label: "Read the repository status" },
   { toolName: "editText", label: "Edit a tracked file" },
   { toolName: "gitPush", label: "Push to the remote" },
