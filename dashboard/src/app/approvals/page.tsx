@@ -62,6 +62,14 @@ interface Pending {
   expiresAt?: number | null;
   riskSignals?: RiskSignal[];
   personalSignals?: PersonalSignal[];
+  /**
+   * `false` = restored from the durable log after a bridge restart, so no
+   * caller is waiting on it (ADR-0018). Approving records the decision but
+   * performs nothing — the originating run must be re-run to act on it.
+   * `undefined` = older payload shape, predating durable approvals, where
+   * every listed entry necessarily had a live caller — treated as owned.
+   */
+  owned?: boolean;
 }
 
 type RuleSource = "managed" | "project-local" | "project" | "user";
@@ -253,8 +261,12 @@ const ApprovalCard = memo(function ApprovalCard({
     // approves was missing — a stray click on a high-tier Bash `rm -rf`
     // approved instantly.
     if (decision === "approve" && p.tier === "high") {
+      // An unowned entry performs nothing, so "this cannot be undone" would
+      // be exactly backwards — the risk is believing the action ran.
       const proceed = window.confirm(
-        `Approve high-risk ${p.toolName}? This cannot be undone.`,
+        unowned
+          ? `Approve high-risk ${p.toolName}? Nothing is waiting on this request, so approving RECORDS the decision but does NOT run the action.`
+          : `Approve high-risk ${p.toolName}? This cannot be undone.`,
       );
       if (!proceed) return;
     }
@@ -274,7 +286,13 @@ const ApprovalCard = memo(function ApprovalCard({
     else setRejecting(true);
     try {
       await onDecide(p.callId, decision, reason);
-      toast.success(decision === "approve" ? "Approved" : "Denied");
+      toast.success(
+        unowned
+          ? `${decision === "approve" ? "Approved" : "Denied"} — recorded only, nothing was waiting to run`
+          : decision === "approve"
+            ? "Approved"
+            : "Denied",
+      );
     } catch (e) {
       toast.error(
         `${decision === "approve" ? "Approve" : "Reject"} failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -302,6 +320,11 @@ const ApprovalCard = memo(function ApprovalCard({
     p.tier === "high" ? "apc-urgent-high" :
     p.tier === "medium" ? "apc-urgent-medium" : "";
 
+  // ADR-0018: an entry restored after a restart has no waiting caller.
+  // Explicit `=== false` — `undefined` is an older payload shape, where
+  // every entry had a live caller, and must not be mislabelled as unowned.
+  const unowned = p.owned === false;
+
   return (
     <article
       ref={cardRef}
@@ -321,6 +344,14 @@ const ApprovalCard = memo(function ApprovalCard({
           <h3 className="apc-title">{heading}</h3>
         </div>
         <BlastBadge cls={actionClass} />
+        {unowned && (
+          <span
+            className="pill warn apc-shrink0"
+            title="Restored after a bridge restart. Nothing is waiting on this — a decision here is recorded, not performed."
+          >
+            No waiting caller
+          </span>
+        )}
         <RiskMeter level={p.tier} />
         {match && (
           <span className={`pill ${ruleClass(match)} apc-shrink0`}>
@@ -345,6 +376,14 @@ const ApprovalCard = memo(function ApprovalCard({
           )}
         </span>
       </div>
+
+      {unowned && (
+        <p className="apc-summary" style={{ color: "var(--warn)" }}>
+          This survived a bridge restart, so nothing is waiting on it.
+          Approving records your decision but does not run the action — re-run
+          the originating recipe to actually perform it.
+        </p>
+      )}
 
       {isHighStakes && (
         <p className="apc-considered-sentence">{wantsToSentence(p.toolName, p.params)}</p>
