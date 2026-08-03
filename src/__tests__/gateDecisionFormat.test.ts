@@ -29,6 +29,46 @@ function rec(over: Partial<GateDecisionRecord> = {}): GateDecisionRecord {
   };
 }
 
+describe("formatGateDecision — forward compatibility (ADR-0017)", () => {
+  // The gate-decision log is append-only and read cross-process (ADR-0007), so
+  // an older reader can meet a record written by a NEWER bridge. Today the
+  // renderer is `action === "allow" ? ALLOWED : GATED`, which does not throw on
+  // an unknown action — it silently reports it as "GATED (asked for approval)".
+  // For the `forbid` state ADR-0017 introduces, that is a lie in the dangerous
+  // direction: it tells an operator the action is awaiting approval when in
+  // fact no approval can ever unlock it.
+  it("does not report an unrecognised action as merely gated", () => {
+    const out = formatGateDecision(
+      rec({ action: "forbid" as GateDecisionRecord["action"] }),
+    );
+    expect(out).not.toContain("GATED (asked for approval)");
+  });
+
+  it("names the unrecognised action and says the reader is out of date", () => {
+    const out = formatGateDecision(
+      rec({ action: "forbid" as GateDecisionRecord["action"] }),
+    );
+    expect(out).toContain("forbid");
+    expect(out.toLowerCase()).toContain("newer");
+  });
+
+  it("still renders every other field of a forward record", () => {
+    const out = formatGateDecision(
+      rec({ action: "forbid" as GateDecisionRecord["action"] }),
+    );
+    expect(out).toContain("w1 → githubCreateIssue");
+    expect(out).toContain("issue:compensable:high");
+    expect(out).toContain("Effective level used for this decision: L0");
+  });
+
+  it("leaves the two known actions unchanged", () => {
+    expect(formatGateDecision(rec({ action: "allow" }))).toContain("ALLOWED");
+    expect(formatGateDecision(rec({ action: "gate" }))).toContain(
+      "GATED (asked for approval)",
+    );
+  });
+});
+
 describe("formatGateDecision", () => {
   it("renders the core fields as plain-English prose", () => {
     const out = formatGateDecision(rec());

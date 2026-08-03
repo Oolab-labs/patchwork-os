@@ -40,6 +40,46 @@ import type { WorkerLevelStore } from "./workerLevelStore.js";
 
 export type WorkerGateAction = "allow" | "gate";
 
+/** What the caller should actually do with a gate decision. */
+export type GateOutcome =
+  /** Let it proceed (still subject to any tier gate composed above). */
+  | "flow"
+  /** Ask a human. */
+  | "queue"
+  /** Refuse outright — no human is asked, because none may say yes. */
+  | "refuse";
+
+/**
+ * Map a gate action to what the caller does about it.
+ *
+ * Exists to make the third branch explicit *before* there is a third action.
+ * The call site in `recipeOrchestration.ts` reads `if (action === "allow")
+ * flow; else queue`, which is correct for exactly two values and becomes a
+ * safety hole the moment a third exists: the `forbid` state
+ * [ADR-0017](../../docs/adr/0017-decision-record-actor-and-forbid.md)
+ * introduces would fall into the `else` and be OFFERED TO A HUMAN AS
+ * APPROVABLE — and a human approving it would let through an action that no
+ * approval may unlock.
+ *
+ * So the default is `refuse`, not `queue`. An action this build does not
+ * understand is one it must not perform, and it must not recruit a human into
+ * performing it either. That is the fail-closed direction, consistent with
+ * [ADR-0016](../../docs/adr/0016-approval-hook-fail-closed.md).
+ *
+ * Latent today — only `"gate"` currently reaches the non-allow path — which is
+ * precisely why it is cheap to fix now.
+ */
+export function gateOutcomeFor(action: string): GateOutcome {
+  switch (action) {
+    case "allow":
+      return "flow";
+    case "gate":
+      return "queue";
+    default:
+      return "refuse";
+  }
+}
+
 export interface WorkerGateDecision {
   action: WorkerGateAction;
   classKey: string;
