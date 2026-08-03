@@ -254,6 +254,18 @@ describe("buildWorkerAutonomyGate", () => {
     // and a real policy change — the two things that earn a bump.
     expect(gated?.gatePolicyVersion).toBe("worker-ramp-v1");
     expect(allowed?.reversibility).toBe("reversible");
+
+    // An autonomous ALLOW is attributed to the worker — it is the party that
+    // acted, and nobody else was involved.
+    expect(allowed?.actor).toEqual(
+      expect.objectContaining({ id: expect.any(String), kind: "worker" }),
+    );
+    // A GATED decision is deliberately NOT attributed. The approving human is
+    // unknown at this point and cannot be known until the approval path carries
+    // an identity, so naming anyone here would be a lie. Absence means "nobody
+    // recorded this" (ADR-0017), which must stay distinguishable from a
+    // synthesized "unknown".
+    expect(gated?.actor).toBeUndefined();
   });
 
   it("a throwing recordGateDecision never blocks the gate (fail-soft)", async () => {

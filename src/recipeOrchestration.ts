@@ -212,6 +212,23 @@ export async function buildWorkerAutonomyGate(
           ...(contextRisk?.reasons && {
             contextRiskReasons: contextRisk.reasons,
           }),
+          // Attribute an autonomous ALLOW to the worker: it is the party that
+          // acted, and nobody else was involved. Deliberately absent on the
+          // other two paths, because attributing them would be a lie:
+          //   - `gate` — the approving human is not known here, and cannot be
+          //     until the approval path carries an identity (ApprovalQueue is
+          //     an in-memory Map with a 5-minute TTL).
+          //   - `forbid` — nobody acted. Workspace policy refused, and naming
+          //     the worker would read as though it did something.
+          // An absent actor means "nobody recorded this", which ADR-0017 keeps
+          // deliberately distinguishable from a synthesized "unknown".
+          ...(decision.action === "allow" && {
+            actor: {
+              id: worker.id,
+              kind: "worker" as const,
+              ...(worker.name ? { displayName: worker.name } : {}),
+            },
+          }),
           reason: decision.reason,
           gatePolicyVersion: GATE_POLICY_VERSION,
         });
