@@ -247,12 +247,25 @@ The `src/workers/` subsystem implements a trust-ramp-aware autonomy gate for rec
 
 - **Worker identity**: a worker = a named recipe identity. Trust is per `(workerName × actionClassKey)` — never global. Competence demonstrated on reversible low-blast actions (reads, CI) cannot transfer to compensable or irreversible high-blast actions (git push, PR merge, file delete).
 - **Trust levels**: L0–L4, Bayesian Beta posterior + LCB threshold. `outcomeWeight` is blast-weighted so one high-blast failure outweighs many trivial successes.
-- **Gate formula**: `effectiveLevel = min(earned, autonomyCeiling, contextCeiling)`. The `contextCeiling` is a descending-only seam — signals can only lower autonomy, never raise it (NaN / out-of-range → no de-rate).
-- **Autonomy thresholds**: reversible actions bypass the gate unconditionally. Compensable actions unlock at effective L2. Irreversible actions require L4.
+- **Three terminal states**: `allow` | `gate` | `forbid` (ADR-0017). `forbid` is not a stronger gate — it means no earned trust and no human approval unlocks the action. It is evaluated FIRST in `decideWorkerAction`, ahead of the agent-step carve-out, the reversibility short-circuit and all trust maths, because any branch that runs earlier is a path around it. Consequence taken deliberately: a broad rule can stall every worker on its agent step — a loud, self-explaining failure, chosen over the silent alternative of permitting a banned action.
+- **Forbid rules**: `src/workers/forbidPolicy.ts`, passed via `AutonomyDecisionOpts.forbidRules`. Pattern language matches `WorkerManifest.owns` (domain | exact classKey | prefix). Empty/absent ⇒ nothing forbidden, so it is entirely opt-in. Unlike the roster, a malformed rule is NOT silently dropped — a deny-list that loses a rule fails *open*, so `parseForbidRules` reports what it could not parse.
+- **Gate formula**: `effectiveLevel = min(earned, autonomyCeiling, contextCeiling)`, applied only to actions that are not forbidden. The `contextCeiling` is a descending-only seam — signals can only lower autonomy, never raise it (NaN / out-of-range → no de-rate).
+- **Autonomy thresholds**: reversible actions bypass the gate unconditionally. Compensable actions unlock at effective L2. Irreversible actions require L4. None of these apply to a forbidden action.
+- **Decision records**: every decision persists to `~/.patchwork/worker_gate_decisions.jsonl` with `gatePolicyVersion` (now `worker-ramp-v1`) and an optional `actor` — a *snapshot* (id + kind + display name as it was), never a roster reference, so a rename or role change cannot rewrite history. Absent on pre-attribution records and never backfilled: "nobody recorded this" must stay distinguishable from "we do not know".
 - **Feature flag**: `PATCHWORK_FLAG_WORKER_AUTONOMY` (default off). With the flag off, the gate is a no-op — byte-identical to pre-ramp behavior. Requires `--driver subprocess`.
 - **Dogfood templates**: `templates/workers/` — three reference workers (release-notes, dependency-bump, triage-failing-tests).
 - **Monitoring**: `patchwork workers shadow` replays logs and shows per-worker × action-class trust dial + ramp-vs-gate divergences. `patchwork workers backtest` calibrates cold-start without touching live gate behavior.
 - **Full reference**: [docs/worker-autonomy-policy-gate.md](docs/worker-autonomy-policy-gate.md), [docs/runbooks/worker-autonomy-dogfood.md](docs/runbooks/worker-autonomy-dogfood.md).
+
+## Workspace Identity
+
+`src/identity/` — who may act in a workspace. Added because the bridge authenticated a single bearer token, so no persisted record could name a person and segregation of duties was *unenforceable*, not merely unimplemented.
+
+- **Roles**: `owner` | `admin` | `operator` | `approver` | `auditor` | `worker`. A member holds a SET of roles, never one — otherwise a single-admin workspace must choose between administering and approving, and the workaround is to quietly give `admin` the approve capability. So `admin` gets policy/members/systems but NOT `action.approve`; `auditor` gets reads and nothing else.
+- **Segregation of duties**: `canApproveAction(approver, preparedById)`. The self-approval check runs BEFORE the capability check — an owner holds `action.approve`, so testing capability first would report an owner approving their own work as allowed.
+- **Roster**: `members.json` (honours `PATCHWORK_HOME`), loaded once at bridge startup into `server.roster`. Fail-SOFT: missing/unreadable/malformed ⇒ one implicit owner, byte-identical to pre-identity behaviour. This is deliberately the opposite of ADR-0016's fail-closed — that gate decides *whether an action happens* (safe default: no); this decides *who you are on your own machine* (safe default: the status quo ante).
+- **Members are deactivated, never deleted** — deleting one would orphan every decision that names them.
+- **Not yet wired to authorisation.** Nothing consults the roster to permit or refuse a request; it exists so a decision record has a real member to name. Attributing a *gated* decision to its approving human additionally needs `ApprovalQueue` to become durable — it is currently an in-memory `Map` with a 5-minute TTL.
 
 ## Architecture Rules
 

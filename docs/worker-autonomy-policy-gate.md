@@ -289,6 +289,72 @@ after a fast sequence of feature PRs even when each shipped green.
 
 ---
 
+## 7. The third terminal state — `forbid` (shipped 2026-08-03, ADR-0017)
+
+The gate had two outcomes: `allow` and `gate`. Both are escapable — `gate`
+by earning trust, or by a human clicking Approve. There was no way to say
+**never**.
+
+`forbid` is that third state. It means no level of earned trust and no human
+approval unlocks the action: it holds at L4 with an autonomy ceiling of 4, and
+it holds against an operator who approves it.
+
+### Why it is not an empty `reachableLevels()`
+
+The obvious implementation — have `reachableLevels()` return `[]` for a
+forbidden class — was rejected. It survives mechanically (`graduation.ts` guards
+`nextRung !== undefined`), but it encodes a hard policy as an emergent property
+of an empty array, and `[]` vs `[0]` is a distinction that will not survive
+maintenance. More importantly it conflates two different things:
+`reachableLevels` describes which rungs a class can *climb*, while `forbid` is
+an assertion about the *action*. They come apart exactly where it matters.
+
+So `forbid` is a policy predicate — `isForbidden(actionClass, rules)` in
+`src/workers/forbidPolicy.ts` — consulted before the trust maths.
+
+### Evaluation order, and the cost of getting it right
+
+`decideWorkerAction` settles forbid **first**: ahead of the agent-step
+carve-out, ahead of the reversibility short-circuit, ahead of every level
+comparison. Any branch that runs earlier is a path around it.
+
+That ordering means a broad rule (`match: "other"`, say) **can stall every
+worker on its agent step**. This is deliberate. That failure is loud and names
+the rule that fired; the alternative — letting a carve-out win — fails silently
+by permitting an action the operator declared must never happen. A safety
+control a carve-out can bypass is not one.
+
+### Rules
+
+Matching mirrors `WorkerManifest.owns`: a domain, an exact class key, or a
+prefix. Every rule carries a required `reason`, because a refusal without one
+is unusable in a receipt.
+
+Empty or absent rules forbid nothing, so an unconfigured workspace is
+byte-identical to the pre-forbid gate. Forbidding is entirely opt-in.
+
+**A deny-list fails in the opposite direction to a roster.** `identity/roster.ts`
+degrades a malformed `members.json` to a single implicit owner, because the safe
+default for *who you are* is the status quo ante. Silently dropping a malformed
+*forbid* rule fails **open** — the banned action becomes merely gated, and a
+human can then approve it. So `parseForbidRules` returns the positions it could
+not parse, and the caller is expected to shout rather than proceed quietly.
+
+### Compatibility
+
+`GATE_POLICY_VERSION` moved `worker-ramp-v0` → `worker-ramp-v1` with this
+change, which earns the bump on both counts ADR-0017 identifies: an enum
+widening (breaks exhaustive switches in older readers) and a genuine policy
+change. The optional `actor` field shipped *unversioned* by contrast, because a
+new optional field is genuinely additive.
+
+Readers were hardened first, in a separate change: `describeGateAction` names an
+unrecognised action instead of reporting it as "GATED (asked for approval)", and
+`gateOutcomeFor` maps an unknown action to **refuse**, so no build ever offers a
+value it does not understand to a human for approval.
+
+---
+
 ## See also
 
 - [docs/runbooks/worker-autonomy-dogfood.md](runbooks/worker-autonomy-dogfood.md) — operator runbook for the live dogfood campaign
