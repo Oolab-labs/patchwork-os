@@ -248,7 +248,11 @@ describe("buildWorkerAutonomyGate", () => {
     // the record carries the decision INPUTS, not just a verdict
     expect(gated?.classKey).toContain("vcs-push");
     expect(gated?.owned).toBe(false);
-    expect(gated?.gatePolicyVersion).toBe("worker-ramp-v0");
+    // Hardcoded on purpose: this pins the persisted wire value so a policy
+    // bump is a deliberate act rather than a silent one. Moved v0 → v1 with
+    // the `forbid` terminal state (ADR-0017), which is both an enum widening
+    // and a real policy change — the two things that earn a bump.
+    expect(gated?.gatePolicyVersion).toBe("worker-ramp-v1");
     expect(allowed?.reversibility).toBe("reversible");
   });
 

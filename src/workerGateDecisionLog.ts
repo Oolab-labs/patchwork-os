@@ -41,7 +41,12 @@ import type { Reversibility } from "./workers/actionClass.js";
  * appends become visible. Schema is additive.
  */
 
-export type GateAction = "allow" | "gate";
+/**
+ * `forbid` is a third TERMINAL state, not a stronger gate: no earned trust and
+ * no human approval unlocks it (ADR-0017). Readers that predate it refuse
+ * rather than misreport — see `describeGateAction` / `gateOutcomeFor`.
+ */
+export type GateAction = "allow" | "gate" | "forbid";
 
 /**
  * Who allowed (or is accountable for) a decision — a SNAPSHOT, not a reference.
@@ -178,7 +183,11 @@ export class WorkerGateDecisionLog {
     if (!workerId) throw new Error("workerId is required");
     if (!toolName) throw new Error("toolName is required");
     if (!classKey) throw new Error("classKey is required");
-    if (input.action !== "allow" && input.action !== "gate") {
+    if (
+      input.action !== "allow" &&
+      input.action !== "gate" &&
+      input.action !== "forbid"
+    ) {
       throw new Error(`invalid action: ${String(input.action)}`);
     }
 
@@ -457,6 +466,8 @@ export function describeGateAction(action: string): string {
       return "ALLOWED";
     case "gate":
       return "GATED (asked for approval)";
+    case "forbid":
+      return "FORBIDDEN (no approval can unlock this)";
     default:
       return `UNRECOGNISED ACTION "${action}" — this record was written by a newer Patchwork; upgrade to read it correctly`;
   }

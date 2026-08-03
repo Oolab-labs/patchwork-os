@@ -5,6 +5,7 @@ import {
   knownActionTools,
 } from "./actionClass.js";
 import { type ContextRisk, contextRiskCeiling } from "./contextRisk.js";
+import { type ForbidRule, isForbidden } from "./forbidPolicy.js";
 import type { TrustLevel } from "./trustLevel.js";
 import { ownsAction, type WorkerManifest } from "./worker.js";
 import type { WorkerLevelStore } from "./workerLevelStore.js";
@@ -38,7 +39,7 @@ import type { WorkerLevelStore } from "./workerLevelStore.js";
  * auto-approves anything that would otherwise have been queued by tier policy.
  */
 
-export type WorkerGateAction = "allow" | "gate";
+export type WorkerGateAction = "allow" | "gate" | "forbid";
 
 /** What the caller should actually do with a gate decision. */
 export type GateOutcome =
@@ -106,6 +107,12 @@ export interface WorkerGateDecision {
 export interface AutonomyDecisionOpts {
   /** Live situational risk for THIS action (fast, day-1, no cold-start). */
   contextRisk?: ContextRisk;
+  /**
+   * Actions this workspace forbids outright (ADR-0017). Absent or empty ⇒ no
+   * action is forbidden and the decision is byte-identical to the pre-forbid
+   * gate, so forbidding is entirely opt-in.
+   */
+  forbidRules?: readonly ForbidRule[];
 }
 
 /**
@@ -125,7 +132,7 @@ const AUTONOMOUS_LEVEL = 4 as const;
  *  constants + composition rule below). A decision can't be replayed/explained
  *  without knowing which policy produced it — bump when the thresholds or the
  *  reversibility→level mapping change. */
-export const GATE_POLICY_VERSION = "worker-ramp-v0";
+export const GATE_POLICY_VERSION = "worker-ramp-v1";
 
 /** How the Claude subprocess sees bridge MCP tools under `--disallowed-tools`:
  *  `mcp__<server>__<tool>`. The server name is fixed to `patchwork` by the
@@ -199,6 +206,26 @@ export function decideWorkerAction(
     effectiveLevel,
     ...(contextCeiling !== undefined && { contextCeiling }),
   } as const;
+
+  // Forbidden actions are settled FIRST — before the agent carve-out, before
+  // reversibility, before any trust maths. "Forbidden" means no earned trust
+  // and no human approval unlocks this, so any branch that precedes it is a
+  // path around it.
+  //
+  // That ordering is deliberate even though it makes a broad rule (say
+  // `match: "other"`) capable of stalling every worker on its agent step. That
+  // failure is loud and self-explaining: each decision names the rule that
+  // fired. The alternative — letting a carve-out run first — fails silently, by
+  // permitting an action the operator declared must never happen. A safety
+  // control that a carve-out can bypass is not one.
+  const forbidden = isForbidden(ac, opts?.forbidRules ?? []);
+  if (forbidden.forbidden) {
+    return {
+      ...base,
+      action: "forbid",
+      reason: `forbidden by workspace policy (rule \`${forbidden.matchedBy}\`): ${forbidden.reason}`,
+    };
+  }
 
   // Agent (reasoning) steps are not a durable side-effecting action-class: the
   // claude subprocess produces an output var, and any tool calls it makes are
