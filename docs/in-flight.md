@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-_(none — everything below has merged; add a line here before starting non-trivial work.)_
+- 2026-08-04 `feat/worker-forbids-manifest` — A configuration surface for ADR-0017's `forbid` state. Found by driving the dashboard rather than reading it: `forbidRules` was threaded through `AutonomyDecisionOpts`/`PreviewOpts`/`BoundaryPreviewOpts` and `isForbidden` was correctly wired into `decideWorkerAction`, but NO production code ever supplied a rule — only tests did. There was no manifest field, config file or env var, so the control boundary's third column ("not permitted — no approval can unlock these") was structurally always empty in the running product: the policy existed with no way to configure it. Adds `forbids:` to the worker manifest, defaulted into `boundaryForRecipe`. Held as RAW `unknown` on the manifest and validated downstream by `parseForbidRules` rather than in `parseWorker` — throwing there would skip the whole manifest via `loadWorkersFromDir`'s fail-soft catch, removing the worker AND its gate, so a typo in a deny rule would disable the very policy it was tightening. An explicit caller rule set still wins, so the manifest can't silently re-add rules under a caller that passed none. 4 tests. — PR pending
 
 ## Recently closed (informal log, prune periodically)
 

@@ -18,7 +18,7 @@
  */
 
 import { FLAG_WORKER_AUTONOMY, isEnabled } from "../featureFlags.js";
-import type { ForbidRule } from "./forbidPolicy.js";
+import { type ForbidRule, parseForbidRules } from "./forbidPolicy.js";
 import {
   type ActionBoundary,
   type CandidateAction,
@@ -65,12 +65,19 @@ export function boundaryForRecipe(
   const { worker, store } = trust;
   const candidates = opts.candidates ?? defaultCandidatesFor(worker);
 
+  // Rules come from the caller when supplied, else from the worker's own
+  // `forbids:`. Without this fallback the manifest field would be inert and
+  // the "not permitted" column could never be non-empty in the running
+  // product — the policy existed but had no configuration surface.
+  const forbidRules =
+    opts.forbidRules ?? parseForbidRules(worker.forbids).rules;
+
   return {
     workerId: worker.id,
     workerName: worker.name,
     recipeName,
     boundary: previewActions(worker, candidates, store, {
-      ...(opts.forbidRules ? { forbidRules: opts.forbidRules } : {}),
+      ...(forbidRules.length > 0 ? { forbidRules } : {}),
     }),
     // Deliberately reported rather than used to suppress the result. An
     // operator asking "what may this worker do?" while the flag is off should
