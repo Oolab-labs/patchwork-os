@@ -11,6 +11,7 @@ import {
   dispatchCancelPush,
   enqueueApprovalWithDispatch,
 } from "./approvalHttp.js";
+import { resolveApprovalLogDir } from "./approvalPersistence.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { loadOrCreateBridgeToken } from "./bridgeToken.js";
@@ -229,13 +230,17 @@ export class Bridge {
   private tokenUsageTracker: TokenUsageTracker;
 
   constructor(private config: Config) {
+    this.logger = new Logger(config.verbose, config.jsonl);
     // Seed the process-wide ApprovalQueue singleton with the configured
     // per-risk-tier timeouts before any other code path can reach a bare
     // getApprovalQueue() (which would otherwise lock in the hardcoded
     // defaults). Must be the first call in the constructor — see
     // getApprovalQueue()'s doc comment in approvalQueue.ts.
-    getApprovalQueue({ ttlMs: config.approvalTimeouts ?? undefined });
-    this.logger = new Logger(config.verbose, config.jsonl);
+    getApprovalQueue({
+      ttlMs: config.approvalTimeouts ?? undefined,
+      persistDir: resolveApprovalLogDir(),
+      logger: this.logger,
+    });
     this.lockFile = new LockFileManager(this.logger);
     const configDir =
       process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
