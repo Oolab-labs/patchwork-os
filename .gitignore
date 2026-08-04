@@ -124,8 +124,10 @@ intellij-plugin/.gradle/
 # templates that hard-reference them by path. Working material for showing the
 # local-model privacy story, not shipped repo content — the templates cannot be
 # split from demos/ because their input defaults point into it.
+# Matched by PATTERN, not by name. This file is tracked and this repo is
+# public, so listing demo bundles individually published their names — and a
+# demo name can carry account context even when the bundle itself never
+# leaves the machine. Add new demo bundles by extending the glob, never by
+# naming them here.
 /demos/
-/templates/recipes/aaro-consolidation-integrity-demo.yaml
-/templates/recipes/aaro-evidence-pack-demo.yaml
-/templates/recipes/aaro-import-difference-demo.yaml
-/templates/recipes/private-credit-review-demo.yaml
+/templates/recipes/*-demo.yaml
