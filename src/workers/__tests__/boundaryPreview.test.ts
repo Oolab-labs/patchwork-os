@@ -90,7 +90,7 @@ describe("boundaryForRecipe", () => {
     // alternative — hiding the boundary — leaves an operator with nothing.
     writeWorker("release-notes", ["fs-write"]);
     const r = boundaryForRecipe("release-notes", opts());
-    expect(typeof r!.enforced).toBe("boolean");
+    expect(typeof r!.autonomyFlagEnabled).toBe("boolean");
   });
 
   it("still returns a boundary when the flag is off", () => {

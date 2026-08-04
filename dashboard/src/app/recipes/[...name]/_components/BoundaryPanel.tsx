@@ -28,7 +28,7 @@ interface BoundaryResult {
    * displayed refusals were themselves enforced. Named for what the bridge
    * actually reports so nobody reads more into it than it says.
    */
-  enforced: boolean;
+  autonomyFlagEnabled: boolean;
   /** Manifest `forbids:` entries that failed to parse and are NOT in force. */
   invalidForbidRules?: number;
 }
@@ -101,7 +101,7 @@ export function BoundaryPanel({
         >
           {busy ? "Resolving…" : "Show control boundary"}
         </button>
-        {result && !result.enforced && (
+        {result && !result.autonomyFlagEnabled && (
           <span
             className="mono"
             style={{ fontSize: "var(--fs-xs)", color: "var(--warn)" }}

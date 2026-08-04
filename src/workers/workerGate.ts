@@ -5,7 +5,11 @@ import {
   knownActionTools,
 } from "./actionClass.js";
 import { type ContextRisk, contextRiskCeiling } from "./contextRisk.js";
-import { type ForbidRule, isForbidden } from "./forbidPolicy.js";
+import {
+  type ForbidRule,
+  isForbidden,
+  parseForbidRules,
+} from "./forbidPolicy.js";
 import type { TrustLevel } from "./trustLevel.js";
 import { ownsAction, type WorkerManifest } from "./worker.js";
 import type { WorkerLevelStore } from "./workerLevelStore.js";
@@ -337,6 +341,7 @@ export function disallowedToolsForAgentStep(
     ...knownActionTools(),
   ]);
   const blocked = new Set<string>();
+  const forbidRules = parseForbidRules(worker.forbids).rules;
   for (const toolName of universe) {
     // The agent step itself is always allowed (reasoning, not a durable side-
     // effect — decideWorkerAction special-cases it); never self-block.
@@ -346,10 +351,23 @@ export function disallowedToolsForAgentStep(
     // they would be dead weight in `--disallowed-tools`. The camelCase MCP twin
     // (githubCreateIssue) is enumerated separately and IS emitted below.
     if (toolName.includes(".")) continue;
-    if (
-      decideWorkerAction(worker, toolName, undefined, store).action !== "gate"
-    )
-      continue;
+    // Rules are derived from the worker HERE rather than threaded in by the
+    // caller. Every `decideWorkerAction` consumer that relies on a caller to
+    // pass `forbidRules` is one forgetful call site away from a silent
+    // fail-open — which is exactly how the enforcement path shipped wrong.
+    // Deriving at the point of use removes that failure mode.
+    const { action } = decideWorkerAction(
+      worker,
+      toolName,
+      undefined,
+      store,
+      forbidRules.length > 0 ? { forbidRules } : undefined,
+    );
+    // `forbid` must block as hard as `gate` does. Testing only for "gate" let a
+    // forbidden tool fall through this `continue` and stay OUT of the deny
+    // list — leaving the agent step able to call the one thing no approval
+    // unlocks, while the boundary screen said "not permitted".
+    if (action !== "gate" && action !== "forbid") continue;
     // Don't over-block. An UNKNOWN tool (domain "other") defaults to
     // irreversible in the trust model — conservative for EARNING, but blanket-
     // denying every unknown here would strip the agent of the harmless reads and

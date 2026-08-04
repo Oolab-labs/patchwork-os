@@ -39,7 +39,7 @@ export interface WorkerBoundary {
    * and a screen that does not say so would imply protection that is not
    * running. The caller must surface this.
    */
-  enforced: boolean;
+  autonomyFlagEnabled: boolean;
   /**
    * How many `forbids:` entries in the manifest could not be parsed and are
    * therefore NOT in force. Absent when all parsed (or when the caller supplied
@@ -99,6 +99,6 @@ export function boundaryForRecipe(
     // operator asking "what may this worker do?" while the flag is off should
     // get the answer AND be told it is not being enforced — hiding the boundary
     // would leave them with no information at all, which is worse.
-    enforced: isEnabled(FLAG_WORKER_AUTONOMY),
+    autonomyFlagEnabled: isEnabled(FLAG_WORKER_AUTONOMY),
   };
 }

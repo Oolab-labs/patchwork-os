@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ pathname: "/recipes/private-credit-review-demo/edit" }));
+const mocks = vi.hoisted(() => ({ pathname: "/recipes/sample-recipe/edit" }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -20,7 +20,7 @@ vi.mock("@/hooks/useBridgeFetch", () => ({
   useBridgeFetch: () => ({
     data: [
       {
-        name: "private-credit-review-demo",
+        name: "sample-recipe",
         description: "Reviews a private credit workbook.",
         enabled: true,
       },
@@ -34,12 +34,12 @@ import RecipeDetailLayout from "../layout";
 
 describe("RecipeDetailLayout scroll behavior", () => {
   beforeEach(() => {
-    mocks.pathname = "/recipes/private-credit-review-demo/edit";
+    mocks.pathname = "/recipes/sample-recipe/edit";
   });
 
   it("does not make the full-width recipe rail sticky above the editor", async () => {
-    const params = Object.assign(Promise.resolve({ name: ["private-credit-review-demo", "edit"] }), {
-      testValue: { name: ["private-credit-review-demo", "edit"] },
+    const params = Object.assign(Promise.resolve({ name: ["sample-recipe", "edit"] }), {
+      testValue: { name: ["sample-recipe", "edit"] },
     });
     render(
       <RecipeDetailLayout params={params}>

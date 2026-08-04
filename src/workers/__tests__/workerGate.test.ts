@@ -450,3 +450,78 @@ describe("decideWorkerAction — forbidden actions", () => {
     expect(gateOutcomeFor("forbid")).toBe("refuse");
   });
 });
+
+describe("disallowedToolsForAgentStep — forbidden tools must be sandboxed", () => {
+  /**
+   * The sandbox previously called decideWorkerAction with no opts (so a
+   * `forbid` verdict was impossible) AND skipped on `action !== "gate"` (so
+   * even a real `forbid` fell through the `continue` and was never added).
+   * Net: a forbidden tool was left OUT of --disallowed-tools, i.e. the agent
+   * step could call the one thing no approval is supposed to unlock.
+   *
+   * That is the agent-step twin of the preview/enforcement divergence: the
+   * boundary screen says "not permitted" while an agent step can still do it.
+   */
+  const finance = () =>
+    parseWorker({
+      id: "fin",
+      name: "Fin",
+      owns: ["fs-write", "messaging"],
+      autonomyCeiling: 4,
+      forbids: [
+        { match: "messaging", reason: "May never communicate externally." },
+      ],
+    });
+
+  /** A store where `fin` has fully earned L4 on `toolName`. */
+  function earnedL4(toolName: string): WorkerLevelStore {
+    const store = new WorkerLevelStore();
+    const cfg = {
+      dwellMs: 1000,
+      demoteCooldownMs: 5000,
+      minEvidenceForGraduation: 5,
+    };
+    for (let i = 0; i < 60; i++)
+      store.apply("fin", { toolName, good: true, at: 0 }, { cfg });
+    for (const at of [1000, 2000, 3000, 4000])
+      store.apply("fin", { toolName, good: true, at }, { cfg });
+    return store;
+  }
+
+  it("without a forbid rule, an EARNED messaging tool is callable (control)", () => {
+    // Pins that the next test is not passing for the trivial reason. With L4
+    // earned and ceiling 4, nothing gates slackPostMessage — so if it appears
+    // in the deny list below, only the forbid rule can have put it there.
+    const permissive = parseWorker({
+      id: "fin",
+      name: "Fin",
+      owns: ["fs-write", "messaging"],
+      autonomyCeiling: 4,
+    });
+    const blocked = disallowedToolsForAgentStep(
+      permissive,
+      earnedL4("slackPostMessage"),
+    );
+    expect(blocked).not.toContain("slackPostMessage");
+  });
+
+  it("blocks a forbidden tool even when trust would otherwise permit it", () => {
+    const blocked = disallowedToolsForAgentStep(
+      finance(),
+      earnedL4("slackPostMessage"),
+    );
+    expect(blocked).toContain("slackPostMessage");
+    expect(blocked).toContain("mcp__patchwork__slackPostMessage");
+  });
+
+  it("still leaves reversible tools callable for a worker with forbid rules", () => {
+    // Guards the over-block direction: a deny rule must not strip the agent of
+    // the harmless tools it needs to do its job.
+    const blocked = disallowedToolsForAgentStep(
+      finance(),
+      new WorkerLevelStore(),
+    );
+    expect(blocked).not.toContain("editText");
+    expect(blocked).not.toContain("getGitStatus");
+  });
+});

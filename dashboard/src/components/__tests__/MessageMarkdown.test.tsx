@@ -8,7 +8,7 @@ describe("MessageMarkdown", () => {
     render(
       <MessageMarkdown
         content={`---
-recipe: private-credit-review-demo
+recipe: sample-recipe
 runSeq: 11800
 trigger: manual
 deliveredAt: 2026-07-29T14:00:00.000Z
@@ -26,7 +26,7 @@ Approve with conditions.`}
     ).toBeInTheDocument();
     expect(screen.getByText("Approve with conditions.")).toBeInTheDocument();
     expect(
-      screen.queryByText(/recipe: private-credit-review-demo/),
+      screen.queryByText(/recipe: sample-recipe/),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/runSeq: 11800/)).not.toBeInTheDocument();
   });
