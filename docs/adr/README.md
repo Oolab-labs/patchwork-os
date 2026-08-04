@@ -21,4 +21,6 @@ This directory contains Architecture Decision Records (ADRs) for claude-ide-brid
 - [ADR-0015: Cost-Aware Routing](0015-cost-aware-routing.md) — price table, `budget.usdMax` enforcement, per-step downshift gearbox
 - [ADR-0016: Approval Hook Fails Closed](0016-approval-hook-fail-closed.md) — `PreToolUse` hook denies on unreachable bridge; `PATCHWORK_APPROVAL_FAIL_OPEN` escape hatch
 - [ADR-0017: Decision Record Actor + `forbid`](0017-decision-record-actor-and-forbid.md) — one wire-format migration adding an actor field and a third terminal gate state; `gatePolicyVersion` → `worker-ramp-v1`
-- [ADR-0018: Durable Approvals](0018-durable-approvals.md) — **Proposed.** Persist the approval request, not the blocked caller; restored entries are `pending, unowned`
+- [ADR-0018: Durable Approvals](0018-durable-approvals.md) — Persist the approval request, not the blocked caller; restored entries are `pending, unowned`
+- [ADR-0019: The Open-Core Boundary](0019-open-core-boundary.md) — the open runtime emits evidence, only the commercial control plane attests to it; `patchwork-multitenant` scope frozen to infrastructure
+- [ADR-0020: Per-Member Authentication](0020-per-member-authentication.md) — a pluggable identity seam resolving to `members.json`; local `scrypt` credentials first, OIDC mapped on `sub` second; unblocks actor attribution and segregation of duties
