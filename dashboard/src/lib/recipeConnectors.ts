@@ -35,6 +35,11 @@ export interface RecipeSummaryForConnectors {
   description?: string;
 }
 
+/** Escape a token for safe use inside a RegExp (connector ids contain `-`). */
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function detectConnectorsForRecipe(recipe: RecipeSummaryForConnectors): string[] {
   const haystack = `${recipe.name} ${recipe.description ?? ""}`.toLowerCase();
   const found = new Set<string>();
@@ -42,7 +47,14 @@ export function detectConnectorsForRecipe(recipe: RecipeSummaryForConnectors): s
     ...Object.keys(TOOL_NAMESPACE_TO_CONNECTOR),
     ...KNOWN_CONNECTOR_IDS,
   ]) {
-    if (haystack.includes(ns.toLowerCase())) {
+    // Whole-token match, NOT substring. A naive `includes()` made the
+    // two-letter alias `es` (elasticsearch) match the letters "es" inside
+    // ordinary English — "does", "files", "causes" — so 63 of 73 installed
+    // recipes falsely reported "needs Elasticsearch connected before it can
+    // run". A false required-connector is worse than a missed one: it blocks
+    // a working recipe behind a setup task that does not exist.
+    const re = new RegExp(`(?:^|[^a-z0-9])${escapeRe(ns.toLowerCase())}(?:[^a-z0-9]|$)`);
+    if (re.test(haystack)) {
       const c = namespaceToConnector(ns);
       if (c) found.add(c);
     }
