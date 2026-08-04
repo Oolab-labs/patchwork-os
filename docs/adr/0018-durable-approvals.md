@@ -1,13 +1,16 @@
 # ADR-0018: Durable Approvals — Persist the Request, Not the Await
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-03
+**Implemented:** 2026-08-04 (#1245 storage, #1246 unowned-visibility UI)
 
-> Every other ADR here is Accepted. This one is **Proposed** because the work it
-> describes is not scheduled, and because its central claim — that the blocked
-> caller cannot be restored — decides how much is worth building. Recording the
-> reasoning before writing code is the cheap half; committing to the build is
-> not this document's call.
+> Recorded as **Proposed** while unscheduled — its central claim, that the
+> blocked caller cannot be restored, decided how much was worth building.
+> Promoted to Accepted once implemented: `ApprovalQueue` now persists via
+> `src/approvalPersistence.ts` (`approvalQueue.ts:7`, `bridge.ts:14`) and
+> restored entries surface as `pending, unowned` in the dashboard. Attributing a
+> restored approval to a *person* remains blocked on
+> [ADR-0020](0020-per-member-authentication.md), not on this ADR.
 
 ## Context
 
