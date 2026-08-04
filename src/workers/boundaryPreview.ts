@@ -18,7 +18,7 @@
  */
 
 import { FLAG_WORKER_AUTONOMY, isEnabled } from "../featureFlags.js";
-import type { ForbidRule } from "./forbidPolicy.js";
+import { type ForbidRule, parseForbidRules } from "./forbidPolicy.js";
 import {
   type ActionBoundary,
   type CandidateAction,
@@ -39,7 +39,15 @@ export interface WorkerBoundary {
    * and a screen that does not say so would imply protection that is not
    * running. The caller must surface this.
    */
-  enforced: boolean;
+  autonomyFlagEnabled: boolean;
+  /**
+   * How many `forbids:` entries in the manifest could not be parsed and are
+   * therefore NOT in force. Absent when all parsed (or when the caller supplied
+   * its own rules). Present and non-zero means the displayed "not permitted"
+   * column understates the operator's intent — which must be visible, because a
+   * deny-list that loses a rule fails open.
+   */
+  invalidForbidRules?: number;
 }
 
 export interface BoundaryPreviewOpts {
@@ -65,17 +73,32 @@ export function boundaryForRecipe(
   const { worker, store } = trust;
   const candidates = opts.candidates ?? defaultCandidatesFor(worker);
 
+  // Rules come from the caller when supplied, else from the worker's own
+  // `forbids:`. Without this fallback the manifest field would be inert and
+  // the "not permitted" column could never be non-empty in the running
+  // product — the policy existed but had no configuration surface.
+  const parsedForbids = parseForbidRules(worker.forbids);
+  const forbidRules = opts.forbidRules ?? parsedForbids.rules;
+
   return {
     workerId: worker.id,
     workerName: worker.name,
     recipeName,
+    // Surfaced, not swallowed: a rule that failed to parse is NOT in force, so
+    // the "not permitted" column is shorter than the operator's policy says it
+    // should be. Reporting zero here would let a typo quietly widen authority —
+    // a deny-list fails open. Only meaningful when the rules came from the
+    // manifest; a caller supplying its own list owns its own validation.
+    ...(opts.forbidRules === undefined && parsedForbids.invalid.length > 0
+      ? { invalidForbidRules: parsedForbids.invalid.length }
+      : {}),
     boundary: previewActions(worker, candidates, store, {
-      ...(opts.forbidRules ? { forbidRules: opts.forbidRules } : {}),
+      ...(forbidRules.length > 0 ? { forbidRules } : {}),
     }),
     // Deliberately reported rather than used to suppress the result. An
     // operator asking "what may this worker do?" while the flag is off should
     // get the answer AND be told it is not being enforced — hiding the boundary
     // would leave them with no information at all, which is worse.
-    enforced: isEnabled(FLAG_WORKER_AUTONOMY),
+    autonomyFlagEnabled: isEnabled(FLAG_WORKER_AUTONOMY),
   };
 }

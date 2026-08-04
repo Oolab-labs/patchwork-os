@@ -323,3 +323,70 @@ describe("buildWorkerAgentDisallowedTools (agent-step bypass)", () => {
     expect(list).not.toContain("getGitStatus");
   });
 });
+
+describe("buildWorkerAutonomyGate — manifest forbid rules reach ENFORCEMENT", () => {
+  /**
+   * The control-boundary screen renders three columns, and the third one says
+   * "no approval can unlock these". `boundaryForRecipe` defaults forbid rules in
+   * from `worker.forbids` — so if the enforcement path did NOT, the preview and
+   * the gate would disagree: the screen would show an action as refused outright
+   * while the gate merely queued it for a human, who could then approve it.
+   *
+   * That divergence is silent AND permissive — it tells an operator they are
+   * protected when they are not — which is precisely the failure the boundary
+   * exists to rule out. These tests pin enforcement to the manifest.
+   */
+  let dir: string;
+  let opts: { workersDir: string; patchworkDir: string };
+
+  const FORBIDDING_WORKER = `id: fin-worker
+name: Finance Worker
+recipe: fin-recipe
+owns:
+  - fs-write
+  - messaging
+autonomyCeiling: 4
+forbids:
+  - match: messaging
+    reason: May never communicate externally on its own account.
+`;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "pw-forbid-gate-"));
+    const workersDir = path.join(dir, "workers");
+    mkdirSync(workersDir, { recursive: true });
+    writeFileSync(path.join(workersDir, "fin.worker.yaml"), FORBIDDING_WORKER);
+    opts = { workersDir, patchworkDir: dir };
+    setFlag(FLAG_WORKER_AUTONOMY, true, false);
+    resetApprovalQueueForTests();
+  });
+
+  afterEach(() => {
+    setFlag(FLAG_WORKER_AUTONOMY, false, false);
+    resetApprovalQueueForTests();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("refuses a forbidden action outright — it is never queued for approval", async () => {
+    // Even with a permissive tier fn AND an uncapped ceiling, a forbidden
+    // action must not reach a human: no approval unlocks it.
+    const tierFn = vi.fn(async () => true);
+    const g = await buildWorkerAutonomyGate("fin-recipe", tierFn, opts);
+    const r = await g!({
+      toolId: "slackPostMessage",
+      tier: "high",
+      params: {},
+    });
+    expect(r).toBe(false);
+    // The critical half: nothing was offered to a person to approve.
+    expect(getApprovalQueue().list()).toHaveLength(0);
+  });
+
+  it("still allows a non-forbidden action from the same worker", async () => {
+    // Guards against the rule over-matching and bricking the worker entirely.
+    const tierFn = vi.fn(async () => true);
+    const g = await buildWorkerAutonomyGate("fin-recipe", tierFn, opts);
+    const r = await g!({ toolId: "editText", tier: "low", params: {} });
+    expect(r).toBe(true);
+  });
+});

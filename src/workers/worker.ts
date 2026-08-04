@@ -47,6 +47,25 @@ export interface WorkerManifest {
   competence?: WorkerCompetence;
   /** Free-form sector tag (drives default ceilings / reporting). */
   sector?: string;
+  /**
+   * Action-classes this worker may NEVER take — the configuration surface for
+   * ADR-0017's `forbid` terminal state. Same pattern language as `owns`
+   * (domain | exact classKey | prefix), so operators learn one syntax.
+   *
+   * `forbid` is not a stronger gate: no earned trust and no human approval
+   * unlocks a forbidden action. Absent/empty ⇒ nothing forbidden, so this is
+   * entirely opt-in and existing manifests are unaffected.
+   *
+   * Each entry is `{ match, reason }` — the reason is required because a
+   * refusal with no reason is unusable in a receipt.
+   *
+   * Held here as RAW input and validated downstream by `parseForbidRules`,
+   * which reports unparseable entries by position rather than dropping them.
+   * That split is deliberate: unlike `owns`, a deny-list that silently loses a
+   * rule fails OPEN (the banned action degrades to merely gated, and a human
+   * can then approve it), so the reporting must survive to the point of use.
+   */
+  forbids?: unknown;
 }
 
 export class WorkerParseError extends Error {
@@ -122,6 +141,13 @@ export function parseWorker(raw: unknown): WorkerManifest {
     autonomyCeiling,
     competence,
     sector: typeof r.sector === "string" ? r.sector : undefined,
+    // Passed through unvalidated ON PURPOSE — see the field's doc comment.
+    // Throwing here would skip the whole manifest via loadWorkersFromDir's
+    // fail-soft catch, which would remove the worker entirely and take its
+    // gate with it: a typo in a deny rule would disable the very policy the
+    // rule was tightening. `parseForbidRules` validates at the point of use
+    // and reports what it could not parse.
+    forbids: r.forbids,
   };
 }
 

@@ -15,7 +15,7 @@ import { boundarySize } from "../previewActions.js";
 
 let home: string;
 
-function writeWorker(recipe: string, owns: string[]) {
+function writeWorker(recipe: string, owns: string[], forbidsYaml?: string[]) {
   const dir = join(home, "workers");
   mkdirSync(dir, { recursive: true });
   // The loader reads `*.worker.yaml` only — a .json file is silently ignored.
@@ -29,6 +29,7 @@ function writeWorker(recipe: string, owns: string[]) {
       "  - test",
       "owns:",
       ...owns.map((o) => `  - ${o}`),
+      ...(forbidsYaml ?? []),
       "",
     ].join("\n"),
   );
@@ -89,7 +90,7 @@ describe("boundaryForRecipe", () => {
     // alternative — hiding the boundary — leaves an operator with nothing.
     writeWorker("release-notes", ["fs-write"]);
     const r = boundaryForRecipe("release-notes", opts());
-    expect(typeof r!.enforced).toBe("boolean");
+    expect(typeof r!.autonomyFlagEnabled).toBe("boolean");
   });
 
   it("still returns a boundary when the flag is off", () => {
@@ -102,5 +103,89 @@ describe("boundaryForRecipe", () => {
     boundaryForRecipe("release-notes", opts());
     // A decision log would appear here if the preview recorded anything.
     expect(() => rmSync(join(home, "worker_gate_decisions.jsonl"))).toThrow();
+  });
+});
+
+describe("boundaryForRecipe — forbid rules from the worker manifest", () => {
+  // Before this, `forbidRules` was threaded through every type but no
+  // production code ever supplied one — only tests did. The "not permitted"
+  // column was therefore structurally always empty in the running product:
+  // the policy existed with no configuration surface.
+  const FORBIDS = [
+    "forbids:",
+    "  - match: messaging",
+    "    reason: May never communicate externally on its own account.",
+  ];
+
+  it("reads forbids from the manifest so the third column can be non-empty", () => {
+    writeWorker("close-review", ["fs-write", "messaging"], FORBIDS);
+    const r = boundaryForRecipe("close-review", opts());
+    expect(r).not.toBeNull();
+    expect(r!.boundary.notPermitted.length).toBeGreaterThan(0);
+    // The operator's own words reach the screen — "denied by policy" tells a
+    // person nothing about which policy or why.
+    expect(r!.boundary.notPermitted[0]?.reason).toContain(
+      "May never communicate externally",
+    );
+  });
+
+  it("an explicit caller rule set still wins over the manifest", () => {
+    writeWorker("close-review", ["fs-write", "messaging"], FORBIDS);
+    const r = boundaryForRecipe("close-review", {
+      ...opts(),
+      forbidRules: [],
+    });
+    // Caller passed an empty list deliberately — the manifest must not
+    // silently re-add its own rules underneath it.
+    expect(r!.boundary.notPermitted).toHaveLength(0);
+  });
+
+  it("a manifest with no forbids forbids nothing (opt-in)", () => {
+    writeWorker("close-review", ["fs-write", "messaging"]);
+    const r = boundaryForRecipe("close-review", opts());
+    expect(r!.boundary.notPermitted).toHaveLength(0);
+  });
+
+  it("reports an unparseable rule rather than silently narrowing the column", () => {
+    // A dropped deny rule fails OPEN — the banned action degrades to merely
+    // gated. If the count were swallowed, a typo would quietly widen authority
+    // and the screen would look authoritative while understating the policy.
+    writeWorker(
+      "close-review",
+      ["fs-write", "messaging"],
+      [
+        "forbids:",
+        "  - match: messaging",
+        "    reason: fine",
+        "  - match: http", // no `reason:` — unparseable
+      ],
+    );
+    const r = boundaryForRecipe("close-review", opts());
+    expect(r!.invalidForbidRules).toBe(1);
+  });
+
+  it("reports nothing when every rule parses", () => {
+    writeWorker("close-review", ["fs-write", "messaging"], FORBIDS);
+    expect(
+      boundaryForRecipe("close-review", opts())!.invalidForbidRules,
+    ).toBeUndefined();
+  });
+
+  it("a malformed forbid entry does not take the whole worker down", () => {
+    // Throwing in parseWorker would skip the manifest via loadWorkersFromDir's
+    // fail-soft catch — removing the worker AND its gate, so a typo in a deny
+    // rule would disable the policy it was tightening. The rule is dropped and
+    // reported by parseForbidRules instead; the worker survives.
+    writeWorker(
+      "close-review",
+      ["fs-write", "messaging"],
+      [
+        "forbids:",
+        "  - match: messaging", // no `reason:` — unparseable
+      ],
+    );
+    const r = boundaryForRecipe("close-review", opts());
+    expect(r).not.toBeNull();
+    expect(boundarySize(r!.boundary)).toBeGreaterThan(0);
   });
 });

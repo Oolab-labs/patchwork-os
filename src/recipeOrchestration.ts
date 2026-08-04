@@ -181,13 +181,40 @@ export async function buildWorkerAutonomyGate(
       contextRisk = undefined;
     }
 
+    // Forbidden-action rules from the worker manifest. ENFORCEMENT MUST SEE THE
+    // SAME RULES THE PREVIEW DOES. `boundaryForRecipe` defaults these in from
+    // `worker.forbids`; if this path did not, the control-boundary screen would
+    // show an action as "not permitted — no approval can unlock these" while the
+    // gate merely queued it for a human, who could then approve it. That failure
+    // is silent AND permissive: it tells an operator they are protected when they
+    // are not, which is the one divergence the boundary must never have.
+    const { parseForbidRules, describeForbidRules } = await import(
+      "./workers/forbidPolicy.js"
+    );
+    const parsedForbids = parseForbidRules(worker.forbids);
+    const forbidRules = parsedForbids.rules;
+    // A dropped deny rule fails OPEN — the banned action silently degrades to
+    // merely gated, and a human can then approve it. Discarding `.invalid`
+    // here would make that failure invisible, so it is logged loudly. This is
+    // the whole reason parseForbidRules reports positions instead of throwing.
+    if (parsedForbids.invalid.length > 0) {
+      console.warn(
+        `[workers] ${worker.id}: ${describeForbidRules(parsedForbids)}`,
+      );
+    }
+
     return async (input) => {
       const decision = decideWorkerAction(
         worker,
         input.toolId,
         input.params,
         store,
-        contextRisk ? { contextRisk } : undefined,
+        contextRisk || forbidRules.length > 0
+          ? {
+              ...(contextRisk ? { contextRisk } : {}),
+              ...(forbidRules.length > 0 ? { forbidRules } : {}),
+            }
+          : undefined,
       );
       // Decision Record: persist the decision + its inputs on EVERY path (incl.
       // autonomous allows, which otherwise leave no trail). Fail-soft — a logging

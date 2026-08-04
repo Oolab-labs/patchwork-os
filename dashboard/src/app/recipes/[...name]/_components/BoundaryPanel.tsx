@@ -23,7 +23,14 @@ interface BoundaryResult {
   workerName: string;
   recipeName: string;
   boundary: ActionBoundary;
-  enforced: boolean;
+  /**
+   * Whether the worker-autonomy FLAG is on — not a statement that the
+   * displayed refusals were themselves enforced. Named for what the bridge
+   * actually reports so nobody reads more into it than it says.
+   */
+  autonomyFlagEnabled: boolean;
+  /** Manifest `forbids:` entries that failed to parse and are NOT in force. */
+  invalidForbidRules?: number;
 }
 
 export function BoundaryPanel({
@@ -94,7 +101,7 @@ export function BoundaryPanel({
         >
           {busy ? "Resolving…" : "Show control boundary"}
         </button>
-        {result && !result.enforced && (
+        {result && !result.autonomyFlagEnabled && (
           <span
             className="mono"
             style={{ fontSize: "var(--fs-xs)", color: "var(--warn)" }}
@@ -103,6 +110,15 @@ export function BoundaryPanel({
           </span>
         )}
       </div>
+
+      {result?.invalidForbidRules ? (
+        <div style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}>
+          ⚠ {result.invalidForbidRules} forbid rule
+          {result.invalidForbidRules === 1 ? "" : "s"} in this worker&apos;s
+          manifest could not be parsed and {result.invalidForbidRules === 1 ? "is" : "are"}{" "}
+          NOT in force. The list below understates what you intended to forbid.
+        </div>
+      ) : null}
 
       {error && (
         <div style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}>

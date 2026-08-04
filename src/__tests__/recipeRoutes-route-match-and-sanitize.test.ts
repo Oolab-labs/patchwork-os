@@ -233,7 +233,7 @@ describe("GET /workers/boundary — control boundary route", () => {
           workerName: "release-notes",
           recipeName,
           boundary: { mayDoNow: [], needsApproval: [], notPermitted: [] },
-          enforced: true,
+          autonomyFlagEnabled: true,
         };
       },
     });
@@ -257,7 +257,7 @@ describe("GET /workers/boundary — control boundary route", () => {
         workerName: "release-notes",
         recipeName: "release-notes",
         boundary: { mayDoNow: [], needsApproval: [], notPermitted: [] },
-        enforced: true,
+        autonomyFlagEnabled: true,
       },
     });
   });
