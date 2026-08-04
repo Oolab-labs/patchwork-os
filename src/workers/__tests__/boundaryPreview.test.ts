@@ -146,6 +146,31 @@ describe("boundaryForRecipe — forbid rules from the worker manifest", () => {
     expect(r!.boundary.notPermitted).toHaveLength(0);
   });
 
+  it("reports an unparseable rule rather than silently narrowing the column", () => {
+    // A dropped deny rule fails OPEN — the banned action degrades to merely
+    // gated. If the count were swallowed, a typo would quietly widen authority
+    // and the screen would look authoritative while understating the policy.
+    writeWorker(
+      "close-review",
+      ["fs-write", "messaging"],
+      [
+        "forbids:",
+        "  - match: messaging",
+        "    reason: fine",
+        "  - match: http", // no `reason:` — unparseable
+      ],
+    );
+    const r = boundaryForRecipe("close-review", opts());
+    expect(r!.invalidForbidRules).toBe(1);
+  });
+
+  it("reports nothing when every rule parses", () => {
+    writeWorker("close-review", ["fs-write", "messaging"], FORBIDS);
+    expect(
+      boundaryForRecipe("close-review", opts())!.invalidForbidRules,
+    ).toBeUndefined();
+  });
+
   it("a malformed forbid entry does not take the whole worker down", () => {
     // Throwing in parseWorker would skip the manifest via loadWorkersFromDir's
     // fail-soft catch — removing the worker AND its gate, so a typo in a deny

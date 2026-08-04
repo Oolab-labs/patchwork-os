@@ -188,8 +188,20 @@ export async function buildWorkerAutonomyGate(
     // gate merely queued it for a human, who could then approve it. That failure
     // is silent AND permissive: it tells an operator they are protected when they
     // are not, which is the one divergence the boundary must never have.
-    const { parseForbidRules } = await import("./workers/forbidPolicy.js");
-    const forbidRules = parseForbidRules(worker.forbids).rules;
+    const { parseForbidRules, describeForbidRules } = await import(
+      "./workers/forbidPolicy.js"
+    );
+    const parsedForbids = parseForbidRules(worker.forbids);
+    const forbidRules = parsedForbids.rules;
+    // A dropped deny rule fails OPEN — the banned action silently degrades to
+    // merely gated, and a human can then approve it. Discarding `.invalid`
+    // here would make that failure invisible, so it is logged loudly. This is
+    // the whole reason parseForbidRules reports positions instead of throwing.
+    if (parsedForbids.invalid.length > 0) {
+      console.warn(
+        `[workers] ${worker.id}: ${describeForbidRules(parsedForbids)}`,
+      );
+    }
 
     return async (input) => {
       const decision = decideWorkerAction(

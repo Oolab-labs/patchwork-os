@@ -40,6 +40,14 @@ export interface WorkerBoundary {
    * running. The caller must surface this.
    */
   enforced: boolean;
+  /**
+   * How many `forbids:` entries in the manifest could not be parsed and are
+   * therefore NOT in force. Absent when all parsed (or when the caller supplied
+   * its own rules). Present and non-zero means the displayed "not permitted"
+   * column understates the operator's intent — which must be visible, because a
+   * deny-list that loses a rule fails open.
+   */
+  invalidForbidRules?: number;
 }
 
 export interface BoundaryPreviewOpts {
@@ -69,13 +77,21 @@ export function boundaryForRecipe(
   // `forbids:`. Without this fallback the manifest field would be inert and
   // the "not permitted" column could never be non-empty in the running
   // product — the policy existed but had no configuration surface.
-  const forbidRules =
-    opts.forbidRules ?? parseForbidRules(worker.forbids).rules;
+  const parsedForbids = parseForbidRules(worker.forbids);
+  const forbidRules = opts.forbidRules ?? parsedForbids.rules;
 
   return {
     workerId: worker.id,
     workerName: worker.name,
     recipeName,
+    // Surfaced, not swallowed: a rule that failed to parse is NOT in force, so
+    // the "not permitted" column is shorter than the operator's policy says it
+    // should be. Reporting zero here would let a typo quietly widen authority —
+    // a deny-list fails open. Only meaningful when the rules came from the
+    // manifest; a caller supplying its own list owns its own validation.
+    ...(opts.forbidRules === undefined && parsedForbids.invalid.length > 0
+      ? { invalidForbidRules: parsedForbids.invalid.length }
+      : {}),
     boundary: previewActions(worker, candidates, store, {
       ...(forbidRules.length > 0 ? { forbidRules } : {}),
     }),
