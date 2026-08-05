@@ -159,3 +159,41 @@ registerTool({
     return JSON.stringify(result);
   }),
 });
+
+// ============================================================================
+// resend.cancel_email — the inverse of send_email, PRE-DELIVERY ONLY
+// ============================================================================
+
+registerTool({
+  id: "resend.cancel_email",
+  namespace: "resend",
+  description:
+    "Cancel a scheduled Resend email by id. This is a pre-delivery hold, NOT a recall: it only succeeds while the email is still queued or scheduled. Once Resend has handed the message to the mail transport nothing can retract it.",
+  paramsSchema: {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description: "Resend email id to cancel (required)",
+      },
+      into: CommonSchemas.into,
+    },
+    required: ["id"],
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      object: { type: "string" },
+      id: { type: "string" },
+    },
+  },
+  riskDefault: "medium",
+  isWrite: true,
+  isConnector: true,
+  execute: wrapConnectorExecute(async ({ params }) => {
+    const { getResendConnector } = await import("../../connectors/resend.js");
+    const connector = getResendConnector();
+    const result = await connector.cancelEmail(params.id as string);
+    return JSON.stringify(result);
+  }),
+});

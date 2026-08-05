@@ -43,6 +43,11 @@ registerTool({
     properties: {
       ok: { type: "boolean" },
       message_id: { type: "number" },
+      chat_id: {
+        type: "number",
+        description:
+          "Numeric chat id from the API — deleteMessage needs this plus message_id",
+      },
       error: { type: "string" },
     },
   },
@@ -65,7 +70,14 @@ registerTool({
             ? (params.parse_mode as "Markdown" | "MarkdownV2" | "HTML")
             : undefined,
       });
-      return JSON.stringify({ ok: true, message_id: message.message_id });
+      // `chat` as well as `message_id`: deleteMessage needs BOTH, and the
+      // caller's chat_id may be an @username while the API returns the numeric
+      // id that a later delete must use (#1264).
+      return JSON.stringify({
+        ok: true,
+        message_id: message.message_id,
+        chat_id: message.chat?.id,
+      });
     } catch (err) {
       return JSON.stringify({
         ok: false,

@@ -22,6 +22,8 @@ const getTasks = vi.fn();
 const createTask = vi.fn();
 const closeTask = vi.fn();
 const getProjects = vi.fn();
+const reopenTask = vi.fn();
+const deleteTask = vi.fn();
 
 vi.mock("../../../connectors/todoist.js", () => ({
   getTodoistConnector: () => ({
@@ -29,6 +31,8 @@ vi.mock("../../../connectors/todoist.js", () => ({
     createTask,
     closeTask,
     getProjects,
+    reopenTask,
+    deleteTask,
   }),
 }));
 
@@ -222,5 +226,42 @@ describe("todoist recipe-step tools", () => {
       expect(getProjects).toHaveBeenCalledWith();
       expect(out).toBe(JSON.stringify(projects));
     });
+  });
+});
+
+// ── Compensating actions (#1264) ─────────────────────────────────────────────
+// `close_task` and `create_task` shipped without their inverses, even though
+// the connector has implemented both since day one. An action with no
+// reachable inverse is irreversible for reasons unrelated to the vendor API.
+describe("todoist compensating actions", () => {
+  it("exposes todoist.reopen_task as the inverse of close_task", async () => {
+    const tool = getTool("todoist.reopen_task");
+    expect(tool).toBeDefined();
+    expect(tool?.isWrite).toBe(true);
+    expect(tool?.isConnector).toBe(true);
+
+    reopenTask.mockResolvedValue(undefined);
+    const out = await tool?.execute(ctx({ id: "42" }));
+    expect(reopenTask).toHaveBeenCalledWith("42");
+    expect(JSON.parse(out as string)).toEqual({ ok: true, id: "42" });
+  });
+
+  it("exposes todoist.delete_task as the inverse of create_task", async () => {
+    const tool = getTool("todoist.delete_task");
+    expect(tool).toBeDefined();
+    expect(tool?.isWrite).toBe(true);
+
+    deleteTask.mockResolvedValue(undefined);
+    const out = await tool?.execute(ctx({ id: "7" }));
+    expect(deleteTask).toHaveBeenCalledWith("7");
+    expect(JSON.parse(out as string)).toEqual({ ok: true, id: "7" });
+  });
+
+  it("returns the created task id so a later delete can target it", async () => {
+    createTask.mockResolvedValue({ id: "99", content: "x" });
+    const out = await getTool("todoist.create_task")?.execute(
+      ctx({ content: "x" }),
+    );
+    expect(JSON.parse(out as string).id).toBe("99");
   });
 });

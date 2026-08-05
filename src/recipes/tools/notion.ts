@@ -290,6 +290,12 @@ registerTool({
     properties: {
       ok: { type: "boolean" },
       blockCount: { type: "number" },
+      blockIds: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Ids of the created blocks — the handle a compensating delete needs",
+      },
     },
   },
   riskDefault: "medium",
@@ -309,6 +315,13 @@ registerTool({
         typeof connector.appendBlock
       >[0]["blockType"],
     });
-    return JSON.stringify({ ok: true, blockCount: result.results.length });
+    // Surface the created block ids. Without them the append has no inverse:
+    // Notion can delete a block, but only if you know which one — and the ids
+    // are right here in the response (#1264).
+    return JSON.stringify({
+      ok: true,
+      blockCount: result.results.length,
+      blockIds: result.results.map((b) => b.id),
+    });
   }),
 });
