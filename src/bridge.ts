@@ -16,6 +16,8 @@ import { getApprovalQueue } from "./approvalQueue.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { loadOrCreateBridgeToken } from "./bridgeToken.js";
 import { repairBridgeToolsRulesIfStale } from "./bridgeToolsRules.js";
+import { ButlerFactStore } from "./butler/factStore.js";
+import { buildMemoryCard } from "./butler/memoryCard.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { CommitIssueLinkLog } from "./commitIssueLinkLog.js";
 import type { Config } from "./config.js";
@@ -216,6 +218,10 @@ export class Bridge {
   private workerGateDecisionLog: WorkerGateDecisionLog | null = null;
   /** Pre-computed digest of recent decisions, refreshed on each session connect. */
   private recentTracesDigest: string[] = [];
+  /** Butler's durable memory. Read lazily so a bridge that never uses it pays
+   *  nothing, and so a corrupt store degrades to "no card" rather than
+   *  refusing to start. */
+  private butlerFactStore: ButlerFactStore | null = null;
   private httpMcpHandler: StreamableHttpHandler | null = null;
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
@@ -994,6 +1000,11 @@ export class Bridge {
       lines.push(...this.recentTracesDigest);
       lines.push("");
     }
+    const memory = this.buildButlerMemoryCard();
+    if (memory.length > 0) {
+      lines.push(...memory);
+      lines.push("");
+    }
     lines.push("CONTEXT PLATFORM:");
     lines.push(
       "  Use ctx tools for issue/PR/error context — not gh or githubViewPR.",
@@ -1008,6 +1019,27 @@ export class Bridge {
     lines.push("");
     lines.push(...buildEnforcementReminder());
     return lines.join("\n");
+  }
+
+  /**
+   * Butler's memory as instruction lines. Fail-soft in both directions: an
+   * unreadable store yields no card rather than a broken handshake, and only
+   * facts at or above the originate threshold are rendered — anything Butler
+   * merely READ (email, chat, calendar) must never reach the system prompt,
+   * which is the whole OWASP ASI06 attack in one step.
+   */
+  private buildButlerMemoryCard(): string[] {
+    try {
+      this.butlerFactStore ??= new ButlerFactStore({ logger: this.logger });
+      return buildMemoryCard(this.butlerFactStore.recall(), {
+        now: Date.now(),
+      });
+    } catch (err) {
+      this.logger.warn?.(
+        `[butler-memory] card unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return [];
+    }
   }
 
   private async refreshRecentTracesDigest(): Promise<void> {
