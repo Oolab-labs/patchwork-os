@@ -252,7 +252,7 @@ describe("buildWorkerAutonomyGate", () => {
     // bump is a deliberate act rather than a silent one. Moved v0 → v1 with
     // the `forbid` terminal state (ADR-0017), which is both an enum widening
     // and a real policy change — the two things that earn a bump.
-    expect(gated?.gatePolicyVersion).toBe("worker-ramp-v1");
+    expect(gated?.gatePolicyVersion).toBe("worker-ramp-v2");
     expect(allowed?.reversibility).toBe("reversible");
 
     // An autonomous ALLOW is attributed to the worker — it is the party that

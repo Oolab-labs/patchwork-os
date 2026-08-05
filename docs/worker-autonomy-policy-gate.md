@@ -348,6 +348,33 @@ widening (breaks exhaustive switches in older readers) and a genuine policy
 change. The optional `actor` field shipped *unversioned* by contrast, because a
 new optional field is genuinely additive.
 
+### Magnitude bands (`worker-ramp-v2`)
+
+An action class was originally keyed `domain:reversibility:blastTier` — every
+component derived from the tool **name**. That made blast tier a property of the
+*kind* of action and never of the *instance*, so a trivial charge and a
+catastrophic one shared one trust cell: evidence ground out on the former
+silently authorised the latter. `outcomeWeight` did not compensate, because it
+weights failures by the same static per-class tier.
+
+Value-bearing domains (currently just `payments`) now append a coarse magnitude
+band: `payments:irreversible:high:band<=50`. Bands, never raw amounts — an
+unbounded key space would give every purchase its own class and none would ever
+accumulate enough evidence to graduate. An amount that cannot be read bands as
+the **widest** bucket, never the cheapest, so a malformed or adversarial param
+cannot be the route to the low-friction class.
+
+Pre-v2 state keyed on the unbanded form is deliberately **not migrated**. It is
+left unreachable, and such a class re-earns from the prior. Mapping it onto a
+band would launder exactly the trust the band exists to separate: the evidence
+in that cell was gathered without regard to magnitude, so it cannot honestly be
+claimed for any particular band.
+
+Note this is a guard rail placed *before* the capability: no payments tool is
+registered in the recipe tool registry today. The connector methods exist
+(`src/connectors/paystack.ts`, `stripe.ts`) but are unreachable from recipes,
+and that unreachability is currently the only thing containing them.
+
 Readers were hardened first, in a separate change: `describeGateAction` names an
 unrecognised action instead of reporting it as "GATED (asked for approval)", and
 `gateOutcomeFor` maps an unknown action to **refuse**, so no build ever offers a
