@@ -16,6 +16,7 @@ import {
   type PatchworkConfig,
   saveConfig,
 } from "../patchworkConfig.js";
+import { patchworkHome } from "../patchworkHome.js";
 import { registerPreToolUseHook } from "../preToolUseHook.js";
 import { ensureCmdShim } from "../winShim.js";
 
@@ -220,8 +221,15 @@ export async function runPatchworkInit(
     process.exit(0);
   }
 
+  // Write where the bridge READS. `patchworkHome()` honours PATCHWORK_HOME;
+  // building this from a bare `homedir()` would make `init` create a config
+  // in ~/.patchwork that an override-configured bridge never opens — a file
+  // that looks like it took effect and didn't. `opts.home` still wins so
+  // tests can inject a temp home.
   const home = opts.home ?? homedir();
-  const patchworkDir = join(home, ".patchwork");
+  const patchworkDir = opts.home
+    ? join(opts.home, ".patchwork")
+    : patchworkHome();
   const recipesDir = join(patchworkDir, "recipes");
   const inboxDir = join(patchworkDir, "inbox");
   const journalDir = join(patchworkDir, "journal");
