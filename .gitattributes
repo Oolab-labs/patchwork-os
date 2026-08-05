@@ -14,3 +14,8 @@
 *.cmd text eol=crlf
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+
+# docs/in-flight.md is an append-only coordination ledger: concurrent sessions
+# add adjacent entries, which git reports as a conflict on every merge (all five
+# of #1256-#1260 last session). Union merge keeps both sides' appends.
+docs/in-flight.md merge=union
