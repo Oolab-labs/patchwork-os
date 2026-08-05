@@ -1,0 +1,51 @@
+# Butler's errands worker — the walking-skeleton demo identity
+# (docs/plans/butler-walking-skeleton-2026-08-05.md, Phase 3).
+#
+# This exists to make ONE governance moment visible: Butler proposes a real
+# external action, a person says yes, and the Decision Record afterwards says
+# what happened, on what evidence, and whether it can be undone.
+#
+# Deliberately a SEPARATE identity from Butler itself. Butler proposes; the
+# errands worker executes. In a workspace of one that is the only way to get a
+# maker/checker pair at all — the roster fails soft to a single implicit owner,
+# so maker-checker between two humans is arithmetically unavailable.
+#
+# KNOWN LIMITATION, do not mistake this for delegation: a nested recipe today
+# runs under its PARENT's gate and its evidence is attributed to the parent
+# (buildWorkerAutonomyGate binds once per top-level run). So this worker earns
+# its own dial only when its recipe is the top-level run. Fixing that would
+# widen autonomy and needs its own change with a hard never-widen rule.
+id: butler-errands-worker
+name: Butler — Errands
+sector: personal
+recipe: butler-errand
+responsibilities:
+  - Turn a stated request into a task on the user's personal list
+  - Never act on a request it merely READ somewhere; only one the user made
+
+# Matches the recipe's actual steps. `tasks` covers todoist.create_task;
+# `tasks-read` covers the list read. Nothing aspirational — an `owns` entry
+# with no step to attach an observation to can never earn anything, it just
+# looks like coverage.
+owns:
+  - tasks-read
+  - tasks
+
+# Capped at 1, BELOW the compensable auto-allow rung (L2), so every write stays
+# human-approved no matter how much trust accrues. That is the point of the
+# demo: the approval must actually happen. Raising this to 2 is what "Butler
+# handles small errands on its own" would mean, and it should be a deliberate
+# decision made after watching the queue, not a default.
+#
+# Note the honest gap it also covers: there is no outcome grader for tasks.
+# Nothing observes whether a created task was useful or junk, so a success
+# would fold good:true past the durability window on no evidence — the same
+# trust-by-neglect closed for issues in #1064, surviving on this path. Until a
+# grader exists, earned trust here is not meaningful and the ceiling is what
+# actually protects the user.
+autonomyCeiling: 1
+
+# Cold-start prior. Modest and weakly held: this worker has done nothing yet.
+competence:
+  mean: 0.7
+  strength: 2

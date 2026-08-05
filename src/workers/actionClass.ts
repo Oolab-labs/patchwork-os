@@ -117,6 +117,20 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
   "linear.list_issues": "issue-read", // read-only; reversible
   "sentry.get_issue": "issue-read", // read-only; reversible
   "diagnostics.get": "fs-read",
+  // personal task management. Separate from `issue` (engineering trackers):
+  // a personal to-do list has different blast radius and a different audience,
+  // and trust on one should not unlock the other.
+  "todoist.list_tasks": "tasks-read",
+  "todoist.list_projects": "tasks-read",
+  "asana.list_tasks": "tasks-read",
+  "asana.get_task": "tasks-read",
+  "todoist.create_task": "tasks", // compensable — todoist.delete_task exists
+  "todoist.close_task": "tasks", // compensable — todoist.reopen_task exists
+  "todoist.reopen_task": "tasks",
+  "todoist.delete_task": "tasks",
+  "asana.create_task": "tasks",
+  "asana.update_task": "tasks",
+  "asana.complete_task": "tasks",
   // payments / commerce — money movement. These connector methods exist
   // (src/connectors/paystack.ts, stripe.ts) but are NOT currently registered as
   // recipe tools; that unreachability is the only thing containing them today.
@@ -147,6 +161,12 @@ const REVERSIBILITY_BY_DOMAIN: Record<string, Reversibility> = {
   "issue-read": "reversible", // read-only issue queries
   ci: "reversible", // re-runnable, no durable side effect
   "deps-read": "reversible",
+  "tasks-read": "reversible",
+  // Compensable rather than reversible: every write here has a registered
+  // inverse (#1268), but running it is a NEW action with residue — a shared
+  // list showed the task, a collaborator may have seen it. "Undoable" and
+  // "as if it never happened" are not the same claim.
+  tasks: "compensable",
   payments: "irreversible", // a settled charge/transfer has no generic inverse;
   // a refund is a NEW compensating action with residue (fees kept, two
   // statement lines), not an undo — see src/recipes/fileRollback.ts's note.

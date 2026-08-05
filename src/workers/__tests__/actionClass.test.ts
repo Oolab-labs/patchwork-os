@@ -209,3 +209,34 @@ describe("decision record legibility", () => {
     );
   });
 });
+
+describe("personal task management", () => {
+  it("classifies todoist writes as compensable, not irreversible", () => {
+    // Every write has a registered inverse (#1268), so the middle ramp rungs
+    // are reachable — but it is compensable, never "reversible": undoing is a
+    // new action with residue.
+    const ac = classifyActionClass("todoist.create_task");
+    expect(ac.domain).toBe("tasks");
+    expect(ac.reversibility).toBe("compensable");
+    expect(reachableLevels(ac)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("keeps reads in their own reversible domain", () => {
+    expect(classifyActionClass("todoist.list_tasks").reversibility).toBe(
+      "reversible",
+    );
+  });
+
+  it("does not let personal-task trust unlock engineering issues", () => {
+    // A to-do list and a public issue tracker have different audiences.
+    expect(classifyActionClass("todoist.create_task").key).not.toBe(
+      classifyActionClass("github.create_issue").key,
+    );
+  });
+
+  it("no longer falls through to other:irreversible", () => {
+    // Before this, the whole connector surface classified as `other`, which
+    // gated correctly but told an operator nothing about what was gated.
+    expect(classifyActionClass("todoist.create_task").domain).not.toBe("other");
+  });
+});

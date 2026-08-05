@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=https://patchwork.dev/schemas/recipe.v1.json
+#
+# Body for the Butler Errands Worker (templates/workers/butler-errands.worker.yaml).
+# Phase 3 of docs/plans/butler-walking-skeleton-2026-08-05.md.
+#
+# The whole point of this recipe is the GATE, not the errand. It performs one
+# real external action (a task appears on the user's personal list) so that a
+# person can watch: Butler proposes → it stops → you say yes → the Decision
+# Record afterwards says what happened, on what evidence, and that it can be
+# undone with todoist.delete_task.
+#
+# Manual trigger on purpose. Inbound chat is deferred (Telegram's webhook mode
+# needs a public HTTPS endpoint a local-first bridge does not have, so inbound
+# means a polling loop — real infrastructure, and not what this slice is for).
+# Run it with:
+#   patchwork recipe run butler-errand --var request="book the car in for a service"
+apiVersion: patchwork.sh/v1
+name: butler-errand
+description: Turn a request the user made into a task on their personal list, with a human approving the write.
+allowWrites:
+  - todoist.create_task
+  - file.append
+trigger:
+  type: manual
+  vars:
+    - name: request
+      default: ""
+      description: "What the user asked for, in their own words. Required — an empty request produces an empty task title."
+    - name: project_id
+      default: ""
+      description: "Todoist project to file into. Leave blank for the default inbox."
+steps:
+  # Read first: an errand that duplicates something already on the list is the
+  # most likely way for this to be annoying rather than useful.
+  - tool: todoist.list_tasks
+    limit: 50
+    into: existing
+
+  - agent:
+      prompt: |
+        The user asked for: {{request}}
+
+        Their current tasks:
+        {{existing}}
+
+        Write ONE task title for this request — imperative, under 60
+        characters, no trailing full stop. If the request is already covered by
+        an existing task, reply with exactly: DUPLICATE
+
+        Reply with the title alone, nothing else.
+      into: title
+
+  # The gated step. `tasks:compensable:*` sits above the worker's
+  # autonomyCeiling of 1, so this always stops for a human — by design, not by
+  # accident. Approving it is the moment the whole demo exists to show.
+  - when: "{{title}} != DUPLICATE"
+    tool: todoist.create_task
+    content: "{{title}}"
+    project_id: "{{project_id}}"
+    into: created
+
+  # The receipt. `created.id` is what todoist.delete_task needs to undo this —
+  # surfacing it is the difference between "undoable in principle" and
+  # "undoable by someone who has the id".
+  - tool: file.append
+    path: ~/.patchwork/inbox/butler-errands.md
+    content: |
+      - {{title}} (todoist id {{created.id}}) — undo: patchwork recipe run … todoist.delete_task id={{created.id}}
