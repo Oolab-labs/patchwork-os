@@ -1,3 +1,15 @@
+# ⚠️  NOT RUNNABLE TODAY — aspirational example.
+#
+# This recipe uses `parallel: {each}` (map-reduce) to run an AGENT step once
+# per item. No runner implements that: the chained runner rejects it, and the
+# flat runner used to record the step as `skipped` and carry on, so the recipe
+# "succeeded" while its central step never executed. It is kept as a design
+# target for agent fan-out (`fan_out` supports tool sub-steps only, serially).
+#
+# It is excluded from the `validates all example recipes` lint gate by name —
+# see EXAMPLES_KNOWN_UNRUNNABLE in src/commands/__tests__/recipe.test.ts.
+# Delete this banner and the exclusion together once agent fan-out lands.
+
 # vision-tier — demonstrates the runClaudeTask parent→child spawn pattern.
 # Works today if --driver subprocess is active.
 # Each topic gets its own Claude subprocess; parent merges results.

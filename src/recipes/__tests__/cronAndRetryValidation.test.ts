@@ -63,7 +63,14 @@ describe("validateRecipeDefinition — parallel:{each} rejected in chained recip
     ).toBe(true);
   });
 
-  it("allows parallel:{each} in non-chained recipes", () => {
+  // Was "allows parallel:{each} in non-chained recipes", asserting the
+  // chained-specific error does NOT fire on a flat recipe. True as far as it
+  // went, but as written it also asserted a flat recipe may use the form
+  // freely — and the flat runner cannot run it either: the step was silently
+  // recorded `skipped` and its body never executed. The flat path now has its
+  // own error, so the assertion becomes "a DIFFERENT, flat-specific error",
+  // not "no error".
+  it("rejects parallel:{each} in non-chained recipes with the flat-path error", () => {
     const r = validateRecipeDefinition({
       ...BASE,
       steps: [
@@ -80,10 +87,15 @@ describe("validateRecipeDefinition — parallel:{each} rejected in chained recip
     const errs = r.issues
       .filter((i) => i.level === "error")
       .map((i) => i.message);
+    expect(errs.some((e) => /not supported in this recipe/i.test(e))).toBe(
+      true,
+    );
+    // …and it is the flat-path rule that fired, not the chained one.
     expect(
-      errs.some((e) =>
-        /parallel.*each.*chained|chained.*parallel.*each/i.test(e),
-      ),
+      r.issues.some((i) => i.code === "flat-compound-step-unsupported"),
+    ).toBe(true);
+    expect(
+      r.issues.some((i) => i.code === "chained-parallel-each-unsupported"),
     ).toBe(false);
   });
 });
