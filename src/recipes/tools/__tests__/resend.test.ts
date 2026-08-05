@@ -14,9 +14,10 @@ import type { RunContext } from "../../yamlRunner.js";
 const sendEmail = vi.fn();
 const listEmails = vi.fn();
 const getEmail = vi.fn();
+const cancelEmail = vi.fn();
 
 vi.mock("../../../connectors/resend.js", () => ({
-  getResendConnector: () => ({ sendEmail, listEmails, getEmail }),
+  getResendConnector: () => ({ sendEmail, listEmails, getEmail, cancelEmail }),
 }));
 
 // Trigger self-registration of the resend.* tools into the global registry.
@@ -166,5 +167,39 @@ describe("resend.get_email — execute", () => {
 
     expect(getEmail).toHaveBeenCalledWith("email_789");
     expect(result).toBe(JSON.stringify(email));
+  });
+});
+
+// ── Compensating action (#1264) ──────────────────────────────────────────────
+// Resend can cancel an email only while it is still queued/scheduled — this is
+// a pre-delivery hold, NOT a recall. Once handed to the MTA nothing can undo
+// it. The connector has implemented cancelEmail all along; no recipe could
+// reach it, so a scheduled send had no inverse.
+describe("resend.cancel_email", () => {
+  it("is registered as a write tool", () => {
+    const tool = getTool("resend.cancel_email");
+    expect(tool).toBeDefined();
+    expect(tool?.isWrite).toBe(true);
+    expect(tool?.isConnector).toBe(true);
+  });
+
+  it("calls cancelEmail(id) and returns its result", async () => {
+    cancelEmail.mockResolvedValue({ object: "email", id: "e_1" });
+    const out = await getTool("resend.cancel_email")?.execute(
+      makeCtx({ id: "e_1" }, "resend.cancel_email"),
+    );
+    expect(cancelEmail).toHaveBeenCalledWith("e_1");
+    expect(JSON.parse(out as string)).toEqual({ object: "email", id: "e_1" });
+  });
+
+  it("send_email surfaces the id a later cancel must target", async () => {
+    sendEmail.mockResolvedValue({ id: "e_2" });
+    const out = await getTool("resend.send_email")?.execute(
+      makeCtx(
+        { from: "a@b.c", to: "d@e.f", subject: "s", text: "t" },
+        "resend.send_email",
+      ),
+    );
+    expect(JSON.parse(out as string).id).toBe("e_2");
   });
 });

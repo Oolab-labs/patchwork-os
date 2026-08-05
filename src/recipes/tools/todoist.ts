@@ -208,6 +208,84 @@ registerTool({
 });
 
 // ============================================================================
+// todoist.reopen_task — the inverse of close_task
+// ============================================================================
+
+registerTool({
+  id: "todoist.reopen_task",
+  namespace: "todoist",
+  description:
+    "Reopen (un-complete) a Todoist task by id. The compensating action for todoist.close_task.",
+  paramsSchema: {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description: "Todoist task id to reopen (required)",
+      },
+      into: CommonSchemas.into,
+    },
+    required: ["id"],
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      ok: { type: "boolean" },
+      id: { type: "string" },
+    },
+  },
+  riskDefault: "medium",
+  isWrite: true,
+  isConnector: true,
+  execute: wrapConnectorExecute(async ({ params }) => {
+    const { getTodoistConnector } = await import("../../connectors/todoist.js");
+    const connector = getTodoistConnector();
+    const id = params.id as string;
+    await connector.reopenTask(id);
+    return JSON.stringify({ ok: true, id });
+  }),
+});
+
+// ============================================================================
+// todoist.delete_task — the inverse of create_task
+// ============================================================================
+
+registerTool({
+  id: "todoist.delete_task",
+  namespace: "todoist",
+  description:
+    "Delete a Todoist task by id. The compensating action for todoist.create_task. Unlike close_task this is permanent — the task is not recoverable from the Todoist UI.",
+  paramsSchema: {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description: "Todoist task id to delete (required)",
+      },
+      into: CommonSchemas.into,
+    },
+    required: ["id"],
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      ok: { type: "boolean" },
+      id: { type: "string" },
+    },
+  },
+  riskDefault: "medium",
+  isWrite: true,
+  isConnector: true,
+  execute: wrapConnectorExecute(async ({ params }) => {
+    const { getTodoistConnector } = await import("../../connectors/todoist.js");
+    const connector = getTodoistConnector();
+    const id = params.id as string;
+    await connector.deleteTask(id);
+    return JSON.stringify({ ok: true, id });
+  }),
+});
+
+// ============================================================================
 // todoist.list_projects
 // ============================================================================
 
