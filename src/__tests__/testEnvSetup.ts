@@ -28,6 +28,14 @@ process.env.PATCHWORK_HOME = testConfigDir;
 // `allowTmp: false` to `resolveRecipePath` directly.
 process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL = "1";
 
+// Fail loudly if a test reaches a REAL model instead of an injected one.
+// `defaultLocalFn` (LOCAL_ENDPOINT) and `defaultClaudeCodeFn` (the
+// subscription CLI) need no API key, so on a developer laptop they succeed
+// silently — a test that omitted `driver:` made a genuine model call and
+// nothing reported it. Opt a single test back out with
+// PATCHWORK_TEST_ALLOW_LIVE=1 when the live call is the point.
+process.env.PATCHWORK_TEST_NO_LIVE_MODELS = "1";
+
 // Clean up the temp dir when the worker exits.
 process.on("exit", () => {
   try {

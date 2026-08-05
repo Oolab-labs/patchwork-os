@@ -3242,6 +3242,43 @@ function isVitestEnv(): boolean {
 }
 
 /** Resolve all RunnerDeps to concrete StepDeps with production defaults filled in. */
+/**
+ * Test-only guard against a recipe run reaching a REAL model.
+ *
+ * Active when `PATCHWORK_TEST_NO_LIVE_MODELS=1` (set by `testEnvSetup`, never
+ * in production) and switchable off per-test with
+ * `PATCHWORK_TEST_ALLOW_LIVE=1`.
+ *
+ * It substitutes the DEFAULT driver implementations only — a test that
+ * injects its own `claudeFn` / `localFn` / `claudeCodeFn` is unaffected, and
+ * so are the tests that import `defaultClaudeFn` & co. directly to exercise
+ * them with `fetch`/`spawn` controlled. What it catches is the accidental
+ * path: an agent step with no pinned `driver` and no injected executor, where
+ * auto-detect picks whatever the machine happens to offer.
+ *
+ * That is not hypothetical. `defaultLocalFn` calls `LOCAL_ENDPOINT` with no
+ * credential at all, and `defaultClaudeCodeFn` spawns the subscription CLI —
+ * neither needs an API key, so neither fails closed on a developer laptop. A
+ * test that hit one of them made a genuine model call and nothing said so.
+ * (`defaultClaudeFn` already returns a skip marker without
+ * `ANTHROPIC_API_KEY`, so it is only guarded when a key IS present.)
+ */
+function liveModelGuardActive(): boolean {
+  return (
+    process.env.PATCHWORK_TEST_NO_LIVE_MODELS === "1" &&
+    process.env.PATCHWORK_TEST_ALLOW_LIVE !== "1"
+  );
+}
+
+function refuseLiveModel(which: string): never {
+  throw new Error(
+    `[test-guard] this test reached ${which}, which would call a REAL model. ` +
+      "Pin `driver:` on the agent step and inject the matching fn " +
+      "(claudeFn / localFn / claudeCodeFn) in the runner deps. " +
+      "If the live call is the point, set PATCHWORK_TEST_ALLOW_LIVE=1 for that test.",
+  );
+}
+
 function resolveStepDeps(
   deps: RunnerDeps,
   scope?: { recipeName: string },
@@ -3294,9 +3331,21 @@ function resolveStepDeps(
             "diagnostics.get unavailable (no bridge / no `deps.getDiagnostics` injected)",
         })),
     fetchFn: deps.fetchFn ?? (globalThis.fetch as FetchFn),
-    claudeFn: deps.claudeFn ?? defaultClaudeFn,
-    claudeCodeFn: deps.claudeCodeFn ?? defaultClaudeCodeFn,
-    localFn: deps.localFn ?? defaultLocalFn,
+    claudeFn:
+      deps.claudeFn ??
+      (liveModelGuardActive() && process.env.ANTHROPIC_API_KEY
+        ? () => refuseLiveModel("defaultClaudeFn (Anthropic API)")
+        : defaultClaudeFn),
+    claudeCodeFn:
+      deps.claudeCodeFn ??
+      (liveModelGuardActive()
+        ? () => refuseLiveModel("defaultClaudeCodeFn (claude CLI subprocess)")
+        : defaultClaudeCodeFn),
+    localFn:
+      deps.localFn ??
+      (liveModelGuardActive()
+        ? () => refuseLiveModel("defaultLocalFn (LOCAL_ENDPOINT)")
+        : defaultLocalFn),
     providerDriverFn: deps.providerDriverFn ?? makeProviderDriverFn(),
     mockConnectors: deps.mockConnectors ?? {},
     recordFixturesDir: deps.recordFixturesDir,
