@@ -85,6 +85,6 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
   run_level:
     "Whole-recipe failure (no step ran). Check the recipe for circular deps / parse errors.",
   unsupported_step:
-    "The step uses a form this recipe type can't run (parallel / each / recipe / chain / branch on a non-chained recipe). Use the fan_out tool step for tool-only loops, or set trigger.type: chained.",
+    "The step uses a form this recipe type can't run (parallel / each / recipe / chain / branch on a non-chained recipe). Use the fan_out tool step (it loops a tool or an agent sub-step), or set trigger.type: chained.",
   unknown: "Uncategorised halt. Open the run trace for the raw error.",
 };

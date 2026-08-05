@@ -6,7 +6,8 @@
  * in `items`, aggregating results. Stays out of the step-loop surgery
  * that a first-class `for_each` would require.
  *
- * v1 scope: tool-typed `do` only (no agent fan-out), no per-iter expect.
+ * Tool-typed `do`. Agent sub-steps (`do.agent`) are covered in
+ * fanOutAgent.test.ts. No per-iter expect on either path.
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
