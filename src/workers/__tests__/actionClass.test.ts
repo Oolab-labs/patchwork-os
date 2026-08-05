@@ -186,3 +186,26 @@ describe("money movement rates high blast", () => {
     expect(outcomeWeight(ac, false)).toBe(12 * 3 * 1.5);
   });
 });
+
+describe("decision record legibility", () => {
+  it("names the band on the decision, not only inside the key string", () => {
+    // `gate explain` answers "why was THIS action gated". Leaving magnitude
+    // implicit in the key would make an operator parse a string to find the
+    // one fact that decided it.
+    const ac = classifyActionClass("paystack.charge_authorization", {
+      amount: 5_000_00,
+    });
+    expect(ac.magnitudeBand).toBe("band>500");
+    expect(ac.key.endsWith(":band>500")).toBe(true);
+  });
+
+  it("leaves the band absent — not undefined-valued — for non-value domains", () => {
+    const ac = classifyActionClass("gitPush");
+    expect(ac.magnitudeBand).toBeUndefined();
+    // Absent in the serialised form: "not applicable", not "we looked and
+    // found none".
+    expect(Object.hasOwn(JSON.parse(JSON.stringify(ac)), "magnitudeBand")).toBe(
+      false,
+    );
+  });
+});
