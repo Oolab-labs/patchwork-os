@@ -209,6 +209,29 @@ describe("flat runner — parallel: [] desugars to sequential", () => {
     expect(writes.length).toBe(0);
   });
 
+  it("errors on an EMPTY parallel group instead of dropping the step", async () => {
+    // Found in review: an empty array was treated as a group with no children,
+    // so the step silently vanished — the exact bug this file exists to close,
+    // reintroduced by the fix for it. The chained runner guards with
+    // `.length > 0`; this is the flat counterpart.
+    const result = await runYamlRecipe(
+      recipeWithStep({ id: "fan", parallel: [] }),
+      deps(),
+    );
+    expect(result.errorMessage).toMatch(/no steps/i);
+  });
+
+  it("errors on a malformed child instead of skipping it", async () => {
+    // A typo'd child (null, a bare string) used to be dropped mid-loop, so a
+    // group of 3 could silently run 2.
+    const result = await runYamlRecipe(
+      recipeWithStep({ id: "fan", parallel: [w("a"), null, w("b")] }),
+      deps(),
+    );
+    expect(result.errorMessage).toMatch(/step 2 .*is not an object/i);
+    expect(writes.length).toBe(0);
+  });
+
   it("lint accepts the array form on a flat recipe", () => {
     const res = validateRecipeDefinition({
       name: "flat-array",

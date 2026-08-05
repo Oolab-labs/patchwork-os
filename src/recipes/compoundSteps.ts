@@ -143,10 +143,31 @@ export function expandFlatParallel<T>(steps: readonly T[]): T[] {
       );
     }
 
+    // An empty group is an authoring error, not a no-op. Expanding it to
+    // nothing would delete the step from the run silently — the very failure
+    // this module exists to close, reintroduced by its own fix. (The chained
+    // runner guards the same case with `.length > 0`.)
+    if (rec.parallel.length === 0) {
+      throw new Error(
+        `parallel group "${groupId}" has no steps. Remove the group, or give it steps to run.`,
+      );
+    }
+
     const children: unknown[] = [];
-    for (const rawChild of rec.parallel) {
-      if (!rawChild || typeof rawChild !== "object" || Array.isArray(rawChild))
-        continue;
+    for (let j = 0; j < rec.parallel.length; j++) {
+      const rawChild = rec.parallel[j];
+      // Same reasoning one level down: a typo'd child (null, a bare string)
+      // used to be dropped mid-loop, so a group of three could silently run
+      // two and still report success.
+      if (
+        !rawChild ||
+        typeof rawChild !== "object" ||
+        Array.isArray(rawChild)
+      ) {
+        throw new Error(
+          `parallel group "${groupId}" step ${j + 1} is not an object (got ${rawChild === null ? "null" : typeof rawChild}).`,
+        );
+      }
       const child = { ...(rawChild as Record<string, unknown>) };
       if (rec.when !== undefined) {
         if (child.when !== undefined) {
