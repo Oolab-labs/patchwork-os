@@ -28,22 +28,29 @@ steps:
         Whitelist: ~/.patchwork/quiet-hours-whitelist.md
         Urgent = on-call alert, family emergency keyword, known-VIP sender with
         "urgent"/"asap"/"emergency" in subject.
-        Return JSON: { urgent: bool, reason: string }
+        Return JSON: { urgent: bool, batch: bool, reason: string }
+        `batch` is the inverse of `urgent` — set exactly one of them true.
         Input: {{event.notification}}
       into: verdict
-  - id: deliver_or_batch
-    branch:
-      - when: "{{verdict.urgent}}"
-        tool: notify.push
-        risk: high
-        title: "{{event.notification.title}}"
-        body: "{{event.notification.body}}"
-        sound: true
-      - otherwise:
-          tool: queue.append
-          risk: low
-          queue: morning-digest
-          item: "{{event.notification}}"
+  # Was a `branch:` step. `branch:` is not implemented in ANY runner, so the
+  # whole deliver-or-batch decision silently did nothing: the step was recorded
+  # as skipped and the run reported success. Rewritten as two `when:`-guarded
+  # steps, which the flat runner does execute. The guards need both booleans
+  # because `when:` is a truthiness check with no negation operator — hence
+  # `batch` above rather than an `otherwise:` arm.
+  - id: deliver_urgent
+    when: "{{verdict.urgent}}"
+    tool: notify.push
+    risk: high
+    title: "{{event.notification.title}}"
+    body: "{{event.notification.body}}"
+    sound: true
+  - id: batch_the_rest
+    when: "{{verdict.batch}}"
+    tool: queue.append
+    risk: low
+    queue: morning-digest
+    item: "{{event.notification}}"
 on_error:
   notify: false
   retry: 0

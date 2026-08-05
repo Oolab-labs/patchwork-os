@@ -2,6 +2,7 @@ import type { ValidateFunction } from "ajv";
 import cron from "node-cron";
 import { createAjv2020, type ErrorObject } from "../ajv2020.js";
 import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
+import { unsupportedKeysOf, unsupportedStepMessage } from "./compoundSteps.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
@@ -228,6 +229,31 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
       typeof rawRecipe.trigger === "object" &&
       !Array.isArray(rawRecipe.trigger) &&
       (rawRecipe.trigger as Record<string, unknown>).type === "chained";
+    // The flat-path counterpart. `dispatchRecipe` routes on
+    // `trigger.type === "chained"` alone, so every other trigger type runs on
+    // yamlRunner — which implements none of the compound forms. Before this
+    // rule such a recipe passed lint AND reported a successful run whose
+    // compound step was silently recorded as `skipped`. Kept in step with the
+    // runtime guard by sharing COMPOUND_STEP_KEYS.
+    if (!isChainedRecipe && Array.isArray(rawRecipe?.steps)) {
+      const rawSteps = rawRecipe!.steps as unknown[];
+      for (let i = 0; i < rawSteps.length; i++) {
+        const rawStep = rawSteps[i];
+        if (rawStep && typeof rawStep === "object" && !Array.isArray(rawStep)) {
+          const rs = rawStep as Record<string, unknown>;
+          const used = unsupportedKeysOf(rs);
+          if (used.length > 0) {
+            issues.push({
+              level: "error",
+              message: unsupportedStepMessage(`Step ${i + 1}`, used),
+              path: `steps.${i}.${used[0]}`,
+              code: "flat-compound-step-unsupported",
+            });
+          }
+        }
+      }
+    }
+
     if (isChainedRecipe && Array.isArray(rawRecipe?.steps)) {
       const rawSteps = rawRecipe!.steps as unknown[];
       for (let i = 0; i < rawSteps.length; i++) {

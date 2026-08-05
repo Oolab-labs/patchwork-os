@@ -68,6 +68,11 @@ import {
   type AgentUsage,
 } from "./agentExecutor.js";
 import { deriveBreakerKey, getCircuitBreaker } from "./circuitBreaker.js";
+import {
+  expandFlatParallel,
+  unsupportedKeysOf,
+  unsupportedStepMessage,
+} from "./compoundSteps.js";
 import { FileRollbackLog } from "./fileRollback.js";
 import { categoriseHaltReason, type HaltCategory } from "./haltCategory.js";
 import {
@@ -1411,6 +1416,24 @@ export async function runYamlRecipe(
       /* live-tail must not break a recipe run */
     }
   };
+  // Desugar `parallel: [ ... ]` groups into sequential steps. The flat runner
+  // has no concurrency, and running a group's children in order yields the
+  // same results — only wall-clock differs — so the hint is honoured by
+  // flattening rather than rejected. Done BEFORE the step count is reported:
+  // emitting the unexpanded length is what made chained progress indicators
+  // exceed 100% (audit 2026-06-08 recipe-chained-7), and the same trap is
+  // here. A malformed group (unknown group-level key, or a guard on both the
+  // group and a child) throws; the error is held and rethrown inside the step
+  // loop's try, which routes it through the normal "mark the run error"
+  // finalization instead of escaping and stranding the run at "running".
+  let steps = recipe.steps;
+  let expansionError: string | undefined;
+  try {
+    steps = expandFlatParallel(recipe.steps);
+  } catch (err) {
+    expansionError = err instanceof Error ? err.message : String(err);
+  }
+
   // Emit recipe_started as soon as we have a runSeq. The dashboard
   // RecipeRunInline component watches for this event to flip a row
   // from "queued" to "running" without waiting for the first step.
@@ -1418,7 +1441,7 @@ export async function runYamlRecipe(
     runSeq,
     recipeName: recipe.name,
     trigger: yamlTriggerKind,
-    totalSteps: recipe.steps.length,
+    totalSteps: steps.length,
     ts: recipeStartedAt,
   });
 
@@ -1788,7 +1811,8 @@ export async function runYamlRecipe(
   // message into `runError` and fall through to the normal
   // finalization path, which marks the run "error".
   try {
-    for (const step of recipe.steps) {
+    if (expansionError) throw new Error(expansionError);
+    for (const step of steps) {
       // Bug (2): abort on a prior fatal failure. chainedRunner throws (and
       // stops) when a non-optional step fails; the flat runner used to keep
       // going. Break here so later steps don't run on top of a failed
@@ -1818,6 +1842,46 @@ export async function runYamlRecipe(
         tool: step.agent ? "agent" : step.tool,
         ts: stepTs,
       });
+      // Compound steps the flat runner does not implement. `dispatchRecipe`
+      // routes on `trigger.type === "chained"` alone, so every cron / manual /
+      // event / webhook recipe lands here — and none of these forms is read
+      // anywhere in this file. Such a step used to fall through to
+      // executeToolStep's "Unknown tool — skip, don't throw (forward compat)"
+      // return, come back `null`, and be recorded as `skipped` with no error:
+      // the run reported success while the body never executed. The chained
+      // runner already fails loud on its own unsupported form; this is the
+      // missing half. Deliberately NOT extended to `awaits:` — sequential
+      // execution is a valid schedule for any ordering hint, so ignoring it
+      // loses nothing and erroring would be a false alarm.
+      const unsupported = unsupportedKeysOf(step);
+      if (unsupported.length > 0) {
+        const msg = unsupportedStepMessage(
+          `Step "${stepIdForEmit}"`,
+          unsupported,
+        );
+        stepResults.push({
+          id: stepIdForEmit,
+          status: "error",
+          error: msg,
+          haltReason: msg,
+          haltCategory: "unsupported_step" as HaltCategory,
+          durationMs: 0,
+        });
+        runError = runError ?? msg;
+        haltAfterFailure = true;
+        stepsRun++;
+        persistLiveStepResults();
+        emit("recipe_step_done", {
+          runSeq,
+          recipeName: recipe.name,
+          stepId: stepIdForEmit,
+          status: "error",
+          durationMs: 0,
+          ts: Date.now(),
+        });
+        continue;
+      }
+
       // Evaluate `when` guard before running anything. Mirrors
       // chainedRunner.ts:248-266 — render the template, then truthy-check the
       // result (empty string, "0", "false", "null", "undefined" are falsy).

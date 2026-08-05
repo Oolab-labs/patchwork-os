@@ -23,6 +23,7 @@ export type HaltCategory =
   | "missing_connector"
   | "approval_rejected"
   | "run_level"
+  | "unsupported_step"
   | "unknown";
 
 export interface HaltSummary {
@@ -47,6 +48,7 @@ export const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   missing_connector: "missing connector",
   approval_rejected: "approval rejected",
   run_level: "run-level halt",
+  unsupported_step: "unsupported step form",
   unknown: "uncategorised",
 };
 
@@ -82,5 +84,7 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "A step was rejected at the approval gate. Approve it from the dashboard, or set requireApproval: false on the recipe.",
   run_level:
     "Whole-recipe failure (no step ran). Check the recipe for circular deps / parse errors.",
+  unsupported_step:
+    "The step uses a form this recipe type can't run (parallel / each / recipe / chain / branch on a non-chained recipe). Use the fan_out tool step for tool-only loops, or set trigger.type: chained.",
   unknown: "Uncategorised halt. Open the run trace for the raw error.",
 };
