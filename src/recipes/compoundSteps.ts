@@ -87,9 +87,9 @@ export function unsupportedKeysOf(step: unknown): string[] {
  * fails is the same class of misdirection this module exists to remove.
  */
 const REMEDY: Record<string, string> = {
-  each: "Use the `fan_out` tool step — no runner implements `each`.",
+  each: "Use the `fan_out` tool step (it loops a tool or an agent sub-step) — no runner implements `each`.",
   "parallel:{each}":
-    "Use the `fan_out` tool step — no runner implements the map-reduce form.",
+    "Use the `fan_out` tool step (it loops a tool or an agent sub-step) — no runner implements the map-reduce form.",
   recipe: "Set `trigger.type: chained`, which supports nested recipes.",
   chain: "Set `trigger.type: chained`, which supports chained sub-recipes.",
   branch:

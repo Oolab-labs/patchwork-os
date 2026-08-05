@@ -1130,9 +1130,9 @@ export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
       // recipe-chained-1)
       throw new Error(
         `Step "${step.id ?? `parallel_${i}`}" uses parallel:{ each } ` +
-          `(runtime map-reduce), which is not yet implemented in chained ` +
-          "recipes. Use the `fan_out` tool step for tool-only loops; agent " +
-          "fan-out over a runtime-produced array is not yet supported.",
+          `(runtime map-reduce), which is not implemented in chained ` +
+          "recipes. Use the `fan_out` tool step — it loops a tool OR an agent " +
+          "sub-step over an array, on the flat runner.",
       );
     } else {
       if (step.id && seenIds.has(step.id)) {

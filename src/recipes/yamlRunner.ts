@@ -876,6 +876,26 @@ export type StepDeps = Required<
    * aren't both supplied — rollback capture is then a no-op.
    */
   fileRollbackLog?: FileRollbackLog;
+  /**
+   * Agent executor for `fan_out` agent sub-steps, injected by
+   * `runYamlRecipe` (see the closure of the same name for why it cannot live
+   * in the tool). Absent for callers that build StepDeps without a run —
+   * `buildChainedDeps`, direct `executeTool` in tests — and `fan_out` then
+   * REFUSES an agent sub-step rather than running it outside the budget.
+   * Optional on purpose: a required field would force every call site to
+   * supply something, and the tempting something is a no-budget executor.
+   */
+  runNestedAgent?: (input: {
+    prompt: string;
+    driver?: string;
+    model?: string;
+  }) => Promise<{
+    text: string;
+    ok: boolean;
+    error?: string;
+    /** Budget refused admission — the loop must stop, not continue. */
+    budgetHalt?: boolean;
+  }>;
 };
 
 // Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
@@ -1595,6 +1615,90 @@ export async function runYamlRecipe(
       return { value: stripped, ok: true };
     }
   };
+
+  /**
+   * The seam `fan_out` uses for agent sub-steps (one agent call per item).
+   *
+   * It lives HERE, not in the tool, because `runBudget` and
+   * `currentStepUsage` are closure locals of this function: a tool receives
+   * `StepDeps` and cannot reach either. A fan_out that called the agent
+   * itself would spend real money that `admit()` never sees — the same shape
+   * as the S1 finding that left the chained path's budget unenforced. So the
+   * tool decides WHICH prompts to run and this decides whether each one may
+   * run at all, then books the spend.
+   *
+   * Admission is checked per iteration rather than once for the loop: a
+   * 300-item fan-out must stop at the cap, not discover it after the 300th
+   * call. `budgetHalt` is distinct from an ordinary failed iteration because
+   * `on_iter_error: continue` must NOT apply to it — continuing past an
+   * exhausted budget would keep spending exactly when the cap said stop.
+   */
+  const runNestedAgent = async (input: {
+    prompt: string;
+    driver?: string;
+    model?: string;
+  }): Promise<{
+    text: string;
+    ok: boolean;
+    error?: string;
+    budgetHalt?: boolean;
+  }> => {
+    const admission = runBudget.admit();
+    if (!admission.admitted) {
+      return {
+        text: "",
+        ok: false,
+        error: admission.reason ?? "budget_exceeded",
+        budgetHalt: true,
+      };
+    }
+    const agentReturn = await _executeAgent(
+      {
+        prompt: input.prompt,
+        driver: input.driver === "api" ? "anthropic" : input.driver,
+        model: input.model,
+        // A worker-owned recipe's agent deny list applies to every agent call
+        // it makes, including the ones inside a loop — otherwise fan_out is a
+        // hole straight through the worker sandbox.
+        ...(() => {
+          const merged = mergeAgentDisallowedTools(
+            undefined,
+            deps.agentDisallowedTools,
+          );
+          return merged ? { disallowedTools: merged } : {};
+        })(),
+      },
+      buildAgentExecutorDeps(stepDeps, deps),
+    );
+    runBudget.reconcile(
+      agentReturn.servedBy?.driver ?? input.driver ?? "auto",
+      agentReturn.usage,
+      agentReturn.servedBy?.model,
+      {
+        inputChars: input.prompt.length,
+        outputChars: agentReturn.text.length,
+      },
+    );
+    accumulateAgentUsage(
+      currentStepUsage,
+      agentReturn.usage,
+      agentReturn.servedBy,
+      priceTable,
+    );
+    const text = agentReturn.text;
+    // Same failure detection as a first-class agent step. Without it a
+    // refusal or a narration-only reply would be aggregated as a successful
+    // iteration and flow into the synthesis step as if it were real content.
+    if (text.startsWith("[agent step failed:") || detectSilentFail(text)) {
+      return { text, ok: false, error: text };
+    }
+    const stripped = stripLeadingNarration(text);
+    if (!stripped.trim()) {
+      return { text, ok: false, error: "[agent step returned no content]" };
+    }
+    return { text: stripped, ok: true };
+  };
+  stepDeps.runNestedAgent = runNestedAgent;
 
   const runJudgeRefineLoop = async (params: {
     agentCfg: NonNullable<YamlStep["agent"]>;

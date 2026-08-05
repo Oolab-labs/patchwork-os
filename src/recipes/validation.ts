@@ -268,7 +268,7 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
           ) {
             issues.push({
               level: "error",
-              message: `Step ${i + 1}: parallel:{each} map-reduce is not supported in chained recipes. Use the \`fan_out\` tool step for tool-only loops.`,
+              message: `Step ${i + 1}: parallel:{each} map-reduce is not supported in chained recipes. Use the \`fan_out\` tool step, which loops a tool or an agent sub-step over an array.`,
               path: `steps.${i}.parallel`,
               code: "chained-parallel-each-unsupported",
             });

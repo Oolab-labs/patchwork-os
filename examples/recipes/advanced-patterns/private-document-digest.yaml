@@ -1,0 +1,90 @@
+# Scrub many documents locally, then synthesise off-box.
+#
+# The shape this exists for: a report needs hundreds of documents, but the
+# documents themselves must not leave the machine. A LOCAL model does the
+# per-document pass; only its scrubbed output reaches a frontier model.
+#
+# Why `fan_out` and not `parallel: {each}`: no runner implements the
+# map-reduce form. `fan_out` with `do.agent` runs one agent call per item,
+# and the runner (not the tool) admits each call against the run budget —
+# a 300-item loop stops at the cap instead of discovering it afterwards.
+#
+# Honest limits, so nobody assumes more safety than is here:
+#   - The scrubbing quality is the local model's prompt. There is no
+#     deterministic regex/NER floor underneath it and no test asserting a
+#     leak didn't happen. For regulated data, put a deterministic pass in
+#     FRONT of this and treat the model as the second net, not the only one.
+#   - `driver: local` means whatever LOCAL_ENDPOINT points at. The driver
+#     refuses a non-loopback/non-private endpoint unless
+#     LOCAL_ENDPOINT_ALLOW_REMOTE=1 — do not set that casually, it is what
+#     keeps "local" local.
+#   - Iterations run serially. 300 documents is 300 sequential local calls.
+apiVersion: patchwork.sh/v1
+version: 1.0.0
+name: private-document-digest
+description: >
+  Redact a batch of documents with a local model, then write a digest from the
+  redacted extracts only. Raw document text never reaches a hosted model.
+trigger:
+  type: manual
+  inputs:
+    - name: DOC_LIST
+      type: string
+      description: JSON array of document paths or texts to process.
+    - name: DIGEST_PATH
+      type: string
+      description: Where to write the finished digest.
+budget:
+  # A per-document loop is the easy way to spend a lot without noticing.
+  # Cap it, and halt rather than warn.
+  usdMax: 2.00
+  on_breach: halt
+steps:
+  - id: scrub
+    risk: low
+    tool: fan_out
+    items: "{{DOC_LIST}}"
+    as: doc
+    max_iterations: 500
+    # One bad document shouldn't lose the other 299; the failed iteration is
+    # recorded in the aggregate with ok:false and the digest step can see it.
+    on_iter_error: continue
+    into: extracts
+    do:
+      agent:
+        driver: local
+        prompt: |
+          Extract only the facts needed for a summary of this document.
+
+          Rules:
+          - No names, addresses, account numbers, phone numbers or emails.
+          - Replace each person or organisation with a stable token: E1, E2, …
+          - Keep dates only as month-and-year.
+          - If the document contains nothing summary-worthy, return exactly: SKIP
+
+          Document:
+          {{doc}}
+
+  - id: digest
+    risk: low
+    agent:
+      # Only the scrubbed extracts reach this step. If you change `into:` or
+      # this prompt to reference the raw documents, the whole point is lost.
+      prompt: |
+        Below is a JSON array of redacted extracts, one per source document.
+        Entries with "ok": false failed to process — mention how many, don't
+        guess at their contents. Entries whose output is SKIP had nothing
+        worth reporting.
+
+        Write a digest: the themes that recur, what changed over the period,
+        and anything that looks like an outlier. Refer to entities by their
+        tokens (E1, E2, …) exactly as they appear.
+
+        {{extracts}}
+      into: digest_text
+
+  - id: write
+    risk: medium
+    tool: file.write
+    path: "{{DIGEST_PATH}}"
+    content: "{{digest_text}}"
