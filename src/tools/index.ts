@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ActivityLog } from "../activityLog.js";
 import type { AutomationHooks } from "../automation.js";
+import { ButlerFactStore } from "../butler/factStore.js";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { Config } from "../config.js";
@@ -25,6 +26,11 @@ import {
 } from "./batchLsp.js";
 import { createBridgeDoctorTool } from "./bridgeDoctor.js";
 import { createBridgeStatusTool, type DisconnectInfo } from "./bridgeStatus.js";
+import {
+  createButlerForgetTool,
+  createButlerRecallTool,
+  createButlerRememberTool,
+} from "./butlerMemory.js";
 import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
 import {
@@ -445,6 +451,11 @@ export function registerAllTools(
     commitIssueLinkLogArg ?? new CommitIssueLinkLog({ dir: patchworkDir });
   const decisionTraceLog =
     decisionTraceLogArg ?? new DecisionTraceLog({ dir: patchworkDir });
+  // Butler's durable memory. Unlike the logs above it resolves its own
+  // directory through patchworkPath() so PATCHWORK_HOME is honoured (#1265) —
+  // a belief store that lands in a different root than the rest of the install
+  // is the exact split-installation failure that issue is about.
+  const butlerFactStore = new ButlerFactStore();
 
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -800,6 +811,9 @@ export function registerAllTools(
       decisionTraceLog,
       sessionId ? () => sessionId : undefined,
     ),
+    createButlerRememberTool(butlerFactStore),
+    createButlerRecallTool(butlerFactStore),
+    createButlerForgetTool(butlerFactStore),
     createGetCommitsForIssueTool(workspace, commitIssueLinkLog),
     createGetCodeCoverageTool(workspace),
     createGenerateTestsTool(workspace),
