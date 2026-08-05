@@ -119,6 +119,15 @@ export function ownerHaltPhrase(
         fix: "open-trace",
         fixLabel: "See what happened",
       };
+    case "unsupported_step":
+      // Deliberately NOT "open-trace": the step never ran, so a trace shows
+      // nothing. This is an authoring defect — the recipe uses a step form
+      // this recipe type can't execute — and the fix is to edit the recipe.
+      return {
+        sentence:
+          "One of its steps uses a feature this kind of recipe can't run, so it stopped.",
+        fix: "none",
+      };
     case "unknown":
       return {
         sentence: "It stopped for a reason we couldn't label.",

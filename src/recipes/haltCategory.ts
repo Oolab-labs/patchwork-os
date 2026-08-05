@@ -59,6 +59,15 @@ export type HaltCategory =
   | "approval_rejected"
   /** Whole-recipe failure (e.g. circular dependencies) — has no step row. */
   | "run_level"
+  /**
+   * The step uses a construct this runner does not implement (a compound
+   * step — `parallel`, `each`, `recipe`, `chain`, `branch` — on a non-chained
+   * recipe). An AUTHORING defect, not a runtime failure: nothing was attempted
+   * and a retry cannot help. Its own category because the fix is specific and
+   * knowable ("use fan_out, or make the recipe chained") — folding it into
+   * `unknown` would send the author to a run trace that shows nothing.
+   */
+  | "unsupported_step"
   | "unknown";
 
 /**
@@ -83,6 +92,7 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   missing_connector: "missing connector",
   approval_rejected: "approval rejected",
   run_level: "run-level halt",
+  unsupported_step: "unsupported step form",
   unknown: "uncategorised",
 };
 
@@ -110,6 +120,7 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   approval_rejected:
     "approve the step from the dashboard, or set requireApproval: false",
   run_level: "check recipe for circular deps / parse errors",
+  unsupported_step: "use `fan_out`, or set trigger.type: chained",
   unknown: "open run trace for raw error",
 };
 
@@ -129,6 +140,10 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (/approval[_ ]?rejected|rejected by .*approval/i.test(reason))
     return "approval_rejected";
   if (/^expect_failed/i.test(reason)) return "expect_failed";
+  // Compound step on a non-chained recipe (yamlRunner's COMPOUND_STEP_KEYS
+  // guard). Authoring defect — must precede every runtime-failure matcher.
+  if (/is not supported in this recipe/i.test(reason))
+    return "unsupported_step";
   // Opt-in judge→refine loop exhaustion (`judge "x" did not approve after N
   // revisions`). Must precede the generic `Agent step ... threw` matcher.
   if (/did not approve after \d+ revision/i.test(reason))
