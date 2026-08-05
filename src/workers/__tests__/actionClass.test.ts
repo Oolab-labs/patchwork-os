@@ -111,3 +111,78 @@ describe("outcomeWeight", () => {
     expect(classifyActionClass("editText").brandExposed).toBe(false);
   });
 });
+
+describe("magnitude bands (payments)", () => {
+  it("separates a small purchase from a large one into distinct classes", () => {
+    // The defect: the class key derived from the tool NAME alone, so trust
+    // ground out on cheap instances auto-allowed an expensive one.
+    const small = classifyActionClass("paystack.charge_authorization", {
+      amount: 500, // minor units — 5.00
+    });
+    const large = classifyActionClass("paystack.charge_authorization", {
+      amount: 500_000, // 5,000.00
+    });
+    expect(small.key).not.toBe(large.key);
+    expect(small.domain).toBe("payments");
+    expect(large.domain).toBe("payments");
+  });
+
+  it("puts a payments tool in the payments domain, not `other`", () => {
+    const ac = classifyActionClass("paystack.initiate_transfer", {
+      amount: 1000,
+    });
+    expect(ac.domain).toBe("payments");
+    expect(ac.reversibility).toBe("irreversible");
+    expect(ac.brandExposed).toBe(true);
+  });
+
+  it("bands are stable buckets, not raw amounts — so a class can graduate", () => {
+    const a = classifyActionClass("paystack.charge_authorization", {
+      amount: 100,
+    });
+    const b = classifyActionClass("paystack.charge_authorization", {
+      amount: 4000,
+    });
+    expect(a.key).toBe(b.key); // both in the lowest band
+  });
+
+  it("omits the band facet for non-value-bearing domains", () => {
+    expect(classifyActionClass("gitPush", { amount: 999_999 }).key).toBe(
+      "vcs-push:compensable:high",
+    );
+  });
+
+  it("falls to the widest band when no amount is derivable", () => {
+    const unknown = classifyActionClass("paystack.initiate_transfer", {});
+    const huge = classifyActionClass("paystack.initiate_transfer", {
+      amount: 10_000_000,
+    });
+    // An unreadable amount must never be cheaper than the most expensive band.
+    expect(unknown.key).toBe(huge.key);
+  });
+});
+
+describe("money movement rates high blast", () => {
+  it("does not let the namespaced-verb heuristic rate a charge as an ordinary write", () => {
+    // `charge`/`transfer` are not in the read-verb list, so without an explicit
+    // override they fell through to the generic "medium" write default — the
+    // same tier as editText.
+    for (const tool of [
+      "paystack.charge_authorization",
+      "paystack.initiate_transfer",
+      "stripe.create_charge",
+      "stripe.create_payment_intent",
+    ]) {
+      expect(classifyActionClass(tool, { amount: 100 }).blastTier).toBe("high");
+    }
+  });
+
+  it("weights a failed high-value charge far above a routine success", () => {
+    const ac = classifyActionClass("paystack.initiate_transfer", {
+      amount: 5_000_00,
+    });
+    expect(outcomeWeight(ac, true)).toBe(1);
+    // high blast × irreversible × brand-exposed
+    expect(outcomeWeight(ac, false)).toBe(12 * 3 * 1.5);
+  });
+});

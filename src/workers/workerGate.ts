@@ -135,8 +135,17 @@ const AUTONOMOUS_LEVEL = 4 as const;
 /** The gate-policy version stamped on every persisted decision (the threshold
  *  constants + composition rule below). A decision can't be replayed/explained
  *  without knowing which policy produced it — bump when the thresholds or the
- *  reversibility→level mapping change. */
-export const GATE_POLICY_VERSION = "worker-ramp-v1";
+ *  reversibility→level mapping change.
+ *
+ *  v2: action-class keys for value-bearing domains gained a magnitude-band
+ *  facet (`payments:irreversible:high:band<=50`). Pre-v2 trust state keyed on
+ *  the unbanded form is deliberately NOT migrated — it is left unreachable
+ *  rather than mapped onto a band. Migration would launder exactly the trust
+ *  the band exists to separate: whatever evidence produced the old cell was
+ *  gathered without regard to magnitude, so it cannot be claimed for any
+ *  specific band. Unreachable old state means such a class re-earns from the
+ *  prior, which is the conservative direction. */
+export const GATE_POLICY_VERSION = "worker-ramp-v2";
 
 /** How the Claude subprocess sees bridge MCP tools under `--disallowed-tools`:
  *  `mcp__<server>__<tool>`. The server name is fixed to `patchwork` by the

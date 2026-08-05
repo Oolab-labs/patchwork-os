@@ -185,6 +185,14 @@ const NAMESPACED_WRITE_VERB =
  */
 const NAMESPACED_TIER_OVERRIDES: Record<string, RiskTier> = {
   "github.create_issue": "high", // brand-exposed external write
+  // Money movement. Without these the verb heuristic rates `charge`/`transfer`
+  // as an ordinary namespaced write ("medium") — the same tier as editing a
+  // file. Settled funds have no generic inverse, so they are always high.
+  "paystack.charge_authorization": "high",
+  "paystack.initiate_transfer": "high",
+  "stripe.create_charge": "high",
+  "stripe.create_payment_intent": "high",
+  "stripe.create_refund": "high",
 };
 
 function inferTierFromNamespacedId(id: string): RiskTier {
