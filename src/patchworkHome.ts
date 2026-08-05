@@ -26,7 +26,7 @@
 
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /** Legacy (pre-override) root. Exported so callers can name it in messages. */
 export function legacyPatchworkHome(): string {
@@ -41,7 +41,12 @@ export function legacyPatchworkHome(): string {
  */
 export function patchworkHome(): string {
   const override = process.env.PATCHWORK_HOME;
-  return override && override.trim() ? override : legacyPatchworkHome();
+  if (!override || !override.trim()) return legacyPatchworkHome();
+  // `resolve` because a RELATIVE override would otherwise re-point whenever
+  // the process changes directory — and this process has a CwdChanged hook,
+  // so that is a live hazard, not a theoretical one. Pinning it at read time
+  // means the value tracks the env var but never the working directory.
+  return resolve(override.trim());
 }
 
 /** `patchworkHome()` joined with `segments`. */

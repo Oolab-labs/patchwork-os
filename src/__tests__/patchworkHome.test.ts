@@ -32,6 +32,7 @@ import {
 } from "../patchworkConfig.js";
 import {
   _resetLegacyWarning,
+  patchworkHome,
   warnIfLegacyConfigStranded,
 } from "../patchworkHome.js";
 
@@ -125,6 +126,19 @@ describe("PATCHWORK_HOME — config path", () => {
     const lines: string[] = [];
     warnIfLegacyConfigStranded("config.json", (m) => lines.push(m));
     expect(lines).toEqual([]);
+  });
+
+  it("resolves a RELATIVE override to an absolute path", () => {
+    // A relative root would re-point whenever the process changes directory,
+    // and the bridge has a CwdChanged hook — so this is a live hazard.
+    process.env.PATCHWORK_HOME = "relative/dir";
+    expect(path.isAbsolute(patchworkHome())).toBe(true);
+    expect(patchworkHome()).toBe(path.resolve("relative/dir"));
+  });
+
+  it("treats a whitespace-only override as unset", () => {
+    process.env.PATCHWORK_HOME = "   ";
+    expect(patchworkHome()).toBe(path.join(os.homedir(), ".patchwork"));
   });
 
   it("uses the real home when the override is unset", () => {
