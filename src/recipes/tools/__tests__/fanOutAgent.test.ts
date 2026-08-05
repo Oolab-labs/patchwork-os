@@ -251,6 +251,30 @@ describe("fan_out — agent sub-steps", () => {
     expect(written).toContain("E1");
   });
 
+  it.each([
+    ["sandbox", { sandbox: true }],
+    ["tools", { tools: ["Read"] }],
+    ["disallowedTools", { disallowedTools: ["Bash"] }],
+    ["mcpAccess", { mcpAccess: true }],
+    ["into", { into: "x" }],
+    ["vars", { vars: { a: "b" } }],
+  ])("rejects `%s` rather than silently ignoring it", async (_label, extraAgent) => {
+    // Found in review: the original check was a DENYLIST and missed these.
+    // `sandbox` / `tools` / `disallowedTools` are the dangerous ones — an
+    // author writing `sandbox: true` would believe the iteration is
+    // sandboxed while it silently was not, which is a false safety signal
+    // rather than a mere dropped option. Now an allowlist: prompt/driver/
+    // model are honoured, everything else must be named and refused.
+    const result = await runYamlRecipe(
+      fanRecipe('["a"]', {
+        agent: { prompt: "x", driver: "anthropic", ...extraAgent },
+      }),
+      deps(),
+    );
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.error).toMatch(/not supported inside/i);
+  });
+
   it("rejects agent options it cannot honour, instead of ignoring them", async () => {
     // A judge verdict / refine loop inside the iteration is NOT implemented.
     // Accepting the key and dropping it would be the silent-skip bug again.

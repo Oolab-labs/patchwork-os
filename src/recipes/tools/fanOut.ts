@@ -81,7 +81,7 @@ registerTool({
       do: {
         type: "object",
         description:
-          "Inner sub-step, one of two shapes. TOOL: `{tool: <id>, ...params}`. AGENT: `{agent: {prompt, driver?, model?}}` — one agent call per item; step-level agent features (kind/reviews/max_revisions/downshift/escalate/format) are rejected rather than ignored, and agent sub-steps require the flat recipe runner. `{{<as>.*}}` placeholders are rendered per iteration.",
+          "Inner sub-step, one of two shapes. TOOL: `{tool: <id>, ...params}`. AGENT: `{agent: {prompt, driver?, model?}}` — one agent call per item. ONLY those three keys are honoured; any other agent option (sandbox, tools, mcpAccess, kind, reviews, downshift, …) is rejected rather than ignored, because silently dropping `sandbox` would be a false safety signal. Agent sub-steps require the flat recipe runner. `{{<as>.*}}` placeholders are rendered per iteration.",
       },
       concurrency: {
         type: "number",
@@ -178,22 +178,22 @@ registerTool({
           "fan_out: agent sub-steps require the flat recipe runner (no agent executor is wired here)",
         );
       }
-      // Options a first-class agent step honours that an ITERATION does not.
-      // Accepting and ignoring them would be the silent-skip bug in miniature,
-      // so each is named explicitly.
-      const unsupported = [
-        "kind",
-        "reviews",
-        "max_revisions",
-        "downshift",
-        "escalate",
-        "format",
-      ].filter((k) => agentCfg[k] !== undefined);
+      // ALLOWLIST, not a denylist. The first version enumerated the options
+      // to reject and missed `sandbox`, `tools`, `disallowedTools` and
+      // `mcpAccess` — the dangerous ones, because an author writing
+      // `sandbox: true` would believe the iteration is sandboxed while it
+      // silently was not. That is a false safety signal, not merely a dropped
+      // option. An allowlist also survives new keys being added to the agent
+      // block: an option this loop has never heard of is refused by default
+      // instead of being quietly ignored.
+      const HONOURED = new Set(["prompt", "driver", "model"]);
+      const unsupported = Object.keys(agentCfg).filter((k) => !HONOURED.has(k));
       if (unsupported.length > 0) {
         throw new Error(
           `fan_out: \`do.agent.${unsupported.join("`, `do.agent.")}\` is not supported inside an iteration ` +
-            "(judge verdicts, refine loops and per-step routing are step-level features) — " +
-            "move the agent to its own step, or drop the option",
+            "— only `prompt`, `driver` and `model` are honoured. Judge verdicts, refine loops, " +
+            "per-step routing and tool sandboxes are step-level features: move the agent to its " +
+            "own step, or drop the option.",
         );
       }
       toolId = "";
