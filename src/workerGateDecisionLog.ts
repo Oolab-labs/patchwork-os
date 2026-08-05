@@ -77,12 +77,17 @@ export interface GateDecisionRecord {
   workerId: string;
   toolName: string;
   action: GateAction;
-  /** `${domain}:${reversibility}:${blastTier}` — the trust unit. */
+  /** `${domain}:${reversibility}:${blastTier}`, plus `:${magnitudeBand}` for
+   *  value-bearing domains — the trust unit. */
   classKey: string;
   domain: string;
   owned: boolean;
   /** "low" | "medium" | "high" (RiskTier, kept as string to decouple). */
   blastTier: string;
+  /** Value bucket for value-bearing domains (e.g. "band<=50"); absent
+   *  otherwise, and absent on every pre-worker-ramp-v2 record. Optional so an
+   *  older reader is unaffected. */
+  magnitudeBand?: string;
   reversibility: Reversibility;
   /** Trust earned on this class as of the decision. */
   earnedLevel: number;
@@ -231,6 +236,7 @@ export class WorkerGateDecisionLog {
       domain: input.domain,
       owned: input.owned,
       blastTier: input.blastTier,
+      ...(input.magnitudeBand && { magnitudeBand: input.magnitudeBand }),
       reversibility: input.reversibility,
       earnedLevel: input.earnedLevel,
       autonomyCeiling: input.autonomyCeiling,

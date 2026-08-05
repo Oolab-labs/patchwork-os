@@ -229,6 +229,9 @@ export async function buildWorkerAutonomyGate(
           domain: decision.domain,
           owned: decision.owned,
           blastTier: decision.blastTier,
+          ...(decision.magnitudeBand && {
+            magnitudeBand: decision.magnitudeBand,
+          }),
           reversibility: decision.reversibility,
           earnedLevel: decision.earnedLevel,
           autonomyCeiling: decision.autonomyCeiling,

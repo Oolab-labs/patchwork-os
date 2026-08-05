@@ -4956,7 +4956,9 @@ if (process.argv[2] === "gate") {
         "Explain the worker-autonomy gate's most recent decision(s) for a given\n" +
         "worker × action-class, from the local Decision Record\n" +
         "(~/.patchwork/worker_gate_decisions.jsonl) — no bridge required.\n\n" +
-        '  <classKey>       e.g. "issue:compensable:high" (domain:reversibility:blastTier)\n' +
+        '  <classKey>       e.g. "issue:compensable:high" (domain:reversibility:blastTier),\n' +
+        "                   plus a magnitude band on value-bearing domains, e.g.\n" +
+        '                   "payments:irreversible:high:band<=50"\n' +
         "  --limit N        show the N most recent decisions (default 1, or 2 with --diff)\n" +
         "  --diff           compare the 2 most recent decisions and show what changed\n" +
         "  --json            emit raw JSON (for scripting)\n",

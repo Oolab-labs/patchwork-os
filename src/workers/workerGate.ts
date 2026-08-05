@@ -91,6 +91,11 @@ export interface WorkerGateDecision {
   domain: string;
   owned: boolean;
   blastTier: ActionClass["blastTier"];
+  /** Coarse value bucket for value-bearing domains; absent elsewhere. Broken
+   *  out explicitly, like every other component of the class key — an operator
+   *  asking "why was THIS gated" needs the magnitude named, not left implicit
+   *  in a key string they have to parse. */
+  magnitudeBand?: ActionClass["magnitudeBand"];
   reversibility: ActionClass["reversibility"];
   /** Trust actually earned on this class (for logging / the dial). */
   earnedLevel: TrustLevel;
@@ -213,6 +218,10 @@ export function decideWorkerAction(
     domain: ac.domain,
     owned,
     blastTier: ac.blastTier,
+    // Spread-conditional: absent, not undefined, for non-value domains — an
+    // explicit `undefined` would serialise into the Decision Record as a null
+    // and read as "we looked and there was none" rather than "not applicable".
+    ...(ac.magnitudeBand && { magnitudeBand: ac.magnitudeBand }),
     reversibility: ac.reversibility,
     earnedLevel,
     autonomyCeiling: worker.autonomyCeiling,
