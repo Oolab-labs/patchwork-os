@@ -49,7 +49,19 @@ The bridge writes the following files in your home directory. All are **local-on
 | `~/.patchwork/telemetry.json` | First-run timestamp, total recipe runs, 14-day rolling counts. **No event details, no recipe contents.** | Persistent. |
 | `~/.patchwork/inbox/` | Recipe outputs you've explicitly chosen to write here (e.g. `morning-brief-<date>.md`). | You manage these. |
 
-`~/.patchwork/` respects the `PATCHWORK_HOME` environment variable.
+`PATCHWORK_HOME` relocates **part** of `~/.patchwork/`, not all of it. Honoured
+today by: `config.json` and the default recipes directory, connector tokens and
+secrets, the OAuth state store, approval log, feature flags, identity roster,
+activation metrics and worker outcome store. **Not yet honoured** by several
+paths that still resolve against `~/.patchwork` directly — including the recipe
+run log, inbox, decision traces and fixtures (~57 call sites across
+`recipeOrchestration.ts`, `bridge.ts`, `inboxRoutes.ts` and others).
+
+Setting `PATCHWORK_HOME` therefore splits your data across two directories. If
+you set it and a config already exists in `~/.patchwork/`, the bridge logs a
+warning naming both paths rather than silently ignoring the file. Consolidating
+the remaining call sites is tracked work; until it lands, treat the override as
+partial.
 
 These files are **never transmitted by the bridge** unless you opt in to analytics. They exist so that decisions, recipe runs, and tool history persist across bridge restarts and sessions.
 

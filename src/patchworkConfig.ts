@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import type { ModelChoice } from "./adapters/index.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
   storeSecretJsonSync,
 } from "./connectors/tokenStorage.js";
+import { patchworkPath, warnIfLegacyConfigStranded } from "./patchworkHome.js";
 import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 /**
@@ -127,7 +127,10 @@ const DEFAULTS: PatchworkConfig = {
     requireApproval: ["high"],
     pushNotifications: false,
   },
-  recipesDir: join(homedir(), ".patchwork", "recipes"),
+  // `recipesDir` is deliberately absent: a value baked in here would freeze
+  // whatever PATCHWORK_HOME held at module-load time, which for a long-lived
+  // bridge is whatever the first import happened to see. Resolved per load
+  // by `withHomeDefaults` below.
   // Default driver so `patchwork-os recipe run X` and dashboard task launches
   // work immediately after `patchwork init`. Without this the bridge defaults
   // to "none" and recipe execution returns "Recipe execution unavailable —
@@ -136,7 +139,7 @@ const DEFAULTS: PatchworkConfig = {
 };
 
 export function defaultConfigPath(): string {
-  return join(homedir(), ".patchwork", "config.json");
+  return patchworkPath("config.json");
 }
 
 type ApiKeyProvider = keyof NonNullable<PatchworkConfig["apiKeys"]>;
@@ -215,16 +218,31 @@ export function clearConfigCache(): void {
   _configCache.clear();
 }
 
+/**
+ * Fill in the defaults that depend on the workspace root. Applied AFTER the
+ * on-disk config is merged, so an explicit `recipesDir` still wins, and
+ * resolved per call so the value tracks PATCHWORK_HOME rather than whatever
+ * it was at import time.
+ */
+function withHomeDefaults(cfg: PatchworkConfig): PatchworkConfig {
+  return cfg.recipesDir
+    ? cfg
+    : { ...cfg, recipesDir: patchworkPath("recipes") };
+}
+
 export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
+  // Say so when an override is active but the real config was left behind.
+  warnIfLegacyConfigStranded("config.json");
   const now = Date.now();
   const cached = _configCache.get(path);
   if (cached && now < cached.expires) return cached.result;
   if (!existsSync(path)) {
     const fromStore = loadApiKeysFromSecureStore();
-    const result: PatchworkConfig =
+    const result: PatchworkConfig = withHomeDefaults(
       Object.keys(fromStore).length > 0
         ? { ...DEFAULTS, apiKeys: fromStore }
-        : { ...DEFAULTS };
+        : { ...DEFAULTS },
+    );
     _configCache.set(path, { result, expires: now + _CONFIG_TTL_MS });
     return result;
   }
@@ -271,11 +289,11 @@ export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
     Object.keys(fromStore).length > 0 || parsed.apiKeys
       ? { ...parsed.apiKeys, ...fromStore }
       : undefined;
-  const result: PatchworkConfig = {
+  const result: PatchworkConfig = withHomeDefaults({
     ...DEFAULTS,
     ...parsed,
     ...(apiKeys ? { apiKeys } : {}),
-  };
+  });
   // Don't cache migrated configs — the file has just been rewritten; next load
   // should see the stripped version. This path is once-per-key, not hot.
   if (!migrated)
