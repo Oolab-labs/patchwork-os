@@ -22,6 +22,7 @@ const payer: WorkerManifest = {
   id: "payer",
   name: "Payer",
   recipe: "pay-recipe",
+  responsibilities: ["Take payments the user has approved"],
   owns: ["payments"],
   autonomyCeiling: 4,
 };
