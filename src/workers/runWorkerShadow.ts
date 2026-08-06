@@ -73,6 +73,14 @@ function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
         tool: s.tool,
         status: s.status,
         haltReason: s.haltReason,
+        // Carry the step inputs: the action-class key bands value-bearing
+        // actions by magnitude, so dropping these files every outcome under
+        // the widest band and inverts the protection (#1267 read-side only).
+        ...(s.resolvedParams !== null &&
+        typeof s.resolvedParams === "object" &&
+        !Array.isArray(s.resolvedParams)
+          ? { resolvedParams: s.resolvedParams as Record<string, unknown> }
+          : {}),
         // Outcome attribution: carry the captured issue URL so ingestRun can
         // look up the issue's disposition in the outcome store. Only present on
         // github.create_issue steps (see yamlRunner.ts step output capture).
