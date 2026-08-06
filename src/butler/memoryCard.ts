@@ -40,6 +40,37 @@ function age(recordedAt: number, now: number): string {
   return `${Math.floor(d / 365)}y ago`;
 }
 
+/**
+ * Collapse anything that could forge structure in the instructions block.
+ *
+ * This card renders fact text straight into a SYSTEM PROMPT. The store
+ * deliberately accepts any UTF-8 except NUL (a belief is arbitrary text), so
+ * the safety boundary has to be here, at the point of rendering — and it has
+ * to be here rather than at write time, because rows written before this
+ * existed are already on disk.
+ *
+ * Stripped:
+ *   - C0/C1 controls including \n and \r — a newline lets a value emit a
+ *     second line and impersonate a real instruction heading; a lone \r
+ *     rewrites the line in a terminal render.
+ *   - U+2028/U+2029 — Unicode line/paragraph separators, newlines by another
+ *     name in most renderers.
+ *   - U+202A–U+202E, U+2066–U+2069 — bidi overrides, which reorder displayed
+ *     text without changing the bytes, so a value can appear to say something
+ *     other than what is stored.
+ *
+ * Replaced with a space, not removed: deleting them would silently join words
+ * that were separate, which changes the meaning of the belief.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control
+// characters is the entire purpose of this expression.
+const UNSAFE_IN_PROMPT =
+  /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u202A-\u202E\u2066-\u2069]/g;
+
+export function sanitizeForPrompt(s: string): string {
+  return s.replace(UNSAFE_IN_PROMPT, " ").replace(/\s+/g, " ").trim();
+}
+
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
@@ -79,8 +110,11 @@ export function buildMemoryCard(
   const lines = [
     "WHAT YOU KNOW ABOUT THE USER (Butler memory):",
     ...shown.map((f) => {
+      // Sanitise BEFORE truncating: truncation must not be able to leave a
+      // dangling half-escape, and the length budget should count the text
+      // that is actually rendered.
       const body = truncate(
-        `${f.subject} ${f.predicate}: ${f.object}`,
+        sanitizeForPrompt(`${f.subject} ${f.predicate}: ${f.object}`),
         MAX_FACT_CHARS,
       );
       return `  • ${body} (${age(f.recordedAt, opts.now)})`;
