@@ -6,12 +6,21 @@ import { error, requireString, successStructured } from "./utils.js";
  * Butler's durable memory, exposed to agents.
  *
  * The write tool deliberately does NOT take a provenance channel. An agent
- * asking to remember something is, by definition, `recipe_agent` (tier 0.6) —
- * it may reinforce a belief but never originate a high-stakes one, and it can
- * never write at user tier. Letting the caller name its own trust level would
- * hand the pen to whatever text the agent just read, which is the OWASP ASI06
- * failure mode this store exists to resist. Promotion to user tier happens only
- * through a human act, outside this surface.
+ * asking to remember something is, by definition, `recipe_agent` — tier 0.5,
+ * STRICTLY below ORIGINATE_THRESHOLD. Letting the caller name its own trust
+ * level would hand the pen to whatever text the agent just read, which is the
+ * OWASP ASI06 failure mode this store exists to resist.
+ *
+ * What that tier actually buys, stated precisely because an earlier version of
+ * this comment overstated it: a fact written here is DURABLY RECORDED and
+ * readable via `butlerRecall({minTrust: 0})`, but it does not become a belief
+ * on its own — it is filtered out of `resolveFacts` at the originate floor and
+ * never reaches the memory card, so it cannot address the model in a later
+ * session's system prompt. It is a proposal with a receipt, not a fact.
+ *
+ * Promotion to user tier happens only through a human act, outside this
+ * surface. There is no reinforcement mechanism yet: two agent-tier rows about
+ * the same subject do not combine into something that clears the floor.
  */
 
 export function createButlerRememberTool(store: ButlerFactStore) {
@@ -19,7 +28,7 @@ export function createButlerRememberTool(store: ButlerFactStore) {
     schema: {
       name: "butlerRemember",
       description:
-        "Record one durable fact about the user (preference, household, standing context) as subject + predicate + value. Written at agent trust: it can reinforce what the user said, never override it.",
+        "Record one durable fact about the user (preference, household, standing context) as subject + predicate + value. Written at agent trust, below the belief threshold: it is stored and auditable but does not become something Butler asserts.",
       annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: {
         type: "object" as const,

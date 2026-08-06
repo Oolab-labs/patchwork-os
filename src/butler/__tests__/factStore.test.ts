@@ -86,7 +86,8 @@ describe("provenance and trust", () => {
       channel: "recipe_agent",
       contentConfidence: 0.4,
     });
-    expect(f.provenance.tier).toBe(0.6);
+    // 0.5 — strictly below ORIGINATE_THRESHOLD so an agent cannot originate.
+    expect(f.provenance.tier).toBe(0.5);
     expect(f.trust).toBeCloseTo(0.4);
   });
 

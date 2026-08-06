@@ -455,6 +455,9 @@ export function registerAllTools(
   // directory through patchworkPath() so PATCHWORK_HOME is honoured (#1265) —
   // a belief store that lands in a different root than the rest of the install
   // is the exact split-installation failure that issue is about.
+  // No logger passed: ButlerFactStore defaults to console.warn. That default
+  // exists because a missing logger here silently disabled the store's only
+  // signal that a belief went missing.
   const butlerFactStore = new ButlerFactStore();
 
   const workspace = config.workspace;
