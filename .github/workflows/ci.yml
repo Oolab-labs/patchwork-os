@@ -113,6 +113,12 @@ jobs:
       # Scoped to the four reader-facing documents — see the script header.
       - name: Audit docs version drift (gating)
         run: node scripts/audit-version-drift.mjs
+      # Public MIT repo: business model, pricing, competitor analysis and
+      # channel strategy belong outside it (ADR-0019). Six such documents had
+      # landed because the only control was a .gitignore list somebody had to
+      # remember to extend.
+      - name: Audit business content (gating)
+        run: node scripts/audit-business-content.mjs
 
   plugin-validate:
     name: Validate plugin manifest

@@ -78,5 +78,5 @@ If any of these miss, stop and reassess before adding more connectors.
 - Review summary (this conversation): three reviewers, three independent angles, same verdict.
 - [docs/install-ux-plan.md](../install-ux-plan.md) — the front-door work this ADR commits to.
 - [docs/business/pro-tier.md](../business/pro-tier.md) — approval-loop positioning.
-- [docs/verticals/therapy-practices.md](../verticals/therapy-practices.md) — out of scope for this plan, separate repo.
+- `docs/verticals/therapy-practices.md` — out of scope for this plan, separate repo. (Document removed from this repository as commercial material; the statement is kept because it records what this ADR decided.)
 - [documents/roadmap.md](../../documents/roadmap.md) — dogfood items 1–2 pulled into W2.

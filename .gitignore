@@ -105,12 +105,29 @@ intellij-plugin/.gradle/
 *.jpeg
 *.jpg
 
-# Personal/local working docs, not for version control
+# ---- Commercial / business-angle material — never repo content ----
+#
+# This is a public MIT repository. Business model, pricing, competitor
+# analysis, vertical market research and channel strategy do not belong in
+# it — ADR-0019 says so in its own Consequences section ("anything about
+# pricing, packaging or tiers ... do not belong in this repository in any
+# form") and six documents landed anyway, because this list existed but was
+# never extended as new ones were written.
+#
+# scripts/audit-business-content.mjs gates the same rule in CI, so a new one
+# fails the build instead of relying on this list being remembered.
 /docs/audit-bridge-changelog-2026-06-25.md
 /docs/positioning-pricing-onepager.md
 /docs/roadmap-plan-2026-07-02.md
 /docs/business/
 /docs/showcase-guide.md
+/docs/platform-strategy.md
+/docs/listings.md
+/docs/governed-workspace-scope.md
+/docs/recipe-authoring-wave2-plan.md
+/docs/plans/recipe-authoring-wave2-plan-review.md
+/docs/verticals/
+/documents/distribution-channel-policy.md
 /scratch_test_ollama.js
 
 # ---- QUMO / TA trading research — never repo content ----
