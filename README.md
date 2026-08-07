@@ -102,4 +102,4 @@ Off by default; nothing is sent unless you opt in. If you do: aggregate counts a
 
 ⭐ If this saved you a config file or a blown deploy, a star is the only signal I get that it's helping.
 
-MIT © Oolab Labs
+MIT © Oolab Labs — [what that covers](LICENSING.md) · [name and marks](TRADEMARK.md)
