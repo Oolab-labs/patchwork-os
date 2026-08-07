@@ -123,6 +123,11 @@ jobs:
       # licensing pass broke three, and they were only caught by hand.
       - name: Audit doc links (gating)
         run: node scripts/audit-doc-links.mjs
+      # .claude/skills and the plugin's skills are standalone copies, not
+      # symlinks. CLAUDE.md asks for a manual sync; 339dda40 proved that is not
+      # enough — the local ide-refactor sat on the pre-refactorAnalyze version.
+      - name: Audit skill parity (gating)
+        run: node scripts/audit-skill-parity.mjs
 
   plugin-validate:
     name: Validate plugin manifest
