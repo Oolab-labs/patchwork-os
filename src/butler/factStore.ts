@@ -70,17 +70,28 @@ export class ButlerFactStore {
   private readonly file: string;
   private readonly dir: string;
   private readonly now: () => number;
+  /**
+   * Never undefined. The torn-row and malformed-row warnings are the store's
+   * ONLY signal that a durable belief failed to load, and a caller that simply
+   * forgot the option turned them into silent no-ops — which is how
+   * `src/tools/index.ts` shipped with them disabled. Defaulting here fixes
+   * every present and future call site instead of one.
+   */
+  private readonly logger: { warn?: (msg: string) => void };
   /** ADR-0007 tail-on-read watermark. */
   private lastReadOffset = 0;
 
-  constructor(private readonly opts: FactStoreOptions = {}) {
+  constructor(opts: FactStoreOptions = {}) {
     this.dir = opts.dir ?? patchworkPath("butler");
     this.file = path.join(this.dir, "facts.jsonl");
     this.now = opts.now ?? Date.now;
+    this.logger = opts.logger ?? {
+      warn: (msg: string) => console.warn(msg),
+    };
     try {
       mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     } catch (err) {
-      opts.logger?.warn?.(
+      this.logger.warn?.(
         `[butler-facts] could not create ${this.dir}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
@@ -239,7 +250,7 @@ export class ButlerFactStore {
       const buf = readFileSync(this.file);
       raw = buf.subarray(this.lastReadOffset).toString("utf8");
     } catch (err) {
-      this.opts.logger?.warn?.(
+      this.logger.warn?.(
         `[butler-facts] could not read ${this.file}: ${err instanceof Error ? err.message : String(err)}`,
       );
       return;
@@ -253,7 +264,7 @@ export class ButlerFactStore {
       } catch {
         // A torn row is skipped, not fatal — but say so. Silence here would
         // make a lost belief indistinguishable from one never recorded.
-        this.opts.logger?.warn?.(
+        this.logger.warn?.(
           "[butler-facts] skipped an unparseable row — a belief may be missing",
         );
         continue;
@@ -265,7 +276,7 @@ export class ButlerFactStore {
         typeof f?.predicate !== "string" ||
         typeof f?.trust !== "number"
       ) {
-        this.opts.logger?.warn?.("[butler-facts] skipped a malformed row");
+        this.logger.warn?.("[butler-facts] skipped a malformed row");
         continue;
       }
       this.facts.push(f);

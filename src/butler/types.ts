@@ -48,17 +48,29 @@ export type ProvenanceChannel =
 export const PROVENANCE_TIER: Record<ProvenanceChannel, number> = {
   user_chat: 1.0,
   user_confirmed: 1.0,
-  recipe_agent: 0.6, // may reinforce an existing belief, may not originate one
+  // STRICTLY below ORIGINATE_THRESHOLD, and that is the whole claim: an agent
+  // whose context is a just-read email must not be able to seed a new belief.
+  // These were equal (0.6 and 0.6) with both gates comparing `>=`, so the
+  // docstring's "may not originate" was false for the first day it existed.
+  recipe_agent: 0.5,
   connector: 0.3, // may never, on its own, establish anything
   import: 0.3, // never upgraded on the way in
 };
 
-/** Minimum trust to establish a NEW belief that nothing else asserts. */
+/**
+ * Minimum trust to establish a NEW belief that nothing else asserts. Compared
+ * with `>=`, so any channel intended to be unable to originate must sit
+ * STRICTLY below this.
+ */
 export const ORIGINATE_THRESHOLD = 0.6;
 
-/** Minimum trust to write a standing instruction ("always CC my accountant").
- *  Only the user. A connector proposing one is the archetypal ASI06 attack. */
-export const STANDING_THRESHOLD = 1.0;
+// A STANDING_THRESHOLD constant lived here, documented as "only the user may
+// write a standing instruction". Nothing read it: there is no standing-
+// instruction store yet (deferred — see docs/plans/butler-walking-skeleton-
+// 2026-08-05.md). A documented control that no code enforces is worse than an
+// absent one, because a reader budgets for protection that is not there. It is
+// deleted rather than kept aspirationally; reinstate it in the commit that
+// actually enforces it.
 
 export interface FactProvenance {
   channel: ProvenanceChannel;
