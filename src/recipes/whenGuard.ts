@@ -43,8 +43,26 @@
 /** Falsy tokens, from the original guard. Kept verbatim. */
 const FALSY = new Set(["", "0", "false", "null", "undefined"]);
 
-/** Operators an author might reach for that this guard cannot evaluate. */
-const UNSUPPORTED = [">=", "<=", "&&", "||", ">", "<"] as const;
+/**
+ * Operators an author might reach for that this guard cannot evaluate, each
+ * paired with a LITERAL regex.
+ *
+ * Written out rather than built with `new RegExp(escape(op))`: an escape
+ * helper that misses a character is a sink CodeQL is right to flag, and the
+ * set is fixed and tiny, so there is nothing to be gained by generating it.
+ * Two-character operators come first — `>=` must match before `>`.
+ *
+ * Each pattern requires whitespace or a boundary on both sides, so `->` and
+ * `=>` inside a literal comparison value are not mistaken for operators.
+ */
+const UNSUPPORTED: ReadonlyArray<{ op: string; re: RegExp }> = [
+  { op: ">=", re: /(^|\s)>=(\s|$)/ },
+  { op: "<=", re: /(^|\s)<=(\s|$)/ },
+  { op: "&&", re: /(^|\s)&&(\s|$)/ },
+  { op: "||", re: /(^|\s)\|\|(\s|$)/ },
+  { op: ">", re: /(^|\s)>(\s|$)/ },
+  { op: "<", re: /(^|\s)<(\s|$)/ },
+];
 
 export type WhenResult =
   | { kind: "ok"; truthy: boolean }
@@ -64,11 +82,7 @@ function outsideExpressions(template: string): string {
  */
 export function findUnsupportedOperator(template: string): string | null {
   const scan = outsideExpressions(template);
-  for (const op of UNSUPPORTED) {
-    // Require whitespace on at least one side. `->` and `=>` in a literal
-    // comparison value are not operators, and neither is a lone `<` in prose
-    // the author typed deliberately.
-    const re = new RegExp(`(^|\\s)${op.replace(/[|&<>=]/g, "\\$&")}(\\s|$)`);
+  for (const { op, re } of UNSUPPORTED) {
     if (re.test(scan)) return op;
   }
   return null;
