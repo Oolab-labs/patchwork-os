@@ -14,6 +14,7 @@ import {
 } from "./names.js";
 import { generateSchemaSet } from "./schemaGenerator.js";
 import { listToolOutputContextKeys } from "./toolRegistry.js";
+import { findUnsupportedOperator } from "./whenGuard.js";
 
 /** Driver ids a `downshift` candidate may name (mirrors the JSON-schema enum). */
 const DOWNSHIFT_KNOWN_DRIVERS = new Set([
@@ -466,6 +467,7 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
 
       validateAwaitsTargets(r, recipe, issues);
       validateJudgeReviewsTargets(r, issues);
+      validateWhenGuards(r, issues);
 
       validateTemplateReferences(r, issues, collectParallelEachKeys(recipe));
     }
@@ -691,6 +693,39 @@ function validateJudgeReviewsTargets(
       message: `Step ${i + 1}: 'reviews: ${reviews}' does not match any step into key or step id — the judge would review nothing at run time`,
       code: "judge-reviews-unresolved",
       path: `steps.${i}.agent.reviews`,
+    });
+  }
+}
+
+/**
+ * `when:` guards that use an operator the runner cannot evaluate.
+ *
+ * An ERROR, not a warning, because the runner now halts such a step — and
+ * because the failure this catches used to be silent AND permissive:
+ * `when: "{{title}} != DUPLICATE"` rendered to a non-empty string, tested
+ * truthy, and ran the guarded write every time. The author saw a guard; there
+ * was none. Telling them at author time is the whole point of having a linter.
+ *
+ * Only operators OUTSIDE `{{ }}` are flagged — what is inside the braces is
+ * the template engine's business (see `findUnsupportedOperator`).
+ */
+function validateWhenGuards(
+  normalizedRecipe: Record<string, unknown>,
+  issues: LintIssue[],
+): void {
+  const steps = Array.isArray(normalizedRecipe.steps)
+    ? (normalizedRecipe.steps as Record<string, unknown>[])
+    : [];
+  for (let i = 0; i < steps.length; i++) {
+    const when = steps[i]?.when;
+    if (typeof when !== "string" || when.length === 0) continue;
+    const op = findUnsupportedOperator(when);
+    if (!op) continue;
+    issues.push({
+      level: "error",
+      message: `Step ${i + 1}: \`when\` cannot evaluate \`${op}\` — only \`==\` and \`!=\` are supported. Compute the comparison in the step that produces the value and gate on its result, or restate the guard as an equality check.`,
+      code: "when-unsupported-operator",
+      path: `steps.${i}.when`,
     });
   }
 }

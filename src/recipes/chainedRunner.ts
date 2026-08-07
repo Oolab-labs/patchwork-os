@@ -42,6 +42,7 @@ import {
 } from "./stepObservation.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
+import { evaluateWhen } from "./whenGuard.js";
 import type { StepExpect } from "./yamlRunner.js";
 import {
   computeAgentCallUsage,
@@ -392,24 +393,38 @@ export function resolveStepTemplates(
     if ((step.when as unknown) === false) {
       conditionResult = false;
     } else if (step.when) {
-      const compiled = compileTemplate(step.when);
-      const result = compiled.evaluate(context);
-      if ("error" in result) {
-        errors.push(result.error);
+      // Evaluated by the SHARED guard (src/recipes/whenGuard.ts). This block
+      // used to be a hand-maintained twin of the flat runner's, with a comment
+      // on each asking the next person to keep them in lockstep — which is the
+      // arrangement that produced the flat-vs-chained fork in #1256. Parity is
+      // now structural.
+      // The FIRST template error wins and is reported verbatim — a comparison
+      // guard renders each side separately, so a broken `{{ref}}` on the left
+      // must not be masked by a clean literal on the right.
+      let templateError: TemplateError | undefined;
+      const verdict = evaluateWhen(step.when, (s) => {
+        const r = compileTemplate(s).evaluate(context);
+        if ("error" in r) {
+          templateError ??= r.error;
+          return "";
+        }
+        return r.value;
+      });
+      if (templateError !== undefined) {
+        errors.push(templateError);
+        conditionResult = false;
+      } else if (verdict.kind === "unsupported") {
+        // An operator the guard cannot evaluate is an authoring defect. It
+        // fails the condition AND says why — silently truthy-testing it is how
+        // `{{title}} != DUPLICATE` shipped as a guard that never fired.
+        errors.push({
+          type: "compile_error",
+          template: step.when,
+          message: verdict.reason,
+        });
         conditionResult = false;
       } else {
-        // Falsy if the WHOLE value is a falsy token OR its LAST token is — so a
-        // `when` fed an agent's free-text decision (prose ending in "true"/"false")
-        // gates on the verdict, not on "non-empty ⇒ truthy". Single-token guards
-        // are unchanged (last token === whole value). Kept in lockstep with
-        // yamlRunner.ts's guard (runner behavioral parity).
-        const val = result.value.trim().toLowerCase();
-        const FALSY = new Set(["", "0", "false", "null", "undefined"]);
-        const lastToken = (val.split(/\s+/).pop() ?? "").replace(
-          /[^a-z0-9]/g,
-          "",
-        );
-        conditionResult = !!val && !FALSY.has(val) && !FALSY.has(lastToken);
+        conditionResult = verdict.truthy;
       }
     }
   }

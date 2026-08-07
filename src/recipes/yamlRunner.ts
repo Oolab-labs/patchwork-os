@@ -113,6 +113,7 @@ import {
   hasTool,
   registerPluginTools,
 } from "./toolRegistry.js";
+import { evaluateWhen } from "./whenGuard.js";
 import { resolveWorkspaceRoot } from "./workspaceRoot.js";
 import "./tools/index.js";
 
@@ -1996,27 +1997,27 @@ export async function runYamlRecipe(
         step.when === false ||
         (typeof step.when === "string" && step.when.length > 0)
       ) {
-        const rendered =
+        // Evaluated by the SHARED guard (src/recipes/whenGuard.ts) rather than
+        // a local copy — the chained runner used to hold a near-identical
+        // block with a comment asking the next person to keep them in
+        // lockstep, and hand-kept parity is what produced the flat-vs-chained
+        // fork in #1256.
+        const verdict =
           step.when === false
-            ? "false"
-            : render(step.when, ctx).trim().toLowerCase();
-        // Falsy if the WHOLE value is a falsy token OR its LAST token is. The
-        // last-token check is what makes a `when` fed an agent's free-text
-        // decision gate correctly: a step like `decide_file` emits paragraphs of
-        // reasoning that END in "true"/"false" (into: should_file), and a bare
-        // "non-empty ⇒ truthy" check treated that prose as truthy and ran the
-        // guarded step even on a "false" verdict. Single-token guards (the common
-        // case — {{phone}}, {{repo}}, "0") are unchanged: last token === whole
-        // value. Trailing punctuation/backticks/quotes are stripped so `` `false`. ``
-        // still reads false.
-        const FALSY = new Set(["", "0", "false", "null", "undefined"]);
-        const lastToken = (rendered.split(/\s+/).pop() ?? "").replace(
-          /[^a-z0-9]/g,
-          "",
-        );
-        const truthy =
-          !!rendered && !FALSY.has(rendered) && !FALSY.has(lastToken);
-        if (!truthy) {
+            ? ({ kind: "ok", truthy: false } as const)
+            : evaluateWhen(step.when, (s) => render(s, ctx));
+
+        // An operator the guard cannot evaluate is an AUTHORING defect, and it
+        // halts the step. Truthy-testing it is exactly how `{{title}} !=
+        // DUPLICATE` shipped as a guard that never fired: nothing errored,
+        // nothing was skipped, and the guarded write happened every time.
+        if (verdict.kind === "unsupported") {
+          throw new Error(
+            `unsupported_step: ${verdict.reason} (in \`when: ${step.when}\`)`,
+          );
+        }
+
+        if (!verdict.truthy) {
           const skipId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
           stepResults.push({
             id: skipId,
