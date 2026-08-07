@@ -1,6 +1,6 @@
 # Privacy Policy — Patchwork OS / Claude IDE Bridge
 
-**Last updated: May 2026**
+**Last updated: August 2026**
 
 Patchwork OS (also distributed as Claude IDE Bridge — "the bridge") is an open-source MCP server that connects AI coding assistants to your editor. This policy describes what data the bridge handles, where it goes, and what we retain.
 
@@ -71,7 +71,8 @@ These files are **never transmitted by the bridge** unless you opt in to analyti
 ## Mobile push approvals
 
 **Off by default.** Nothing in this section happens unless you configure a push
-relay (`PATCHWORK_PUSH_URL` + `PATCHWORK_PUSH_TOKEN`). This is the only path
+relay (`pushServiceUrl` + `pushServiceToken` in `~/.patchwork/config.json`, or
+the dashboard's Settings → Mobile card). This is the only path
 where approval data leaves your machine by design rather than by your explicit
 request, so it is documented in full: [push-relay-data-flow.md](push-relay-data-flow.md).
 
@@ -108,7 +109,11 @@ persisted at all. Open operational questions — retention on a deployed Redis,
 access-log retention, and whether any hosted relay is operated — are recorded as
 `TODO(owner)` in the data-flow document rather than answered speculatively here.
 
-**Turning it off.** Leave `PATCHWORK_PUSH_URL` unset, or unset it and restart.
+**Turning it off.** Leave `pushServiceUrl` unset in `~/.patchwork/config.json`,
+or clear it (and `pushServiceToken`) and restart the bridge. Note that the
+`PATCHWORK_PUSH_*` environment variables belong to the *receiving* side and
+unsetting them does not disable a bridge configured through config.json —
+see [push-relay-data-flow.md §7](push-relay-data-flow.md#7-configuration-and-turning-it-off).
 Approvals continue to work through the queue, the dashboard and the CLI — push
 is a notification channel, never the gate itself.
 
