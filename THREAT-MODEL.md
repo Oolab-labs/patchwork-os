@@ -102,8 +102,12 @@ a shared machine.
 - **Bridge auth token** lives in `~/.claude/ide/<port>.lock`, mode `0o600`,
   created with `O_EXCL` to defeat symlink races (ADR-0003), compared with
   `timingSafeEqual`.
-- **OAuth tokens issued *by* the bridge are never persisted** — in-memory only,
-  24h TTL; auth codes 5 min and single-use.
+- **OAuth tokens issued *by* the bridge are stored as hashes, never raw.**
+  `persistTokens` (`src/oauth.ts:911`) writes `SHA-256(token) → {clientId,
+  scope, expiresAt}` through the same keychain/encrypted-file layer as
+  connector credentials, so a client survives a restart without
+  re-authorising and the token cannot be recovered from the record. Auth
+  codes are memory-only, 5 min, single-use.
 - **Secrets are stripped from logs.** `logErrorSafe` in the relay redacts PEM
   blocks and long base64 runs; connector `client_secret` values were removed
   from stored token payloads (audit 2026-06-19, H2).

@@ -23,7 +23,7 @@ The bridge processes the following categories of data **locally on your machine*
 | Terminal output | stdout/stderr from test runs and commands | Only in remote mode |
 | Editor state | Open tabs, diagnostics, cursor position | Only in remote mode |
 | Handoff notes | Short context strings written via `setHandoffNote` | Stored on disk only, never transmitted |
-| OAuth tokens | Short-lived access tokens (24-hour TTL) | In-memory only, never persisted to disk |
+| OAuth tokens | Short-lived access tokens (24-hour TTL) | Raw token in memory only. A SHA-256 **hash** plus client id, scope and expiry is stored so sessions survive a restart — see below |
 | Approval notifications | Call id, tool name, risk tier, one-line summary, single-use token | Only if you configure mobile push (see below) |
 
 **Local mode (default):** The bridge binds to `127.0.0.1` only. No editor data leaves your machine via the bridge itself. Your AI assistant connects over localhost.
@@ -173,7 +173,11 @@ When configured, span data goes only to the endpoint **you configure** (e.g. you
 - We do not transmit your code, file contents, terminal output, or git history to Anthropic or any third party.
 - We do not send approval notifications anywhere unless you configure a push relay yourself. When you do, the one-line summary and the approval token reach that relay and the push provider — see [Mobile push approvals](#mobile-push-approvals).
 - We do not collect crash reports automatically. Errors are written to stderr only.
-- We do not persist OAuth tokens or auth codes to disk — they live only in process memory and expire automatically (auth codes: 5 minutes, access tokens: 24 hours).
+- We do not persist **raw** OAuth access tokens. In remote (OAuth) mode the bridge stores a SHA-256 hash of each
+  live token alongside its client id, scope and expiry, so an authorised client survives a bridge restart without
+  re-authorising; the token itself cannot be recovered from that record. It goes through the same OS-keychain (or
+  encrypted-file) storage as connector credentials, never a plaintext file. Auth codes are memory-only and expire
+  in 5 minutes; access tokens expire in 24 hours and their hashes are dropped at expiry.
 - We do not set cookies or use browser storage.
 - We do not show ads or share data with advertisers.
 - We do not build cross-install user profiles. The opt-in usage summary contains no stable user identifier.
