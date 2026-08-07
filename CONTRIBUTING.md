@@ -13,7 +13,10 @@ dev guide.
    of truth; the numbers were re-baselined down for vitest 4's stricter
    coverage counting, not because coverage dropped).
 3. **No secrets in commits.** Check `git diff` before staging.
-4. **Small PRs** — one adapter, one dashboard page, or one recipe schema change per PR.
+4. **Agree to the [CLA](./CLA.md) before your first PR.** Sign off your
+   commits (`git commit -s`) or comment "I agree to the CLA" on the PR.
+   Checked automatically by the `CLA` workflow.
+5. **Small PRs** — one adapter, one dashboard page, or one recipe schema change per PR.
 
 ## AI-agent contributions
 
