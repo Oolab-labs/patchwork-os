@@ -1,0 +1,96 @@
+# CLA acceptance check.
+#
+# CLA.md requires every contributor to agree before their patch is merged, and
+# nothing enforced that. This closes the gap for future contributions; it makes
+# no claim about past ones (see docs/internal/cla-audit.md).
+#
+# A PR passes if ANY of:
+#   1. the author is a bot (dependabot, github-actions) — mechanical commits,
+#      and listing a bot as a party that "agreed" would be meaningless;
+#   2. the author is listed in .github/cla-accepted.txt;
+#   3. every commit in the PR carries a `Signed-off-by:` trailer — which CLA.md
+#      names as the agreement itself.
+#
+# Deliberately NOT "every commit must be signed off" alone: the maintainer's
+# 2000+ existing commits are not signed off, so that rule would fail every PR
+# from the copyright holder on day one. A permanently-red gate is one everyone
+# learns to ignore, which is worse than no gate.
+name: CLA
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  cla:
+    name: CLA acceptance
+    runs-on: ubuntu-latest
+    steps:
+      # pull_request_target checks out the BASE ref, which is what we want:
+      # the allowlist must come from the target branch, never from the PR's
+      # own diff. Otherwise a contributor could add themselves to the
+      # allowlist in the same PR the check is meant to gate.
+      - uses: actions/checkout@v4
+
+      - name: Check CLA acceptance
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const author = (context.payload.pull_request.user.login || '').toLowerCase();
+            const type = context.payload.pull_request.user.type;
+
+            if (type === 'Bot' || author.endsWith('[bot]')) {
+              core.info(`${author} is a bot — CLA not applicable.`);
+              return;
+            }
+
+            let accepted = [];
+            try {
+              accepted = fs.readFileSync('.github/cla-accepted.txt', 'utf8')
+                .split('\n')
+                .map(l => l.replace(/#.*$/, '').trim().toLowerCase())
+                .filter(Boolean);
+            } catch (err) {
+              core.setFailed(`Cannot read .github/cla-accepted.txt: ${err.message}`);
+              return;
+            }
+
+            if (accepted.includes(author)) {
+              core.info(`${author} is on record as having accepted the CLA.`);
+              return;
+            }
+
+            const commits = await github.paginate(
+              github.rest.pulls.listCommits,
+              { ...context.repo, pull_number: context.payload.pull_request.number },
+            );
+            const unsigned = commits.filter(
+              c => !/^Signed-off-by:\s*.+<.+@.+>/m.test(c.commit.message),
+            );
+
+            if (unsigned.length === 0 && commits.length > 0) {
+              core.info(`All ${commits.length} commit(s) signed off — CLA accepted.`);
+              return;
+            }
+
+            core.setFailed(
+              [
+                `@${author} has not accepted the CLA.`,
+                '',
+                'Two ways to fix this, either is fine:',
+                '',
+                '  1. Sign off your commits — CLA.md names that as the agreement:',
+                '       git rebase --signoff origin/main && git push --force-with-lease',
+                '',
+                '  2. Comment "I agree to the CLA" on this PR. A maintainer will',
+                '     add you to .github/cla-accepted.txt.',
+                '',
+                `Unsigned commits: ${unsigned.length} of ${commits.length}.`,
+                'Full text: CLA.md',
+              ].join('\n'),
+            );

@@ -1,0 +1,21 @@
+# Contributors whose CLA acceptance is on record.
+#
+# One GitHub username per line, lowercase. Comments start with '#'.
+# Checked by .github/workflows/cla.yml.
+#
+# HOW SOMEONE GETS ADDED
+#
+#   1. They sign off their commits (`git commit -s`) — the CLA names that as
+#      the agreement, so a signed-off PR passes without an entry here.
+#   2. Or they comment "I agree to the CLA" on their first PR, and a
+#      maintainer adds them here in a follow-up commit.
+#
+# Bots are exempt in the workflow rather than listed here, so that a bot
+# cannot be mistaken for a party that agreed to anything.
+#
+# Removing a name does not withdraw a past agreement — the CLA grant is
+# irrevocable for contributions already made. This file records who has
+# agreed, not who is currently active.
+
+# Maintainer / copyright holder (Oolab Labs).
+kungfuk3nnyyy
