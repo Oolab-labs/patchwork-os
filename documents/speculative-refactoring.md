@@ -10,7 +10,7 @@ This is the workflow most people actually want when an AI proposes a 40-file ref
 
 ## What's safe and what isn't
 
-The honest version, which the [Positioning agent's report](strategic/2026-05-02/positioning-report.md) section 9 explicitly flagged should not be oversold.
+The honest version, which the Positioning agent's report (`strategic/2026-05-02/positioning-report.md`, not in this repository) section 9 explicitly flagged should not be oversold.
 
 | Phase | Safe? | What can go wrong |
 |---|---|---|

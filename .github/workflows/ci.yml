@@ -119,6 +119,10 @@ jobs:
       # remember to extend.
       - name: Audit business content (gating)
         run: node scripts/audit-business-content.mjs
+      # Relative links in tracked markdown. Removing documents during the
+      # licensing pass broke three, and they were only caught by hand.
+      - name: Audit doc links (gating)
+        run: node scripts/audit-doc-links.mjs
 
   plugin-validate:
     name: Validate plugin manifest
