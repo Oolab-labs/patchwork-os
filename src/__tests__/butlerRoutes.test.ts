@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ButlerFactStore } from "../butler/factStore.js";
+import { StandingPermissionStore } from "../butler/permissionStore.js";
 import type { ButlerFact } from "../butler/types.js";
 import type { ButlerRouteDeps } from "../butlerRoutes.js";
 import { tryHandleButlerRoute } from "../butlerRoutes.js";
@@ -372,6 +373,82 @@ describe("POST /butler/facts/:seq/confirm", () => {
     expect(r.status).toBe(200);
     expect(r.json.fact.provenance.validated).toBe(true);
     expect(r.json.fact.supersedes).toBe(f.seq);
+  });
+});
+
+describe("/butler/permissions", () => {
+  let permStore: StandingPermissionStore;
+
+  beforeEach(() => {
+    permStore = new StandingPermissionStore({
+      dir: tmpDir,
+      logger: { warn: () => {} },
+    });
+    deps = { factStoreFn: () => store, permissionStoreFn: () => permStore };
+  });
+
+  it("grants and lists, and never takes grantedBy from the body", async () => {
+    const r = await call("POST", "/butler/permissions", {
+      domains: ["tasks"],
+      note: "small errands",
+      // An unverified claim about a person. Must not be honoured.
+      grantedBy: "wes",
+    });
+    expect(r.status).toBe(201);
+    expect(r.json.permission.grantedBy).toBeNull();
+
+    const list = await call("GET", "/butler/permissions");
+    expect(list.json.count).toBe(1);
+    expect(list.json.permissions[0].active).toBe(true);
+    expect(list.json.permissions[0].note).toBe("small errands");
+  });
+
+  it("revokes without deleting — the grant stays listed, inactive", async () => {
+    const granted = await call("POST", "/butler/permissions", {
+      domains: ["tasks"],
+    });
+    const id = granted.json.permission.id;
+
+    const revoked = await call("DELETE", `/butler/permissions/${id}`);
+    expect(revoked.status).toBe(200);
+    expect(revoked.json.permission.revokedAt).toBeTypeOf("number");
+
+    const list = await call("GET", "/butler/permissions");
+    // Still there — "what did I used to allow?" stays answerable.
+    expect(list.json.count).toBe(1);
+    expect(list.json.permissions[0].active).toBe(false);
+  });
+
+  it("404s revoking something that was never granted", async () => {
+    const r = await call("DELETE", "/butler/permissions/nope");
+    expect(r.status).toBe(404);
+  });
+
+  it("400s on a missing scope rather than granting everything", async () => {
+    const r = await call("POST", "/butler/permissions", { note: "everything" });
+    expect(r.status).toBe(400);
+    expect(permStore.list()).toHaveLength(0);
+  });
+
+  it("reports every use", async () => {
+    const granted = await call("POST", "/butler/permissions", {
+      domains: ["issue"],
+    });
+    permStore.recordExercise({
+      permissionId: granted.json.permission.id,
+      toolName: "githubCreateIssue",
+      classKey: "issue:compensable:high",
+    });
+
+    const r = await call("GET", "/butler/permissions/exercises");
+    expect(r.json.count).toBe(1);
+    expect(r.json.exercises[0].toolName).toBe("githubCreateIssue");
+  });
+
+  it("501s when the bridge has no permission store — never a silent empty list", async () => {
+    deps = { factStoreFn: () => store };
+    const r = await call("GET", "/butler/permissions");
+    expect(r.status).toBe(501);
   });
 });
 

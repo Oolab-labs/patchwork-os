@@ -268,6 +268,121 @@ describe("buildWorkerAutonomyGate", () => {
     expect(gated?.actor).toBeUndefined();
   });
 
+  /**
+   * Standing permissions at the ENFORCEMENT layer. The unit tests prove the
+   * matcher and the preview agree; these prove the thing that actually runs
+   * does the same, and that using a grant leaves a receipt.
+   *
+   * `StandingPermissionStore` resolves through `patchworkPath`, which
+   * `testEnvSetup` redirects to a temp PATCHWORK_HOME — so these write to an
+   * isolated store, never the developer's.
+   */
+  describe("standing permissions", () => {
+    // Lazily imported so the module picks up the redirected PATCHWORK_HOME.
+    async function permStore() {
+      const { StandingPermissionStore } = await import(
+        "../butler/permissionStore.js"
+      );
+      return new StandingPermissionStore();
+    }
+
+    // The gate constructs its own store from PATCHWORK_HOME, so there is no
+    // injection seam to point at a temp dir — which means grants persist
+    // between cases in this file unless the directory is cleared. Found the
+    // hard way: a test asserting "a grant for another domain changes nothing"
+    // passed the wrong way because an earlier test's grant was still live.
+    beforeEach(async () => {
+      const { patchworkPath } = await import("../patchworkHome.js");
+      rmSync(patchworkPath("butler"), { recursive: true, force: true });
+    });
+
+    it("a covering grant lets a gated step flow WITHOUT queueing a human", async () => {
+      const store = await permStore();
+      store.grant({ scope: { domains: ["vcs-push"] }, note: "small pushes" });
+
+      const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
+      const result = await g!({ toolId: "gitPush", tier: "high", params: {} });
+
+      expect(result).toBe(true);
+      // The point of the whole feature: nobody was asked.
+      expect(getApprovalQueue().list()).toHaveLength(0);
+    });
+
+    it("records an exercise — a use that leaves no receipt is a bug", async () => {
+      const store = await permStore();
+      const p = store.grant({ scope: { domains: ["vcs-push"] } });
+
+      const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
+      await g!({ toolId: "gitPush", tier: "high", params: {} });
+
+      const exercises = (await permStore()).exercises();
+      expect(exercises).toHaveLength(1);
+      expect(exercises[0]?.permissionId).toBe(p.id);
+      expect(exercises[0]?.toolName).toBe("gitPush");
+      expect(exercises[0]?.workerId).toBe("test-worker");
+    });
+
+    it("the Decision Record says a permission answered, not just `gate`", async () => {
+      const store = await permStore();
+      const p = store.grant({ scope: { domains: ["vcs-push"] } });
+      const records: RecordGateDecisionInput[] = [];
+
+      const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts, {
+        recordGateDecision: (r) => records.push(r),
+      });
+      await g!({ toolId: "gitPush", tier: "high", params: {} });
+
+      // The gate's own verdict is unchanged — the trust maths still gated it.
+      expect(records[0]?.action).toBe("gate");
+      // ...but the record must not leave a reader thinking a human was asked.
+      expect(records[0]?.standingPermissionId).toBe(p.id);
+    });
+
+    it("revocation bites immediately — the very next step queues again", async () => {
+      const store = await permStore();
+      const p = store.grant({ scope: { domains: ["vcs-push"] } });
+
+      const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
+      expect(await g!({ toolId: "gitPush", tier: "high", params: {} })).toBe(
+        true,
+      );
+
+      store.revoke(p.id);
+
+      // Same gate instance — a grant cached for the run would keep flowing.
+      const pending = g!({ toolId: "gitPush", tier: "high", params: {} });
+      await tick();
+      expect(getApprovalQueue().list()).toHaveLength(1);
+      getApprovalQueue().reject(firstCallId());
+      expect(await pending).toBe(false);
+    });
+
+    it("a grant NEVER covers an irreversible action", async () => {
+      const store = await permStore();
+      // As broad as it gets, and naming the domain explicitly.
+      store.grant({ scope: { domains: ["shell", "messaging", "vcs-push"] } });
+
+      const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
+      const pending = g!({ toolId: "runCommand", tier: "high", params: {} });
+      await tick();
+      expect(getApprovalQueue().list()).toHaveLength(1);
+      getApprovalQueue().reject(firstCallId());
+      expect(await pending).toBe(false);
+    });
+
+    it("a grant that names another domain changes nothing", async () => {
+      const store = await permStore();
+      store.grant({ scope: { domains: ["issue"] } });
+
+      const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
+      const pending = g!({ toolId: "gitPush", tier: "high", params: {} });
+      await tick();
+      expect(getApprovalQueue().list()).toHaveLength(1);
+      getApprovalQueue().reject(firstCallId());
+      expect(await pending).toBe(false);
+    });
+  });
+
   it("a throwing recordGateDecision never blocks the gate (fail-soft)", async () => {
     const gate = await buildWorkerAutonomyGate("test-recipe", undefined, opts, {
       recordGateDecision: () => {

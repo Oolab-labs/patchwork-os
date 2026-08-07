@@ -37,10 +37,11 @@
  * that never happened.
  */
 
+import type { StandingPermission } from "../butler/standingPermission.js";
 import { classifyActionClass, knownActionTools } from "./actionClass.js";
 import type { ForbidRule } from "./forbidPolicy.js";
 import { ownsAction, type WorkerManifest } from "./worker.js";
-import { decideWorkerAction, gateOutcomeFor } from "./workerGate.js";
+import { decideWorkerAction, resolveGateOutcome } from "./workerGate.js";
 import type { WorkerLevelStore } from "./workerLevelStore.js";
 
 /** An action to ask about. `label` is what a person should see. */
@@ -74,6 +75,13 @@ export interface PreviewOpts {
   forbidRules?: readonly ForbidRule[];
   /** Situational risk, folded in exactly as the live gate folds it in. */
   contextRisk?: import("./contextRisk.js").ContextRisk;
+  /** Standing permissions in force, folded in exactly as the live gate folds
+   *  them in. Absent ⇒ identical to the pre-permission preview. */
+  standingPermissions?: readonly StandingPermission[];
+  /** Clock for expiry/revocation. Defaults to `Date.now()`. */
+  now?: number;
+  /** Exercises today per grant, for `ceiling.perDay`. */
+  usageToday?: (permissionId: string) => number;
 }
 
 /**
@@ -108,9 +116,28 @@ export function previewActions(
       reason: decision.reason,
     };
 
-    // Route through the SAME mapping the enforcement path uses, so a column
-    // can never disagree with what would actually happen.
-    switch (gateOutcomeFor(decision.action)) {
+    // Route through the SAME resolver the enforcement path uses — including
+    // standing permissions — so a column can never disagree with what would
+    // actually happen. A grant that lets an action flow MUST move it out of
+    // "needs approval" here, or the screen tells an operator a person will be
+    // asked when nobody will be.
+    const resolved = resolveGateOutcome(
+      decision,
+      opts.standingPermissions
+        ? {
+            permissions: opts.standingPermissions,
+            now: opts.now ?? Date.now(),
+            ...(opts.usageToday && { usageToday: opts.usageToday }),
+          }
+        : undefined,
+    );
+    // Say WHY in the permission's words when one answered. "Earned autonomy on
+    // a compensable class" and "you said not to ask about these" are different
+    // facts about the boundary and a reader needs to tell them apart.
+    if (resolved.standingPermissionReason)
+      entry.reason = resolved.standingPermissionReason;
+
+    switch (resolved.outcome) {
       case "flow":
         boundary.mayDoNow.push(entry);
         break;

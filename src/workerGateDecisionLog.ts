@@ -116,6 +116,22 @@ export interface GateDecisionRecord {
    * not the blocker; durability is.)
    */
   actor?: GateDecisionActor;
+  /**
+   * Set when a STANDING PERMISSION answered this decision: the gate said
+   * `gate`, and a pre-recorded human approval converted it to flow without
+   * queueing (src/butler/standingPermission.ts).
+   *
+   * Read this field as load-bearing: `action: "gate"` WITH this id present
+   * means the action went ahead and no human was asked at the time. Without
+   * it, `action: "gate"` means what it always did — somebody was asked.
+   *
+   * Deliberately NOT an `actor`. The grant names its own `grantedBy`, which is
+   * `null` until per-member auth exists (ADR-0020), and synthesizing an actor
+   * from a permission would write a claim about a person into an audit record
+   * on no evidence. The id points at the grant; the grant states what is known
+   * about who made it.
+   */
+  standingPermissionId?: string;
   /** The gate-policy version (thresholds/constants) that produced this row.
    *  Replay is not reproducible without knowing which policy decided. */
   gatePolicyVersion: string;
@@ -249,6 +265,9 @@ export class WorkerGateDecisionLog {
       }),
       ...(reasons.length > 0 && { contextRiskReasons: reasons }),
       ...(actor && { actor }),
+      ...(input.standingPermissionId && {
+        standingPermissionId: input.standingPermissionId,
+      }),
       reason: input.reason.slice(0, MAX_REASON_LEN),
       gatePolicyVersion: input.gatePolicyVersion,
     };

@@ -18,6 +18,7 @@ import {
   routeApprovalRequest,
 } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
+import { StandingPermissionStore } from "./butler/permissionStore.js";
 import { getButlerFactStore } from "./butler/sharedStore.js";
 import { tryHandleButlerRoute } from "./butlerRoutes.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
@@ -1776,6 +1777,13 @@ export class Server extends EventEmitter<ServerEvents> {
       if (
         tryHandleButlerRoute(req, res, parsedUrl, {
           factStoreFn: () => getButlerFactStore(),
+          // A fresh store per request — the house pattern for the append-only
+          // JSONL stores (cf. `outcomeStoreFn`). Safe here in a way it would
+          // NOT be for the fact store: this one holds no in-memory counter, so
+          // two instances cannot hand out colliding ids. Every read is a
+          // whole-file read, so a grant made by another process is visible
+          // immediately.
+          permissionStoreFn: () => new StandingPermissionStore(),
         })
       ) {
         return;

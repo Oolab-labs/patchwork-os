@@ -1,3 +1,7 @@
+import {
+  coversAction,
+  type StandingPermission,
+} from "../butler/standingPermission.js";
 import { classifyTool, getRiskTierMap } from "../riskTier.js";
 import {
   type ActionClass,
@@ -83,6 +87,81 @@ export function gateOutcomeFor(action: string): GateOutcome {
     default:
       return "refuse";
   }
+}
+
+/**
+ * Standing permissions in force, for `resolveGateOutcome`.
+ *
+ * Absent ⇒ the outcome is exactly `gateOutcomeFor(decision.action)`, so a
+ * workspace that has never granted one behaves byte-identically to the
+ * pre-permission build.
+ */
+export interface StandingPermissionContext {
+  permissions: readonly StandingPermission[];
+  now: number;
+  /** Exercises recorded today per grant, for `ceiling.perDay`. Omit and the
+   *  cap is not enforced — documented in `coversAction` rather than silently
+   *  treated as zero. */
+  usageToday?: (permissionId: string) => number;
+}
+
+/** What the caller should do, plus the receipt when a permission answered. */
+export interface ResolvedGateOutcome {
+  outcome: GateOutcome;
+  /** Set only when a standing permission converted `queue` → `flow`. */
+  standingPermissionId?: string;
+  /** Plain-language sentence for the "done without asking" receipt. */
+  standingPermissionReason?: string;
+}
+
+/**
+ * The single place a gate decision becomes an action, for BOTH the enforcement
+ * path and the boundary preview.
+ *
+ * Standing permissions are applied here rather than inside
+ * `decideWorkerAction` for a reason that is easy to get backwards. A standing
+ * permission is a pre-recorded HUMAN APPROVAL, not earned trust. Folding it
+ * into the trust maths would make an action a person waved through in advance
+ * count as evidence the WORKER is reliable — trust-by-neglect, the same
+ * scoring leak `foldOutcome` was fixed for. So the trust computation is
+ * untouched and a permission answers strictly later, at the exact point where
+ * the gate has already said "ask a human".
+ *
+ * Only `queue` is convertible. `flow` and `refuse` pass through, which is what
+ * makes "a grant can never unlock a forbidden action" structural rather than a
+ * rule someone has to remember: the conversion is unreachable from the refuse
+ * branch. `coversAction` independently refuses `irreversible`.
+ *
+ * PURE — no I/O and no exercise recording. The caller records the exercise,
+ * because previewing an action must never look like taking one.
+ */
+export function resolveGateOutcome(
+  decision: Pick<
+    WorkerGateDecision,
+    "action" | "domain" | "classKey" | "reversibility" | "magnitudeBand"
+  >,
+  ctx?: StandingPermissionContext,
+): ResolvedGateOutcome {
+  const outcome = gateOutcomeFor(decision.action);
+  if (outcome !== "queue" || !ctx || ctx.permissions.length === 0)
+    return { outcome };
+
+  const check = coversAction(
+    ctx.permissions,
+    {
+      domain: decision.domain,
+      classKey: decision.classKey,
+      reversibility: decision.reversibility,
+      ...(decision.magnitudeBand && { magnitudeBand: decision.magnitudeBand }),
+    },
+    { now: ctx.now, ...(ctx.usageToday && { usageToday: ctx.usageToday }) },
+  );
+  if (!check.covered) return { outcome: "queue" };
+  return {
+    outcome: "flow",
+    standingPermissionId: check.permission.id,
+    standingPermissionReason: check.reason,
+  };
 }
 
 export interface WorkerGateDecision {

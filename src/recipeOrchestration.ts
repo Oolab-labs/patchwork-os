@@ -49,7 +49,6 @@ import type { Server } from "./server.js";
 import { boundaryForRecipe } from "./workers/boundaryPreview.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./workers/outcomeStore.js";
 import { computePendingConfirmations } from "./workers/runWorkerShadow.js";
-import { gateOutcomeFor } from "./workers/workerGate.js";
 import {
   lintWorkerContent,
   listWorkers,
@@ -156,9 +155,27 @@ export async function buildWorkerAutonomyGate(
     const trust = loadWorkerTrustForRecipe(recipeName, trustOpts);
     if (!trust) return null;
 
-    const { decideWorkerAction, GATE_POLICY_VERSION } = await import(
-      "./workers/workerGate.js"
-    );
+    const { decideWorkerAction, GATE_POLICY_VERSION, resolveGateOutcome } =
+      await import("./workers/workerGate.js");
+    // Standing permissions — pre-recorded human approvals (src/butler/
+    // standingPermission.ts). The STORE is constructed once per run; the
+    // GRANTS are re-read on every decision (see below), because revocation has
+    // to bite immediately. Fail-soft in the same direction as everything else
+    // in this factory: an unreadable permission file means no permission, so
+    // an action that would have flowed goes back to asking a person. Failing
+    // the other way would let a store error widen autonomy, which is the one
+    // direction a fault must never take.
+    let permissionStore:
+      | import("./butler/permissionStore.js").StandingPermissionStore
+      | undefined;
+    try {
+      const { StandingPermissionStore } = await import(
+        "./butler/permissionStore.js"
+      );
+      permissionStore = new StandingPermissionStore();
+    } catch {
+      permissionStore = undefined;
+    }
     const { getApprovalQueue } = await import("./approvalQueue.js");
     const queue = getApprovalQueue();
     const { worker, store } = trust;
@@ -216,6 +233,34 @@ export async function buildWorkerAutonomyGate(
             }
           : undefined,
       );
+      // Standing permissions fold in HERE, at the queue branch, because a grant
+      // is a pre-recorded human approval rather than earned trust — see
+      // resolveGateOutcome. Read fresh on every decision, not cached for the
+      // run: revocation has to take effect immediately, and a run that had
+      // already loaded a now-withdrawn grant would keep acting on it.
+      //
+      // Resolved BEFORE the Decision Record is written, so the record can state
+      // that a permission answered. Writing the record first would leave an
+      // audit trail saying `gate` for an action that in fact went ahead without
+      // anyone being asked — the most misleading row this log could contain.
+      let standing:
+        | import("./workers/workerGate.js").StandingPermissionContext
+        | undefined;
+      try {
+        const live = permissionStore?.active() ?? [];
+        if (live.length > 0) {
+          const pstore = permissionStore as NonNullable<typeof permissionStore>;
+          standing = {
+            permissions: live,
+            now: Date.now(),
+            usageToday: (id: string) => pstore.usageToday(id),
+          };
+        }
+      } catch {
+        standing = undefined; // fail-soft toward asking a person
+      }
+      const resolved = resolveGateOutcome(decision, standing);
+
       // Decision Record: persist the decision + its inputs on EVERY path (incl.
       // autonomous allows, which otherwise leave no trail). Fail-soft — a logging
       // error must never block or change the gate.
@@ -260,6 +305,12 @@ export async function buildWorkerAutonomyGate(
               ...(worker.name ? { displayName: worker.name } : {}),
             },
           }),
+          // Present ⇒ this `gate` decision flowed under a pre-recorded human
+          // approval and nobody was asked at the time. Absent ⇒ a `gate` means
+          // what it always did.
+          ...(resolved.standingPermissionId && {
+            standingPermissionId: resolved.standingPermissionId,
+          }),
           reason: decision.reason,
           gatePolicyVersion: GATE_POLICY_VERSION,
         });
@@ -269,12 +320,26 @@ export async function buildWorkerAutonomyGate(
       // Route on the decision explicitly rather than `allow ? flow : queue`.
       // The else-form is correct for exactly two actions and becomes a hole the
       // moment there is a third: `forbid` (ADR-0017) would fall into it and be
-      // offered to a human as approvable. `gateOutcomeFor` refuses by default.
-      const outcome = gateOutcomeFor(decision.action);
+      // offered to a human as approvable. `resolveGateOutcome` refuses by
+      // default and was already computed above, before the Decision Record.
+      const outcome = resolved.outcome;
       // allow → defer to the tier gate so we never DROP tier-policy protection
       // (floor composition). When no tier fn is injected (approvalGate off),
       // a worker `allow` means flow.
       if (outcome === "flow") {
+        // Every use is reported. A permission whose exercises are invisible is
+        // indistinguishable from a bug, and the page has to be able to say
+        // "done without asking, because you allowed it". Fail-soft: a lost
+        // receipt must not block an action the user already authorised.
+        if (resolved.standingPermissionId) {
+          permissionStore?.recordExercise({
+            permissionId: resolved.standingPermissionId,
+            toolName: input.toolId,
+            classKey: decision.classKey,
+            workerId: worker.id,
+            recipeName,
+          });
+        }
         return tierApprovalFn ? tierApprovalFn(input) : true;
       }
       // Unknown action → refuse without asking anyone. No human is recruited

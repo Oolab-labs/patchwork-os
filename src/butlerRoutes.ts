@@ -39,6 +39,8 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ButlerFactStore } from "./butler/factStore.js";
+import type { StandingPermissionStore } from "./butler/permissionStore.js";
+import { isActive } from "./butler/standingPermission.js";
 import type { ButlerFact } from "./butler/types.js";
 import { ORIGINATE_THRESHOLD } from "./butler/types.js";
 import { respond500 } from "./httpErrorResponse.js";
@@ -50,6 +52,10 @@ const MAX_BODY = 16 * 1024;
 export interface ButlerRouteDeps {
   /** The process-wide store. Injected so tests can point at a temp dir. */
   factStoreFn: () => ButlerFactStore;
+  /** Standing-permission record. Absent ⇒ the permission routes 501 rather
+   *  than silently reporting "no permissions", which would read as "you have
+   *  granted nothing" when the truth is "this bridge cannot tell you". */
+  permissionStoreFn?: () => StandingPermissionStore;
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -316,6 +322,122 @@ export function tryHandleButlerRoute(
     }
     respondWithPromotion(res, deps, seq, { requireBelowFloor: true });
     return true;
+  }
+
+  // ── Standing permissions ──────────────────────────────────────────────────
+  //
+  // GET  /butler/permissions            every grant ever made, newest first
+  // POST /butler/permissions            grant one
+  // DELETE /butler/permissions/:id      withdraw (the record is KEPT)
+  // GET  /butler/permissions/exercises  every use — "done without asking"
+  //
+  // The list includes revoked and expired grants, with an `active` flag. A page
+  // that could only show live grants could not answer "what did I used to
+  // allow?", which is half the reason the record is append-only.
+  if (pathname.startsWith("/butler/permissions")) {
+    if (!deps.permissionStoreFn) {
+      json(res, 501, {
+        ok: false,
+        error: "standing permissions are not available on this bridge",
+      });
+      return true;
+    }
+    const store = deps.permissionStoreFn();
+
+    if (pathname === "/butler/permissions" && req.method === "GET") {
+      try {
+        const now = Date.now();
+        const permissions = store
+          .list()
+          .map((p) => ({ ...p, active: isActive(p, now) }));
+        json(res, 200, { ok: true, permissions, count: permissions.length });
+      } catch (err) {
+        respond500(res, err);
+      }
+      return true;
+    }
+
+    if (pathname === "/butler/permissions/exercises" && req.method === "GET") {
+      try {
+        const exercises = store.exercises();
+        json(res, 200, { ok: true, exercises, count: exercises.length });
+      } catch (err) {
+        respond500(res, err);
+      }
+      return true;
+    }
+
+    if (pathname === "/butler/permissions" && req.method === "POST") {
+      void (async () => {
+        try {
+          const parsed = await readJsonBody<{
+            domains?: unknown;
+            note?: unknown;
+            expiresAt?: unknown;
+            perDay?: unknown;
+            magnitudeBand?: unknown;
+          }>(req, MAX_BODY);
+          if (!parsed.ok) {
+            if (parsed.code === "too_large") respond413(res, MAX_BODY);
+            else badRequest(res, "Invalid JSON body");
+            return;
+          }
+          const body = parsed.value ?? {};
+          if (
+            !Array.isArray(body.domains) ||
+            !body.domains.every((d) => typeof d === "string")
+          ) {
+            badRequest(res, "domains must be an array of strings");
+            return;
+          }
+          const ceiling: NonNullable<
+            Parameters<StandingPermissionStore["grant"]>[0]["ceiling"]
+          > = {};
+          if (typeof body.perDay === "number") ceiling.perDay = body.perDay;
+          if (
+            body.magnitudeBand === "band<=50" ||
+            body.magnitudeBand === "band<=500" ||
+            body.magnitudeBand === "band>500"
+          )
+            ceiling.magnitudeBand = body.magnitudeBand;
+
+          const permission = store.grant({
+            scope: { domains: body.domains as string[] },
+            // grantedBy is NOT taken from the body. The bridge authenticates one
+            // shared token, so nothing here can establish who is asking, and a
+            // caller-supplied name would be an unverified claim written into an
+            // audit record (ADR-0020). It stays null until per-member auth.
+            ...(typeof body.note === "string" && { note: body.note }),
+            ...(typeof body.expiresAt === "number" && {
+              expiresAt: body.expiresAt,
+            }),
+            ...(Object.keys(ceiling).length > 0 && { ceiling }),
+          });
+          json(res, 201, { ok: true, permission });
+        } catch (err) {
+          badRequest(res, err instanceof Error ? err.message : String(err));
+        }
+      })();
+      return true;
+    }
+
+    const revokeMatch = /^\/butler\/permissions\/([^/]+)$/.exec(pathname);
+    if (revokeMatch && req.method === "DELETE") {
+      try {
+        const permission = store.revoke(
+          decodeURIComponent(revokeMatch[1] ?? ""),
+        );
+        // Revoked, not deleted: the row stays so "allowed for a while, then
+        // withdrawn" remains answerable.
+        json(res, 200, { ok: true, permission });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/^no standing permission/.test(msg))
+          json(res, 404, { ok: false, error: msg });
+        else respond500(res, err);
+      }
+      return true;
+    }
   }
 
   return false;
