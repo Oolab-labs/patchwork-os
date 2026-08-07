@@ -24,6 +24,7 @@ The bridge processes the following categories of data **locally on your machine*
 | Editor state | Open tabs, diagnostics, cursor position | Only in remote mode |
 | Handoff notes | Short context strings written via `setHandoffNote` | Stored on disk only, never transmitted |
 | OAuth tokens | Short-lived access tokens (24-hour TTL) | In-memory only, never persisted to disk |
+| Approval notifications | Call id, tool name, risk tier, one-line summary, single-use token | Only if you configure mobile push (see below) |
 
 **Local mode (default):** The bridge binds to `127.0.0.1` only. No editor data leaves your machine via the bridge itself. Your AI assistant connects over localhost.
 
@@ -64,6 +65,52 @@ the remaining call sites is tracked work; until it lands, treat the override as
 partial.
 
 These files are **never transmitted by the bridge** unless you opt in to analytics. They exist so that decisions, recipe runs, and tool history persist across bridge restarts and sessions.
+
+---
+
+## Mobile push approvals
+
+**Off by default.** Nothing in this section happens unless you configure a push
+relay (`PATCHWORK_PUSH_URL` + `PATCHWORK_PUSH_TOKEN`). This is the only path
+where approval data leaves your machine by design rather than by your explicit
+request, so it is documented in full: [push-relay-data-flow.md](push-relay-data-flow.md).
+
+**What leaves the machine.** When an approval is queued, the bridge POSTs a small
+payload to the relay you configured: the call id, the tool name, the risk tier,
+the timestamps, a single-use approval token, the callback base URL for your own
+bridge, and — the field that carries real content — an optional one-line
+`summary` of what is being asked. Risk-signal detail is sent to the relay but
+**dropped there**, and never reaches a device or a push provider.
+
+**What the relay can see.** The summary in plaintext, and the approval token.
+There is no end-to-end encryption between the bridge and the phone. A relay
+operator can read what an approval is about, and a compromised relay holds
+enough to answer one queued approval in your place — the token is single-use and
+short-lived, and a relay can never originate an action, only answer one already
+queued. This is why the relay is designed to be self-hosted.
+
+**What the relay cannot see.** Your files, repository, tool arguments, agent
+reasoning, or the result of the action. It has no read path into your bridge.
+Your decision does not travel through it either: the phone posts approve/reject
+**directly to your bridge**, not back through the relay.
+
+**What Apple and Google see.** APNS and FCM payloads are not end-to-end
+encrypted. Both providers can see the notification title, the body (your
+`summary`), and the full data dictionary — including the approval token. Keeping
+the token out of the URL protects it from access logs and referrer headers; it
+does not hide it from the push provider.
+
+**Retention.** Device registrations are `{push token, platform, timestamp}` —
+no account data, no device name, no IP. With Redis they persist **indefinitely**
+(the code sets no TTL) until the device is removed or evicted by the 10-device
+cap; without Redis they last only as long as the process. Payloads are not
+persisted at all. Open operational questions — retention on a deployed Redis,
+access-log retention, and whether any hosted relay is operated — are recorded as
+`TODO(owner)` in the data-flow document rather than answered speculatively here.
+
+**Turning it off.** Leave `PATCHWORK_PUSH_URL` unset, or unset it and restart.
+Approvals continue to work through the queue, the dashboard and the CLI — push
+is a notification channel, never the gate itself.
 
 ---
 
@@ -119,6 +166,7 @@ When configured, span data goes only to the endpoint **you configure** (e.g. you
 ## What we do NOT do
 
 - We do not transmit your code, file contents, terminal output, or git history to Anthropic or any third party.
+- We do not send approval notifications anywhere unless you configure a push relay yourself. When you do, the one-line summary and the approval token reach that relay and the push provider — see [Mobile push approvals](#mobile-push-approvals).
 - We do not collect crash reports automatically. Errors are written to stderr only.
 - We do not persist OAuth tokens or auth codes to disk — they live only in process memory and expire automatically (auth codes: 5 minutes, access tokens: 24 hours).
 - We do not set cookies or use browser storage.

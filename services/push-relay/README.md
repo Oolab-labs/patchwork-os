@@ -4,6 +4,12 @@ Standalone Express service that lets the bridge notify a phone when an approval 
 
 It is a sibling, not a dependency, of `dashboard/src/app/api/relay/push` and `.../relay/halt`: those two dashboard routes implement the same wire shape (`POST /push`, Bearer auth against a shared token) but fan out via Web Push to browser subscriptions instead of native FCM/APNS. An operator points `pushServiceUrl` at either this service or the dashboard's own URL — never both.
 
+For what actually leaves a user's machine, what this service and the push
+providers can see, retention, and how to turn the whole path off, see
+[docs/push-relay-data-flow.md](../../docs/push-relay-data-flow.md). This
+README is for someone maintaining the service; that one is for someone
+assessing it.
+
 ## The files that matter
 
 - `src/index.ts` — entrypoint. Wires up Redis-or-in-memory device registry, optional FCM (`firebase-admin`) and APNS (`@parse/node-apn`) adapters from env, mounts `/health` (unauthenticated, for uptime probes) ahead of the bearer-auth gate, then the per-IP rate limiter, then the router.
