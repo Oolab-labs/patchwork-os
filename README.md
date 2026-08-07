@@ -59,7 +59,7 @@ trigger → recipe/worker → [reversible? → run]
 
 ### Also in the box: the Claude IDE Bridge
 
-The foundation layer is a standalone MCP bridge that gives Claude Code eyes and hands in your editor — 177 tools: diagnostics, LSP navigation, refactoring with risk analysis, debugger, terminal, git/GitHub, file ops.
+The foundation layer is a standalone MCP bridge that gives Claude Code eyes and hands in your editor — 180 tools: diagnostics, LSP navigation, refactoring with risk analysis, debugger, terminal, git/GitHub, file ops.
 
 ```bash
 npm install -g patchwork-os
@@ -80,7 +80,7 @@ JetBrains via a companion plugin. Claude Desktop, Gemini CLI, Codex CLI, Grok Bu
 
 - **Connectors** — 45+, all writes governed by your policy: GitHub, Slack, Gmail, Calendar, Drive, Linear, Jira, Sentry, Notion, Stripe, PagerDuty, Datadog, …
 
-- **IDE bridge** — 177 MCP tools · VS Code-family extension · JetBrains plugin · plugins hot-reload (write tools mid-session)
+- **IDE bridge** — 180 MCP tools · VS Code-family extension · JetBrains plugin · plugins hot-reload (write tools mid-session)
 
 - **Oversight** — web dashboard · mobile push approvals (PWA) · halts/judgments CLI · trace memory across sessions
 
