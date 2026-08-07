@@ -11,7 +11,7 @@ Key findings reviewers agreed on independently:
 
 - **Front door not done.** [package.json](../../package.json) is `0.1.0-alpha.0`; there is no published `npx patchwork-os init`. [docs/install-ux-plan.md](../install-ux-plan.md) puts the drop-off at F4–F7 — before any connector could help.
 - **No OAuth broker UI.** The 14-week plan assumed `claude-ide-bridge secrets set gmail.token` on the CLI. No parent or therapist will do this.
-- **Approval loop demoted.** The phone-push-tap-approve flow is the hero feature in [docs/business/pro-tier.md](../business/pro-tier.md), not one connector among many.
+- **Approval loop demoted.** The phone-push-tap-approve flow is the hero feature in `docs/business/pro-tier.md` (commercial material, not in this repository), not one connector among many.
 - **Premature abstraction.** RefResolver registry, dynamic TraceType registry, and `PluginContext` schemaVersion bump (1→2) were proposed before any external plugin exists.
 - **Tier 4 blast radius.** Plugins run in-process with no sandbox ([src/pluginLoader.ts](../../src/pluginLoader.ts)). Shipping PHI-handling code in the same repo as general-purpose plugins puts HIPAA posture at the mercy of any bug anywhere.
 - **Google OAuth verification is a 4–6 week critical path.** The 14-week plan has no slack if review bounces.
@@ -77,6 +77,6 @@ If any of these miss, stop and reassess before adding more connectors.
 
 - Review summary (this conversation): three reviewers, three independent angles, same verdict.
 - [docs/install-ux-plan.md](../install-ux-plan.md) — the front-door work this ADR commits to.
-- [docs/business/pro-tier.md](../business/pro-tier.md) — approval-loop positioning.
+- `docs/business/pro-tier.md` — approval-loop positioning. (Commercial material, not in this repository.)
 - `docs/verticals/therapy-practices.md` — out of scope for this plan, separate repo. (Document removed from this repository as commercial material; the statement is kept because it records what this ADR decided.)
 - [documents/roadmap.md](../../documents/roadmap.md) — dogfood items 1–2 pulled into W2.

@@ -1,0 +1,14 @@
+{
+  "_readme": [
+    "Links that cannot resolve inside this repository by design.",
+    "Checked by scripts/audit-doc-links.mjs. Every entry needs a reason.",
+    "Unused entries are reported, not fatal, so they can be deleted."
+  ],
+  "allow": [
+    {
+      "file": "templates/CLAUDE.bridge.md",
+      "target": "docs/cowork.md",
+      "reason": "This is a TEMPLATE rendered into a user's own workspace. Its links resolve relative to the destination repository, not to templates/. Rewriting the path would break it where it is actually used."
+    }
+  ]
+}
