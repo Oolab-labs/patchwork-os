@@ -22,6 +22,9 @@ TODO(owner): the npm `next` dist-tag still points at `0.2.0-alpha.32` and is
 documented nowhere. Should it be deprecated/removed, or does something depend
 on it?
 
+For what this system is designed to resist, what it is not, and the known
+residual risks, see [THREAT-MODEL.md](THREAT-MODEL.md).
+
 ## Reporting a Vulnerability
 
 **Please do not file vulnerabilities as public GitHub issues.**
