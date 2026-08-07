@@ -69,6 +69,11 @@ export const NAV_SECTIONS: NavSection[] = [
     routes: [
       { href: "/",      label: "Overview", icon: "home" },
       { href: "/inbox", label: "Inbox",    icon: "inbox" },
+      // Deliberately unlike the rest of the dashboard: large print, single
+      // column, black on white (docs/plans/butler-ui-large-print-2026-08-06.md).
+      // Sits in Home because it is a morning-routine destination — the ask, and
+      // what was done overnight without asking.
+      { href: "/butler", label: "Butler",  paletteLabel: "Home — Butler", icon: "person" },
     ],
   },
   {

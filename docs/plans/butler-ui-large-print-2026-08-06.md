@@ -25,7 +25,7 @@ an accessible base. See §6.
 | Decision record | **Built** — `worker_gate_decisions.jsonl` |
 | Errands worker + recipe | **Built** — templates (#1273) |
 | **HTTP surface for Butler** | **Built** — `src/butlerRoutes.ts` (Phase A) |
-| **Dashboard page** | **NONE.** Zero references to Butler in `dashboard/src/`. |
+| **Dashboard page** | **Built** — `dashboard/src/app/butler/` (Phase C) |
 | **Standing-permission record** | **Built** — `src/butler/standingPermission.ts` + `permissionStore.ts` (Phase B) |
 
 So the build is: an HTTP surface, a page, and one new store.
@@ -158,7 +158,7 @@ inverted safety property shipped here before.
 
 ---
 
-## 4. Phase C — the page (~5 days)
+## 4. Phase C — the page (~5 days) — **BUILT**
 
 `dashboard/src/app/butler/page.tsx`. Single column, no side panel. Sections in DOM order:
 
@@ -170,6 +170,26 @@ inverted safety property shipped here before.
 5. **Standing permissions** — what's allowed, and a Take it back control.
 
 No hover-only affordances anywhere. No tooltips carrying required information.
+
+### What verification changed
+
+Three things were wrong in this plan or in the first build, and all three were
+found by *running* it rather than reading it:
+
+1. **`#a33c17` does not clear AAA.** §8 proposed it and said "verify before
+   committing". Verified: **6.53:1** on white, short of 7. `#8f3413` (7.87:1)
+   shipped instead. Both measurements are pinned in the test so the rejected
+   value cannot be quietly re-adopted.
+2. **The focus ring was invisible on the primary button.** Dark focus blue on
+   the dark-orange accent computes to 1.5:1 — i.e. no visible focus on the most
+   important control on the page. Fixed structurally rather than by hunting for
+   a third colour: a background-coloured gap ring (`box-shadow`) separates the
+   outline from the control, so the outline only ever sits on `--lp-bg`.
+3. **The shell's fixed mobile nav covered the last control.** At 320px, "Take
+   this back" — the control that withdraws a standing permission — sat under a
+   63px fixed bar and could not be tapped. Every unit test passed while that was
+   true, because they render the page alone. This is §8's "audit the seam"
+   risk arriving concretely; the page now clears `--bottom-nav-h`.
 
 ---
 
@@ -193,6 +213,18 @@ Not aspirations; the page is not done until each is verified.
 
 A11 is not a WCAG rule. It is here because cognitive accessibility is the axis this
 product fails most easily, and a disappearing undo is how it would fail.
+
+**Status: all met.** A1/A2/A4/A5/A8/A10 are asserted in
+`butler-a11y.test.ts`, which parses `butler.css` — jsdom does not cascade an
+imported stylesheet, so a `getComputedStyle` assertion there would pass against
+a stylesheet saying 9px. A3/A5/A6/A7/A11 are asserted in
+`butler-page.test.tsx` against the rendered DOM, including that the undo is
+still present an hour later on a fake clock.
+
+A8/A9 were additionally verified in a real browser at 320×720 against a live
+bridge: 18px computed base, no text under 18px, smallest button 228×64, no
+horizontal overflow, and nothing clipped under the WCAG 1.4.12 text-spacing
+override injected at runtime.
 
 ---
 

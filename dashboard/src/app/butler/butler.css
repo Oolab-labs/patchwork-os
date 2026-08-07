@@ -1,0 +1,304 @@
+/*
+ * Butler — the large-print base.
+ *
+ * LARGE PRINT IS THE BASE, NOT A MODE. That ordering is the whole point, and
+ * it is the one thing to preserve if this file is ever refactored. A mode that
+ * can be switched off is a mode that gets skipped in the next feature: the
+ * accessible path rots because nobody is looking at it, and by then retrofitting
+ * is expensive. So the accessible values are the DEFAULT declarations, and the
+ * house style arrives as `[data-density="comfortable"]` layered on top.
+ *
+ * The density layer may tighten spacing and re-point colour tokens. It may
+ * never shrink a tap target below 44px, remove a text label, or drop a
+ * contrast pair below the AAA floor — `butler-a11y.test.ts` parses THIS FILE
+ * and fails if it does, so the rule is enforced rather than asked for.
+ *
+ * Everything here is scoped under `.butler` so it cannot leak into the rest of
+ * the dashboard, and so the rest of the dashboard's tokens cannot leak in.
+ */
+
+.butler {
+  /* ── type scale ────────────────────────────────────────────────────────
+     Nothing under 18px. Primary content — the facts, the question being
+     asked — is 21px. These are the A1 acceptance criteria and the a11y test
+     reads them from here. */
+  --lp-text: 18px;
+  --lp-text-primary: 21px;
+  --lp-text-heading: 28px;
+  --lp-text-title: 34px;
+  --lp-line: 1.6;
+
+  /* ── targets ───────────────────────────────────────────────────────────
+     WCAG 2.5.5 asks for 44x44. The plan asks for buttons over 60px on the
+     primary actions, because the people this page is for are not always
+     steady with a mouse. 44 is the FLOOR, not the size. */
+  --lp-target-min: 44px;
+  --lp-target: 64px;
+
+  --lp-gap: 20px;
+  --lp-gap-section: 40px;
+  --lp-radius: 10px;
+  --lp-border: 2px;
+
+  /* ── colour ────────────────────────────────────────────────────────────
+     Black on white, and the contrast pairs are AAA (7:1 text, 3:1 non-text).
+     Verified computationally in the a11y test, not by eye.
+
+     --lp-accent is #8f3413, NOT the house --orange (#c5532a). The brand
+     orange on white is 4.4:1 — fine for AA at large sizes, short of the AAA
+     floor this page holds itself to. Darkening it is the smallest change
+     that keeps the family resemblance and clears 7:1. */
+  --lp-bg: #ffffff;
+  --lp-fg: #000000;
+  --lp-fg-soft: #333333;
+  --lp-line-colour: #595959;
+  --lp-accent: #8f3413;
+  --lp-accent-fg: #ffffff;
+  --lp-danger: #a3161a;
+  --lp-focus: #0b3d91;
+
+  background: var(--lp-bg);
+  color: var(--lp-fg);
+  font-size: var(--lp-text);
+  line-height: var(--lp-line);
+  /* Single column. No side panel, at any width — a second column is a second
+     place to look, and this page is read by people for whom scanning is the
+     expensive part. */
+  max-width: 46rem;
+  margin: 0 auto;
+  /* The bottom padding clears the shell's FIXED mobile nav. Found by opening
+     the page in a real browser at 320px, not by reading: with a plain
+     `padding: X`, the last control on the page — "Take this back", the one
+     that withdraws a permission — sits underneath a 63px fixed bar and cannot
+     be tapped. Every unit test passed while that was true, because the bar
+     belongs to the shell and the tests render the page alone.
+     `--bottom-nav-h` is the shell's own variable (globals.css), 0 when there
+     is no bar, so this is correct on desktop too. */
+  padding: var(--lp-gap-section) var(--lp-gap)
+    calc(
+      var(--lp-gap-section) + var(--bottom-nav-h, 0px) +
+        env(safe-area-inset-bottom, 0px)
+    );
+}
+
+@media (prefers-color-scheme: dark) {
+  .butler {
+    --lp-bg: #000000;
+    --lp-fg: #ffffff;
+    --lp-fg-soft: #d9d9d9;
+    --lp-line-colour: #a6a6a6;
+    /* Light enough on black to clear 7:1; the dark twin of #8f3413. */
+    --lp-accent: #ff9d6e;
+    --lp-accent-fg: #000000;
+    --lp-danger: #ff9a9d;
+    --lp-focus: #9ec5ff;
+  }
+}
+
+/* The viewer's explicit choice beats the OS hint, in BOTH directions — a
+   dark-preferring reader who picks light must get light. */
+:root[data-theme="light"] .butler {
+  --lp-bg: #ffffff;
+  --lp-fg: #000000;
+  --lp-fg-soft: #333333;
+  --lp-line-colour: #595959;
+  --lp-accent: #8f3413;
+  --lp-accent-fg: #ffffff;
+  --lp-danger: #a3161a;
+  --lp-focus: #0b3d91;
+}
+:root[data-theme="dark"] .butler {
+  --lp-bg: #000000;
+  --lp-fg: #ffffff;
+  --lp-fg-soft: #d9d9d9;
+  --lp-line-colour: #a6a6a6;
+  --lp-accent: #ff9d6e;
+  --lp-accent-fg: #000000;
+  --lp-danger: #ff9a9d;
+  --lp-focus: #9ec5ff;
+}
+
+/* ── the density layer ──────────────────────────────────────────────────
+   The house style, layered over the accessible base. Spacing tightens and
+   the accent returns toward the brand orange — but every SIZE token stays
+   at or above its floor, and no label is removed. */
+.butler[data-density="comfortable"] {
+  --lp-gap: 14px;
+  --lp-gap-section: 28px;
+  --lp-text-heading: 24px;
+  --lp-text-title: 28px;
+  --lp-target: 52px;
+  --lp-radius: 8px;
+}
+
+/* ── high contrast: a third stop, not a fork ─────────────────────────── */
+@media (prefers-contrast: more) {
+  .butler {
+    --lp-fg-soft: var(--lp-fg);
+    --lp-line-colour: var(--lp-fg);
+    --lp-border: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .butler *,
+  .butler *::before,
+  .butler *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── structure ─────────────────────────────────────────────────────────── */
+
+.butler h1 {
+  font-size: var(--lp-text-title);
+  line-height: 1.25;
+  margin: 0 0 var(--lp-gap);
+}
+
+.butler h2 {
+  font-size: var(--lp-text-heading);
+  line-height: 1.3;
+  margin: 0 0 var(--lp-gap);
+}
+
+.butlerSection {
+  margin-bottom: var(--lp-gap-section);
+  border-top: var(--lp-border) solid var(--lp-line-colour);
+  padding-top: var(--lp-gap);
+}
+
+.butlerRow {
+  border: var(--lp-border) solid var(--lp-line-colour);
+  border-radius: var(--lp-radius);
+  padding: var(--lp-gap);
+  margin-bottom: var(--lp-gap);
+}
+
+.butlerRowText {
+  font-size: var(--lp-text-primary);
+  margin: 0 0 8px;
+}
+
+/* Source, state and every other status is stated IN WORDS here (WCAG 1.4.1).
+   Nothing on this page is communicated by colour alone, so this needs no
+   colour of its own. */
+.butlerMeta {
+  font-size: var(--lp-text);
+  color: var(--lp-fg-soft);
+  margin: 0 0 var(--lp-gap);
+}
+
+/* ── controls ──────────────────────────────────────────────────────────
+   Always visible. There are NO hover-only affordances on this page: a
+   control that appears on hover does not exist for a touch user, a keyboard
+   user, or anyone who cannot hold a pointer still. */
+.butlerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lp-gap);
+}
+
+.butlerButton {
+  min-height: var(--lp-target);
+  min-width: var(--lp-target-min);
+  padding: 12px 20px;
+  font-size: var(--lp-text-primary);
+  font-family: inherit;
+  border: var(--lp-border) solid var(--lp-fg);
+  border-radius: var(--lp-radius);
+  background: var(--lp-bg);
+  color: var(--lp-fg);
+  cursor: pointer;
+}
+
+.butlerButtonPrimary {
+  background: var(--lp-accent);
+  color: var(--lp-accent-fg);
+  border-color: var(--lp-accent);
+}
+
+.butlerButtonFull {
+  flex: 1 1 100%;
+  min-height: var(--lp-target);
+}
+
+/* Visible focus (WCAG 2.4.11).
+ *
+ * The two-ring construction is load-bearing, not decoration. A single ring
+ * has to contrast with whatever it sits on, and the primary button is a dark
+ * orange — the focus blue against it computes to 1.5:1, i.e. invisible
+ * exactly on the most important control on the page. The a11y test caught
+ * that before it shipped.
+ *
+ * The `box-shadow` paints a ring in the PAGE background colour between the
+ * control and the outline, so the outline always lands on the background and
+ * only ever has to clear 3:1 against that one known colour. The declaration
+ * order matters: shadow inside, outline outside it via `outline-offset`.
+ *
+ * The outline is never removed anywhere in this file. */
+.butler :focus-visible {
+  box-shadow: 0 0 0 3px var(--lp-bg);
+  outline: 3px solid var(--lp-focus);
+  outline-offset: 3px;
+}
+
+.butlerInput {
+  min-height: var(--lp-target-min);
+  width: 100%;
+  padding: 10px 12px;
+  font-size: var(--lp-text-primary);
+  font-family: inherit;
+  color: var(--lp-fg);
+  background: var(--lp-bg);
+  border: var(--lp-border) solid var(--lp-fg);
+  border-radius: var(--lp-radius);
+}
+
+.butlerLabel {
+  display: block;
+  font-size: var(--lp-text);
+  margin-bottom: 8px;
+}
+
+/* The live region. Visually hidden but never `display: none` — a hidden-by-
+   display region is not announced. */
+.butlerAnnounce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.butlerEmpty {
+  font-size: var(--lp-text-primary);
+  color: var(--lp-fg-soft);
+}
+
+/* Long values (a URL, a class key) must scroll inside their own row rather
+   than push the page sideways — 1.4.10 asks for no horizontal scroll at
+   320px. */
+.butlerScroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+@media (max-width: 420px) {
+  .butler {
+    padding: var(--lp-gap) 12px
+      calc(
+        var(--lp-gap-section) + var(--bottom-nav-h, 0px) +
+          env(safe-area-inset-bottom, 0px)
+      );
+  }
+  /* Stack the two answers at narrow widths so each keeps its full width and
+     its full height. Shrinking them to fit side by side is how a 44px floor
+     quietly becomes a 30px target. */
+  .butlerActions .butlerButton {
+    flex: 1 1 100%;
+  }
+}
