@@ -35,6 +35,15 @@ export interface RunRecord {
   steps: Array<{
     tool?: string;
     status: "ok" | "skipped" | "error";
+    /**
+     * Step inputs after template substitution. Load-bearing for TRUST, not
+     * just for display: the action-class key carries a magnitude band for
+     * value-bearing domains, so evidence recorded without params classifies to
+     * the WIDEST band. That does not merely disable the protection, it inverts
+     * it — cheap successes would credit the expensive cell and make the large
+     * action more likely to auto-allow the more small ones succeeded.
+     */
+    resolvedParams?: Record<string, unknown>;
     /** Persisted halt reason — used to tell a worker failure apart from a
      * human approval decision (the latter is not trust evidence; see L2). */
     haltReason?: string;
@@ -268,7 +277,12 @@ export class WorkerShadowObserver {
       if (!decision.fold) continue;
       this.store.apply(
         worker.id,
-        { toolName: step.tool, good: decision.good, at: run.at },
+        {
+          toolName: step.tool,
+          ...(step.resolvedParams && { params: step.resolvedParams }),
+          good: decision.good,
+          at: run.at,
+        },
         { prior, cfg: this.cfg },
       );
     }
