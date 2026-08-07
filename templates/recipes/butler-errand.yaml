@@ -62,7 +62,15 @@ steps:
   # The receipt. `created.id` is what todoist.delete_task needs to undo this —
   # surfacing it is the difference between "undoable in principle" and
   # "undoable by someone who has the id".
-  - tool: file.append
+  #
+  # It carries the SAME guard as the step above, and that is load-bearing: with
+  # no guard it ran even when nothing was created, writing a receipt for a task
+  # that does not exist with an empty `{{created.id}}` in the undo line. That
+  # was latent while the guard above was inert (it never skipped, so this never
+  # ran alone) and would have started the moment the guard began working —
+  # a fix upstream breaking something downstream, silently.
+  - when: "{{title}} != DUPLICATE"
+    tool: file.append
     path: ~/.patchwork/inbox/butler-errands.md
     content: |
       - {{title}} (todoist id {{created.id}}) — undo: patchwork recipe run … todoist.delete_task id={{created.id}}

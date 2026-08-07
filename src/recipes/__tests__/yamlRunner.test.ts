@@ -5079,7 +5079,14 @@ describe("flight recorder — per-step output capture", () => {
           tool: "file.append",
           path: path.join(TMP, "skip.md"),
           content: "x",
-          when: "missing > 0", // resolves false — step is skipped
+          // Was `when: "missing > 0"` with a comment saying "resolves false".
+          // It did skip, but not for that reason: the guard was never
+          // evaluated as a comparison — the rendered string simply ended in
+          // the token "0", which is falsy. `>` is now reported as an
+          // authoring error (src/recipes/whenGuard.ts), so this uses a guard
+          // that genuinely resolves false. The subject of the test — that a
+          // skipped step captures no output — is unchanged.
+          when: "{{missing}}", // renders empty ⇒ falsy ⇒ step is skipped
         },
       ],
     });
