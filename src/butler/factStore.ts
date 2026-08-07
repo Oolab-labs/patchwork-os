@@ -18,6 +18,7 @@ import {
   appendFileSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -176,6 +177,81 @@ export class ButlerFactStore {
     };
     this.append(tomb);
     return tomb;
+  }
+
+  /**
+   * GDPR Art. 17 erasure. THE ONLY method in this class that rewrites the log.
+   *
+   * A tombstone (`forget`) stops a belief resolving but leaves the words on
+   * disk, which is the right audit behaviour and the wrong erasure behaviour —
+   * "delete my address" cannot mean "keep my address, annotated". So the two
+   * are separate operations with separate routes, and the caller must ask for
+   * this one explicitly.
+   *
+   * What survives: the row, its seq, its timestamps, its provenance, and
+   * `erased: true` + `erasedAt`. What is destroyed: subject, predicate,
+   * object — every field that can carry personal data. Keeping the husk is
+   * deliberate; see the `erased` docstring in types.ts.
+   *
+   * Rewrite is atomic (temp file + rename) and holds the same lock as an
+   * append, so a sibling process cannot append into the file between the read
+   * and the replace and have its row silently dropped.
+   */
+  erase(seqToErase: number): ButlerFact {
+    this.tail();
+    if (!this.facts.some((f) => f.seq === seqToErase))
+      throw new Error(`no fact with seq ${seqToErase}`);
+
+    let erasedRow: ButlerFact | undefined;
+    const tmp = `${this.file}.erase.${process.pid}.tmp`;
+    withFileLockSync(this.file, () => {
+      const lines = readFileSync(this.file, "utf8").split("\n");
+      const out: string[] = [];
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let f: ButlerFact;
+        try {
+          f = JSON.parse(line) as ButlerFact;
+        } catch {
+          // Preserve a torn row verbatim. Dropping it here would turn an
+          // erasure request into silent data loss for an unrelated belief.
+          out.push(line);
+          continue;
+        }
+        if (f.seq === seqToErase) {
+          const row: ButlerFact = {
+            ...f,
+            subject: "",
+            predicate: "",
+            object: "",
+            erased: true,
+            erasedAt: this.now(),
+          };
+          erasedRow = row;
+          out.push(JSON.stringify(row));
+        } else {
+          out.push(line);
+        }
+      }
+      writeFileSync(tmp, out.length ? `${out.join("\n")}\n` : "", {
+        mode: 0o600,
+      });
+      renameSync(tmp, this.file);
+      this.lastReadOffset = statSync(this.file).size;
+    });
+
+    if (!erasedRow) {
+      // In memory but not on disk — the append that created it failed, or a
+      // sibling truncated the file. Say so rather than reporting success.
+      throw new Error(`fact ${seqToErase} was not found on disk`);
+    }
+    // The file changed length underneath the watermark, so a delta read would
+    // splice. Reload from scratch.
+    this.facts = [];
+    this.seq = 0;
+    this.lastReadOffset = 0;
+    this.tail();
+    return erasedRow;
   }
 
   /** Current beliefs. Pure resolution over the tailed log. */
