@@ -26,7 +26,7 @@ an accessible base. See §6.
 | Errands worker + recipe | **Built** — templates (#1273) |
 | **HTTP surface for Butler** | **Built** — `src/butlerRoutes.ts` (Phase A) |
 | **Dashboard page** | **NONE.** Zero references to Butler in `dashboard/src/`. |
-| **Standing-permission record** | **NONE.** Every mockup leans on it; nothing implements it. |
+| **Standing-permission record** | **Built** — `src/butler/standingPermission.ts` + `permissionStore.ts` (Phase B) |
 
 So the build is: an HTTP surface, a page, and one new store.
 
@@ -96,7 +96,7 @@ belief for whatever it used to be about.
 
 ---
 
-## 3. Phase B — the standing-permission record (~4 days)
+## 3. Phase B — the standing-permission record (~4 days) — **BUILT**
 
 The only genuinely new domain object. Every mockup has a "stop asking about small things"
 button and nothing behind it.
@@ -116,8 +116,23 @@ interface StandingPermission {
 Rules that are not negotiable:
 
 - **It only ever narrows.** A permission may lower the bar for a class it names and must
-  never widen anything else. Composes as another `min()` alongside `autonomyCeiling` and
-  `contextCeiling` — the descending-only seam the gate already has.
+  never widen anything else.
+
+  > **Correction, made while building it.** This plan said the permission "composes as
+  > another `min()` alongside `autonomyCeiling` and `contextCeiling`". It cannot. Those
+  > are ceilings that LOWER autonomy, and a standing permission by definition lets through
+  > something that would otherwise have stopped — so wiring it there would either do
+  > nothing or would raise earned trust. Raising earned trust is the one thing it must
+  > never do: an action a human waved through in advance would become evidence the WORKER
+  > is reliable, which is trust-by-neglect with extra steps (the leak `foldOutcome` was
+  > fixed for).
+  >
+  > **What was built instead:** a permission is a PRE-RECORDED HUMAN APPROVAL and composes
+  > one layer later, in `resolveGateOutcome` — the single mapping from a gate decision to
+  > an action, shared by enforcement and preview. `decideWorkerAction` is byte-identical
+  > whether or not a permission exists. Only a `queue` outcome is convertible; `flow` and
+  > `refuse` pass through, which makes "no grant unlocks a forbidden action" structural
+  > rather than a rule someone has to remember.
 - **Revocation is immediate and total**, and the record is kept, not deleted.
 - **Every use is reported.** The page must show "done without asking, because you allowed
   it" — a permission whose exercises are invisible is indistinguishable from a bug.
@@ -125,10 +140,21 @@ Rules that are not negotiable:
   record must enforce what the copy promises.
 
 Store: `~/.patchwork/butler/permissions.jsonl`, same append-only pattern, via
-`patchworkPath()`.
+`patchworkPath()`. Exercises go to a SEPARATE `permission_exercises.jsonl` — different
+lifetime, wildly different volume, and interleaving them would make every "what am I
+currently allowing?" read scan months of routine traffic.
+
+HTTP surface (Phase A's pattern): `GET/POST /butler/permissions`,
+`DELETE /butler/permissions/:id` (revokes, never deletes), and
+`GET /butler/permissions/exercises` — so Phase C is purely presentational. `grantedBy` is
+never taken from the request body: the bridge authenticates one shared token, so a
+caller-supplied name is an unverified claim (ADR-0020) and it stays `null`.
 
 **Tests:** a grant cannot widen a class it does not name; revocation takes effect on the
-next decision; an irreversible action is refused even under the broadest grant.
+next decision; an irreversible action is refused even under the broadest grant; and — the
+one that matters most — `previewActions` and `decideWorkerAction` bucket every candidate
+identically under four different grant sets. Component tests passing separately is how an
+inverted safety property shipped here before.
 
 ---
 
