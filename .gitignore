@@ -113,6 +113,64 @@ intellij-plugin/.gradle/
 /docs/showcase-guide.md
 /scratch_test_ollama.js
 
+# ---- QUMO / TA trading research — never repo content ----
+#
+# These patterns previously lived ONLY in .git/info/exclude, which is
+# per-clone and never shared: on a fresh clone, in CI, or on a second
+# machine, none of these files were ignored at all. That is how
+# docs/qumo-desk-precommit.md and deploy/qumo-liq-collector.* reached a
+# public repo — force-added to unbreak CI during a large PR, then never
+# noticed. Moving the patterns here makes the exclusion travel with the
+# repository instead of with one checkout.
+/docs/altcoin-setups-*
+/docs/altpivot-*
+/docs/altsetup-*
+/docs/baserate-*
+/docs/brief-replay-*
+/docs/crypto-brief-*
+/docs/fibtime-*
+/docs/hosodatime-*
+/docs/joe-calls-*
+/docs/joe-mining-*
+/docs/phase1a-*
+/docs/phase1b-*
+/docs/phase1c-*
+/docs/phase1d-*
+/docs/phase1e-*
+/docs/pine-mining-*
+/docs/qumo-*
+/docs/setup-hunting-*
+/docs/ta-cycles-*
+/docs/watchlist-precommit.md
+/docs/wp-calls-*
+/deploy/qumo-*
+/scripts/qumo-*
+/scripts/altsetup-killgate.ts
+/scripts/altxs-harvest.ts
+/scripts/brief-replay-backtest.ts
+/scripts/fibtime-backtest.ts
+/scripts/hosodatime-backtest.ts
+/scripts/joe-calls-score.ts
+/scripts/joe-mining-ingest.ts
+/scripts/phase1a-backtest.ts
+/scripts/phase1b-backtest.ts
+/scripts/phase1c-backtest.ts
+/scripts/phase1d-backtest.ts
+/scripts/ta-backtest.ts
+/scripts/ta-directional.ts
+/scripts/watchlist-killgate.ts
+/scripts/wp-calls-score.ts
+/src/ta/
+/src/recipes/tools/altscan.ts
+/src/recipes/tools/market.ts
+/src/recipes/tools/ta.ts
+/src/recipes/tools/taLedger.ts
+/src/recipes/tools/watchlist.ts
+/src/recipes/tools/__tests__/market.test.ts
+/src/recipes/tools/__tests__/ta.test.ts
+/src/recipes/tools/__tests__/taLedger.test.ts
+/src/recipes/tools/__tests__/watchlist.test.ts
+
 # Codex CLI scaffolding (different coding agent tool, not used for this repo)
 /.codex/
 /AGENTS.md
