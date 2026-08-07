@@ -28,7 +28,7 @@ export function createButlerRememberTool(store: ButlerFactStore) {
     schema: {
       name: "butlerRemember",
       description:
-        "Record one durable fact about the user (preference, household, standing context) as subject + predicate + value. Written at agent trust, below the belief threshold: it is stored and auditable but does not become something Butler asserts.",
+        "Record one durable fact about the user (preference, household, standing context) as subject + predicate + value. Stored at agent trust: auditable, but not something Butler asserts on its own.",
       annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: {
         type: "object" as const,
