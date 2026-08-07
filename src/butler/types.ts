@@ -127,6 +127,25 @@ export interface ButlerFact {
   supersedes?: number;
   /** Set on a tombstone row: the seq being retracted. */
   retracts?: number;
+
+  /**
+   * GDPR Art. 17 erasure. The ONE case where a row's content is rewritten in
+   * place: subject / predicate / object are blanked and this flag is set.
+   *
+   * The row itself is kept, and that is the deliberate compromise. Deleting
+   * the line would renumber nothing but WOULD make "a belief was here and the
+   * user had it erased on this date" indistinguishable from "nothing was ever
+   * recorded" — the same distinction the decision record protects by never
+   * backfilling `actor`. What erasure owes the subject is that the personal
+   * data is gone; it does not owe them the destruction of the audit fact that
+   * an erasure happened.
+   *
+   * An erased row is never a belief: `resolveFacts` drops it before anything
+   * else, so it cannot resolve as an empty-string value for its old key.
+   */
+  erased?: true;
+  /** When the erasure was performed. Present iff `erased`. */
+  erasedAt?: number;
 }
 
 /** Field caps. A belief is a sentence, not a transcript. */

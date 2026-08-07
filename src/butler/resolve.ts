@@ -10,6 +10,7 @@
  * belongs in code.
  *
  * Precedence for one (subject, predicate), in order:
+ *   0. drop erased rows                  — content removed under GDPR Art. 17
  *   1. drop rows not valid at `now`      — expired or not yet in force
  *   2. drop rows below `minTrust`        — the poisoning floor
  *   3. drop rows retracted by a tombstone
@@ -70,6 +71,11 @@ export function resolveFacts(
   const best = new Map<string, ButlerFact>();
   for (const f of ownerFiltered) {
     if (f.retracts !== undefined) continue; // tombstones are not beliefs
+    // An erased row has had its subject/predicate/object blanked (GDPR
+    // Art. 17). It must be dropped BEFORE the key is computed, or every
+    // erased row in the store would collide on the single key ""\0"" and the
+    // most recent one would resolve as an empty-string belief.
+    if (f.erased) continue;
     if (retracted.has(f.seq)) continue;
     if (!validAt(f, opts.now)) continue;
     if (f.trust < minTrust) continue;

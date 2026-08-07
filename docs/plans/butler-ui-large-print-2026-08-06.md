@@ -24,7 +24,7 @@ an accessible base. See §6.
 | Approval queue, durable, risk-tiered TTL | **Built** — ADR-0018, #1245/#1246 |
 | Decision record | **Built** — `worker_gate_decisions.jsonl` |
 | Errands worker + recipe | **Built** — templates (#1273) |
-| **HTTP surface for Butler** | **NONE.** No route reads or writes a fact over HTTP. |
+| **HTTP surface for Butler** | **Built** — `src/butlerRoutes.ts` (Phase A) |
 | **Dashboard page** | **NONE.** Zero references to Butler in `dashboard/src/`. |
 | **Standing-permission record** | **NONE.** Every mockup leans on it; nothing implements it. |
 
@@ -32,7 +32,7 @@ So the build is: an HTTP surface, a page, and one new store.
 
 ---
 
-## 2. Phase A — bridge HTTP surface (~3 days)
+## 2. Phase A — bridge HTTP surface (~3 days) — **BUILT**
 
 New `src/butlerRoutes.ts`, Bearer-gated, mirroring `inboxRoutes.ts` in shape.
 
@@ -56,12 +56,43 @@ Non-obvious requirements:
   rewrite. Do not leave it implied.
 - **Quarantine promotion is never automatic.** It is the one path that raises trust, so it
   takes a human act and records `user_confirmed`.
-- Dashboard proxy at `dashboard/src/app/api/bridge/butler/...`. Note the trap from the
-  recipe-doctor work: a dynamic `[...path]` proxy swallows query strings — `minTrust`
-  needs a route that preserves it.
+- Dashboard proxy: **no new file needed.** The catch-all
+  `dashboard/src/app/api/bridge/[...path]/route.ts` already forwards `req.nextUrl.search`
+  verbatim and exports all five methods. The recipe-doctor trap was NOT the catch-all — it
+  was the *more specific* dynamic `recipes/[...name]` proxy shadowing it and dropping the
+  query. Nothing shadows `/butler/*`, so `minTrust` survives. Re-check this the moment
+  anything adds a `butler/[...]` segment.
 
 **Tests:** route-level for each verb, plus one asserting `PATCH` leaves the original row
 intact and resolution returns the new value.
+
+### The erasure decision (settled — do not re-litigate without a reason)
+
+**Tombstone and erasure are separate operations, and erasure is never the default.**
+
+`DELETE /butler/facts/:seq` writes a tombstone: the belief stops resolving, the words stay
+on disk. `DELETE /butler/facts/:seq?erase=true` calls `ButlerFactStore.erase`, which is the
+only method in that class that rewrites the log — it blanks subject / predicate / object in
+place and sets `erased: true` + `erasedAt`.
+
+Three things this settles:
+
+- **Not scheduled compaction.** A deletion that happens later is a deletion the user cannot
+  see happen, and "we'll get to it" is the weakest possible answer to an Art. 17 request.
+  The rewrite is synchronous, atomic (temp file + rename), and under the same lock as an
+  append so a sibling process's row cannot be swallowed between read and replace.
+- **The row itself survives as a husk.** Erasure owes the subject the destruction of their
+  personal data; it does not owe them the destruction of the audit fact that an erasure
+  occurred. Deleting the line outright would make "a belief was here and was erased" and
+  "nothing was ever recorded" indistinguishable — the same distinction the decision record
+  protects by never backfilling `actor`.
+- **Two verbs because they are two requests.** "Stop believing this" and "destroy this" are
+  different asks, and a caller who meant the first must not silently get the second. That
+  is why erasure needs an explicit flag rather than being what DELETE quietly does.
+
+`resolveFacts` drops erased rows *before* computing the fact key — otherwise every erased
+husk collides on the single key `"\0"` and the newest one resolves as an empty-string
+belief for whatever it used to be about.
 
 ---
 

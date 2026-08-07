@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ActivityLog } from "../activityLog.js";
 import type { AutomationHooks } from "../automation.js";
-import { ButlerFactStore } from "../butler/factStore.js";
+import { getButlerFactStore } from "../butler/sharedStore.js";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { Config } from "../config.js";
@@ -458,7 +458,9 @@ export function registerAllTools(
   // No logger passed: ButlerFactStore defaults to console.warn. That default
   // exists because a missing logger here silently disabled the store's only
   // signal that a belief went missing.
-  const butlerFactStore = new ButlerFactStore();
+  // Shared with src/butlerRoutes.ts: one instance per process, because `seq`
+  // is a per-instance counter and resolution breaks ties on it.
+  const butlerFactStore = getButlerFactStore();
 
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;

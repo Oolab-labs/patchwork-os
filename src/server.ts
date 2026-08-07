@@ -18,6 +18,8 @@ import {
   routeApprovalRequest,
 } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
+import { getButlerFactStore } from "./butler/sharedStore.js";
+import { tryHandleButlerRoute } from "./butlerRoutes.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
 import {
   handleClaudeAuthCancel,
@@ -1765,6 +1767,17 @@ export class Server extends EventEmitter<ServerEvents> {
 
       // ── Inbox routes (extracted to src/inboxRoutes.ts) ───────────────────
       if (tryHandleInboxRoute(req, res, parsedUrl)) {
+        return;
+      }
+
+      // ── Butler fact routes (src/butlerRoutes.ts) ─────────────────────────
+      // Lazily resolved: constructing the store touches the filesystem, and a
+      // bridge that never sees a /butler request should not create the dir.
+      if (
+        tryHandleButlerRoute(req, res, parsedUrl, {
+          factStoreFn: () => getButlerFactStore(),
+        })
+      ) {
         return;
       }
 
