@@ -1,0 +1,44 @@
+{
+  "_readme": [
+    "Legitimate engineering uses of commercial vocabulary, checked by",
+    "scripts/audit-business-content.mjs.",
+    "",
+    "This allowlist is half the design, not an escape hatch. The gate matches",
+    "vocabulary because commercial strategy has no structural signature, and",
+    "this project has a cost-aware model router — so provider pricing tiers and",
+    "cost vocabulary appear legitimately throughout.",
+    "",
+    "Every entry needs a reason a reviewer can check. An entry that stops",
+    "matching is reported as unused (not a failure) so it can be deleted rather",
+    "than silently muting a future real finding.",
+    "",
+    "Matching is per (file, term). Use term '*' only with a strong reason."
+  ],
+  "allow": [
+    {
+      "file": "docs/adr/0019-open-core-boundary.md",
+      "term": "monetisation",
+      "reason": "The open-core boundary needs a public rationale, and LICENSING.md depends on it. Keeping an accepted ADR intact is also better practice than editing the record to satisfy a linter. Note the ADR itself rules pricing/packaging/tiers out of this repo — this entry covers the reasoning for the boundary, not any pricing detail. Decided 2026-08-07."
+    },
+    {
+      "file": "CHANGELOG.md",
+      "term": "free tier",
+      "reason": "Gemini's API free tier exhausting its daily quota — a model-provider limit that changed a recipe's driver. Engineering, not our commercial model."
+    },
+    {
+      "file": "docs/plans/ai-recipe-builder.md",
+      "term": "free tier",
+      "reason": "Groq and Ollama provider tiers in a model-selection table. Describes what a user's chosen provider costs them, not what we charge."
+    },
+    {
+      "file": "docs/plans/recipe-chaining-wave1-plan.md",
+      "term": "free tier",
+      "reason": "A PagerDuty sandbox account used for connector testing."
+    },
+    {
+      "file": "docs/plans/punch-list.md",
+      "term": "monetisation",
+      "reason": "A single row marking a custom registry / ratings / monetization milestone as NOT on the roadmap horizon. Records an exclusion; contains no strategy."
+    }
+  ]
+}
