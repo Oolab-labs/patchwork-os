@@ -15,8 +15,9 @@ remote-mode paths.
 
 ## 1. The path
 
-Mobile approvals are **off unless configured**. With no `pushServiceUrl`, none
-of this runs and nothing leaves the machine.
+Mobile approvals are **off unless configured**. With no `pushServiceUrl` in
+`~/.patchwork/config.json`, none of this runs and nothing leaves the machine.
+See §7 — the setting is a config key, not an environment variable.
 
 ```
   ┌────────────────────┐
@@ -258,21 +259,37 @@ Apple/Google app credentials needed. `dashboard/src/app/api/relay/{push,halt}`
 implement the same `POST /push` + Bearer shape. This is the path the project
 itself dogfoods; see [mobile-oversight-self-host.md](mobile-oversight-self-host.md).
 
-Point the bridge at whichever you chose with `PATCHWORK_PUSH_URL` and
-`PATCHWORK_PUSH_TOKEN`.
+Point the bridge at whichever you chose by setting `pushServiceUrl` and
+`pushServiceToken` — see §7 for where those actually live.
 
 ---
 
-## 7. Turning it off
+## 7. Configuration, and turning it off
 
-Mobile approvals are **off by default**. To have none of this happen:
+**Where the setting lives.** This is easy to get wrong, so it is worth being
+exact. There are two different sets of names on the two sides of the wire:
 
-- Leave `pushServiceUrl` / `PATCHWORK_PUSH_URL` unset. `dispatchPushNotification`
-  is only called when a URL is configured; with none, no request is made.
-- Already enabled? Unset `PATCHWORK_PUSH_URL` and `PATCHWORK_PUSH_TOKEN` and
+| Side | Setting | Where |
+|---|---|---|
+| **Bridge** (sender) | `pushServiceUrl`, `pushServiceToken`, `pushServiceBaseUrl` | Keys in `~/.patchwork/config.json`, read by `loadPatchworkConfig` (`src/config.ts`). Writable from the dashboard's Settings → Mobile card. **Not** environment variables — the bridge reads no `PATCHWORK_PUSH_*` var. |
+| **Dashboard relay** (receiver, option B) | `PATCHWORK_PUSH_TOKEN`, `PATCHWORK_PUSH_URL`, `PATCHWORK_PUSH_BASE_URL` | Environment variables for the Next.js process, used to authenticate inbound `/api/relay/*` requests. |
+| **Standalone relay** (receiver, option A) | `RELAY_AUTH_TOKENS`, `REDIS_URL`, `FCM_*`, `APNS_*` | Environment variables for that service. |
+
+So unsetting `PATCHWORK_PUSH_URL` does **not** disable push on a bridge
+configured through `config.json` or the dashboard. That is the mistake this
+table exists to prevent.
+
+**Mobile approvals are off by default.** To have none of this happen:
+
+- Leave `pushServiceUrl` unset in `~/.patchwork/config.json`. The dispatch is
+  guarded by `if (deps.pushServiceUrl && deps.pushServiceToken && approvalToken)`
+  (`src/approvalHttp.ts:944`) — with no URL, no request is made and no code path
+  runs.
+- Already enabled? Clear `pushServiceUrl` and `pushServiceToken` from
+  `~/.patchwork/config.json` (or blank the fields in Settings → Mobile) and
   restart the bridge.
-- To stop one device rather than the path: `DELETE /devices` with the token in
-  the JSON body, or the dashboard settings card.
+- To stop one device rather than the whole path: `DELETE /devices` with the
+  token in the JSON body, or the dashboard settings card.
 - To stop everything acting, not just the phone path: `patchwork panic`
   (see [ADR-0013](adr/0013-kill-switch.md)).
 
