@@ -9,7 +9,9 @@ dev guide.
 
 1. **Extend, don't fork the bridge.** If a bug is in the bridge layer, fix it there.
 2. **Tests mandatory.** New tools/adapters need vitest coverage. CI gates at
-   75% lines / 70% branches / 75% functions.
+   71% lines / 62% branches / 70% functions (`vitest.config.ts` is the source
+   of truth; the numbers were re-baselined down for vitest 4's stricter
+   coverage counting, not because coverage dropped).
 3. **No secrets in commits.** Check `git diff` before staging.
 4. **Small PRs** — one adapter, one dashboard page, or one recipe schema change per PR.
 

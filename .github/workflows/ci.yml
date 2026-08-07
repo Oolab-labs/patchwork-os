@@ -107,6 +107,12 @@ jobs:
         run: node scripts/audit-docs-wired.mjs
       - name: Audit docs drift (advisory, tool-count/coverage claims)
         run: node scripts/audit-docs-drift.mjs
+      # Gating, unlike the advisory drift check above: version drift moves only
+      # on a release, the fix is one line, and the failure mode is a security
+      # document telling a reader to pin a version line that no longer exists.
+      # Scoped to the four reader-facing documents — see the script header.
+      - name: Audit docs version drift (gating)
+        run: node scripts/audit-version-drift.mjs
 
   plugin-validate:
     name: Validate plugin manifest
