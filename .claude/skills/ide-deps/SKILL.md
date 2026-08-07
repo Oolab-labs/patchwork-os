@@ -1,8 +1,8 @@
 ---
 name: ide-deps
 description: Dependency graph for a file or symbol. Calls getCallHierarchy and findReferences, builds a directed graph, and renders an interactive HTML force-directed graph. Opens in the system browser.
-argument-hint: "<file path> [symbol name]"
 effort: low
+argument-hint: "<file path> [symbol name]"
 ---
 
 ## Prerequisites
