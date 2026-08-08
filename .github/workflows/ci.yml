@@ -128,6 +128,13 @@ jobs:
       # enough — the local ide-refactor sat on the pre-refactorAnalyze version.
       - name: Audit skill parity (gating)
         run: node scripts/audit-skill-parity.mjs
+      # Two deploy scripts hardcoded `root@<ip>` for a server whose address the
+      # hosting provider later reassigned to an unrelated customer, while one of
+      # them passes the bridge token and dashboard password to whatever host it
+      # names. Five files carried stale real addresses and all were found by
+      # accident, months later. Nothing was going to report it.
+      - name: Audit real IP literals (gating)
+        run: node scripts/audit-real-ips.mjs
       # Supply chain. Scoped to PRODUCTION dependencies at high/critical —
       # that is what ships, and dev-tooling advisories would make this job red
       # on somebody else's release schedule.

@@ -3,12 +3,43 @@
 # Run from Mac: bash deploy/deploy-dashboard.sh
 set -euo pipefail
 
-VPS="root@185.167.97.141"
-REMOTE_DIR="/opt/patchwork-dashboard"
-PM2_NAME="patchwork-dashboard"
-PORT=3200
-NGINX_CONF="/etc/nginx/sites-available/patchworkos"
-DASHBOARD_URL="https://patchworkos.com/dashboard"
+# Deployment target. REQUIRED, and deliberately without a default.
+#
+# This used to be a hardcoded `root@<ip>` pointing at one specific server.
+# That address was later reassigned by the hosting provider to an unrelated
+# customer, and the script kept pointing at it — while line ~48 passes
+# PATCHWORK_BRIDGE_TOKEN and DASHBOARD_PASSWORD to whatever host it names.
+# A deploy script that guesses its target is the bug; refusing to guess is
+# the fix. Nothing here is secret, but a wrong default aims real
+# credentials at a real stranger.
+if [ -z "${PATCHWORK_VPS:-}" ]; then
+  cat >&2 <<'ERR'
+error: PATCHWORK_VPS is not set.
+
+  Set it to the ssh destination for YOUR server, e.g.
+
+      PATCHWORK_VPS=root@203.0.113.10  bash deploy/deploy-dashboard.sh
+      PATCHWORK_VPS=deploy@example.com bash deploy/deploy-dashboard.sh
+
+  An ssh config alias works too (see deploy/macos/README.md).
+
+  There is no default on purpose: this script sends deployment
+  credentials to whatever host it is given.
+ERR
+  exit 1
+fi
+VPS="$PATCHWORK_VPS"
+
+# Site-specific settings. These defaults suit a single-site install; override
+# per deployment. They are NOT secrets — they are paths and process names.
+REMOTE_DIR="${PATCHWORK_REMOTE_DIR:-/opt/patchwork-dashboard}"
+PM2_NAME="${PATCHWORK_PM2_NAME:-patchwork-dashboard}"
+PORT="${PATCHWORK_DASHBOARD_PORT:-3200}"
+NGINX_CONF="${PATCHWORK_NGINX_CONF:-/etc/nginx/sites-available/patchwork}"
+DASHBOARD_URL="${PATCHWORK_DASHBOARD_URL:-https://your.tld/dashboard}"
+# Written into the remote .env.local. VAPID_SUBJECT must be a mailto: you own.
+BRIDGE_URL="${PATCHWORK_BRIDGE_URL:-https://your.tld}"
+VAPID_SUBJECT="${PATCHWORK_VAPID_SUBJECT:-mailto:admin@your.tld}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -45,14 +76,23 @@ echo "==> Deploying on VPS..."
 # `${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}` inside the heredoc evaluated on
 # the remote, where the var doesn't exist, and always wrote REPLACE_ME.
 # shellcheck disable=SC2087
-ssh "$VPS" bash -s -- "${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}" "${DASHBOARD_PASSWORD:-}" <<'REMOTE'
+ssh "$VPS" bash -s -- \
+  "${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}" "${DASHBOARD_PASSWORD:-}" \
+  "$REMOTE_DIR" "$PM2_NAME" "$PORT" "$BRIDGE_URL" "$VAPID_SUBJECT" <<'REMOTE'
 set -euo pipefail
 # `${N:-}` so an empty/missing positional arg doesn't trip `set -u`.
+#
+# The site settings are passed in rather than repeated here. They used to be
+# declared twice — once locally and once inside this heredoc — so overriding
+# the local copy silently changed nothing on the remote side. Two sources of
+# truth for the same path is a bug waiting for someone to trust the wrong one.
 PATCHWORK_BRIDGE_TOKEN="${1:-REPLACE_ME}"
 DASHBOARD_PASSWORD="${2:-}"
-REMOTE_DIR="/opt/patchwork-dashboard"
-PM2_NAME="patchwork-dashboard"
-PORT=3200
+REMOTE_DIR="${3:-/opt/patchwork-dashboard}"
+PM2_NAME="${4:-patchwork-dashboard}"
+PORT="${5:-3200}"
+BRIDGE_URL="${6:-https://your.tld}"
+VAPID_SUBJECT="${7:-mailto:admin@your.tld}"
 
 # Stop existing PM2 process if running
 if pm2 list | grep -q "$PM2_NAME"; then
@@ -109,9 +149,9 @@ if [ -f "$REMOTE_DIR/.env.local" ]; then
 else
   cat > "$REMOTE_DIR/.env.local" <<ENV
 NEXT_PUBLIC_BASE_PATH=/dashboard
-PATCHWORK_BRIDGE_URL=https://patchworkos.com
+PATCHWORK_BRIDGE_URL=${BRIDGE_URL}
 PATCHWORK_BRIDGE_TOKEN=${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}
-VAPID_SUBJECT=mailto:support@gigsecure.co.ke
+VAPID_SUBJECT=${VAPID_SUBJECT}
 DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
 ENV
   chmod 600 "$REMOTE_DIR/.env.local"
@@ -123,32 +163,38 @@ which pm2 || npm install -g pm2
 
 # Start with PM2
 cd "$REMOTE_DIR"
-PORT=3200 pm2 start server.js --name "$PM2_NAME"
+PORT="$PORT" pm2 start server.js --name "$PM2_NAME"
 
 pm2 save
 echo "PM2 started: $PM2_NAME on port $PORT"
 REMOTE
 
 echo "==> Configuring nginx..."
-ssh "$VPS" bash <<'NGINX'
+ssh "$VPS" bash -s -- "$NGINX_CONF" "$PORT" <<'NGINX'
 set -euo pipefail
-NGINX_CONF="/etc/nginx/sites-available/patchworkos"
+# Passed in, not repeated — see the note on the REMOTE heredoc above.
+NGINX_CONF="${1:?nginx conf path not passed}"
+# The proxy_pass port MUST track the port pm2 starts the app on. These were
+# two independent literals; making the port configurable without threading it
+# here would have produced a proxy pointing at nothing.
+APP_PORT="${2:?app port not passed}"
 
 # Add SSE location block if missing
 if ! grep -q "location /dashboard/api/bridge/stream" "$NGINX_CONF"; then
   # Insert before the closing brace of the SSL server block
   # We insert just before the last `}` that closes the server block listening on 443
-  python3 - "$NGINX_CONF" <<'PYEOF'
+  python3 - "$NGINX_CONF" "$APP_PORT" <<'PYEOF'
 import sys, re
 
 path = sys.argv[1]
+port = sys.argv[2]
 with open(path) as f:
     content = f.read()
 
-sse_block = """
+sse_block = f"""
     # SSE passthrough — no buffering
-    location /dashboard/api/bridge/stream {
-        proxy_pass http://127.0.0.1:3200;
+    location /dashboard/api/bridge/stream {{
+        proxy_pass http://127.0.0.1:{port};
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_cache off;
@@ -159,18 +205,18 @@ sse_block = """
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         add_header X-Accel-Buffering no;
-    }
+    }}
 
     # Dashboard app
-    location /dashboard {
-        proxy_pass http://127.0.0.1:3200;
+    location /dashboard {{
+        proxy_pass http://127.0.0.1:{port};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 60s;
-    }
+    }}
 """
 
 # Find the ssl/443 server block and insert before its closing brace
@@ -195,4 +241,4 @@ NGINX
 
 echo ""
 echo "==> Deploy complete!"
-echo "    Dashboard: https://patchworkos.com/dashboard"
+echo "    Dashboard: $DASHBOARD_URL"

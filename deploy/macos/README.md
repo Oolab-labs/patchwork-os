@@ -34,7 +34,7 @@ self-hosted dashboard persistent on your Mac:
    ```ssh-config
    # ~/.ssh/config
    Host pw-bridge
-       HostName 185.167.97.141       # your VPS IP — stable across DNS shifts
+       HostName 203.0.113.10       # your VPS IP — stable across DNS shifts
        User wesh                      # or root, whatever your VPS allows
        IdentityFile ~/.ssh/id_ed25519
        ServerAliveInterval 30
@@ -57,11 +57,11 @@ self-hosted dashboard persistent on your Mac:
    Without an alias (interactive, prompts for VPS host):
    ```bash
    bash deploy/macos/install-mac-bridge.sh
-   # → prompts; recommend the IP (185.167.97.141) over the domain
+   # → prompts; recommend the IP (203.0.113.10) over the domain
    ```
    Or fully env-driven:
    ```bash
-   VPS_HOST=185.167.97.141 VPS_USER=root \
+   VPS_HOST=203.0.113.10 VPS_USER=root \
    BRIDGE_PORT=63906 VPS_PORT=3285 \
    bash deploy/macos/install-mac-bridge.sh
    ```

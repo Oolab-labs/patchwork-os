@@ -7,7 +7,7 @@
 #   bash deploy/macos/install-mac-bridge.sh
 #
 # Usage (env-driven, idempotent re-install):
-#   VPS_HOST=185.167.97.141 VPS_USER=root BRIDGE_PORT=63906 \
+#   VPS_HOST=203.0.113.10 VPS_USER=root BRIDGE_PORT=63906 \
 #   VPS_PORT=3285 BRIDGE_TOKEN="$(uuidgen | tr '[:upper:]' '[:lower:]')" \
 #   bash deploy/macos/install-mac-bridge.sh
 #
@@ -20,7 +20,7 @@
 # Using a ~/.ssh/config alias (cleanest):
 #   # in ~/.ssh/config:
 #   #   Host pw-bridge
-#   #       HostName 185.167.97.141
+#   #       HostName 203.0.113.10
 #   #       User wesh
 #   #       IdentityFile ~/.ssh/id_ed25519
 #   VPS_HOST=pw-bridge VPS_USER=wesh \
@@ -103,7 +103,7 @@ VPS target — three choices, in increasing order of stability:
   (1) Public domain     e.g. bridge.your.tld
       DNS-resolved each connection. Drifts during redeploys → host-key churn.
 
-  (2) VPS IP            e.g. 185.167.97.141
+  (2) VPS IP            e.g. 203.0.113.10
       Stable per VPS. Doesn't survive a VPS rebuild but doesn't drift between.
 
   (3) ~/.ssh/config alias  e.g. pw-bridge
