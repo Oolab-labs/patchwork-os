@@ -75,6 +75,24 @@ const IPV4_RE = /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g;
 const SKIP_FILE =
   /(^|\/)(package-lock\.json|\.gitattributes)$|\.(png|jpg|jpeg|gif|svg|ico|woff2?|pdf|vsix|tgz)$|(^|\/)__tests__\/|\.(test|spec)\.[cm]?[jt]sx?$/i;
 
+/**
+ * This gate's own files.
+ *
+ * The allowlist exists to hold IP addresses, so scanning it means every
+ * accepted exception is re-reported as a violation — and this file's header
+ * quotes `8.8.8.8` while explaining why tests are excluded.
+ *
+ * Worth recording how this was found, because the local run said OK: both
+ * files were still UNTRACKED when it ran, so `git ls-files` never showed
+ * them to the scanner. The check could not have failed, which made its
+ * passing meaningless. CI caught it on the first push, once they were
+ * tracked.
+ */
+const SELF = new Set([
+  "scripts/audit-real-ips.mjs",
+  "scripts/audit-real-ips-allowlist.json",
+]);
+
 function isAllowedAddress(o) {
   const [a, b] = o;
   if (o.some((n) => n > 255)) return true; // not a valid address at all
@@ -98,7 +116,7 @@ function trackedFiles() {
   })
     .split("\n")
     .filter(Boolean)
-    .filter((f) => !SKIP_FILE.test(f));
+    .filter((f) => !SKIP_FILE.test(f) && !SELF.has(f));
 }
 
 /** Real addresses that must stay, each with a reason. */
