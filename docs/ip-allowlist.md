@@ -76,28 +76,6 @@ iptables -A INPUT -p tcp --dport 9000 -j DROP
 
 ---
 
-## Anthropic QA / test account access
-
-For the claude.ai plugin submission, Anthropic's QA team needs a stable demo instance. The demo bridge at `brushed-burt-swatheable.ngrok-free.app` is configured as follows:
-
-| Setting | Value |
-|---|---|
-| Endpoint | `https://brushed-burt-swatheable.ngrok-free.app` |
-| Auth | Fixed bearer token (share privately with Anthropic) |
-| OAuth issuer | `https://brushed-burt-swatheable.ngrok-free.app` |
-| Workspace | Read-only demo workspace (no write tools enabled on demo) |
-| Uptime | Managed via tmux session `bridge` on the VPS |
-
-To start/restart the demo instance:
-```bash
-# On the VPS
-tmux attach -t bridge
-# Ctrl-C to stop, then:
-npm run remote
-```
-
----
-
 ## Environment variables
 
 | Variable | Description |
