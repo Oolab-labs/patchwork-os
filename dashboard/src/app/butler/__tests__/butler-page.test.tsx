@@ -69,7 +69,11 @@ function mockBridge(over: Record<string, unknown> = {}) {
     "/butler/quarantine": { ok: true, facts: [GUESS] },
     "/butler/permissions/exercises": { ok: true, exercises: [EXERCISE] },
     "/butler/permissions": { ok: true, permissions: [PERMISSION] },
-    "/approvals": { pending: [ASK] },
+    // GET /approvals returns a BARE ARRAY (src/approvalHttp.ts). This
+    // fixture used to wrap it in `{pending: […]}`, which no server ever sent,
+    // so the test passed while the page read `.pending` off an array and
+    // rendered "Nothing right now." forever.
+    "/approvals": [ASK],
     ...over,
   };
   vi.stubGlobal(
@@ -258,7 +262,12 @@ describe("A5 — keyboard operable, and nothing is hover-only", () => {
     expect(yes.getAttribute("type")).toBe("button");
     fireEvent.click(yes);
     await waitFor(() =>
-      expect(calls.some((c) => c.url.includes("/approvals/approve/"))).toBe(
+      expect(
+        // The bridge routes /approve/<id>; there is no /approvals/ prefix on
+        // the decision route. This asserted the URL the page used to send,
+        // which 404'd.
+        calls.some((c) => c.url.includes("/approve/")),
+      ).toBe(
         true,
       ),
     );
@@ -277,6 +286,50 @@ describe("honesty when the bridge is unreachable", () => {
     expect(
       screen.getByText(/not the same as knowing nothing about you/i),
     ).toBeTruthy();
+  });
+
+  it("says so for a 502 too — the failure the old code could not see", async () => {
+    // The dashboard proxy answers a dead bridge with a 502 whose BODY is
+    // valid JSON: {"error":"Bridge unreachable"}. `.then(r => r.json())`
+    // resolved, the shape guards fell through to [], and the page rendered
+    // "Nothing yet." about a bridge it never reached. Only a network-level
+    // rejection (the test above) ever reached the catch — so the existing
+    // test passed while this, the failure that actually happens in
+    // production, went unnoticed.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 502,
+          json: () => Promise.resolve({ error: "Bridge unreachable" }),
+        }),
+      ),
+    );
+    render(<ButlerPage />);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/could not reach the bridge/i);
+  });
+
+  it("distinguishes 'I cannot check' from 'you have granted nothing'", async () => {
+    // The bridge answers 501 when it has no permission store, with an
+    // explicit comment that it must not read as "you have granted nothing".
+    // The client used to flatten that to an empty list, defeating the
+    // distinction the server went out of its way to make.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: false,
+          status: 501,
+          json: () => Promise.resolve({ error: "not available" }),
+        }),
+      ),
+    );
+    render(<ButlerPage />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/cannot check/i);
   });
 });
 

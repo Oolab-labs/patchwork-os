@@ -143,6 +143,28 @@ function permissionInWords(p: StandingPermission): string {
   }.`;
 }
 
+/**
+ * GET a bridge route and fail loudly on a non-2xx.
+ *
+ * The dashboard proxy returns a JSON body on failure (502
+ * `{"error":"Bridge unreachable"}`), so `.then(r => r.json())` resolves
+ * happily and the caller cannot tell a dead bridge from an empty one.
+ */
+async function getJson(path: string): Promise<Record<string, unknown>> {
+  const res = await fetch(apiPath(path));
+  if (!res.ok) {
+    // The bridge answers 501 for a permission store it cannot read, with an
+    // explicit comment that it must not read as "you have granted nothing".
+    // Preserve that distinction instead of flattening it to an empty list.
+    throw new Error(
+      res.status === 501
+        ? "I cannot check that on this bridge."
+        : `Could not reach the bridge (${res.status}).`,
+    );
+  }
+  return (await res.json()) as Record<string, unknown>;
+}
+
 // ─────────────────────────────────────────────────────────────── page
 
 export default function ButlerPage() {
@@ -168,26 +190,43 @@ export default function ButlerPage() {
 
   const load = useCallback(async () => {
     try {
+      // `r.json()` alone was not enough to keep the promise in the comment
+      // below. The dashboard proxy answers a dead bridge with a 502 whose
+      // BODY is valid JSON (`{"error":"Bridge unreachable"}`), so the parse
+      // succeeded, the shape guards fell through to `[]`, and the page said
+      // "Nothing yet." — confidently, about a bridge it never reached. Only a
+      // network-level rejection ever reached the catch. Check the status.
       const [f, q, p, e, a] = await Promise.all([
-        fetch(apiPath("/api/bridge/butler/facts")).then((r) => r.json()),
-        fetch(apiPath("/api/bridge/butler/quarantine")).then((r) => r.json()),
-        fetch(apiPath("/api/bridge/butler/permissions")).then((r) => r.json()),
-        fetch(apiPath("/api/bridge/butler/permissions/exercises")).then((r) =>
-          r.json(),
-        ),
-        fetch(apiPath("/api/bridge/approvals")).then((r) => r.json()),
+        getJson("/api/bridge/butler/facts"),
+        getJson("/api/bridge/butler/quarantine"),
+        getJson("/api/bridge/butler/permissions"),
+        getJson("/api/bridge/butler/permissions/exercises"),
+        getJson("/api/bridge/approvals"),
       ]);
       setFacts(Array.isArray(f?.facts) ? f.facts : []);
       setQuarantine(Array.isArray(q?.facts) ? q.facts : []);
       setPermissions(Array.isArray(p?.permissions) ? p.permissions : []);
       setExercises(Array.isArray(e?.exercises) ? e.exercises : []);
-      setAsks(Array.isArray(a?.pending) ? a.pending : []);
+      // GET /approvals returns a BARE ARRAY (src/approvalHttp.ts) — there is
+      // no `pending` wrapper. Reading `.pending` off an array is undefined, so
+      // this section rendered "Nothing right now." no matter how many
+      // approvals were queued. The canonical /approvals page casts the body to
+      // an array directly; this now agrees with the server and with it.
+      setAsks(Array.isArray(a) ? a : []);
       setLoadError(null);
     } catch (err) {
       // Say so. A page that silently renders "Butler knows nothing about you"
       // when the truth is "I could not reach the bridge" is worse than an
       // error: the reader believes it.
-      setLoadError(err instanceof Error ? err.message : String(err));
+      // A raw ECONNREFUSED is not a sentence anyone should read. Messages
+      // this page raises itself (getJson) already are; anything else gets the
+      // plain form.
+      const msg = err instanceof Error ? err.message : String(err);
+      setLoadError(
+        /^[A-Z].*[.?]$/.test(msg)
+          ? msg
+          : "I could not reach the bridge, so I cannot show you anything right now.",
+      );
     } finally {
       setReady(true);
     }
@@ -211,21 +250,38 @@ export default function ButlerPage() {
     [load],
   );
 
+  const del = useCallback(
+    async (path: string) => {
+      const res = await fetch(apiPath(path), { method: "DELETE" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      await load();
+      return res;
+    },
+    [load],
+  );
+
   // ── the ask ───────────────────────────────────────────────────────────
   const ask = asks[0];
 
   const answerAsk = useCallback(
     async (p: Pending, decision: "approve" | "reject") => {
       try {
-        await fetch(apiPath(`/api/bridge/approvals/${decision}/${p.callId}`), {
-          method: "POST",
-        });
+        // Two bugs here, and the second is why the first was invisible.
+        //
+        // The bridge routes `/approve/<id>` and `/reject/<id>` — there is no
+        // `/approvals/` prefix on the decision route (the `/approvals/<id>`
+        // pattern is a single-segment detail route). So every answer 404'd.
+        //
+        // And `post()` was not used, so the 404 resolved and Butler said
+        // "Yes. I will go ahead." for an action that never happened. A
+        // governance product telling someone it approved something it did not
+        // is the worst failure on this page.
+        await post(`/api/bridge/${decision}/${p.callId}`);
         announce(
           decision === "approve"
             ? "Yes. I will go ahead."
             : "No. I have left it alone.",
         );
-        await load();
       } catch {
         announce("I could not send your answer. Nothing has changed.");
       }
@@ -237,9 +293,9 @@ export default function ButlerPage() {
   const removeFact = useCallback(
     async (f: ButlerFact) => {
       try {
-        await fetch(apiPath(`/api/bridge/butler/facts/${f.seq}`), {
-          method: "DELETE",
-        });
+        // Was a bare fetch: a failed DELETE still announced "Removed" and
+        // still offered an undo for a deletion that never happened.
+        await del(`/api/bridge/butler/facts/${f.seq}`);
         announce(`Removed: ${factInWords(f)}`);
         // The undo puts the fact back as something YOU said, which is what it
         // was. It stays available until used.
@@ -286,9 +342,7 @@ export default function ButlerPage() {
   const revokePermission = useCallback(
     async (p: StandingPermission) => {
       try {
-        await fetch(apiPath(`/api/bridge/butler/permissions/${p.id}`), {
-          method: "DELETE",
-        });
+        await del(`/api/bridge/butler/permissions/${p.id}`);
         announce("Taken back. I will ask you about those again.");
         offerUndo(`Took back "${permissionInWords(p)}"`, async () => {
           await post("/api/bridge/butler/permissions", {
@@ -322,10 +376,14 @@ export default function ButlerPage() {
 
       <h1>Butler</h1>
 
+      {/* The reason is shown, not just the reassurance. The bridge answers 501
+          when it cannot read the permission store, with an explicit comment
+          that this must not read as "you have granted nothing" — a fixed
+          "could not reach the bridge" sentence throws that distinction away
+          at the last step, after the server took care to make it. */}
       {loadError && (
         <p className="butlerRowText" role="alert">
-          I could not reach the bridge, so I cannot show you anything right now.
-          This is not the same as knowing nothing about you.
+          {loadError} This is not the same as knowing nothing about you.
         </p>
       )}
 
@@ -335,9 +393,14 @@ export default function ButlerPage() {
         {ask ? (
           <div className="butlerRow">
             <p className="butlerRowText">{ask.summary ?? ask.toolName}</p>
+            {/* "and not ask again about this one" was a promise nothing kept:
+                there is no suppression store, so rejecting removes the queue
+                entry and the next run asks again. Saying what actually
+                happens is worth more than a reassurance that turns out to be
+                false the first time the recipe runs on a schedule. */}
             <p className="butlerMeta">
               If you say yes, I will do this now. If you say no, I will leave it
-              alone and not ask again about this one.
+              alone this time.
             </p>
             <div className="butlerActions">
               <button

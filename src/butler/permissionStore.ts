@@ -28,6 +28,7 @@ import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { withFileLockSync } from "../fileLockSync.js";
 import { patchworkPath } from "../patchworkHome.js";
+import { ButlerNotFoundError, ButlerValidationError } from "./errors.js";
 import type { StandingPermission } from "./standingPermission.js";
 
 /** One use of a grant. Written by the enforcement path, never by a preview. */
@@ -97,14 +98,20 @@ export class StandingPermissionStore {
       .map((d) => d.trim())
       .filter((d) => d.length > 0);
     if (domains.length === 0)
-      throw new Error("a standing permission must name at least one domain");
+      throw new ButlerValidationError(
+        "a standing permission must name at least one domain",
+      );
     for (const d of domains) {
       if (d.includes("\0"))
-        throw new Error("scope domains must not contain null bytes");
+        throw new ButlerValidationError(
+          "scope domains must not contain null bytes",
+        );
     }
     const perDay = input.ceiling?.perDay;
     if (perDay !== undefined && (!Number.isInteger(perDay) || perDay < 1))
-      throw new Error("ceiling.perDay must be a positive integer");
+      throw new ButlerValidationError(
+        "ceiling.perDay must be a positive integer",
+      );
 
     const p: StandingPermission = {
       id: randomUUID(),
@@ -127,7 +134,8 @@ export class StandingPermissionStore {
    */
   revoke(id: string): StandingPermission {
     const current = this.list().find((p) => p.id === id);
-    if (!current) throw new Error(`no standing permission with id ${id}`);
+    if (!current)
+      throw new ButlerNotFoundError(`no standing permission with id ${id}`);
     if (current.revokedAt !== undefined) return current; // idempotent
     const revoked: StandingPermission = { ...current, revokedAt: this.now() };
     this.append(this.file, revoked);
