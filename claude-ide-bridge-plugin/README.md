@@ -2,7 +2,7 @@
 
 If you're using this, a star helps more people find it — [github.com/Oolab-labs/patchwork-os](https://github.com/Oolab-labs/patchwork-os)
 
-A Claude Code plugin that provides full IDE integration — 177 tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
+A Claude Code plugin that provides full IDE integration — 180 tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
 
 ![Patchwork OS dashboard — connected bridge, live telemetry, and recipe library](https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/docs/images/dashboard-overview.png)
 
@@ -29,7 +29,7 @@ claude --plugin-dir $(npm root -g)/patchwork-os/claude-ide-bridge-plugin
 
 ### Verify it's working
 
-Inside Claude Code, type `/ide` and select the bridge from the list. You should see a confirmation with the tool count — 177 tools when the extension is connected. Tools that require the extension (terminal, debugger, LSP, editor state) are automatically hidden when it's not connected and reappear on reconnect.
+Inside Claude Code, type `/ide` and select the bridge from the list. You should see a confirmation with the tool count — 180 tools when the extension is connected. Tools that require the extension (terminal, debugger, LSP, editor state) are automatically hidden when it's not connected and reappear on reconnect.
 
 The session start hook also prints bridge status automatically — look for a summary line at the top of each new conversation.
 
@@ -177,7 +177,7 @@ All agents have `memory: project` enabled — they learn codebase patterns acros
 
 ### MCP Server
 
-The plugin configures the bridge as an MCP server, providing 177 tools:
+The plugin configures the bridge as an MCP server, providing 180 tools:
 
 - **LSP** (13 tools): goToDefinition, findReferences, getHover, renameSymbol, getCallHierarchy, getTypeHierarchy, getInlayHints, ...
 - **Debugging** (5 tools): setDebugBreakpoints, startDebugging, evaluateInDebugger, getDebugState, stopDebugging

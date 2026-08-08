@@ -86,7 +86,7 @@ rm ~/.claude/ide/*.lock
 | `writeFile` | `editText` |
 | `listFiles` | `getFileTree` |
 
-**Slim mode**: v2 introduced slim mode (default in v2.0–v2.42). **v2.43.0 flipped the default back to full mode** — all 177 tools are now registered by default. Pass `--slim` to opt into the IDE-exclusive subset. The `--full` flag is retained as a no-op for backward compatibility with older start commands.
+**Slim mode**: v2 introduced slim mode (default in v2.0–v2.42). **v2.43.0 flipped the default back to full mode** — all 180 tools are now registered by default. Pass `--slim` to opt into the IDE-exclusive subset. The `--full` flag is retained as a no-op for backward compatibility with older start commands.
 
 **MCP config**: No manual regeneration needed — the bridge writes its own lock file (`~/.claude/ide/<port>.lock`) on start, and the MCP server is registered via `claude mcp add` or the `claude-ide-bridge init` install flow. Use `claude-ide-bridge print-token` to retrieve the auth token for a remote MCP client.
 

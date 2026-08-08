@@ -106,7 +106,7 @@ Two independent WebSocket connections run simultaneously. The **Claude Code ↔ 
 
 `registerAllTools()` in `src/tools/index.ts` constructs all tool factories with explicit dependency injection (workspace path, `extensionClient`, `config`, `probes`, `activityLog`, `orchestrator`, `automationHooks`, `fileLock`, `transport`). It returns a flat `ToolSchema[]` array.
 
-**Full mode** (default since v2.43.0): the `SLIM_TOOL_NAMES` filter is bypassed; all 177 tools are registered. Full-only tools include git write operations, terminal, file tree, GitHub, HTTP client, Claude orchestration, and code quality tools.
+**Full mode** (default since v2.43.0): the `SLIM_TOOL_NAMES` filter is bypassed; all 180 tools are registered. Full-only tools include git write operations, terminal, file tree, GitHub, HTTP client, Claude orchestration, and code quality tools.
 
 **Slim mode** (`--slim`): `SLIM_TOOL_NAMES` is a `Set<string>` of 61 names. Only tools whose `schema.name` is in this set are registered. Slim mode exposes IDE-exclusive tools — LSP, debugger, editor state, decorations — that Claude Code cannot replicate natively.
 

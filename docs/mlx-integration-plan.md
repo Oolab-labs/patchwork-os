@@ -285,7 +285,7 @@ own approval gate (`src/approvalHttp.ts`), so the two safety layers compose —
 Siri convenience + Patchwork's human-approval net on risky actions.
 
 **The one thing worth doing now (small, independent):** define a **slim,
-Siri-safe tool surface**. Do NOT expose all 177 tools (shell/write/git) to Core
+Siri-safe tool surface**. Do NOT expose all 180 tools (shell/write/git) to Core
 AI. Reuse `--slim` + tool-capability filtering to register a deliberately narrow
 read-mostly set (e.g. run-recipe, status, a few reads). This is buildable today
 and is the only part not gated on Apple's timeline.

@@ -105,8 +105,22 @@ jobs:
         run: node scripts/audit-parity-xfails.mjs
       - name: Audit docs⇒wired parity (#850)
         run: node scripts/audit-docs-wired.mjs
-      - name: Audit docs drift (advisory, tool-count/coverage claims)
+      # Was advisory ("always exits 0") and checked two files, so it reported
+      # "no docs drift found" while 13 tracked files carried a tool count two
+      # releases stale — including a licensing statement and the plugin README
+      # a user reads first. Now gating, and scanning every tracked markdown
+      # file for full-surface claims.
+      - name: Audit docs drift (gating)
         run: node scripts/audit-docs-drift.mjs
+      # docs/in-flight.md is the one document CLAUDE.md tells every session to
+      # read before starting work. It has been swept by hand twice and decayed
+      # both times; on 2026-08-08 all ten Active entries were merged, the
+      # oldest four days earlier. An entry left after its PR merges is worse
+      # than no ledger — it claims somebody is working on something nobody is.
+      - name: Audit in-flight ledger (gating)
+        run: node scripts/audit-in-flight.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Gating, unlike the advisory drift check above: version drift moves only
       # on a release, the fix is one line, and the failure mode is a security
       # document telling a reader to pin a version line that no longer exists.

@@ -81,7 +81,7 @@ Or search **Claude IDE Bridge** in the VS Code / Cursor / Windsurf marketplace.
 
 ## Slim vs Full Mode
 
-The bridge starts in **full mode** by default (changed in v2.43.0) — all 177 tools, covering LSP/debugger/refactoring plus git, GitHub, terminal, file tree, and orchestration.
+The bridge starts in **full mode** by default (changed in v2.43.0) — all 180 tools, covering LSP/debugger/refactoring plus git, GitHub, terminal, file tree, and orchestration.
 
 Pass `--slim` to restrict to the ~60 IDE-exclusive tools (LSP, debugger, editor state only) — useful when you want Claude to use its native Read/Write/Bash tools for everything else:
 
@@ -144,7 +144,7 @@ Claude calls `refactorAnalyze` (checks blast radius and risk), `refactorPreview`
 Standard setup. Extension connects automatically. Full LSP, debugger, and editor state available.
 
 ### Remote SSH
-VS Code Remote-SSH and Cursor SSH load the extension on the VPS side (`extensionKind: ["workspace"]`). Start the bridge on the remote machine. All 177 tools work over SSH.
+VS Code Remote-SSH and Cursor SSH load the extension on the VPS side (`extensionKind: ["workspace"]`). Start the bridge on the remote machine. All 180 tools work over SSH.
 
 ```bash
 # On the remote machine
@@ -290,7 +290,7 @@ Bundled companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `p
 
 | Flag | Default | Description |
 |---|---|---|
-| `--slim` | off | Restrict to IDE-exclusive tools (default: full, 177 tools) |
+| `--slim` | off | Restrict to IDE-exclusive tools (default: full, 180 tools) |
 | `--full` | on | No-op (retained for backward compat — full is the default since v2.43.0) |
 | `--watch` | off | Auto-restart on crash |
 | `--bind <host>` | `127.0.0.1` | Bind address (`0.0.0.0` for remote access) |

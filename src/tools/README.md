@@ -1,6 +1,6 @@
 # src/tools
 
-This directory holds every MCP tool implementation the bridge exposes to Claude Code — 177 tools per `documents/platform-docs.md`, spanning file I/O, git, LSP navigation/refactoring, terminal execution, HTTP, debugging, and Claude subprocess orchestration. Each tool is a small module exporting a factory that the registry in `index.ts` wires into the MCP server at startup. Shared cross-cutting concerns (path safety, arg parsing, response shaping) live in a handful of `*-utils.ts` / `utils.ts` files rather than being reimplemented per tool.
+This directory holds every MCP tool implementation the bridge exposes to Claude Code — 180 tools per `documents/platform-docs.md`, spanning file I/O, git, LSP navigation/refactoring, terminal execution, HTTP, debugging, and Claude subprocess orchestration. Each tool is a small module exporting a factory that the registry in `index.ts` wires into the MCP server at startup. Shared cross-cutting concerns (path safety, arg parsing, response shaping) live in a handful of `*-utils.ts` / `utils.ts` files rather than being reimplemented per tool.
 
 ## The 5 files that matter and why
 

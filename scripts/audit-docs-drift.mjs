@@ -8,14 +8,21 @@
  * updated, or a coverage threshold changing (e.g. a vitest major-version
  * re-baseline) without CLAUDE.md's copy being touched.
  *
- * ADVISORY ONLY — this script never fails CI (always exits 0). Drift here is
- * a documentation-hygiene issue, not a correctness break; a hard gate would
- * fight routine threshold-tuning PRs. It exists purely to surface drift in
- * a scannable place instead of silently rotting.
+ * GATING since 2026-08. It was advisory — "always exits 0" — on the reasoning
+ * that a hard gate would fight routine threshold-tuning PRs. The reasoning was
+ * sound and the outcome was not: while it reported "no docs drift found", 13
+ * tracked files carried a tool count two releases stale, including a licensing
+ * statement and the plugin README a user reads first. It only ever looked at
+ * CLAUDE.md and the platform-docs banner, so the two files somebody remembered
+ * to check were the two it checked.
+ *
+ * An advisory check on a number nobody re-derives by hand is a check nobody
+ * reads. The threshold-tuning worry is handled by the allowlist instead: an
+ * exception costs one line and a reason, which is cheaper than the drift.
  *
  * Checks:
- *   1. Tool count — CLAUDE.md's "N tools registered" claim (documents/
- *      platform-docs.md reference line) vs. the actual registered-tool count,
+ *   1. Tool count — EVERY tracked markdown file's "N tools" claim vs. the
+ *      actual registered-tool count,
  *      computed the same way audit-lsp-tools.mjs computes its Stats line
  *      (every distinct tool `name` seen in the built tool-schema exports).
  *   2. Coverage thresholds — CLAUDE.md's "Coverage gates: X% lines, Y%
@@ -23,7 +30,7 @@
  *      vitest.config.ts.
  *
  * Usage: node scripts/audit-docs-drift.mjs
- * Exit code: always 0. Non-zero only on a script bug (file not found, etc).
+ * Exit:  0 clean · 1 drift found · 2 script error
  */
 
 import { execSync } from "node:child_process";
@@ -69,6 +76,10 @@ function auditToolCount() {
     return;
   }
   const actual = Number(m[1]);
+
+  // Every tracked markdown file, not the two somebody thought to list. A
+  // count is claimed in 20+ places and re-derived by hand in none of them.
+  auditToolCountAcrossDocs(actual);
 
   const claude = read("CLAUDE.md");
   const claudeMatch = claude.match(/\((\d+)\s+tools registered\)/);
@@ -193,6 +204,91 @@ function auditPluginApiDrift() {
   }
 }
 
+/**
+ * Documents whose numbers are a record of what was true when they were
+ * written. Updating them would be falsifying a record, not fixing drift.
+ */
+const HISTORICAL = [
+  /^CHANGELOG\.md$/,
+  /^docs\/dogfood\//, // dated dogfood reports
+  /^docs\/plans\//, // point-in-time plans
+  /-\d{4}-\d{2}-\d{2}\.md$/, // anything stamped with its own date
+];
+
+/**
+ * Phrases that assert the WHOLE tool surface, as opposed to counting a subset.
+ *
+ * Matching a bare "N tools" was the first attempt and it was unusable: "15
+ * tools for LSP navigation" is a correct statement about a subset, and there
+ * are dozens. The claim this gate is for is "this is how many tools there
+ * are", which in practice is written one of these five ways.
+ *
+ * Limitation, stated rather than hidden: a stale SUBSET count is invisible to
+ * this. `audit-business-content.mjs` makes the same kind of trade-off and says
+ * so — a check that fires constantly on correct text gets switched off, and
+ * then it guards nothing.
+ */
+const FULL_SURFACE_CLAIM = [
+  /\ball\s+(\d{2,4})(\+?)\s+tools\b/g,
+  /\b(\d{2,4})(\+?)\s+tools\s+(?:are\s+)?registered\b/g,
+  /\bregisters?\s+(\d{2,4})(\+?)\s+tools\b/g,
+  /\bprovid(?:es|ing)\s+(\d{2,4})(\+?)\s+tools\b/g,
+  /\b(\d{2,4})(\+?)\s+tools\s+per\s+`?documents\/platform-docs/g,
+];
+
+function auditToolCountAcrossDocs(actual) {
+  let slim = 0;
+  try {
+    const stats = execSync("node scripts/audit-lsp-tools.mjs", {
+      cwd: root,
+      encoding: "utf8",
+    });
+    slim = Number(stats.match(/(\d+)\s+slim tools/)?.[1] ?? 0);
+  } catch {
+    // The caller already reported an unusable Stats line.
+  }
+
+  const files = execSync("git ls-files '*.md'", {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024,
+  })
+    .split("\n")
+    .filter(Boolean)
+    .filter((f) => !HISTORICAL.some((re) => re.test(f)));
+
+  const seen = new Set();
+  for (const file of files) {
+    let text;
+    try {
+      text = read(file);
+    } catch {
+      continue;
+    }
+    text.split("\n").forEach((line, i) => {
+      for (const re of FULL_SURFACE_CLAIM) {
+        re.lastIndex = 0;
+        for (const m of line.matchAll(re)) {
+          const n = Number(m[1]);
+          const approx = m[2] === "+";
+          if (n === actual || n === slim) continue;
+          // "170+ tools" stays true as the real count grows past it.
+          if (approx && n <= actual) continue;
+          // One line can match two patterns ("all 177 tools" and "177 tools
+          // are registered" are the same claim). Report the line once.
+          const key = `${file}:${i + 1}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          drift.push(
+            `tool-count: ${key} claims "${m[0].trim()}" — actual is ${actual}` +
+              (slim ? ` (slim ${slim})` : ""),
+          );
+        }
+      }
+    });
+  }
+}
+
 // ── run ──────────────────────────────────────────────────────────────────────
 
 auditToolCount();
@@ -201,10 +297,13 @@ auditPluginApiDrift();
 
 for (const n of notes) console.log(`  ℹ ${n}`);
 if (drift.length > 0) {
-  console.log("\n⚠ docs-drift found (advisory only, does not fail CI):\n");
-  for (const d of drift) console.log(`  • ${d}`);
-} else {
-  console.log("\n✓ no docs drift found");
+  console.error(`\n✗ docs drift — ${drift.length} stale claim(s):\n`);
+  for (const d of drift) console.error(`  • ${d}`);
+  console.error(
+    "\nUpdate the number, or add the file to HISTORICAL in this script if it\n" +
+      "is a record of what was true at the time (a changelog entry).\n",
+  );
+  process.exit(1);
 }
-// Always exit 0 — see file header for why this is advisory-only.
+console.log("\n✓ no docs drift found");
 process.exit(0);
