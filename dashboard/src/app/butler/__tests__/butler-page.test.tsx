@@ -85,10 +85,23 @@ function mockBridge(over: Record<string, unknown> = {}) {
       const key = Object.keys(bodies)
         .sort((a, b) => b.length - a.length)
         .find((k) => url.includes(k));
+      // DELETE /butler/facts/:seq answers with the tombstone, and its seq is
+      // what the undo needs to call the restore route. The mock returned `{}`,
+      // so a client reading the tombstone would silently offer no undo — the
+      // fixture has to answer like the server or the test proves nothing.
+      const isFactDelete =
+        init?.method === "DELETE" && url.includes("/butler/facts/");
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve(key ? bodies[key] : {}),
+        json: () =>
+          Promise.resolve(
+            isFactDelete
+              ? { ok: true, erased: false, tombstone: { seq: 99 } }
+              : key
+                ? bodies[key]
+                : {},
+          ),
       });
     }),
   );
@@ -218,8 +231,11 @@ describe("A11 — destructive actions are undoable, and the undo does not time o
 
     await waitFor(() =>
       expect(
+        // Specifically the restore route. Asserting any POST to
+        // /butler/facts passed against the old client, which re-created the
+        // fact as `user_chat` and lost its provenance.
         calls.some(
-          (c) => c.method === "POST" && c.url.includes("/butler/facts"),
+          (c) => c.method === "POST" && c.url.includes("/butler/facts/99/restore"),
         ),
       ).toBe(true),
     );

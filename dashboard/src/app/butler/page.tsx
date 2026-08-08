@@ -295,18 +295,24 @@ export default function ButlerPage() {
       try {
         // Was a bare fetch: a failed DELETE still announced "Removed" and
         // still offered an undo for a deletion that never happened.
-        await del(`/api/bridge/butler/facts/${f.seq}`);
+        // DELETE returns the tombstone; its seq is what identifies the
+        // retraction to undo.
+        const res = await del(`/api/bridge/butler/facts/${f.seq}`);
+        const body = (await res.json()) as { tombstone?: { seq?: number } };
+        const tombSeq = body?.tombstone?.seq;
         announce(`Removed: ${factInWords(f)}`);
-        // The undo puts the fact back as something YOU said, which is what it
-        // was. It stays available until used.
-        offerUndo(`Removed "${factInWords(f)}"`, async () => {
-          await post("/api/bridge/butler/facts", {
-            subject: f.subject,
-            predicate: f.predicate,
-            object: f.object,
+        // Put it back AS IT WAS. This used to re-POST a plain fact, and the
+        // create route stamps channel "user_chat" unconditionally — so undoing
+        // the removal of something Butler had merely READ somewhere returned it
+        // as something you had said, above the threshold at which it starts
+        // being used. The undo was a trust escalator. The restore route copies
+        // the original row's provenance instead.
+        if (tombSeq !== undefined) {
+          offerUndo(`Removed "${factInWords(f)}"`, async () => {
+            await post(`/api/bridge/butler/facts/${tombSeq}/restore`);
+            announce(`Put back: ${factInWords(f)}`);
           });
-          announce(`Put back: ${factInWords(f)}`);
-        });
+        }
         await load();
       } catch {
         announce("I could not remove that. Nothing has changed.");
@@ -344,12 +350,13 @@ export default function ButlerPage() {
       try {
         await del(`/api/bridge/butler/permissions/${p.id}`);
         announce("Taken back. I will ask you about those again.");
+        // Restore the SAME grant. This used to call the grant route with three
+        // fields, which minted a new id and grantedAt and silently dropped
+        // `expiresAt` and the magnitude band — turning a capped, expiring
+        // permission into an uncapped permanent one, and orphaning every
+        // "done without asking" record attached to the old id.
         offerUndo(`Took back "${permissionInWords(p)}"`, async () => {
-          await post("/api/bridge/butler/permissions", {
-            domains: p.scope.domains,
-            ...(p.note && { note: p.note }),
-            ...(p.ceiling?.perDay && { perDay: p.ceiling.perDay }),
-          });
+          await post(`/api/bridge/butler/permissions/${p.id}/restore`);
           announce("Allowed again.");
         });
         await load();

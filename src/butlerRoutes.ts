@@ -357,6 +357,34 @@ export function tryHandleButlerRoute(
     return true;
   }
 
+  // ── POST /butler/facts/:seq/restore ───────────────────────────────────────
+  //
+  // Undo a forget. `:seq` is the TOMBSTONE's seq, not the original's — that is
+  // what the caller was handed by DELETE, and it is what identifies the
+  // retraction being undone.
+  //
+  // A dedicated route rather than "just POST the fact again": the create route
+  // stamps `channel: "user_chat"` unconditionally and must keep doing so, so a
+  // client re-posting a deleted fact silently promoted a connector-sourced
+  // belief (tier 0.3) to something the user said (tier 1.0), above
+  // ORIGINATE_THRESHOLD. The store owns restoration because the store is the
+  // only thing that knows what the row was.
+  const restoreFactMatch = /^\/butler\/facts\/([^/]+)\/restore$/.exec(pathname);
+  if (restoreFactMatch && req.method === "POST") {
+    const seq = parseSeq(restoreFactMatch[1] ?? "");
+    if (seq === null) {
+      badRequest(res, "seq must be a positive integer");
+      return true;
+    }
+    try {
+      const fact = deps.factStoreFn().restore(seq);
+      json(res, 200, { ok: true, fact });
+    } catch (err) {
+      respondStoreError(res, err, "butler/facts/restore");
+    }
+    return true;
+  }
+
   // ── Standing permissions ──────────────────────────────────────────────────
   //
   // GET  /butler/permissions            every grant ever made, newest first
@@ -451,6 +479,28 @@ export function tryHandleButlerRoute(
           respondStoreError(res, err, "butler/permissions");
         }
       })();
+      return true;
+    }
+
+    // ── POST /butler/permissions/:id/restore ────────────────────────────────
+    //
+    // Undo a revoke by clearing `revokedAt` on the EXISTING grant. Not a fresh
+    // grant: re-granting minted a new id and grantedAt and dropped `expiresAt`
+    // and `ceiling.magnitudeBand`, quietly turning a capped, expiring
+    // permission into an uncapped permanent one and orphaning every exercise
+    // recorded against the old id. Takes no body, so it cannot widen anything.
+    const restorePermMatch = /^\/butler\/permissions\/([^/]+)\/restore$/.exec(
+      pathname,
+    );
+    if (restorePermMatch && req.method === "POST") {
+      try {
+        const permission = store.restore(
+          decodeURIComponent(restorePermMatch[1] ?? ""),
+        );
+        json(res, 200, { ok: true, permission });
+      } catch (err) {
+        respondStoreError(res, err, "butler/permissions/restore");
+      }
       return true;
     }
 
