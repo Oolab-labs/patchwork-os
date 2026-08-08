@@ -1238,6 +1238,26 @@ export function extractRunLogStepResults(result: RunRecipeResult["result"]):
   }));
 }
 
+/**
+ * Surface the budget notices the runner already computed.
+ *
+ * `RunBudget` raises a one-time notice whenever a cap cannot actually be
+ * enforced — a local or subscription driver incurs no metered cost, or a model
+ * is missing from the price table. Those notices reached the run result and
+ * the run log and stopped there: the CLI never printed them.
+ *
+ * So a recipe declaring `usdMax: 2.00` and running against a local model
+ * printed a clean report, and the operator had every reason to believe the cap
+ * was holding. It was inert. A cap you believe in and do not have is worse
+ * than no cap, because it is the one you stop checking.
+ */
+function pushBudgetWarnings(lines: string[], result: unknown): void {
+  const warnings = (result as { budgetWarnings?: unknown }).budgetWarnings;
+  if (!Array.isArray(warnings) || warnings.length === 0) return;
+  lines.push("");
+  for (const w of warnings) lines.push(`  ⚠ ${String(w)}`);
+}
+
 export function formatRunReport(
   result: RunRecipeResult["result"],
   recipeName: string,
@@ -1253,6 +1273,7 @@ export function formatRunReport(
       for (const o of result.outputs) lines.push(`  → ${o}`);
     }
     if (result.errorMessage) lines.push(`  Error: ${result.errorMessage}`);
+    pushBudgetWarnings(lines, result);
     return lines.join("\n");
   }
 
@@ -1275,6 +1296,7 @@ export function formatRunReport(
   if (summary.skipped > 0) parts.push(`${summary.skipped} skipped`);
   if (summary.failed > 0) parts.push(`${summary.failed} failed`);
   lines.push(`${overallOk ? "✓" : "✗"} ${parts.join(" · ")}`);
+  pushBudgetWarnings(lines, result);
   return lines.join("\n");
 }
 

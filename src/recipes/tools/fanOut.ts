@@ -214,6 +214,23 @@ registerTool({
 
     const aggregate: IterResult[] = [];
 
+    /**
+     * Say an iteration finished.
+     *
+     * Called from EVERY path that appends to `aggregate` — success, agent
+     * failure, circuit-breaker short-circuit, tool error. Reporting only the
+     * happy path would be worse than reporting nothing: the run would appear
+     * to stall at the first failure while it was in fact still working.
+     */
+    const report = (index: number, ok: boolean, error?: string): void => {
+      deps.onIterationProgress?.({
+        index,
+        total: items.length,
+        ok,
+        ...(error ? { error } : {}),
+      });
+    };
+
     // Hoist the lazy import outside the loop — dynamic imports cache the
     // module after the first load so correctness is unaffected, but resolving
     // the same promise on every iteration adds async overhead for each item.
@@ -249,6 +266,7 @@ registerTool({
             ? { index: i, ok: true, output: res.text }
             : { index: i, ok: false, error: res.error ?? "agent failed" },
         );
+        report(i, res.ok, res.ok ? undefined : (res.error ?? "agent failed"));
         // A budget refusal is NOT an ordinary iteration failure:
         // `on_iter_error: continue` must not carry the loop past a cap that
         // just said stop. Halt regardless of the setting, keeping the
@@ -287,6 +305,7 @@ registerTool({
       if (breakerKey && getCircuitBreaker().isOpen(breakerKey)) {
         const msg = `circuit_open: "${toolId}" has failed repeatedly for recipe "${deps.recipeName}" — short-circuiting until the cooldown elapses.`;
         aggregate.push({ index: i, ok: false, error: msg });
+        report(i, false, msg);
         if (onIterError === "halt") {
           throw new Error(
             `fan_out: iter ${i} failed (on_iter_error=halt): ${msg}`,
@@ -314,10 +333,12 @@ registerTool({
           ok: true,
           ...(output != null && { output }),
         });
+        report(i, true);
       } catch (err) {
         if (breakerKey) getCircuitBreaker().recordFailure(breakerKey);
         const msg = err instanceof Error ? err.message : String(err);
         aggregate.push({ index: i, ok: false, error: msg });
+        report(i, false, msg);
         if (onIterError === "halt") {
           throw new Error(
             `fan_out: iter ${i} failed (on_iter_error=halt): ${msg}`,
