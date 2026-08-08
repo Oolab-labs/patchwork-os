@@ -325,10 +325,10 @@ this a first-class risk, not a theoretical one.
 
 **Residual risk — the gaps here are concrete.**
 
-- **There is no CVE gate in CI.** No `npm audit`, `osv-scanner` or equivalent
-  runs on a PR. A dependency with a known advisory does not fail the build; it
-  is caught only when Dependabot opens a PR, which is *after* merge and on
-  Dependabot's schedule.
+- **The CVE gate covers production dependencies only.** A known advisory in
+  the dev tree does not fail the build — deliberately (see below) — so
+  test-tooling exposure is caught only when Dependabot opens a PR, which is
+  *after* merge and on Dependabot's schedule.
 - **Dependabot's configuration is not in the repository.** There is no
   `.github/dependabot.yml` — it is configured through repository settings. So the
   policy is not reviewable in the diff, not reproducible on a fork, and cannot be
@@ -342,10 +342,22 @@ this a first-class risk, not a theoretical one.
   `src/` verbatim into its tenant image; there is no automated check that the
   copy matches, so a fix here can silently fail to reach the image.
 
-> `TODO(owner):` decide whether to add a CVE gate to CI (`npm audit --audit-level=high`
-> or `osv-scanner`), and whether to commit `.github/dependabot.yml` so the policy
-> is reviewable. Both are small; the first will likely fail on first run and need
-> a triage pass.
+**Since writing the above, a CVE gate was added** — `npm audit --omit=dev
+--audit-level=high`, scoped to production dependencies because that is what
+ships to a consumer of the npm package. It is green today (0 vulnerabilities
+in the shipped tree).
+
+The dev tree is not clean and that is stated rather than hidden: at time of
+writing `vitest → vite → postcss → nanoid` carries one high advisory
+(GHSA-2v37-7h3g-55p8, nanoid <3.3.17; the lockfile pins 3.3.16). It is test
+tooling, not shipped code. Gating on it would put this build at the mercy of
+another project's release schedule, which is how a gate becomes something
+people route around.
+
+> `TODO(owner):` whether to commit `.github/dependabot.yml` so the dependency
+> policy is reviewable in a diff and reproducible on a fork. It is currently
+> configured through repository settings, so nobody can see or change it via
+> a pull request.
 
 ---
 

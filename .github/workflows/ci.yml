@@ -128,6 +128,13 @@ jobs:
       # enough — the local ide-refactor sat on the pre-refactorAnalyze version.
       - name: Audit skill parity (gating)
         run: node scripts/audit-skill-parity.mjs
+      # Supply chain. Scoped to PRODUCTION dependencies — that is what ships to
+      # a consumer of the npm package, and it is green today. Dev-tooling
+      # advisories (vitest → vite → postcss → nanoid at time of writing) are
+      # real but not in the shipped artifact, and gating on them would make
+      # this red on somebody else's release schedule.
+      - name: Audit production dependencies for known CVEs (gating)
+        run: npm audit --omit=dev --audit-level=high
 
   plugin-validate:
     name: Validate plugin manifest
