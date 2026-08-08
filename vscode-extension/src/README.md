@@ -14,7 +14,7 @@ This is the companion editor extension (VS Code / Windsurf / Cursor) that connec
 
 - **New handler methods must use `tryRequest` / `validatedRequest` / `requestOrNull`, never a blind `proxy<T>()` cast.** This is a hard-won convention — eight latent shape-mismatch bugs shipped between v2.25.18 and v2.25.24 from `proxy<T>()`. See CLAUDE.md's "Architecture Rules" section (`extensionClient` shape validation) for which helper fits which handler contract before writing new code.
 - **Every WebSocket callback must check the generation guard** (`gen !== this.generation`) before acting, or a stale callback from a prior connection can corrupt new connection state. See ADR-0002 (`docs/adr/0002-generation-guards-on-reconnect.md`).
-- **The RTT-pong handler must update `lastBridgePong`.** This was a real production bug (P0-3, fixed 2026-06-25): the bridge never pinged the extension's WebSocket because only the separate sleep-probe pong handler refreshed `lastBridgePong`, causing false-positive reconnect churn. See `docs/security/register.md` and `connection.ts` around the RTT pong handler for the fix; don't regress it.
+- **The RTT-pong handler must update `lastBridgePong`.** This was a real production bug (P0-3, fixed 2026-06-25): the bridge never pinged the extension's WebSocket because only the separate sleep-probe pong handler refreshed `lastBridgePong`, causing false-positive reconnect churn. See the security register (kept locally, not in this repository) and `connection.ts` around the RTT pong handler for the fix; don't regress it.
 
 ## How to test it
 

@@ -1,6 +1,6 @@
 ---
 name: ide-refactor
-description: Safe refactoring with snapshot rollback. Creates a checkpoint, performs the refactoring using LSP rename and code actions, runs tests, and rolls back automatically if anything breaks.
+description: Safe refactoring with git-backed rollback. Verifies a clean working tree, performs the refactoring using LSP rename and code actions, runs tests, and offers to revert via git if anything breaks.
 disable-model-invocation: true
 effort: high
 argument-hint: "[description of refactoring]"
@@ -20,14 +20,28 @@ argument-hint: "[description of refactoring]"
      3. Use the `claude --ide` session (not remote-control)"
    - **Available**: call it. If `extensionConnected` is `false`: show the same message. If `true`: proceed.
 
-Perform refactoring with a safety net. Uses snapshots for instant rollback if tests fail after the change.
+Perform refactoring with a safety net. The safety net is **git**: the working
+tree is verified clean before anything is touched, so `git checkout` reverts the
+whole change if tests fail afterwards.
 
 ## Workflow
 
 ### Phase 1: Checkpoint
 
-1. Use `createSnapshot` with name "pre-refactor" to capture current workspace state
-2. Confirm: "Snapshot created. Starting refactoring: $ARGUMENTS"
+There is no snapshot tool. Git is the rollback mechanism, and it only works if
+the tree is clean first — otherwise a revert would discard the user's unrelated
+work along with the refactoring.
+
+1. Call `getGitStatus`.
+   - **Clean tree**: proceed. `git checkout -- .` will revert everything this
+     skill does.
+   - **Uncommitted changes present**: stop and offer the choice —
+     "You have uncommitted changes. I can't offer a clean rollback until they're
+     saved. Commit them, or shall I `gitStash` them first and restore them
+     after?" Never proceed silently: doing so leaves the user with no way to
+     undo the refactor without also losing their own work.
+2. Confirm: "Working tree clean — `git checkout` will revert this. Starting
+   refactoring: $ARGUMENTS"
 
 ### Phase 2: Plan the refactoring
 
@@ -64,12 +78,15 @@ For structural changes:
 17. Use `runTests` to run the full test suite
 18. If all tests pass:
     - Report success with a summary of changes
-    - The snapshot remains available for manual rollback if needed later
+    - Say plainly that the change is **unstaged and uncommitted**, so
+      `git checkout -- .` still reverts it, and that this stops being true once
+      it is committed
 19. If tests fail:
-    - Use `diffSnapshot` with "pre-refactor" to show exactly what changed
-    - Ask: "Tests failed. Would you like me to roll back?"
-    - If yes: use `restoreSnapshot` with "pre-refactor" to instantly revert
-    - If no: report which tests failed and why, so you can fix manually
+    - Use `getGitDiff` to show exactly what changed
+    - Ask: "Tests failed. Would you like me to revert?"
+    - If yes: use `gitCheckout` to discard the working-tree changes. If Phase 1
+      stashed anything, restore it afterwards and say so
+    - If no: report which tests failed and why, so the user can fix manually
 
 ### Phase 6: Summary
 

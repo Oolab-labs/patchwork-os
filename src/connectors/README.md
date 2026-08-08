@@ -13,9 +13,9 @@ This directory implements the 46 registered third-party connectors (GitHub, Slac
 ## Invariants you must not break
 
 - **SSRF guard**: any connector accepting a user-supplied host, URL, or self-hosted instance URL (Postgres, Redis, MongoDB, Elasticsearch, GitLab self-hosted, Jira/Confluence instance URLs, etc.) must call `isPrivateHost` / the URL-validation helpers in `../ssrfGuard.ts` before connecting. All four DB connectors were retrofitted for this (2026-06-19 H1) — new connectors must not regress it.
-- **Never persist OAuth client secrets alongside stored tokens.** `_client_id` / `_client_secret` must not be written into the token file/keychain entry (Google Drive/Calendar/Docs and Gmail were fixed for this — see `docs/security/register.md` H2).
+- **Never persist OAuth client secrets alongside stored tokens.** `_client_id` / `_client_secret` must not be written into the token file/keychain entry (Google Drive/Calendar/Docs and Gmail were fixed for this — see the security register (kept locally, not in this repository) H2).
 - **Sanitize token-exchange error bodies.** Never embed or echo the raw IdP response body/snippet in an error, log, or HTML page — use `safeOAuthErrorCode()` from `oauthError.ts` instead (fixed across Discord/Asana/GitLab/Monday/GoogleDocs/mcpOAuth.ts, 2026-06-09/06-08).
-- Full history and status of these and other connector-security fixes: `docs/security/register.md`. Env var / OAuth-app-override reference: root `CLAUDE.md` "Connector credential env vars" table and "OAuth 2.0 Mode" section. Scope/rollout rationale: `docs/adr/0008-connector-scope-decision.md`.
+- Full history and status of these and other connector-security fixes: the security register (kept locally, not in this repository). Env var / OAuth-app-override reference: root `CLAUDE.md` "Connector credential env vars" table and "OAuth 2.0 Mode" section. Scope/rollout rationale: `docs/adr/0008-connector-scope-decision.md`.
 
 ## How to test it
 

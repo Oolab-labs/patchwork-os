@@ -156,9 +156,11 @@ damage bounded?
   app requests at consent time. If the Gmail app asks for broad access, a leaked
   token has broad access. There is no per-recipe or per-worker scope narrowing,
   and no down-scoped token exchange.
-- **No scope inventory is published.** A reviewer asking "what can the GitHub
-  connector do with my account?" has to read the connector source. That is a
-  documentation gap, not a code one.
+- **Token connectors cannot be narrowed from here at all.** For Stripe,
+  HubSpot, Zendesk, PagerDuty, Intercom, Datadog, Notion, Telegram, Linear and
+  Sentry, the credential you paste IS the boundary; nothing in this software
+  reduces it, and nothing warns when a token is over-scoped. Least-privilege is
+  entirely the operator's job, and the inventory says so per connector.
 - **PAT-style connectors** (Jira, Notion, Datadog, Linear, PagerDuty, …) take a
   user-supplied token whose scope the user chose. Bounding it is entirely on the
   user, and nothing warns when a token is over-scoped.
@@ -166,9 +168,17 @@ damage bounded?
   GitHub + Slack + Gmail can chain them; the gate sees each call individually and
   has no notion of a multi-step exfiltration pattern.
 
-> `TODO(owner):` publish a scope inventory — for each OAuth connector, the scopes
-> requested and what they permit. This is the single most-asked security-review
-> question about a connector product.
+**Now published:** [docs/connector-scopes.md](docs/connector-scopes.md) lists
+every connector, the scopes it requests, and — the part that matters — which
+connectors decide the scope at all.
+
+That distinction was not obvious before writing it down. Roughly half the
+connectors are token-based: you paste a credential you created, and the
+`scopes` field the connector reports (`stripe.ts` says `["read"]`) is a
+LABEL, not a constraint. It does not narrow the token. A Stripe secret key
+that can issue refunds keeps that power regardless of what the code calls
+it. The same field on an OAuth connector *is* the requested scope and *is*
+enforced by the provider — same field name, opposite meaning.
 
 ---
 
@@ -325,10 +335,10 @@ this a first-class risk, not a theoretical one.
 
 **Residual risk — the gaps here are concrete.**
 
-- **There is no CVE gate in CI.** No `npm audit`, `osv-scanner` or equivalent
-  runs on a PR. A dependency with a known advisory does not fail the build; it
-  is caught only when Dependabot opens a PR, which is *after* merge and on
-  Dependabot's schedule.
+- **The CVE gate covers production dependencies only.** A known advisory in
+  the dev tree does not fail the build — deliberately (see below) — so
+  test-tooling exposure is caught only when Dependabot opens a PR, which is
+  *after* merge and on Dependabot's schedule.
 - **Dependabot's configuration is not in the repository.** There is no
   `.github/dependabot.yml` — it is configured through repository settings. So the
   policy is not reviewable in the diff, not reproducible on a fork, and cannot be
@@ -342,10 +352,22 @@ this a first-class risk, not a theoretical one.
   `src/` verbatim into its tenant image; there is no automated check that the
   copy matches, so a fix here can silently fail to reach the image.
 
-> `TODO(owner):` decide whether to add a CVE gate to CI (`npm audit --audit-level=high`
-> or `osv-scanner`), and whether to commit `.github/dependabot.yml` so the policy
-> is reviewable. Both are small; the first will likely fail on first run and need
-> a triage pass.
+**Since writing the above, a CVE gate was added** — `npm audit --omit=dev
+--audit-level=high`, scoped to production dependencies because that is what
+ships to a consumer of the npm package. It is green today (0 vulnerabilities
+in the shipped tree).
+
+The dev tree is not clean and that is stated rather than hidden: at time of
+writing `vitest → vite → postcss → nanoid` carries one high advisory
+(GHSA-2v37-7h3g-55p8, nanoid <3.3.17; the lockfile pins 3.3.16). It is test
+tooling, not shipped code. Gating on it would put this build at the mercy of
+another project's release schedule, which is how a gate becomes something
+people route around.
+
+> `TODO(owner):` whether to commit `.github/dependabot.yml` so the dependency
+> policy is reviewable in a diff and reproducible on a fork. It is currently
+> configured through repository settings, so nobody can see or change it via
+> a pull request.
 
 ---
 

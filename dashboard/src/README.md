@@ -25,7 +25,7 @@ locally-running bridge process over REST and SSE and renders the result. See
   (`constantTimeEqual` / `verifyBearerToken`) for every auth check in this app.
   Extracted after a real bug where a hand-rolled copy skipped the pad-copy on
   oversized input, collapsing to an all-zero buffer compare — see
-  `docs/security/register.md` for the incident history. Never reimplement this.
+  the security register (kept locally, not in this repository) for the incident history. Never reimplement this.
 - **`app/page.tsx`** — the Overview deck entry point; the representative
   "biggest page" pulling together most of the SSE + REST calls a typical page
   makes, useful as a template when adding a new page.
@@ -45,7 +45,7 @@ locally-running bridge process over REST and SSE and renders the result. See
   SSE-only `/stream` branch) is the other valid reason.
 - Mutating verbs (POST/PUT/PATCH/DELETE) must pass `requireSameOrigin` (see
   `lib/csrf.ts`) before touching the bridge. GET/HEAD are exempt by design.
-- See `docs/security/register.md` for the historical bugs (timing-safe auth
+- See the security register (kept locally, not in this repository) for the historical bugs (timing-safe auth
   bypass, stack-trace leakage) this pattern was built to close — read it
   before touching auth or proxy code.
 

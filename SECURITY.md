@@ -18,12 +18,15 @@ The npm `latest` dist-tag currently points at the same build as `beta`; a stable
 <!-- Version strings in this file are checked against package.json by
      scripts/audit-version-drift.mjs (CI job "Docs version drift"). -->
 
-TODO(owner): the npm `next` dist-tag still points at `0.2.0-alpha.32` and is
-documented nowhere. Should it be deprecated/removed, or does something depend
-on it?
+The npm `next` dist-tag still points at `0.2.0-alpha.32`. Nothing in this
+repository references it — not `package.json`, the release workflows, the
+install scripts, or the docs — so it is a leftover rather than a channel.
+Treat it as unsupported; removing it is safe whenever convenient.
 
 For what this system is designed to resist, what it is not, and the known
-residual risks, see [THREAT-MODEL.md](THREAT-MODEL.md).
+residual risks, see [THREAT-MODEL.md](THREAT-MODEL.md). For what each
+connector can do with your credentials, see
+[docs/connector-scopes.md](docs/connector-scopes.md).
 
 ## Reporting a Vulnerability
 
