@@ -93,6 +93,6 @@ You saved a file. Claude noticed. Nobody typed a prompt.
 
 ## Why this works
 
-The bridge is an MCP server *and* an event source. Your IDE's language server reports errors to the extension, the extension forwards them to the bridge, the bridge's policy engine decides which events trigger Claude subprocesses, and those subprocesses get the bridge's full tool surface (177 tools including LSP, git, shell, debugger).
+The bridge is an MCP server *and* an event source. Your IDE's language server reports errors to the extension, the extension forwards them to the bridge, the bridge's policy engine decides which events trigger Claude subprocesses, and those subprocesses get the bridge's full tool surface (180 tools including LSP, git, shell, debugger).
 
 Most Claude integrations need a prompt. This one watches the editor and shows up on its own.

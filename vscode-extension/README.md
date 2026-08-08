@@ -4,7 +4,7 @@
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/oolab-labs.claude-ide-bridge-extension)](https://marketplace.visualstudio.com/items?itemName=oolab-labs.claude-ide-bridge-extension)
 [![Open VSX version](https://img.shields.io/open-vsx/v/oolab-labs/claude-ide-bridge-extension?label=Open%20VSX)](https://open-vsx.org/extension/oolab-labs/claude-ide-bridge-extension)
 
-> **MCP bridge between Claude Code and your IDE.** 177 tools — diagnostics, LSP, debugger, terminal, git. Works in VS Code, Cursor, Windsurf, and Google Antigravity.
+> **MCP bridge between Claude Code and your IDE.** 180 tools — diagnostics, LSP, debugger, terminal, git. Works in VS Code, Cursor, Windsurf, and Google Antigravity.
 
 Give Claude Code real-time visibility into your editor. Claude sees your open files, diagnostics, terminal output, and editor state — and can act on all of it.
 
@@ -97,7 +97,7 @@ Once connected, Claude has full IDE context and can act on it without you descri
 - **Coverage tracing** — `getCodeCoverage` + lcov/json-summary parsing.
 - **Environment health** — `bridgeDoctor` verifies extension, git, linter, test runner, lock file, and GitHub CLI with actionable suggestions.
 
-The bridge starts in **full mode by default** (177 tools). Pass `--slim` to restrict to the IDE-only surface (~60 tools). Tools that require the extension are automatically hidden when the extension is disconnected and reappear on reconnect.
+The bridge starts in **full mode by default** (180 tools). Pass `--slim` to restrict to the IDE-only surface (~60 tools). Tools that require the extension are automatically hidden when the extension is disconnected and reappear on reconnect.
 
 ---
 

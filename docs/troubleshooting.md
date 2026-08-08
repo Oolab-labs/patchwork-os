@@ -86,7 +86,7 @@ Ask Claude to call `bridgeDoctor` for a full health check — it reports lock fi
 claude-ide-bridge --watch
 ```
 
-Full mode has been the default since v2.43.0 — all 177 tools are registered automatically. To confirm which mode is active and which tools are registered, ask Claude to call `getToolCapabilities`.
+Full mode has been the default since v2.43.0 — all 180 tools are registered automatically. To confirm which mode is active and which tools are registered, ask Claude to call `getToolCapabilities`.
 
 ---
 
