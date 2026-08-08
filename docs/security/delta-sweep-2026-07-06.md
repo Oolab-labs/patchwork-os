@@ -2,7 +2,7 @@
 
 **Scope:** code changed since the 2026-06-19 full audit (`git log --since=2026-06-19`
 — ~132 backend files under `src/`, ~77 dashboard files), not a full re-audit.
-Three targeted checks, informed by [docs/security/register.md](register.md):
+Three targeted checks, informed by the security register (kept locally, not in this repository — it tracks findings that are still open):
 
 1. Workers subsystem — can a recipe step self-attest trust (poison the
    outcome log / gate-decision log that drives the autonomy ramp)?
