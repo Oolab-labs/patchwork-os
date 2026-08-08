@@ -149,6 +149,13 @@ jobs:
       # accident, months later. Nothing was going to report it.
       - name: Audit real IP literals (gating)
         run: node scripts/audit-real-ips.mjs
+      # Inbound licence position. LICENSE-THIRD-PARTY.md was three lines
+      # covering connector glyphs while the four workspaces ship 327
+      # production packages between them. An MIT project asserting an
+      # open-core boundary needs its inbound obligations as legible as its
+      # outbound ones. Reads lockfiles, so it needs no per-workspace install.
+      - name: Audit third-party licences (gating)
+        run: node scripts/audit-third-party-licenses.mjs
       # Supply chain. Scoped to PRODUCTION dependencies at high/critical —
       # that is what ships, and dev-tooling advisories would make this job red
       # on somebody else's release schedule.
