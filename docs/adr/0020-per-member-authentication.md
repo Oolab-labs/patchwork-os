@@ -5,6 +5,9 @@
 **Unblocks:** [ADR-0017](0017-decision-record-actor-and-forbid.md) (actor
 attribution), [ADR-0018](0018-durable-approvals.md) (approval ownership),
 segregation of duties in `src/identity/members.ts`.
+**Bounded by:** [ADR-0019](0019-open-core-boundary.md) — Phase A is MIT and
+lives here; Phase B (OIDC federation) is control-plane. See "Where Phase B is
+built".
 
 ## Context
 
@@ -89,6 +92,45 @@ employee can inherit a predecessor's audit history.
 
 Phase B adds an implementation behind the same seam. It does not change any
 consumer.
+
+### Where Phase B is built — the open-core boundary
+
+This ADR and [ADR-0019](0019-open-core-boundary.md) were written in the same
+commit and this one never cited that one, which left a collision nobody had
+looked at.
+
+ADR-0019 reserves **organisation identity (SSO/SCIM)** for the non-MIT
+`patchwork-control-plane`, on the reasoning that governance features would
+otherwise ship MIT *by default* — simply by being built where they naturally
+belong — and that a published MIT commit cannot be withdrawn. OIDC federation
+against a company's identity provider is that category, not a near neighbour of
+it. Read together and unamended, the two ADRs said: build the thing ADR-0019
+reserves, here, under MIT.
+
+So, explicitly:
+
+| Part | Where | Licence |
+|---|---|---|
+| The seam itself — the resolver interface, `UNATTRIBUTED`, the fail-soft roster default | this repo | MIT |
+| **Phase A** — local `crypto.scrypt` credentials for a single workspace | this repo | MIT |
+| **Phase B** — OIDC mapped on `sub` against an organisation's IdP | `patchwork-control-plane` | non-MIT |
+
+**The seam is the correct MIT artifact, and it is the valuable half of the
+design.** A self-hoster gets real per-member authentication from Phase A, every
+consumer of an identity keeps working unchanged, and nothing here depends on
+the control plane existing. What sits behind the seam for an *organisation* —
+federation, directory sync, the mapping to a corporate subject — is what
+ADR-0019 draws the line around.
+
+This is a boundary decision, not a schedule. Phase B may be built whenever it
+is worth building; the constraint is only that it is built in the repository
+whose licence matches what it is.
+
+**The nearby thing that is NOT reserved:** `src/identity/` as it stands today —
+roles, a local `members.json`, `canApproveAction` — is runtime, and ADR-0019's
+MIT column names "local approvals, the single-workspace gate" outright. It
+reads one local file, has no notion of a tenant or a directory, and fails soft
+to a single implicit owner. It stays here. The line is federation, not identity.
 
 ## Consequences
 
