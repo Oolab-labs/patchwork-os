@@ -1,0 +1,10 @@
+{
+  "_readme": [
+    "High/critical production advisories accepted for now.",
+    "Checked by scripts/audit-production-cves.mjs. Every entry needs a reason,",
+    "and the reason should say what would have to change for it to be removed.",
+    "`workspace` is the lockfile's directory ('.' for the repository root).",
+    "Unused entries are reported, not fatal, so they can be deleted."
+  ],
+  "allow": []
+}
