@@ -190,6 +190,56 @@ export class ButlerFactStore {
   }
 
   /**
+   * Undo a `forget`, putting the belief back AS IT WAS.
+   *
+   * The client used to do this by re-POSTing a plain fact, and
+   * `POST /butler/facts` stamps `channel: "user_chat"` unconditionally — right
+   * for a new claim from a person, wrong for an undo. A fact Butler had read
+   * from a connector (tier 0.3, below `ORIGINATE_THRESHOLD`) came back as
+   * something you had said yourself (tier 1.0, above it). The undo button was
+   * a trust escalator through the barrier this store exists to enforce, and
+   * the only visible difference was that the fact reappeared.
+   *
+   * Everything needed to rebuild it correctly is already here: `forget` writes
+   * a tombstone and never removes the original row. So this reads the original
+   * and re-appends its provenance verbatim — channel, source, sourceRef and
+   * contentConfidence — rather than asking a caller to reassemble them. A
+   * caller that gets that wrong fails in the permissive direction, silently,
+   * which is the failure that happened.
+   *
+   * Appends rather than mutating: the log must still answer "this was
+   * retracted at T1 and restored at T2", not pretend neither happened.
+   *
+   * @param tombstoneSeq The seq of the tombstone written by `forget`.
+   */
+  restore(tombstoneSeq: number): ButlerFact {
+    this.tail();
+    const tomb = this.facts.find((f) => f.seq === tombstoneSeq);
+    if (!tomb)
+      throw new ButlerNotFoundError(`no fact with seq ${tombstoneSeq}`);
+    if (tomb.retracts === undefined)
+      throw new ButlerValidationError(
+        `fact ${tombstoneSeq} is not a retraction — nothing to restore`,
+      );
+    const original = this.facts.find((f) => f.seq === tomb.retracts);
+    if (!original)
+      throw new ButlerNotFoundError(`no fact with seq ${tomb.retracts}`);
+
+    const recordedAt = this.now();
+    const restored: ButlerFact = {
+      ...original,
+      seq: ++this.seq,
+      recordedAt,
+      validFrom: recordedAt,
+      // Points at the TOMBSTONE, not at the original. The chain reads
+      // "belief → retraction → restoration", which is what happened.
+      supersedes: tombstoneSeq,
+    };
+    this.append(restored);
+    return restored;
+  }
+
+  /**
    * GDPR Art. 17 erasure. THE ONLY method in this class that rewrites the log.
    *
    * A tombstone (`forget`) stops a belief resolving but leaves the words on

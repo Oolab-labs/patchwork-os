@@ -143,6 +143,37 @@ export class StandingPermissionStore {
   }
 
   /**
+   * Undo a `revoke`, restoring THE SAME grant.
+   *
+   * The client used to do this by calling `grant` again with three fields —
+   * `domains`, `note` and `perDay` — which silently dropped `expiresAt` and
+   * `ceiling.magnitudeBand`, and minted a fresh `id` and `grantedAt`. Undoing
+   * an accidental revoke therefore turned a capped, expiring grant into an
+   * uncapped permanent one with no link to the original. Every exercise
+   * recorded against the old id was orphaned.
+   *
+   * This appends the existing record with `revokedAt` removed. The id,
+   * `grantedAt`, scope, ceiling and expiry all survive because they are not
+   * re-derived from anything — nothing is passed in, so nothing can be lost.
+   *
+   * Idempotent on a grant that was never revoked: an undo racing a page
+   * refresh should be a no-op, not an error.
+   *
+   * Note this deliberately CANNOT widen a grant. There is no parameter to
+   * widen it with. A caller wanting different scope must make a new grant,
+   * visibly, which is a different act with a different record.
+   */
+  restore(id: string): StandingPermission {
+    const current = this.list().find((p) => p.id === id);
+    if (!current)
+      throw new ButlerNotFoundError(`no standing permission with id ${id}`);
+    if (current.revokedAt === undefined) return current; // idempotent
+    const { revokedAt: _dropped, ...restored } = current;
+    this.append(this.file, restored as StandingPermission);
+    return restored as StandingPermission;
+  }
+
+  /**
    * Current state of every grant ever made, newest first.
    *
    * Revoked and expired grants are INCLUDED — filtering them here would make
