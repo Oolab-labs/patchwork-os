@@ -898,6 +898,28 @@ export type StepDeps = Required<
     /** Budget refused admission — the loop must stop, not continue. */
     budgetHalt?: boolean;
   }>;
+  /**
+   * Called after every `fan_out` iteration so a long loop can say it is alive.
+   *
+   * `fan_out` ran in total silence. A measured local-model pass is ~11s per
+   * item, so 300 documents is an hour of nothing on stdout — and an hour of
+   * silence is indistinguishable from a hang. That is not hypothetical: it is
+   * what made a real dogfood run get misdiagnosed as hung when it was working.
+   *
+   * A seam rather than a `console.log` inside the tool, for the same reason
+   * `runNestedAgent` is one: a tool that writes to a stream of its own choosing
+   * cannot be tested, cannot be silenced for JSON output, and cannot be routed
+   * anywhere else later. Optional — absent means no progress, which is the
+   * old behaviour exactly.
+   */
+  onIterationProgress?: (p: {
+    /** 0-based index of the iteration that just finished. */
+    index: number;
+    total: number;
+    ok: boolean;
+    /** Failure reason, when this iteration failed. */
+    error?: string;
+  }) => void;
 };
 
 // Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
@@ -1701,6 +1723,25 @@ export async function runYamlRecipe(
     return { text: stripped, ok: true };
   };
   stepDeps.runNestedAgent = runNestedAgent;
+
+  /**
+   * Default progress reporter for `fan_out`.
+   *
+   * stderr, not stdout: a recipe's output is stdout, and progress is not
+   * output. Anything piping a run into a file or parsing its result keeps
+   * working, and a human watching the terminal still sees it.
+   *
+   * Only wired when the caller has not supplied one, so a test, the dashboard
+   * or an embedding runner can route it elsewhere without this stomping on it.
+   */
+  if (!stepDeps.onIterationProgress) {
+    stepDeps.onIterationProgress = ({ index, total, ok, error }) => {
+      const n = String(index + 1).padStart(String(total).length, " ");
+      process.stderr.write(
+        `  fan_out ${n}/${total} ${ok ? "ok" : `failed — ${error ?? "unknown"}`}\n`,
+      );
+    };
+  }
 
   const runJudgeRefineLoop = async (params: {
     agentCfg: NonNullable<YamlStep["agent"]>;
