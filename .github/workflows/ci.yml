@@ -128,13 +128,21 @@ jobs:
       # enough — the local ide-refactor sat on the pre-refactorAnalyze version.
       - name: Audit skill parity (gating)
         run: node scripts/audit-skill-parity.mjs
-      # Supply chain. Scoped to PRODUCTION dependencies — that is what ships to
-      # a consumer of the npm package, and it is green today. Dev-tooling
-      # advisories (vitest → vite → postcss → nanoid at time of writing) are
-      # real but not in the shipped artifact, and gating on them would make
-      # this red on somebody else's release schedule.
+      # Supply chain. Scoped to PRODUCTION dependencies at high/critical —
+      # that is what ships, and dev-tooling advisories would make this job red
+      # on somebody else's release schedule.
+      #
+      # This step used to be a bare root-only `npm audit`. The root is one of
+      # four tracked lockfiles, and the other three all ship too: the dashboard
+      # and the relay are deployed, the extension is packaged into a .vsix. A
+      # high-severity advisory sat open in the dashboard's PRODUCTION tree
+      # while this job reported green. The script discovers lockfiles from
+      # `git ls-files` rather than naming them, so a new workspace is covered
+      # the day it lands instead of when somebody remembers to add it.
+      #
+      # Audits from the lockfile — no per-workspace `npm ci` required.
       - name: Audit production dependencies for known CVEs (gating)
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/audit-production-cves.mjs
 
   plugin-validate:
     name: Validate plugin manifest
