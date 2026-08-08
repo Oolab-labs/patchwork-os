@@ -38,6 +38,10 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  isButlerNotFoundError,
+  isButlerValidationError,
+} from "./butler/errors.js";
 import type { ButlerFactStore } from "./butler/factStore.js";
 import type { StandingPermissionStore } from "./butler/permissionStore.js";
 import { isActive } from "./butler/standingPermission.js";
@@ -65,6 +69,35 @@ function json(res: ServerResponse, status: number, body: unknown): void {
 
 function badRequest(res: ServerResponse, error: string): void {
   json(res, 400, { ok: false, error });
+}
+
+/**
+ * Answer a throw from a Butler store.
+ *
+ * Only errors the stores raised DELIBERATELY are echoed. Everything else gets
+ * the generic 500 with the detail logged server-side, because the alternative
+ * is what CodeQL alert #139 flagged: an `appendFileSync` failure carrying the
+ * full facts.jsonl path, handed to whoever made the request.
+ *
+ * Classification travels with the error rather than being re-derived from its
+ * text here. String-matching the messages you expect works until somebody adds
+ * a validation message to a store, and then a caller-fixable 400 silently
+ * becomes a 500 — or an unexpected error matches a prefix and leaks.
+ */
+function respondStoreError(
+  res: ServerResponse,
+  err: unknown,
+  context: string,
+): void {
+  if (isButlerValidationError(err)) {
+    badRequest(res, err.message);
+    return;
+  }
+  if (isButlerNotFoundError(err)) {
+    json(res, 404, { ok: false, error: err.message });
+    return;
+  }
+  respond500(res, err, context);
 }
 
 /**
@@ -191,7 +224,7 @@ export function tryHandleButlerRoute(
       } catch (err) {
         // `remember` throws on caller-fixable input (too long, NUL bytes,
         // confidence out of range). Those are 400s, not 500s.
-        badRequest(res, err instanceof Error ? err.message : String(err));
+        respondStoreError(res, err, "butler/facts");
       }
     })();
     return true;
@@ -246,7 +279,7 @@ export function tryHandleButlerRoute(
         });
         json(res, 200, { ok: true, fact, supersedes: seq });
       } catch (err) {
-        badRequest(res, err instanceof Error ? err.message : String(err));
+        respondStoreError(res, err, "butler/facts/supersede");
       }
     })();
     return true;
@@ -270,10 +303,10 @@ export function tryHandleButlerRoute(
         json(res, 200, { ok: true, erased: false, tombstone });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/^no fact with seq/.test(msg))
-        json(res, 404, { ok: false, error: msg });
-      else respond500(res, err);
+      // Was a regex over the message. The store now says which kind of error
+      // it raised, so the prefix match — and the chance of it drifting away
+      // from the message it matches — is gone.
+      respondStoreError(res, err, "butler/facts/forget");
     }
     return true;
   }
@@ -415,7 +448,7 @@ export function tryHandleButlerRoute(
           });
           json(res, 201, { ok: true, permission });
         } catch (err) {
-          badRequest(res, err instanceof Error ? err.message : String(err));
+          respondStoreError(res, err, "butler/permissions");
         }
       })();
       return true;
@@ -431,10 +464,7 @@ export function tryHandleButlerRoute(
         // withdrawn" remains answerable.
         json(res, 200, { ok: true, permission });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (/^no standing permission/.test(msg))
-          json(res, 404, { ok: false, error: msg });
-        else respond500(res, err);
+        respondStoreError(res, err, "butler/permissions/revoke");
       }
       return true;
     }

@@ -25,6 +25,7 @@ import {
 import path from "node:path";
 import { withFileLockSync } from "../fileLockSync.js";
 import { patchworkPath } from "../patchworkHome.js";
+import { ButlerNotFoundError, ButlerValidationError } from "./errors.js";
 import { type ResolveOpts, resolveFacts, resolveOne } from "./resolve.js";
 import {
   type ButlerFact,
@@ -58,10 +59,12 @@ export interface RememberInput {
 
 function clean(s: string, max: number, field: string): string {
   const t = s.trim();
-  if (!t) throw new Error(`${field} is required`);
+  if (!t) throw new ButlerValidationError(`${field} is required`);
   // NUL would corrupt a JSONL row and break `factKey`'s separator assumption.
-  if (t.includes("\0")) throw new Error(`${field} must not contain null bytes`);
-  if (t.length > max) throw new Error(`${field} exceeds ${max} characters`);
+  if (t.includes("\0"))
+    throw new ButlerValidationError(`${field} must not contain null bytes`);
+  if (t.length > max)
+    throw new ButlerValidationError(`${field} exceeds ${max} characters`);
   return t;
 }
 
@@ -107,17 +110,23 @@ export class ButlerFactStore {
     // checked but not required.
     const object = input.object ?? "";
     if (object.includes("\0"))
-      throw new Error("object must not contain null bytes");
+      throw new ButlerValidationError("object must not contain null bytes");
     if (object.length > MAX_OBJECT_CHARS)
-      throw new Error(`object exceeds ${MAX_OBJECT_CHARS} characters`);
+      throw new ButlerValidationError(
+        `object exceeds ${MAX_OBJECT_CHARS} characters`,
+      );
 
     const tier = PROVENANCE_TIER[input.channel];
     if (tier === undefined)
-      throw new Error(`unknown provenance channel: ${input.channel}`);
+      throw new ButlerValidationError(
+        `unknown provenance channel: ${input.channel}`,
+      );
 
     const cc = input.contentConfidence ?? 1;
     if (!Number.isFinite(cc) || cc < 0 || cc > 1)
-      throw new Error("contentConfidence must be between 0 and 1");
+      throw new ButlerValidationError(
+        "contentConfidence must be between 0 and 1",
+      );
 
     this.tail();
     const recordedAt = this.now();
@@ -159,7 +168,8 @@ export class ButlerFactStore {
   ): ButlerFact {
     this.tail();
     const target = this.facts.find((f) => f.seq === seqToRetract);
-    if (!target) throw new Error(`no fact with seq ${seqToRetract}`);
+    if (!target)
+      throw new ButlerNotFoundError(`no fact with seq ${seqToRetract}`);
     const tier = PROVENANCE_TIER[by];
     const recordedAt = this.now();
     const tomb: ButlerFact = {
@@ -200,7 +210,7 @@ export class ButlerFactStore {
   erase(seqToErase: number): ButlerFact {
     this.tail();
     if (!this.facts.some((f) => f.seq === seqToErase))
-      throw new Error(`no fact with seq ${seqToErase}`);
+      throw new ButlerNotFoundError(`no fact with seq ${seqToErase}`);
 
     let erasedRow: ButlerFact | undefined;
     const tmp = `${this.file}.erase.${process.pid}.tmp`;

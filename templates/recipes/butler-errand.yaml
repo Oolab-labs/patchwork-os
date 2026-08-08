@@ -73,4 +73,4 @@ steps:
     tool: file.append
     path: ~/.patchwork/inbox/butler-errands.md
     content: |
-      - {{title}} (todoist id {{created.id}}) — undo: patchwork recipe run … todoist.delete_task id={{created.id}}
+      - {{title}} (todoist id {{created.id}}) — to undo, delete task {{created.id}} in Todoist
