@@ -8,6 +8,8 @@
  * localFn (Ollama/LM Studio) instead of Anthropic API — opt-in behaviour change.
  */
 
+import { resolveLocalModel } from "./localSettings.js";
+
 /**
  * Token usage reported by an adapter. Both fields are integers; absent
  * `usage` on the parent `AgentResult` means the driver didn't surface
@@ -65,7 +67,12 @@ export interface AgentExecutorDeps {
   /** Returns true when the `claude` CLI is available on PATH. */
   probeClaudeCli: () => boolean;
   /** Reads ~/.patchwork/config; returns {} when absent. */
-  loadPatchworkConfig: () => { model?: string; driver?: string };
+  loadPatchworkConfig: () => {
+    model?: string;
+    driver?: string;
+    localModel?: string;
+    localEndpoint?: string;
+  };
 }
 
 export interface AgentExecutorInput {
@@ -263,11 +270,14 @@ export async function executeAgent(
     return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
   }
   if (driver === "local") {
-    return stamp(
-      "local",
-      model ?? DEFAULT_MODEL,
-      deps.localFn(prompt, model ?? DEFAULT_MODEL),
-    );
+    // Resolve through the shared resolver, NOT `model ?? DEFAULT_MODEL`.
+    // DEFAULT_MODEL is an Anthropic id; using it here sent "claude-…" to a
+    // local server whenever a step omitted `model:`. Stamping the RESOLVED
+    // value is the other half: the log previously recorded what the step
+    // asked for while a config default answered, so an invalid run and a
+    // valid one looked identical.
+    const localModel = resolveLocalModel(model, deps.loadPatchworkConfig());
+    return stamp("local", localModel, deps.localFn(prompt, localModel));
   }
   if (driver !== undefined) {
     throw new Error(`Unknown driver: "${driver}"`);
@@ -276,11 +286,8 @@ export async function executeAgent(
   // No driver — check pwCfg for local model preference (THE MISSING BRANCH).
   const pwCfg = deps.loadPatchworkConfig();
   if (pwCfg.model === "local") {
-    return stamp(
-      "local",
-      model ?? DEFAULT_MODEL,
-      deps.localFn(prompt, model ?? DEFAULT_MODEL),
-    );
+    const localModel = resolveLocalModel(model, pwCfg);
+    return stamp("local", localModel, deps.localFn(prompt, localModel));
   }
 
   // Explicit subprocess driver config → skip API key check entirely.

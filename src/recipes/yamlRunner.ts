@@ -86,6 +86,7 @@ import {
   JUDGE_PROMPT_SUFFIX,
   parseJudgeVerdict,
 } from "./judgeVerdict.js";
+import { resolveLocalEndpoint, resolveLocalModel } from "./localSettings.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
@@ -3867,23 +3868,37 @@ export async function defaultLocalFn(
       "../patchworkConfig.js"
     );
     const cfg = loadPatchworkConfig();
-    // Anti-SSRF: the local adapter streams the prompt to `cfg.localEndpoint`
-    // (dashboard/config-controlled). A `driver: local` recipe must not be
-    // able to POST the prompt to an arbitrary public host. Mirror the
-    // LocalApiDriver gate (src/drivers/local/index.ts): reject any non
-    // loopback/private endpoint unless LOCAL_ENDPOINT_ALLOW_REMOTE=1.
+    // Endpoint and model come from the shared resolver, not from `cfg`
+    // directly. This function used to read config ONLY — never
+    // LOCAL_ENDPOINT / LOCAL_MODEL — while src/config.ts seeds env from
+    // config only when env is unset and calls that "non-destructive", i.e.
+    // env wins. So recipe steps ran the opposite precedence to every other
+    // caller. It also applied `cfg.localModel ?? model`, putting a global
+    // default ahead of a model the recipe author wrote explicitly.
+    //
+    // Resolving is idempotent: agentExecutor already resolves before calling
+    // here, and re-resolving a concrete value returns it unchanged. Direct
+    // callers of this exported function still get the right precedence.
+    const endpoint = resolveLocalEndpoint(cfg);
+    // Anti-SSRF: the local adapter streams the prompt to the resolved
+    // endpoint. A `driver: local` recipe must not be able to POST the prompt
+    // to an arbitrary public host. Mirror the LocalApiDriver gate
+    // (src/drivers/local/index.ts): reject any non loopback/private endpoint
+    // unless LOCAL_ENDPOINT_ALLOW_REMOTE=1. Checking the RESOLVED value
+    // matters — guarding `cfg.localEndpoint` while the adapter used the env
+    // var would have left the env path unguarded.
     if (
-      cfg.localEndpoint &&
+      endpoint &&
       process.env.LOCAL_ENDPOINT_ALLOW_REMOTE !== "1" &&
-      !isLoopbackOrPrivateEndpoint(cfg.localEndpoint)
+      !isLoopbackOrPrivateEndpoint(endpoint)
     ) {
       return {
         text: "[agent step failed: localEndpoint is a public host; set LOCAL_ENDPOINT_ALLOW_REMOTE=1 to override]",
       };
     }
     const adapter = createLocalAdapter({
-      endpoint: cfg.localEndpoint,
-      defaultModel: cfg.localModel ?? model,
+      endpoint,
+      defaultModel: resolveLocalModel(model, cfg),
     });
     const result = await adapter.complete({
       systemPrompt: "",
