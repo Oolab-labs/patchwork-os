@@ -156,9 +156,11 @@ damage bounded?
   app requests at consent time. If the Gmail app asks for broad access, a leaked
   token has broad access. There is no per-recipe or per-worker scope narrowing,
   and no down-scoped token exchange.
-- **No scope inventory is published.** A reviewer asking "what can the GitHub
-  connector do with my account?" has to read the connector source. That is a
-  documentation gap, not a code one.
+- **Token connectors cannot be narrowed from here at all.** For Stripe,
+  HubSpot, Zendesk, PagerDuty, Intercom, Datadog, Notion, Telegram, Linear and
+  Sentry, the credential you paste IS the boundary; nothing in this software
+  reduces it, and nothing warns when a token is over-scoped. Least-privilege is
+  entirely the operator's job, and the inventory says so per connector.
 - **PAT-style connectors** (Jira, Notion, Datadog, Linear, PagerDuty, …) take a
   user-supplied token whose scope the user chose. Bounding it is entirely on the
   user, and nothing warns when a token is over-scoped.
@@ -166,9 +168,17 @@ damage bounded?
   GitHub + Slack + Gmail can chain them; the gate sees each call individually and
   has no notion of a multi-step exfiltration pattern.
 
-> `TODO(owner):` publish a scope inventory — for each OAuth connector, the scopes
-> requested and what they permit. This is the single most-asked security-review
-> question about a connector product.
+**Now published:** [docs/connector-scopes.md](docs/connector-scopes.md) lists
+every connector, the scopes it requests, and — the part that matters — which
+connectors decide the scope at all.
+
+That distinction was not obvious before writing it down. Roughly half the
+connectors are token-based: you paste a credential you created, and the
+`scopes` field the connector reports (`stripe.ts` says `["read"]`) is a
+LABEL, not a constraint. It does not narrow the token. A Stripe secret key
+that can issue refunds keeps that power regardless of what the code calls
+it. The same field on an OAuth connector *is* the requested scope and *is*
+enforced by the provider — same field name, opposite meaning.
 
 ---
 
