@@ -46,7 +46,7 @@ on_http_request:
         config:
           enforce: true
           allow:
-            - 1.2.3.4/32   # Anthropic QA IP or your own client IP
+            - 203.0.113.10/32   # Anthropic QA IP or your own client IP
 ```
 
 ### Option B — direct VPS binding
@@ -61,14 +61,14 @@ claude-ide-bridge --bind 0.0.0.0 --port 9000 --fixed-token $(uuidgen)
 **UFW (Ubuntu):**
 ```bash
 # Allow only specific source IPs
-ufw allow from 1.2.3.4 to any port 9000
-ufw allow from 5.6.7.8 to any port 9000
+ufw allow from 203.0.113.10 to any port 9000
+ufw allow from 203.0.113.11 to any port 9000
 ufw deny 9000
 ```
 
 **iptables:**
 ```bash
-iptables -A INPUT -p tcp --dport 9000 -s 1.2.3.4 -j ACCEPT
+iptables -A INPUT -p tcp --dport 9000 -s 203.0.113.10 -j ACCEPT
 iptables -A INPUT -p tcp --dport 9000 -j DROP
 ```
 

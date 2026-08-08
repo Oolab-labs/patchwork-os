@@ -279,7 +279,7 @@ SESSION_DISPLAY_NAME="bridge:${WS_BASENAME}"
 CLAUDE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=10000 claude --ide --name $(printf '%q' "$SESSION_DISPLAY_NAME")"
 
 # --- SSH reverse tunnel command (pane 4, only when --vps is set) ---
-# Format: --vps user@host:remote_port  (e.g. root@185.220.204.65:9000)
+# Format: --vps user@host:remote_port  (e.g. root@203.0.113.10:9000)
 # The tunnel forwards remote_port on the VPS back to the local bridge port,
 # so a static MCP URL on the VPS proxies directly to the local bridge.
 TUNNEL_CMD=""

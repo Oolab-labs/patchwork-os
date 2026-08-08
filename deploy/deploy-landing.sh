@@ -3,9 +3,26 @@
 # Run from Mac: bash deploy/deploy-landing.sh
 set -euo pipefail
 
-VPS="root@185.167.97.141"
-LANDING_DIR="/var/www/patchwork-landing"
-NGINX_CONF="/etc/nginx/sites-available/patchworkos"
+# Deployment target. REQUIRED, no default — see deploy/deploy-dashboard.sh
+# for why. The address that used to sit here was reassigned by the hosting
+# provider to an unrelated customer.
+if [ -z "${PATCHWORK_VPS:-}" ]; then
+  cat >&2 <<'ERR'
+error: PATCHWORK_VPS is not set.
+
+  Set it to the ssh destination for YOUR server, e.g.
+
+      PATCHWORK_VPS=root@203.0.113.10 bash deploy/deploy-landing.sh
+
+  There is no default on purpose.
+ERR
+  exit 1
+fi
+VPS="$PATCHWORK_VPS"
+
+LANDING_DIR="${PATCHWORK_LANDING_DIR:-/var/www/patchwork-landing}"
+NGINX_CONF="${PATCHWORK_NGINX_CONF:-/etc/nginx/sites-available/patchwork}"
+LANDING_URL="${PATCHWORK_LANDING_URL:-https://your.tld}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -21,23 +38,27 @@ scp "$REPO_ROOT/landing/favicon.svg"  "$VPS:$LANDING_DIR/favicon.svg"
 scp "$REPO_ROOT/landing/manifest.json" "$VPS:$LANDING_DIR/manifest.json"
 
 echo "==> Updating nginx to serve landing page at root..."
-ssh "$VPS" bash <<'REMOTE'
+ssh "$VPS" bash -s -- "$NGINX_CONF" "$LANDING_DIR" <<'REMOTE'
 set -euo pipefail
-NGINX_CONF="/etc/nginx/sites-available/patchworkos"
+# Passed in rather than repeated: these were declared twice, so overriding
+# the local copy silently changed nothing on the remote side.
+NGINX_CONF="${1:?nginx conf path not passed}"
+LANDING_DIR="${2:?landing dir not passed}"
 
 # Insert landing page root location if not already present
 if ! grep -q "location = /" "$NGINX_CONF"; then
-  python3 - "$NGINX_CONF" <<'PYEOF'
+  python3 - "$NGINX_CONF" "$LANDING_DIR" <<'PYEOF'
 import sys, re
 
 path = sys.argv[1]
+landing = sys.argv[2]
 with open(path) as f:
     content = f.read()
 
 landing_blocks = """
     # Static landing page at root
     location = / {
-        root /var/www/patchwork-landing;
+        root __LANDING_DIR__;
         try_files /index.html =404;
     }
 
@@ -55,6 +76,8 @@ landing_blocks = """
         proxy_send_timeout 3600s;
     }
 """
+
+landing_blocks = landing_blocks.replace("__LANDING_DIR__", landing)
 
 # Insert before the SSE/dashboard blocks (before first "location /dashboard")
 # or before the last closing brace if those don't exist
@@ -80,31 +103,34 @@ fi
 # Independent idempotency block for the apex asset locations — these were
 # added after the original landing block, so existing installs miss them.
 if ! grep -q "location = /favicon.ico" "$NGINX_CONF"; then
-  python3 - "$NGINX_CONF" <<'PYEOF'
+  python3 - "$NGINX_CONF" "$LANDING_DIR" <<'PYEOF'
 import sys
 
 path = sys.argv[1]
+landing = sys.argv[2]
 with open(path) as f:
     content = f.read()
 
 asset_blocks = """
     # Apex assets — favicon + PWA manifest browsers probe at root
     location = /favicon.ico {
-        root /var/www/patchwork-landing;
+        root __LANDING_DIR__;
         try_files /favicon.ico =404;
         access_log off;
     }
     location = /favicon.svg {
-        root /var/www/patchwork-landing;
+        root __LANDING_DIR__;
         try_files /favicon.svg =404;
         access_log off;
     }
     location = /manifest.json {
-        root /var/www/patchwork-landing;
+        root __LANDING_DIR__;
         try_files /manifest.json =404;
         access_log off;
     }
 """
+
+asset_blocks = asset_blocks.replace("__LANDING_DIR__", landing)
 
 # Insert immediately after the existing `location = /` block
 marker = '    location = / {'
@@ -133,4 +159,4 @@ REMOTE
 
 echo ""
 echo "==> Deploy complete!"
-echo "    Landing page: https://patchworkos.com"
+echo "    Landing page: $LANDING_URL"

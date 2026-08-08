@@ -160,7 +160,9 @@ PATCHWORK_PUSH_TOKEN=<random uuid — must match bridge pushServiceToken>
 Deploy the dashboard to the VPS:
 
 ```bash
-PATCHWORK_BRIDGE_TOKEN="<your laptop bridge auth token>" bash deploy/deploy-dashboard.sh
+PATCHWORK_VPS="root@your.vps.ip.here" \
+  PATCHWORK_BRIDGE_TOKEN="<your laptop bridge auth token>" \
+  bash deploy/deploy-dashboard.sh
 ```
 
 The deploy script preserves `.env.local` across runs, but its default

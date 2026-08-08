@@ -1,0 +1,26 @@
+{
+  "_readme": [
+    "Public IPv4 literals that must stay in tracked files.",
+    "Checked by scripts/audit-real-ips.mjs. Every entry needs a reason.",
+    "Prefer an environment variable, or an RFC 5737 documentation address",
+    "(192.0.2.x / 198.51.100.x / 203.0.113.x), over an entry here.",
+    "Unused entries are reported, not fatal, so they can be deleted."
+  ],
+  "allow": [
+    {
+      "file": "docs/mobile-oversight-self-host.md",
+      "ip": "1.1.1.1",
+      "reason": "Cloudflare's public DNS resolver, in a `dig @1.1.1.1` command. A documentation-range address would make the command fail \u2014 the whole point is querying a resolver that answers."
+    },
+    {
+      "file": "docs/ip-allowlist.html",
+      "ip": "160.79.104.0",
+      "reason": "Anthropic's published egress range, shown as a worked nginx allow example. A fake range would teach the wrong value. The page already says to use the live list rather than this snapshot."
+    },
+    {
+      "file": "docs/ip-allowlist.html",
+      "ip": "54.84.169.0",
+      "reason": "Second half of the same published egress range \u2014 see the entry above."
+    }
+  ]
+}
