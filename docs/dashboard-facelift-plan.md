@@ -1,4 +1,4 @@
-> Source: live UI inspection (Overview / Runs / Traces) on 2026-06-04, grounded in code by a multi-agent pass (exact file:line + token targets) and reconciled with the original facelift plan in [audit-2026-06-03.md](audit-2026-06-03.md). Supersedes the facelift section there.
+> Source: live UI inspection (Overview / Runs / Traces) on 2026-06-04, grounded in code by a multi-agent pass (exact file:line + token targets) and reconciled with the original facelift plan in `audit-2026-06-03.md` (local working document, not in this repository). Supersedes the facelift section there.
 >
 > Keystone: the color-token grammar PR (P0) cascades into the error-color (P0-2) and status-pill (P0-3) fixes — do it first.
 

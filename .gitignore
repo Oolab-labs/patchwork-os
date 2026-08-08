@@ -105,13 +105,88 @@ intellij-plugin/.gradle/
 *.jpeg
 *.jpg
 
-# Personal/local working docs, not for version control
+# ---- Commercial / business-angle material — never repo content ----
+#
+# This is a public MIT repository. Business model, pricing, competitor
+# analysis, vertical market research and channel strategy do not belong in
+# it — ADR-0019 says so in its own Consequences section ("anything about
+# pricing, packaging or tiers ... do not belong in this repository in any
+# form") and six documents landed anyway, because this list existed but was
+# never extended as new ones were written.
+#
+# scripts/audit-business-content.mjs gates the same rule in CI, so a new one
+# fails the build instead of relying on this list being remembered.
 /docs/audit-bridge-changelog-2026-06-25.md
 /docs/positioning-pricing-onepager.md
 /docs/roadmap-plan-2026-07-02.md
 /docs/business/
 /docs/showcase-guide.md
+/docs/platform-strategy.md
+/docs/listings.md
+/docs/governed-workspace-scope.md
+/docs/recipe-authoring-wave2-plan.md
+/docs/plans/recipe-authoring-wave2-plan-review.md
+/docs/verticals/
+/documents/distribution-channel-policy.md
 /scratch_test_ollama.js
+
+# ---- QUMO / TA trading research — never repo content ----
+#
+# These patterns previously lived ONLY in .git/info/exclude, which is
+# per-clone and never shared: on a fresh clone, in CI, or on a second
+# machine, none of these files were ignored at all. That is how
+# docs/qumo-desk-precommit.md and deploy/qumo-liq-collector.* reached a
+# public repo — force-added to unbreak CI during a large PR, then never
+# noticed. Moving the patterns here makes the exclusion travel with the
+# repository instead of with one checkout.
+/docs/altcoin-setups-*
+/docs/altpivot-*
+/docs/altsetup-*
+/docs/baserate-*
+/docs/brief-replay-*
+/docs/crypto-brief-*
+/docs/fibtime-*
+/docs/hosodatime-*
+/docs/joe-calls-*
+/docs/joe-mining-*
+/docs/phase1a-*
+/docs/phase1b-*
+/docs/phase1c-*
+/docs/phase1d-*
+/docs/phase1e-*
+/docs/pine-mining-*
+/docs/qumo-*
+/docs/setup-hunting-*
+/docs/ta-cycles-*
+/docs/watchlist-precommit.md
+/docs/wp-calls-*
+/deploy/qumo-*
+/scripts/qumo-*
+/scripts/altsetup-killgate.ts
+/scripts/altxs-harvest.ts
+/scripts/brief-replay-backtest.ts
+/scripts/fibtime-backtest.ts
+/scripts/hosodatime-backtest.ts
+/scripts/joe-calls-score.ts
+/scripts/joe-mining-ingest.ts
+/scripts/phase1a-backtest.ts
+/scripts/phase1b-backtest.ts
+/scripts/phase1c-backtest.ts
+/scripts/phase1d-backtest.ts
+/scripts/ta-backtest.ts
+/scripts/ta-directional.ts
+/scripts/watchlist-killgate.ts
+/scripts/wp-calls-score.ts
+/src/ta/
+/src/recipes/tools/altscan.ts
+/src/recipes/tools/market.ts
+/src/recipes/tools/ta.ts
+/src/recipes/tools/taLedger.ts
+/src/recipes/tools/watchlist.ts
+/src/recipes/tools/__tests__/market.test.ts
+/src/recipes/tools/__tests__/ta.test.ts
+/src/recipes/tools/__tests__/taLedger.test.ts
+/src/recipes/tools/__tests__/watchlist.test.ts
 
 # Codex CLI scaffolding (different coding agent tool, not used for this repo)
 /.codex/

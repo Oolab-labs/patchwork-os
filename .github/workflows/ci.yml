@@ -107,6 +107,27 @@ jobs:
         run: node scripts/audit-docs-wired.mjs
       - name: Audit docs drift (advisory, tool-count/coverage claims)
         run: node scripts/audit-docs-drift.mjs
+      # Gating, unlike the advisory drift check above: version drift moves only
+      # on a release, the fix is one line, and the failure mode is a security
+      # document telling a reader to pin a version line that no longer exists.
+      # Scoped to the four reader-facing documents — see the script header.
+      - name: Audit docs version drift (gating)
+        run: node scripts/audit-version-drift.mjs
+      # Public MIT repo: business model, pricing, competitor analysis and
+      # channel strategy belong outside it (ADR-0019). Six such documents had
+      # landed because the only control was a .gitignore list somebody had to
+      # remember to extend.
+      - name: Audit business content (gating)
+        run: node scripts/audit-business-content.mjs
+      # Relative links in tracked markdown. Removing documents during the
+      # licensing pass broke three, and they were only caught by hand.
+      - name: Audit doc links (gating)
+        run: node scripts/audit-doc-links.mjs
+      # .claude/skills and the plugin's skills are standalone copies, not
+      # symlinks. CLAUDE.md asks for a manual sync; 339dda40 proved that is not
+      # enough — the local ide-refactor sat on the pre-refactorAnalyze version.
+      - name: Audit skill parity (gating)
+        run: node scripts/audit-skill-parity.mjs
 
   plugin-validate:
     name: Validate plugin manifest

@@ -1,0 +1,20 @@
+{
+  "_readme": [
+    "Deliberate historical version mentions in the four gated documents.",
+    "Checked by scripts/audit-version-drift.mjs. Every entry needs a reason.",
+    "An entry that stops matching is reported as unused (not a failure) so it",
+    "can be deleted rather than silently muting a future real drift."
+  ],
+  "allow": [
+    {
+      "file": "SECURITY.md",
+      "version": "0.2.0-alpha.37",
+      "reason": "The alpha channel is frozen at this version. It is a statement about a past release, not a claim about the current one, and must not track package.json."
+    },
+    {
+      "file": "SECURITY.md",
+      "version": "0.2.0-alpha.32",
+      "reason": "The stale npm `next` dist-tag, recorded in a TODO(owner) asking whether it should be deprecated. Deliberately the old value."
+    }
+  ]
+}

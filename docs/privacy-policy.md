@@ -1,6 +1,6 @@
 # Privacy Policy — Patchwork OS / Claude IDE Bridge
 
-**Last updated: May 2026**
+**Last updated: August 2026**
 
 Patchwork OS (also distributed as Claude IDE Bridge — "the bridge") is an open-source MCP server that connects AI coding assistants to your editor. This policy describes what data the bridge handles, where it goes, and what we retain.
 
@@ -23,7 +23,8 @@ The bridge processes the following categories of data **locally on your machine*
 | Terminal output | stdout/stderr from test runs and commands | Only in remote mode |
 | Editor state | Open tabs, diagnostics, cursor position | Only in remote mode |
 | Handoff notes | Short context strings written via `setHandoffNote` | Stored on disk only, never transmitted |
-| OAuth tokens | Short-lived access tokens (24-hour TTL) | In-memory only, never persisted to disk |
+| OAuth tokens | Short-lived access tokens (24-hour TTL) | Raw token in memory only. A SHA-256 **hash** plus client id, scope and expiry is stored so sessions survive a restart — see below |
+| Approval notifications | Call id, tool name, risk tier, one-line summary, single-use token | Only if you configure mobile push (see below) |
 
 **Local mode (default):** The bridge binds to `127.0.0.1` only. No editor data leaves your machine via the bridge itself. Your AI assistant connects over localhost.
 
@@ -67,6 +68,57 @@ These files are **never transmitted by the bridge** unless you opt in to analyti
 
 ---
 
+## Mobile push approvals
+
+**Off by default.** Nothing in this section happens unless you configure a push
+relay (`pushServiceUrl` + `pushServiceToken` in `~/.patchwork/config.json`, or
+the dashboard's Settings → Mobile card). This is the only path
+where approval data leaves your machine by design rather than by your explicit
+request, so it is documented in full: [push-relay-data-flow.md](push-relay-data-flow.md).
+
+**What leaves the machine.** When an approval is queued, the bridge POSTs a small
+payload to the relay you configured: the call id, the tool name, the risk tier,
+the timestamps, a single-use approval token, the callback base URL for your own
+bridge, and — the field that carries real content — an optional one-line
+`summary` of what is being asked. Risk-signal detail is sent to the relay but
+**dropped there**, and never reaches a device or a push provider.
+
+**What the relay can see.** The summary in plaintext, and the approval token.
+There is no end-to-end encryption between the bridge and the phone. A relay
+operator can read what an approval is about, and a compromised relay holds
+enough to answer one queued approval in your place — the token is single-use and
+short-lived, and a relay can never originate an action, only answer one already
+queued. This is why the relay is designed to be self-hosted.
+
+**What the relay cannot see.** Your files, repository, tool arguments, agent
+reasoning, or the result of the action. It has no read path into your bridge.
+Your decision does not travel through it either: the phone posts approve/reject
+**directly to your bridge**, not back through the relay.
+
+**What Apple and Google see.** APNS and FCM payloads are not end-to-end
+encrypted. Both providers can see the notification title, the body (your
+`summary`), and the full data dictionary — including the approval token. Keeping
+the token out of the URL protects it from access logs and referrer headers; it
+does not hide it from the push provider.
+
+**Retention.** Device registrations are `{push token, platform, timestamp}` —
+no account data, no device name, no IP. With Redis they persist **indefinitely**
+(the code sets no TTL) until the device is removed or evicted by the 10-device
+cap; without Redis they last only as long as the process. Payloads are not
+persisted at all. Open operational questions — retention on a deployed Redis,
+access-log retention, and whether any hosted relay is operated — are recorded as
+`TODO(owner)` in the data-flow document rather than answered speculatively here.
+
+**Turning it off.** Leave `pushServiceUrl` unset in `~/.patchwork/config.json`,
+or clear it (and `pushServiceToken`) and restart the bridge. Note that the
+`PATCHWORK_PUSH_*` environment variables belong to the *receiving* side and
+unsetting them does not disable a bridge configured through config.json —
+see [push-relay-data-flow.md §7](push-relay-data-flow.md#7-configuration-and-turning-it-off).
+Approvals continue to work through the queue, the dashboard and the CLI — push
+is a notification channel, never the gate itself.
+
+---
+
 ## Opt-in usage analytics
 
 The bridge ships with an **opt-in** anonymized analytics pipeline. It is **off by default** — the bridge does not send anything until you explicitly enable it.
@@ -85,7 +137,7 @@ Your preference is stored in `~/.claude/ide/analytics.json` (mode `0600`).
 
 At the end of each session, a single anonymized summary is POSTed to `https://analytics.claude-ide-bridge.dev/v1/usage`:
 
-- Bridge version (e.g. `0.2.0-beta.0`)
+- Bridge version (e.g. `1.1.0-beta.4`)
 - Session duration in milliseconds
 - Per-tool counts: `{tool: string, calls: number, errors: number, p50Ms: number, p95Ms: number}`
   - **Built-in tool names** (a fixed allowlist — `getDiagnostics`, `readFile`, `runCommand`, etc.) are sent verbatim
@@ -119,8 +171,13 @@ When configured, span data goes only to the endpoint **you configure** (e.g. you
 ## What we do NOT do
 
 - We do not transmit your code, file contents, terminal output, or git history to Anthropic or any third party.
+- We do not send approval notifications anywhere unless you configure a push relay yourself. When you do, the one-line summary and the approval token reach that relay and the push provider — see [Mobile push approvals](#mobile-push-approvals).
 - We do not collect crash reports automatically. Errors are written to stderr only.
-- We do not persist OAuth tokens or auth codes to disk — they live only in process memory and expire automatically (auth codes: 5 minutes, access tokens: 24 hours).
+- We do not persist **raw** OAuth access tokens. In remote (OAuth) mode the bridge stores a SHA-256 hash of each
+  live token alongside its client id, scope and expiry, so an authorised client survives a bridge restart without
+  re-authorising; the token itself cannot be recovered from that record. It goes through the same OS-keychain (or
+  encrypted-file) storage as connector credentials, never a plaintext file. Auth codes are memory-only and expire
+  in 5 minutes; access tokens expire in 24 hours and their hashes are dropped at expiry.
 - We do not set cookies or use browser storage.
 - We do not show ads or share data with advertisers.
 - We do not build cross-install user profiles. The opt-in usage summary contains no stable user identifier.

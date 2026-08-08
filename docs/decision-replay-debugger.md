@@ -1,7 +1,7 @@
 # Decision Replay Debugger — design doc
 
 > **Status:** design only, not implemented. Last updated 2026-05-02.
-> **Source:** [Memory/Ecosystem strategic-plan agent §4](strategic/2026-05-02/memory-ecosystem-report.md).
+> **Source:** Memory/Ecosystem strategic-plan agent §4 (`strategic/2026-05-02/memory-ecosystem-report.md` — strategic material, not in this repository).
 > **Effort estimate:** 2–3 weeks once prerequisites land.
 
 ## What this is
@@ -163,6 +163,6 @@ Recommendation per the original 2026-05-02 walk-through: defer, build alongside 
 - [PR #126 — approval-input capture](https://github.com/Oolab-labs/patchwork-os/pull/126) (the prerequisite)
 - [PR #128 — `patchwork traces export`](https://github.com/Oolab-labs/patchwork-os/pull/128) (offline analysis target)
 - [PR #132 — `--encrypt` for traces export](https://github.com/Oolab-labs/patchwork-os/pull/132) (compliance overlap)
-- [strategic/2026-05-02/memory-ecosystem-report.md](strategic/2026-05-02/memory-ecosystem-report.md) §4 (the source brief)
+- `strategic/2026-05-02/memory-ecosystem-report.md` §4 (the source brief — strategic material, not in this repository)
 - [src/approvalHttp.ts](../src/approvalHttp.ts) (current monolith to be split)
 - [src/riskTier.ts](../src/riskTier.ts) (the inline policy that becomes data)

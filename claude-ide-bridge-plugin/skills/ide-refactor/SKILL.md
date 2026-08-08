@@ -49,23 +49,23 @@ For symbol renames:
 10. Use `renameSymbol` — this handles all references across the workspace via LSP
 
 For structural changes:
-9. Use `getCodeActions` to check if VS Code has automated refactorings available
-10. Use `applyCodeAction` for supported refactorings (extract method, extract variable, etc.)
-11. Use `editText` for manual structural changes
+11. Use `getCodeActions` to check if VS Code has automated refactorings available
+12. Use `applyCodeAction` for supported refactorings (extract method, extract variable, etc.)
+13. Use `editText` for manual structural changes
 
 ### Phase 4: Clean up
 
-12. Use `organizeImports` on every modified file
-13. Use `formatDocument` on every modified file
-14. Use `getDiagnostics` to check for new errors introduced by the refactoring
+14. Use `organizeImports` on every modified file
+15. Use `formatDocument` on every modified file
+16. Use `getDiagnostics` to check for new errors introduced by the refactoring
 
 ### Phase 5: Verify
 
-15. Use `runTests` to run the full test suite
-16. If all tests pass:
+17. Use `runTests` to run the full test suite
+18. If all tests pass:
     - Report success with a summary of changes
     - The snapshot remains available for manual rollback if needed later
-17. If tests fail:
+19. If tests fail:
     - Use `diffSnapshot` with "pre-refactor" to show exactly what changed
     - Ask: "Tests failed. Would you like me to roll back?"
     - If yes: use `restoreSnapshot` with "pre-refactor" to instantly revert
@@ -73,7 +73,7 @@ For structural changes:
 
 ### Phase 6: Summary
 
-18. Report:
+20. Report:
     - What was refactored
     - How many files changed
     - Symbol renames performed

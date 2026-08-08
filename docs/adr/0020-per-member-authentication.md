@@ -118,7 +118,7 @@ taking consequential decisions, and conflating the two would either break
 automation or hand automation a human's name.
 
 **Ordering.** Nothing in Phase 2 of
-[the workspace scope](../governed-workspace-scope.md) — attributed records, SoD
+the workspace scope (`governed-workspace-scope.md`, removed from this repository as commercial material) — attributed records, SoD
 enforcement, approval routing, signed export — should start before Phase A
 lands. Each is finished by identity and unfalsifiable without it.
 
