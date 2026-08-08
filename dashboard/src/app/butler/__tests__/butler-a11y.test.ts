@@ -12,12 +12,42 @@
  * is less glamorous and actually true.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AAA_TEXT, contrastRatio, NON_TEXT } from "@/lib/contrast";
 
-const CSS = readFileSync(path.join(__dirname, "..", "butler.css"), "utf8");
+/**
+ * EVERY stylesheet under the Butler tree, not one hardcoded file.
+ *
+ * The original read `butler.css` by name. That was correct while Butler was
+ * one page, and silently wrong the moment a second stylesheet appears — an
+ * onboarding flow, a sub-route, anything. The new file would be unchecked,
+ * and nothing would say so: the suite would stay green while the guarantees
+ * stopped covering half the surface.
+ *
+ * The empty case is asserted below. A glob that matches nothing passes every
+ * "must not contain" test in this file, which is the most dangerous shape a
+ * check like this can take.
+ */
+function cssFilesUnder(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      if (entry === "__tests__" || entry === "node_modules") continue;
+      out.push(...cssFilesUnder(full));
+    } else if (entry.endsWith(".css")) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+const BUTLER_DIR = path.join(__dirname, "..");
+const CSS_FILES = cssFilesUnder(BUTLER_DIR).sort();
+/** Every Butler stylesheet concatenated — what the whole-tree sweeps read. */
+const CSS = CSS_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
 /** Declarations only — comments stripped. Needed wherever a test looks for
  *  the ABSENCE of something, since this file's prose names the anti-patterns
  *  it forbids and a naive match would fail on the documentation. */
@@ -30,13 +60,79 @@ function tokenIn(block: string, name: string): string {
   return m[1].trim();
 }
 
-/** The declaration block for a selector, so light and dark can be read apart. */
+/**
+ * The declaration block for a selector, so light and dark can be read apart.
+ *
+ * Brace-MATCHED. It used to take the first `}` after the opening brace, which
+ * for an `@media` block returns only its first inner rule. Latent rather than
+ * harmful while the dark block held one rule — it captured 296 of 298
+ * characters — but a second rule added to any media query would have fallen
+ * outside the assertions with nothing to say so.
+ */
 function blockFor(selector: string): string {
   const idx = CSS.indexOf(selector);
   if (idx === -1) throw new Error(`selector ${selector} not found`);
   const open = CSS.indexOf("{", idx);
-  const close = CSS.indexOf("}", open);
-  return CSS.slice(open, close);
+  let depth = 0;
+  for (let i = open; i < CSS.length; i++) {
+    if (CSS[i] === "{") depth++;
+    else if (CSS[i] === "}") {
+      depth--;
+      if (depth === 0) return CSS.slice(open, i);
+    }
+  }
+  throw new Error(`unbalanced braces after ${selector}`);
+}
+
+/**
+ * Text of every rule whose selector names an interactive control.
+ *
+ * Two calibrations, both learned by running it against the real stylesheet:
+ *
+ *  - The selector match is explicit. A first attempt included a bare `a\b`
+ *    for anchors, which matches a standalone letter and pulled in unrelated
+ *    rules. A check that flags correct code gets deleted, not fixed.
+ *  - Visually-hidden blocks are excluded. `position: absolute` with 1×1px is
+ *    the standard screen-reader-only technique — `.butlerAnnounce`, the live
+ *    region, is exactly that — and it is the OPPOSITE of an accessibility
+ *    problem. Flagging it would have argued for making the live region
+ *    44px, which is nonsense.
+ */
+function controlBlocksText(): string {
+  const out: string[] = [];
+  for (const m of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = (m[1] ?? "").trim();
+    const body = m[2] ?? "";
+    const isControl =
+      /\bbutton\b|\[role="button"\]|\binput\b|\bselect\b|\btextarea\b|Button|Action|Toggle/i.test(
+        selector,
+      );
+    if (!isControl) continue;
+    const visuallyHidden =
+      /position:\s*absolute/.test(body) &&
+      /width:\s*1px/.test(body) &&
+      /height:\s*1px/.test(body);
+    if (visuallyHidden) continue;
+    out.push(body);
+  }
+  return out.join("\n");
+}
+
+/** Every top-level rule body in the sheet, for whole-tree sweeps. */
+function allBlocks(): string[] {
+  const blocks: string[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < CSS.length; i++) {
+    if (CSS[i] === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (CSS[i] === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) blocks.push(CSS.slice(start, i));
+    }
+  }
+  return blocks;
 }
 
 const px = (v: string): number => Number.parseFloat(v.replace("px", ""));
@@ -44,6 +140,17 @@ const px = (v: string): number => Number.parseFloat(v.replace("px", ""));
 const base = blockFor(".butler {");
 const dark = blockFor('@media (prefers-color-scheme: dark)');
 const comfortable = blockFor('.butler[data-density="comfortable"]');
+
+describe("the sweep covers something", () => {
+  it("finds at least one Butler stylesheet", () => {
+    // Without this, every "must not contain" assertion below passes over an
+    // empty string. A renamed directory would turn this whole file into a
+    // suite that proves nothing while staying green — the single most likely
+    // way these guarantees are lost.
+    expect(CSS_FILES.length).toBeGreaterThan(0);
+    expect(CSS.length).toBeGreaterThan(500);
+  });
+});
 
 describe("A1 — nothing under 18px", () => {
   it("body text is at least 18px and primary content at least 21px", () => {
@@ -63,6 +170,21 @@ describe("A1 — nothing under 18px", () => {
     expect(px(tokenIn(comfortable, "--lp-text-heading"))).toBeGreaterThanOrEqual(
       21,
     );
+  });
+});
+
+describe("A1b — no literal font-size under 18px anywhere in the tree", () => {
+  it("every literal px font-size is at least 18px", () => {
+    // A1 checks the TOKENS. A stylesheet added later can ignore the tokens
+    // entirely and write `font-size: 14px`, which is the ordinary way this
+    // guarantee is lost — nobody edits a token to make text small, they just
+    // write a smaller number in a new file.
+    const offenders: string[] = [];
+    for (const m of CSS.matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)) {
+      if (Number(m[1]) < 18) offenders.push(m[0]);
+    }
+    expect(offenders, `font sizes under 18px: ${offenders.join(", ")}`)
+      .toHaveLength(0);
   });
 });
 
@@ -157,18 +279,34 @@ describe("A4 — interactive targets are at least 44x44", () => {
     expect(px(tokenIn(comfortable, "--lp-target"))).toBeGreaterThanOrEqual(44);
   });
 
-  it("every min-height is either a target token or a literal ≥44px", () => {
-    const declarations = Array.from(
-      CSS.matchAll(/min-height:\s*([^;]+);/g),
-      (m) => (m[1] ?? "").trim(),
-    );
-    expect(declarations.length).toBeGreaterThan(0);
-    for (const d of declarations) {
-      if (d.startsWith("var(--lp-target")) continue; // token-bound, checked above
-      const literal = /^(\d+)px$/.exec(d);
-      expect(literal, `unexpected min-height: ${d}`).not.toBeNull();
-      expect(Number(literal?.[1])).toBeGreaterThanOrEqual(44);
+  it("no sizing declaration puts a control under 44px", () => {
+    // `min-height` alone was checked. A control sized with `height: 32px` —
+    // the more natural way to write it — was invisible to this, and height is
+    // a HARDER constraint than min-height, so the narrower sweep missed the
+    // stricter mistake.
+    const PROPS = ["min-height", "height", "min-width", "width"];
+    const found: string[] = [];
+    for (const prop of PROPS) {
+      for (const m of CSS.matchAll(
+        new RegExp(`(?<![\\w-])${prop}:\\s*([^;]+);`, "g"),
+      )) {
+        const value = (m[1] ?? "").trim();
+        if (value.startsWith("var(--lp-target")) continue; // checked above
+        // Only literal pixel values can be judged here. Percentages, `auto`,
+        // `100%`, `fit-content` and calc() depend on layout, which this file
+        // cannot see — flagging them would make the check unusable and it
+        // would be turned off.
+        const literal = /^(\d+(?:\.\d+)?)px$/.exec(value);
+        if (!literal) continue;
+        if (Number(literal[1]) < 44) found.push(`${prop}: ${value}`);
+      }
     }
+    // Sizes below 44px are legitimate on non-interactive things — a rule, an
+    // icon, a gap. So this is scoped to declarations inside a block whose
+    // selector mentions a control.
+    const controlSized = found.filter((d) => controlBlocksText().includes(d));
+    expect(controlSized, `control sized under 44px: ${controlSized.join(", ")}`)
+      .toHaveLength(0);
   });
 });
 
@@ -191,6 +329,20 @@ describe("A8 — reflows at 320px", () => {
   it("the column is width-constrained by max-width, not a fixed width", () => {
     expect(base).not.toMatch(/(?<!max-)width:\s*\d/);
     expect(base).toMatch(/max-width:/);
+  });
+
+  it("no rule anywhere pins a width wider than 320px", () => {
+    // Only `.butler {` was checked. A fixed width on any OTHER rule breaks
+    // reflow just as thoroughly, and a multi-step flow is exactly where one
+    // gets added — a progress bar, a step panel, a button row.
+    const offenders: string[] = [];
+    for (const block of allBlocks()) {
+      for (const m of block.matchAll(/(?<![\w-])width:\s*(\d+(?:\.\d+)?)px/g)) {
+        if (Number(m[1]) > 320) offenders.push(m[0]);
+      }
+    }
+    expect(offenders, `fixed widths over 320px: ${offenders.join(", ")}`)
+      .toHaveLength(0);
   });
 
   it("wide content scrolls inside its own container, not the page", () => {
@@ -231,6 +383,23 @@ describe("A10 — honours prefers-reduced-motion and prefers-contrast", () => {
 
   it("strengthens borders and text under prefers-contrast: more", () => {
     expect(CSS).toMatch(/@media \(prefers-contrast: more\)/);
+  });
+
+  it("cancels motion across the whole SUBTREE, not rule by rule", () => {
+    // This is what makes a stylesheet added later safe by default. The
+    // override is `.butler *` with !important, so a transition in a new file
+    // is cancelled without anyone remembering to guard it.
+    //
+    // Asserting the descendant-universal form rather than "no unguarded
+    // transition exists" is deliberate: the latter was the obvious test to
+    // write and it would have flagged correct code, because a transition
+    // inside the subtree is ALREADY covered. What must not happen is someone
+    // narrowing this override to a list of selectors, at which point new
+    // files silently stop being covered.
+    const reduced = blockFor("@media (prefers-reduced-motion: reduce)");
+    expect(reduced).toMatch(/\.butler\s*\*/);
+    expect(reduced).toMatch(/animation-duration:\s*0\.001ms\s*!important/);
+    expect(reduced).toMatch(/transition-duration:\s*0\.001ms\s*!important/);
   });
 });
 
