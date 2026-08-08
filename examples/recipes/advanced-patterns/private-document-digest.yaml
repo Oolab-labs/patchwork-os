@@ -19,6 +19,23 @@
 #     LOCAL_ENDPOINT_ALLOW_REMOTE=1 — do not set that casually, it is what
 #     keeps "local" local.
 #   - Iterations run serially. 300 documents is 300 sequential local calls.
+#   - Entity tokens are PER-DOCUMENT, not global. Each document is scrubbed in
+#     its own agent call with no shared mapping, so the first person in every
+#     document becomes E1 and those E1s are different people. The digest step
+#     is told this explicitly; without that instruction it reads a column of
+#     E1s as one entity and invents a link that is not in the source. A
+#     labelling collision becomes a fabricated fact, which is worse than
+#     saying nothing.
+#   - Making tokens consistent across documents is a known technique
+#     ("consistent surrogation") and is deliberately NOT done here. It is a
+#     privacy COST, not a free improvement: a stable token across a batch is
+#     what lets someone re-identify by cross-referencing, which is why the
+#     field's guidance is to limit batch size when using it. A string-keyed
+#     registry would also only give "same string, same token" — it would not
+#     recognise an initial-plus-surname, the same person's full name, and a
+#     later pronoun as one entity. That is cross-document coreference, which
+#     is still an open problem; calling a registry "entity linking" would be
+#     the same class of overclaim as the bug above.
 apiVersion: patchwork.sh/v1
 version: 1.0.0
 name: private-document-digest
@@ -77,8 +94,13 @@ steps:
         worth reporting.
 
         Write a digest: the themes that recur, what changed over the period,
-        and anything that looks like an outlier. Refer to entities by their
-        tokens (E1, E2, …) exactly as they appear.
+        and anything that looks like an outlier.
+
+        Entity tokens are per-document. E1 in one extract and E1 in another are
+        NOT the same person or organisation — every document was scrubbed in
+        its own pass with no shared mapping. Do not link, merge or count
+        entities across extracts, and do not state how many distinct people or
+        organisations appear. Describe each extract on its own terms.
 
         {{extracts}}
       into: digest_text
