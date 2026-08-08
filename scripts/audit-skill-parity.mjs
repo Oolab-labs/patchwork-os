@@ -72,12 +72,88 @@ function firstDifference(a, b) {
   return null;
 }
 
+/**
+ * Tool names the bridge actually registers, read from the BUILT output.
+ *
+ * Why this check exists: `ide-refactor` instructed the model to call
+ * `createSnapshot` and `restoreSnapshot` for its rollback. Neither tool has
+ * ever existed. The skill's own description promised "rolls back automatically
+ * if anything breaks", so a user got a refactor with no safety net at all and
+ * a closing report telling them a snapshot was available.
+ *
+ * Nothing caught it because a skill is prose — it is never compiled, never
+ * imported, and never type-checked. This is the only place a wrong tool name
+ * can be noticed before a user hits it.
+ *
+ * Returns null when dist/ is absent, and the check is then SKIPPED rather than
+ * failed: a missing build is a local-workflow state, not a broken skill.
+ */
+function registeredTools() {
+  const dir = path.join(root, "dist/tools");
+  if (!existsSync(dir)) return null;
+  const names = new Set();
+  const NAME_RE = /name:\s*"([a-zA-Z][a-zA-Z0-9_]{2,40})"/g;
+  const walk = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.name.endsWith(".js")) {
+        for (const m of readFileSync(full, "utf8").matchAll(NAME_RE))
+          names.add(m[1]);
+      }
+    }
+  };
+  try {
+    walk(dir);
+  } catch {
+    return null;
+  }
+  return names.size > 0 ? names : null;
+}
+
+/**
+ * Identifiers in a SKILL.md that are shaped like a bridge tool call.
+ *
+ * Conservative on purpose: only backticked camelCase starting with a known
+ * verb prefix. Prose like `package.json` or `--flag` is not a tool, and a
+ * false positive here would train people to ignore the gate.
+ */
+const TOOL_VERB =
+  /^(get|set|run|find|go|search|apply|create|open|list|watch|explain|refactor|rename|format|organize|preview|capture|batch|clear|save|close|evaluate|start|stop|detect|generate|begin|commit|rollback|stage|restore|diff)[A-Z]/;
+
+function toolLikeIdentifiers(text) {
+  const out = new Map();
+  text.split("\n").forEach((line, i) => {
+    for (const m of line.matchAll(/`([a-z][a-zA-Z0-9]{3,40})`/g)) {
+      const id = m[1];
+      if (TOOL_VERB.test(id) && !out.has(id)) out.set(id, i + 1);
+    }
+  });
+  return out;
+}
+
 function main() {
   const local = skillsIn(TREES.local);
   const plugin = skillsIn(TREES.plugin);
   const shared = local.filter((n) => plugin.includes(n));
   const pluginOnly = plugin.filter((n) => !local.includes(n));
   const localOnly = local.filter((n) => !plugin.includes(n));
+
+  // Tool-existence check across BOTH trees.
+  const real = registeredTools();
+  const unknownTools = [];
+  if (real) {
+    for (const [tree, dir] of Object.entries(TREES)) {
+      for (const name of skillsIn(dir)) {
+        const file = path.join(dir, name, "SKILL.md");
+        for (const [id, line] of toolLikeIdentifiers(
+          readFileSync(file, "utf8"),
+        )) {
+          if (!real.has(id)) unknownTools.push({ tree, name, id, line });
+        }
+      }
+    }
+  }
 
   const drifted = [];
   for (const name of shared) {
@@ -99,6 +175,31 @@ function main() {
     console.log(
       `[skill-parity] NOTE local-only: ${n} (not shipped in the plugin)`,
     );
+  }
+
+  if (!real) {
+    console.log(
+      "[skill-parity] NOTE dist/ not built — tool-existence check skipped.",
+    );
+  } else {
+    console.log(
+      `[skill-parity] ${real.size} registered tools · tool references checked`,
+    );
+  }
+
+  if (unknownTools.length > 0) {
+    console.error(
+      `\n[skill-parity] FAIL — ${unknownTools.length} reference(s) to tools the bridge does not register:\n`,
+    );
+    for (const u of unknownTools) {
+      console.error(`  ${u.tree}/${u.name}/SKILL.md:${u.line}  \`${u.id}\``);
+    }
+    console.error(
+      "\nA skill is prose — it is never compiled, so a wrong tool name reaches a\n" +
+        "user as a silently skipped step. Check the name against the registry, or\n" +
+        "rewrite the step around a tool that exists.\n",
+    );
+    process.exit(1);
   }
 
   if (drifted.length === 0) {

@@ -41,7 +41,7 @@ For each error (up to 20 total across all files):
 
 5. Call `getCodeActions` at the error range to get quickfix suggestions from the language server
 
-6. If the error involves a function call or method: call `getSignatureHelp` at the call site to see the expected parameter types
+6. If the error involves a function call or method: call `signatureHelp` at the call site to see the expected parameter types
 
 7. Build a diagnosis entry:
    ```
