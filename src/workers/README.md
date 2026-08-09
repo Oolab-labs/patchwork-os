@@ -20,7 +20,7 @@ behavior) used for dogfooding and cold-start calibration.
 
 Everything else (`contextRisk*.ts`, `graduation.ts`, `outcomeStore.ts`,
 `outcomesCli.ts`, `workerLevelStore.ts`, `workerLoader.ts`, `shadowGate.ts`,
-`shadowReport.ts`, `shadowRun.ts`, `backtest.ts`) is support: dwell/demotion
+`shadowReport.ts`, `dialTrajectory.ts`, `backtest.ts`) is support: dwell/demotion
 policy, disposition persistence, manifest loading, and CLI/report plumbing
 around the same core model.
 

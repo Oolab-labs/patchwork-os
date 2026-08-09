@@ -72,7 +72,7 @@ phase 2 (new execution machinery).
 - `shadowGate.ts` — a **pure** recommender: what the ramp *would* decide. Logged in
   shadow; **does not change live gate behavior** in v0.
 - `templates/workers/*.worker.yaml` — 3 dogfood workers for developing Patchwork.
-- `shadowRun.ts` — replay an outcome sequence → dial trajectory (the evidence-latency
+- `dialTrajectory.ts` — replay an outcome sequence → dial trajectory (the evidence-latency
   test).
 
 **Phase 2 — live gate flip (built, flag-gated, default OFF):**

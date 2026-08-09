@@ -12,7 +12,23 @@ import {
 
 /**
  * Replay an outcome sequence for a worker and capture the per-step dial
- * trajectory. This is the cheapest test of the evidence-latency risk: it shows,
+ * trajectory.
+ *
+ * ## Named `dialTrajectory`, not `shadowRun`
+ *
+ * It was `src/workers/shadowRun.ts`, which collided with the unrelated
+ * `src/testing/shadowRun.ts` — a different harness, with its own reference
+ * document (`documents/shadow-run-harness.md`) describing only that one.
+ *
+ * The collision had a cost. An audit looking for dead code found this file had
+ * zero production importers and recommended deleting it. That reasoning was
+ * wrong: this has tests, and `docs/design/worker-ramp-v0.md` lists it as a
+ * deliberate Phase-1 artifact. It has no production caller because it is an
+ * ANALYSIS HARNESS — you run it against recorded outcomes to answer "how many
+ * observations does a worker need to climb each class, and how fast does one
+ * catastrophic outcome demote it". A tool with no caller is not the same thing
+ * as a tool with no purpose, and a name that suggests otherwise costs more
+ * than a rename. This is the cheapest test of the evidence-latency risk: it shows,
  * deterministically, how many real observations (and how much wall-clock) a
  * worker needs to climb each class — and how one catastrophic outcome demotes
  * it in a single step. No model calls, no live gate — pure replay.
@@ -36,7 +52,7 @@ export interface ShadowRunResult {
   store: WorkerLevelStore;
 }
 
-export function shadowRun(
+export function dialTrajectory(
   worker: WorkerManifest,
   outcomes: Outcome[],
   opts: { cfg?: GraduationConfig; store?: WorkerLevelStore } = {},
