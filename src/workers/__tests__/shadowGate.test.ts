@@ -63,7 +63,7 @@ describe("shadowGate.recommend — compensable at L2", () => {
     const d = recommend(w, "gitPush", {}, storeWithL2("w", "gitPush"));
     expect(d.earnedLevel).toBeGreaterThanOrEqual(2);
     expect(d.decision).toBe("bypass");
-    expect(d.reason).toContain("autonomous");
+    expect(d.reason).toContain("earned autonomy");
   });
 
   it("queues compensable at effective L1 (below L2 threshold)", () => {
@@ -73,7 +73,7 @@ describe("shadowGate.recommend — compensable at L2", () => {
     const d = recommend(w, "gitPush", {}, store);
     expect(d.earnedLevel).toBeLessThan(2);
     expect(d.decision).toBe("queue");
-    expect(d.reason).toContain("below-autonomy");
+    expect(d.reason).toContain("unearned");
   });
 
   it("queues compensable when ceiling=1 even at earned L4", () => {
@@ -87,7 +87,7 @@ describe("shadowGate.recommend — compensable at L2", () => {
     expect(d.earnedLevel).toBe(4);
     expect(d.effectiveLevel).toBe(1);
     expect(d.decision).toBe("queue");
-    expect(d.reason).toContain("capped-by-autonomy-ceiling");
+    expect(d.reason).toContain("capped by autonomy ceiling");
   });
 
   it("bypasses compensable when ceiling=2 and earned L4 (effectiveLevel meets threshold)", () => {
@@ -121,7 +121,7 @@ describe("shadowGate.recommend — irreversible", () => {
     expect(d.owned).toBe(false);
     expect(d.effectiveLevel).toBe(0);
     expect(d.decision).toBe("queue");
-    expect(d.reason).toBe("outside-worker-domain");
+    expect(d.reason).toContain("outside the worker");
   });
 
   it("bypasses irreversible only at earned L4", () => {
