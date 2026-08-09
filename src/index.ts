@@ -260,6 +260,13 @@ const KNOWN_SUBCOMMANDS = [
   "approvals",
   "gate",
   "outcomes",
+  // Dispatched at `process.argv[2] === "tools"` (and `help`) but absent from
+  // this array until 2026-08. The comment below calls this "the dispatch
+  // source", and it was not: `patchwork tool` could never be corrected to
+  // `tools`, and any check reading this array as ground truth — there is one,
+  // scripts/audit-cli-commands.mjs — reported a working command as unknown.
+  "tools",
+  "help",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -319,7 +326,7 @@ if (
       `  init [--workspace <dir>]                  Scaffold ~/.patchwork; register CC hooks\n` +
       `  install-extension                         Install the VS Code / Cursor / Windsurf extension\n` +
       `  start-all [--no-dashboard]                Launch bridge + Claude --ide + dashboard\n` +
-      `  start-orchestrator                        Multi-IDE-window meta-bridge\n\n` +
+      `  orchestrator                              Multi-IDE-window meta-bridge\n\n` +
       `Recipes\n` +
       `  recipe new <name> [-i]                    Scaffold a recipe\n` +
       `  recipe list                               List installed recipes\n` +
