@@ -168,4 +168,38 @@ describe("shadowGate agrees with the live gate", () => {
       `context-ceiling divergences:\n  ${mismatches.join("\n  ")}`,
     ).toEqual([]);
   });
+
+  it("honours the worker's OWN forbids with no opts passed", () => {
+    // The case that makes the delegation matter in production. Neither
+    // `workers shadow` nor `workers backtest` passes opts, so if the rules
+    // were not derived from the manifest the instrument would go on reporting
+    // a banned action as one the ramp would let through — which is what it
+    // did.
+    const w = worker({
+      forbids: [{ match: "fs-write", reason: "declared on the manifest" }],
+    } as never);
+    const shadow = recommend(
+      w,
+      "file.write",
+      { path: "notes/example.md", content: "y" },
+      storeAt(4),
+    );
+    expect(shadow.forbidden).toBe(true);
+    expect(shadow.decision).toBe("queue");
+  });
+
+  it("still bypasses a reversible action the manifest does NOT forbid", () => {
+    // The other direction, so the fallback cannot be "forbid everything".
+    const w = worker({
+      forbids: [{ match: "payments", reason: "unrelated" }],
+    } as never);
+    const shadow = recommend(
+      w,
+      "file.write",
+      { path: "notes/example.md", content: "y" },
+      storeAt(0),
+    );
+    expect(shadow.forbidden).toBe(false);
+    expect(shadow.decision).toBe("bypass");
+  });
 });

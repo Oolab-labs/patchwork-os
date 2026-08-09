@@ -1,4 +1,5 @@
 import { classifyActionClass } from "./actionClass.js";
+import { parseForbidRules } from "./forbidPolicy.js";
 import type { TrustLevel } from "./trustLevel.js";
 import { ownsAction, type WorkerManifest } from "./worker.js";
 import { type AutonomyDecisionOpts, decideWorkerAction } from "./workerGate.js";
@@ -65,6 +66,17 @@ export interface ShadowDecision {
  *     gate allow  → bypass
  *     gate gate   → queue
  *     gate forbid → queue, with `forbidden: true`
+ *
+ * Forbid rules default to the worker's own `forbids:` when the caller supplies
+ * none — the same fallback `boundaryPreview` makes, for the same reason it
+ * gives: without it the manifest field is inert, and the instrument would go
+ * on reporting a banned action as one the ramp would let through. Neither
+ * caller passes rules today, so this is what actually makes the delegation
+ * change anything.
+ *
+ * `contextRisk` has no such fallback and cannot: it is live and situational,
+ * not declared. A caller that has it passes it; one that does not gets the
+ * un-throttled answer, which is the honest reading of "no context supplied".
  */
 export function recommend(
   worker: WorkerManifest,
@@ -77,7 +89,12 @@ export function recommend(
   const owned = ownsAction(worker, ac);
   const earnedLevel = (store.getState(worker.id, ac.key)?.level ??
     0) as TrustLevel;
-  const decided = decideWorkerAction(worker, toolName, params, store, opts);
+  const forbidRules =
+    opts?.forbidRules ?? parseForbidRules(worker.forbids).rules;
+  const decided = decideWorkerAction(worker, toolName, params, store, {
+    ...opts,
+    ...(forbidRules.length > 0 ? { forbidRules } : {}),
+  });
 
   return {
     decision: decided.action === "allow" ? "bypass" : "queue",
