@@ -149,6 +149,13 @@ jobs:
       # accident, months later. Nothing was going to report it.
       - name: Audit real IP literals (gating)
         run: node scripts/audit-real-ips.mjs
+      # The README's hero block told a new user to run `patchwork connections
+      # connect gmail`. There is no `connections` verb — the second command in
+      # the 90-second start failed for everyone who followed it, and no gate
+      # could see it: docs-drift checks numbers, docs-wired checks features,
+      # neither checks whether an advertised command dispatches.
+      - name: Audit advertised CLI commands (gating)
+        run: node scripts/audit-cli-commands.mjs
       # Inbound licence position. LICENSE-THIRD-PARTY.md was three lines
       # covering connector glyphs while the four workspaces ship 327
       # production packages between them. An MIT project asserting an

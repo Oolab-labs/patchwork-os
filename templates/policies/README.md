@@ -44,7 +44,8 @@ jq -s '.[0] * (.[1] | with_entries(select(.key | startswith("_") | not)))' \
 ### Restart
 
 ```sh
-patchwork stop
+# Restart the bridge so it picks up the change
+# (Ctrl-C the running process, then:)
 patchwork start
 ```
 
