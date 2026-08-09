@@ -1,6 +1,7 @@
 import { classifyActionClass } from "./actionClass.js";
 import type { TrustLevel } from "./trustLevel.js";
 import { ownsAction, type WorkerManifest } from "./worker.js";
+import { type AutonomyDecisionOpts, decideWorkerAction } from "./workerGate.js";
 import type { WorkerLevelStore } from "./workerLevelStore.js";
 
 /**
@@ -29,71 +30,63 @@ export interface ShadowDecision {
   /** What the gate would operate at: min(earned, ceiling), 0 if not owned. */
   effectiveLevel: TrustLevel;
   reason: string;
+  /**
+   * The gate FORBIDS this outright — no earned trust and no human approval
+   * unlocks it (ADR-0017's third terminal state).
+   *
+   * `decision` collapses to `queue` for a forbidden action because this type
+   * predates `forbid` and its two consumers count queue-vs-bypass. Collapsing
+   * without saying so would report a ban as an ordinary approval, so the fact
+   * is carried separately rather than lost.
+   */
+  forbidden: boolean;
 }
 
-const COMPENSABLE_AUTONOMY_LEVEL = 2;
-const AUTONOMOUS_LEVEL = 4;
-
+/**
+ * Delegates to `decideWorkerAction`. It used to reimplement the trust maths,
+ * and had drifted: it has the reversibility short-circuit and the autonomy
+ * ceiling, and never gained `forbid` or the context ceiling. Measured on a
+ * spread of tools and context scores, HALF the combinations disagreed — and
+ * every disagreement ran permissive, including reporting `bypass` for a
+ * forbidden reversible action.
+ *
+ * That matters more here than almost anywhere: this is what
+ * `patchwork workers shadow` and `patchwork workers backtest` run, which the
+ * dogfood runbook calls the primary instrument for watching the ramp. An
+ * instrument that disagrees with what it measures does not fail loudly — it
+ * reports a number, and the number is wrong.
+ *
+ * CLAUDE.md already states the rule, for `previewActions`: a second copy of
+ * the decision "would drift, and the failure is silent and permissive". Same
+ * rule, same reason. Not correct one copy — leave only one.
+ *
+ * The mapping is the honest one, and lossy in a stated direction:
+ *
+ *     gate allow  → bypass
+ *     gate gate   → queue
+ *     gate forbid → queue, with `forbidden: true`
+ */
 export function recommend(
   worker: WorkerManifest,
   toolName: string,
   params: Record<string, unknown> | undefined,
   store: WorkerLevelStore,
+  opts?: AutonomyDecisionOpts,
 ): ShadowDecision {
   const ac = classifyActionClass(toolName, params);
   const owned = ownsAction(worker, ac);
-
-  // Reversible actions always bypass — no trust threshold applies. Short-
-  // circuiting here prevents false divergence-log noise (the dial would
-  // otherwise compare against L4 and always report a "miss" for reads).
-  if (ac.reversibility === "reversible") {
-    const earnedLevel = (store.getState(worker.id, ac.key)?.level ??
-      0) as TrustLevel;
-    return {
-      decision: "bypass",
-      classKey: ac.key,
-      owned,
-      earnedLevel,
-      autonomyCeiling: worker.autonomyCeiling,
-      effectiveLevel: owned ? earnedLevel : (0 as TrustLevel),
-      reason: "reversible — flows un-gated regardless of earned level",
-    };
-  }
   const earnedLevel = (store.getState(worker.id, ac.key)?.level ??
     0) as TrustLevel;
-
-  let effectiveLevel: TrustLevel = owned ? earnedLevel : 0;
-  if (effectiveLevel > worker.autonomyCeiling)
-    effectiveLevel = worker.autonomyCeiling;
-
-  const decision: "bypass" | "queue" =
-    ac.reversibility === "compensable"
-      ? effectiveLevel >= COMPENSABLE_AUTONOMY_LEVEL
-        ? "bypass"
-        : "queue"
-      : effectiveLevel >= AUTONOMOUS_LEVEL
-        ? "bypass"
-        : "queue";
-
-  const threshold =
-    ac.reversibility === "compensable"
-      ? COMPENSABLE_AUTONOMY_LEVEL
-      : AUTONOMOUS_LEVEL;
-  let reason: string;
-  if (!owned) reason = "outside-worker-domain";
-  else if (worker.autonomyCeiling < threshold)
-    reason = `capped-by-autonomy-ceiling (L${worker.autonomyCeiling} < L${threshold}, earned L${earnedLevel})`;
-  else if (decision === "bypass")
-    reason = `autonomous (earned L${effectiveLevel}, threshold L${threshold})`;
-  else reason = `below-autonomy (effective L${effectiveLevel} < L${threshold})`;
+  const decided = decideWorkerAction(worker, toolName, params, store, opts);
 
   return {
-    decision,
+    decision: decided.action === "allow" ? "bypass" : "queue",
+    forbidden: decided.action === "forbid",
     classKey: ac.key,
     owned,
     earnedLevel,
     autonomyCeiling: worker.autonomyCeiling,
-    effectiveLevel,
-    reason,
+    effectiveLevel: decided.effectiveLevel ?? (owned ? earnedLevel : 0),
+    reason: decided.reason,
   };
 }
