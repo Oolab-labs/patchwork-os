@@ -74,13 +74,22 @@ The five primitives from the [canonical positioning sentence](../README.md) line
 | *hot-reloadable tools* | Tool Registry | The `--plugin-watch` flag re-registers atomically on plugin file changes |
 | *YAML recipes* | Recipe Engine | RecipeOrchestrator + parser + scheduler |
 | *delegation policy with approval queue* | Delegation Policy (gate-shaped) | Every tool dispatch passes through this — it's a structural checkpoint, not a sidecar |
-| *durable trace memory* | Trace Memory (cylinder) | Three log files under `~/.patchwork/` plus the activity log under `~/.claude/ide/` |
+| *durable trace memory* | Trace Memory (cylinder) | Append-only JSONL under `~/.patchwork/` — runs, decision traces, approvals, gate decisions, permissions and their exercises, effects, file rollback, outcomes, facts, commit↔issue links — plus the activity log under `~/.claude/ide/` |
 
 ## Five things to notice
 
-1. **Every outbound action passes through the policy gate.** The arrow from Tool Registry to External Targets does *not* exist as a direct edge — it goes through Delegation Policy first. This is the structural invariant that makes "delegation policy" load-bearing rather than decorative. See [src/approvalHttp.ts](../src/approvalHttp.ts) for the implementation.
+1. **Every outbound action passes through the policy checkpoint — but "checkpoint" is two different things, and only one of them is on by default.**
 
-2. **Trace Memory is the only multi-source sink.** Tool calls, policy decisions, and recipe runs all write to the same trace store. That's what makes [`patchwork traces export`](../src/commands/tracesExport.ts) a single bundle and what makes the Decision Replay Debugger possible.
+   The arrow from Tool Registry to External Targets does *not* exist as a direct edge. What sits on it:
+
+   - **Path and tool policy (`checkPolicy`) runs unconditionally** on all dispatch paths — [src/bridge.ts](../src/bridge.ts), [src/streamableHttp.ts](../src/streamableHttp.ts). This is the structural invariant, and it holds.
+   - **Human approval does not.** `approvalGate` defaults to `"off"` ([src/config.ts](../src/config.ts)), and with it off [src/approvalHttp.ts](../src/approvalHttp.ts) returns `allow` with reason `gate_off` before any tier or content check. A default install queues nothing for a person.
+
+   This paragraph previously said the whole gate was a structural invariant. It is the claim in this document most likely to be repeated somewhere it matters, and for human approval it was not true — an operator reading it would believe a default install asks before acting. It does not, by design: a laptop that halts on every action is unusable. The design is right; the sentence was wrong.
+
+   Turning it on is `approvalGate: "high" | "all"` in `~/.patchwork/config.json`.
+
+2. **Trace Memory is where the evidence lands, but it is not one file.** Tool calls, policy decisions and recipe runs are written by separate append-only logs that share a directory and a format, not a single store — `runs.jsonl`, `decision_traces.jsonl`, `worker_gate_decisions.jsonl`, `approval_log.jsonl` and the rest. The cylinder in the diagram is a category, not a filename. (An earlier version of this line said "the only multi-source sink", which reads as a single file and is not what is on disk.) That's what makes [`patchwork traces export`](../src/commands/tracesExport.ts) a single bundle and what makes the Decision Replay Debugger possible.
 
 3. **Triggers are inputs, not outputs.** Cron, file save, git, test run, webhook, CLI, and the mobile PWA all enter at the same point — the Recipe Engine. The trigger surface is the *non-developer onboarding* story; recipes don't care which trigger fired them.
 
