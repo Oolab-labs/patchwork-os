@@ -39,6 +39,12 @@
  * is a deeper question this deliberately does not answer; the failure it
  * exists for is a top-level verb that does not exist at all.
  *
+ * ## The help text is checked too
+ *
+ * `--help` advertised `start-orchestrator`; the verb is `orchestrator`. That is
+ * worse than the README bug, because the binary's own help is where a reader
+ * goes to check what the README told them. Same rule, same source of truth.
+ *
  * Usage:  node scripts/audit-cli-commands.mjs
  * Exit:   0 clean · 1 unknown verb advertised · 2 script error
  */
@@ -90,8 +96,38 @@ function knownSubcommands() {
     );
     process.exit(2);
   }
-  const end = src.indexOf("]", start);
-  const block = src.slice(start, end);
+  // Bracket-MATCHED. Taking the first `]` truncated the array at the first
+  // comment containing one — `process.argv[2]` in an explanatory note — so two
+  // real verbs fell outside the parse and the gate reported a working command
+  // as unknown. Same shape as the CSS `blockFor` bug fixed in #1298: a scan
+  // that stops at the first closing token silently sees less than it claims.
+  let depth = 0;
+  let end = -1;
+  for (let i = src.indexOf("[", start); i < src.length; i++) {
+    if (src[i] === "[") depth++;
+    else if (src[i] === "]") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end === -1) {
+    console.error(
+      "[cli-commands] KNOWN_SUBCOMMANDS has unbalanced brackets — cannot parse.",
+    );
+    process.exit(2);
+  }
+  // Comments stripped FIRST. The array carries an explanatory note that names
+  // `"tools"` in prose, and without this the parser read the verb out of the
+  // comment — so deleting the real entry changed nothing and the check went on
+  // passing. A scan for the ABSENCE of something must never read the text that
+  // describes it; `audit-a11y` learned the same lesson about CSS comments.
+  const block = src
+    .slice(start, end)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
   const verbs = Array.from(block.matchAll(/"([a-z][a-z0-9-]*)"/g), (m) => m[1]);
   if (verbs.length < 5) {
     console.error(
@@ -127,6 +163,38 @@ function fencedLines(text) {
   return out;
 }
 
+/**
+ * Verbs advertised in the CLI's own `--help` output.
+ *
+ * Read statically from the help template in `src/index.ts` rather than by
+ * running the binary — no build required, so this cannot pass against a stale
+ * `dist/`. Help lines are `  <verb> [args]   Description`, two-space indented
+ * inside a template literal.
+ */
+function helpTextVerbs() {
+  const src = readFileSync(path.join(root, "src/index.ts"), "utf8");
+  // ONLY the top-level help block. Scanning the whole file matched sub-verbs
+  // — `recipe schema`, `recipe audit-env` — which are indented identically
+  // inside their own sub-help and are not top-level verbs at all. A check
+  // reporting `schema` as an unknown command is noise, and noise is how a
+  // check gets deleted.
+  const start = src.indexOf("`Get started\\n`");
+  if (start === -1) {
+    console.error(
+      "[cli-commands] could not locate the top-level help block in src/index.ts — this check needs updating, not deleting.",
+    );
+    process.exit(2);
+  }
+  const end = src.indexOf("process.exit(0)", start);
+  const block = src.slice(start, end === -1 ? src.length : end);
+  const verbs = new Map();
+  for (const m of block.matchAll(/`\s{2}([a-z][a-z0-9-]*)[\s[]/g)) {
+    const verb = m[1];
+    if (verb && !verbs.has(verb)) verbs.set(verb, m[0].trim());
+  }
+  return verbs;
+}
+
 function main() {
   const known = knownSubcommands();
   const files = trackedMarkdown();
@@ -152,9 +220,27 @@ function main() {
     }
   }
 
+  // The binary's own help. A reader who doubts the README checks `--help`,
+  // so an unknown verb there is the more expensive of the two.
+  const helpBad = [];
+  for (const [verb, line] of helpTextVerbs()) {
+    if (!known.has(verb)) helpBad.push({ verb, line });
+  }
+
   console.log(
     `[cli-commands] ${checked} invocation(s) in ${files.length} tracked markdown files · ${known.size} known verbs`,
   );
+
+  if (helpBad.length > 0) {
+    console.error(
+      `\n[cli-commands] FAIL — ${helpBad.length} verb(s) advertised in --help that do not dispatch:\n`,
+    );
+    for (const b of helpBad) console.error(`  ${b.verb}\n    ${b.line}`);
+    console.error(
+      "\nsrc/index.ts advertises it and the dispatcher does not know it.\n",
+    );
+    process.exit(1);
+  }
 
   if (bad.length === 0) {
     console.log("[cli-commands] OK — every advertised command exists.");
