@@ -289,9 +289,55 @@ function auditToolCountAcrossDocs(actual) {
   }
 }
 
+/**
+ * The documented default for `approvalGate` must match the code.
+ *
+ * `documents/architecture.md` claimed every outbound action passes through the
+ * policy gate as a "structural invariant". Human approval does not: the gate
+ * defaults to "off" and returns `allow` before any tier check. An operator
+ * reading that sentence would believe a default install asks before acting.
+ *
+ * The sentence is fixed. This is here so the SAME sentence cannot go stale the
+ * other way — flip the default in config.ts and the doc silently becomes wrong
+ * again, in the direction that overstates safety. Cheap to check, and the
+ * failure mode is a security claim, which is the kind worth spending a gate on.
+ */
+function auditApprovalGateDefault() {
+  const config = read("src/config.ts");
+  const m =
+    /approvalGate\?:\s*"off"\s*\|\s*"high"\s*\|\s*"all"\s*\}\)\.approvalGate\s*\?\?\s*"(\w+)"/.exec(
+      config,
+    );
+  if (!m) {
+    drift.push(
+      "approval-gate: could not read the approvalGate default from src/config.ts — this check needs updating, not deleting.",
+    );
+    return;
+  }
+  const actual = m[1];
+  const doc = read("documents/architecture.md");
+  const claimed = /`approvalGate`\s+defaults\s+to\s+`"(\w+)"`/.exec(doc);
+  if (!claimed) {
+    drift.push(
+      "approval-gate: documents/architecture.md no longer states the approvalGate default. It described the gate as a structural invariant while human approval was off by default; the statement of the real default must stay.",
+    );
+    return;
+  }
+  if (claimed[1] !== actual) {
+    drift.push(
+      `approval-gate: documents/architecture.md says the default is "${claimed[1]}", src/config.ts says "${actual}".`,
+    );
+    return;
+  }
+  notes.push(
+    `approval-gate: documented default "${actual}" matches src/config.ts`,
+  );
+}
+
 // ── run ──────────────────────────────────────────────────────────────────────
 
 auditToolCount();
+auditApprovalGateDefault();
 auditCoverageThresholds();
 auditPluginApiDrift();
 
