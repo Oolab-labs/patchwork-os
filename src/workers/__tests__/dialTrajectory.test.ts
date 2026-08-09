@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
+import { cadence, dialTrajectory, firstReached } from "../dialTrajectory.js";
 import type { Outcome } from "../graduation.js";
-import { cadence, firstReached, shadowRun } from "../shadowRun.js";
 import { parseWorker } from "../worker.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -43,7 +43,7 @@ describe("dial trajectory — the evidence-latency reality", () => {
   const work = cadence("editText", 70);
 
   it("a cold worker takes WEEKS of clean evidence to reach L4 (slow to climb)", () => {
-    const r = shadowRun(noPrior, work);
+    const r = dialTrajectory(noPrior, work);
     const l4 = firstReached(r, EDIT_CLASS, 4);
     expect(l4).toBeDefined();
     // not days — the trustworthy thing is genuinely slow
@@ -56,8 +56,8 @@ describe("dial trajectory — the evidence-latency reality", () => {
   });
 
   it("a shipped competence prior accelerates the climb without faking trust", () => {
-    const cold = shadowRun(noPrior, work);
-    const primed = shadowRun(withPrior, work);
+    const cold = dialTrajectory(noPrior, work);
+    const primed = dialTrajectory(withPrior, work);
     const coldL1 = firstReached(cold, EDIT_CLASS, 1)!;
     const primedL1 = firstReached(primed, EDIT_CLASS, 1)!;
     const coldL4 = firstReached(cold, EDIT_CLASS, 4)!;
@@ -75,7 +75,7 @@ describe("dial trajectory — the evidence-latency reality", () => {
       ...cadence("editText", 65),
       { toolName: "editText", good: false, at: 66 * 6 * 60 * 60 * 1000 },
     ];
-    const r = shadowRun(noPrior, outcomes);
+    const r = dialTrajectory(noPrior, outcomes);
     const demote = r.trajectory.find((s) => s.changed === "demote");
     expect(demote).toBeDefined();
     expect(demote!.level).toBeLessThan(4);
