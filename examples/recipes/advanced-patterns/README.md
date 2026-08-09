@@ -27,7 +27,7 @@ topologies in Patchwork.
 Requires: `--driver subprocess` (or `api`), `file-mcp`, `notify-mcp`.
 
 ```bash
-patchwork run multi-agent-research --question "What are the main failure modes of solo founder companies?"
+patchwork recipe run multi-agent-research --question "What are the main failure modes of solo founder companies?"
 ```
 
 ---

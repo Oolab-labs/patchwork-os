@@ -37,8 +37,9 @@ Prereqs: Node 22+. macOS, Linux, and native Windows (no WSL).
 The hero workflow — Morning Brief:
 
 ```bash
-patchwork connections connect gmail
-patchwork connections connect google-calendar
+patchwork init --with-connectors   # seeds the connector-backed recipes too
+patchwork connect gmail
+patchwork connect google-calendar
 patchwork recipe run morning-brief
 ```
 

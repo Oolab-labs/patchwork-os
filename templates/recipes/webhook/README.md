@@ -21,7 +21,8 @@ file is a copy-and-adjust starting point.
 
 ```sh
 cp templates/recipes/webhook/capture-thought.yaml ~/.patchwork/recipes/
-patchwork stop
+# Restart the bridge so it picks up the change
+# (Ctrl-C the running process, then:)
 patchwork start
 ```
 
