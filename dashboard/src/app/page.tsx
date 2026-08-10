@@ -147,7 +147,12 @@ interface CopilotMessage {
 // Never a recipe step / MCP tool; POST /api/bridge/outcomes is the only
 // way to move a worker's `issue` dial (see CLAUDE.md "outcomes confirm").
 interface PendingConfirmation {
-  issueUrl: string;
+  /** Present only when the filing tool returned a URL; absent for e.g. Todoist. */
+  issueUrl?: string;
+  /** Canonical join key — a URL, or "<tool>:<id>". Always present; key off this. */
+  actionKey: string;
+  /** Structured reference for a non-URL filing, posted straight to /outcomes. */
+  ref?: { tool: string; id: string };
   recipeName: string;
   workerId: string;
   workerName: string;
@@ -537,7 +542,7 @@ function TodayMorningSection({
               </div>
             ))}
             {workerPending.map((p) => (
-              <div className="td-today-row" key={p.issueUrl}>
+              <div className="td-today-row" key={p.actionKey}>
                 <span className="pill muted">verdict</span>
                 <span className="td-today-row-body">
                   <strong>{p.workerName}</strong> filed &ldquo;{p.title ?? "a new issue"}&rdquo; — real?
@@ -546,7 +551,7 @@ function TodayMorningSection({
                 <button
                   type="button"
                   className="btn sm primary"
-                  disabled={outcomeBusy === p.issueUrl}
+                  disabled={outcomeBusy === p.actionKey}
                   onClick={() => onOutcomeDecide(p, "confirmed")}
                 >
                   Looks real
@@ -554,7 +559,7 @@ function TodayMorningSection({
                 <button
                   type="button"
                   className="btn sm ghost"
-                  disabled={outcomeBusy === p.issueUrl}
+                  disabled={outcomeBusy === p.actionKey}
                   onClick={() => onOutcomeDecide(p, "junk")}
                 >
                   Not real
@@ -1116,13 +1121,14 @@ export default function HomePage() {
     (topAttentionFingerprint === "" || topAttentionFingerprint === muteFingerprint);
 
   async function actOutcome(p: PendingConfirmation, disposition: "confirmed" | "junk") {
-    setOutcomeBusy(p.issueUrl);
+    setOutcomeBusy(p.actionKey);
     try {
       const res = await fetch(apiPath("/api/bridge/outcomes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          issueUrl: p.issueUrl,
+          // Exactly one key shape — the route rejects both together.
+          ...(p.ref ? { ref: p.ref } : { issueUrl: p.issueUrl }),
           disposition,
           recipeName: p.recipeName,
           workerClass: p.classKey,
@@ -2081,7 +2087,7 @@ export default function HomePage() {
                     <button
                       type="button"
                       className="btn sm primary"
-                      disabled={outcomeBusy === topWorkerPending.issueUrl}
+                      disabled={outcomeBusy === topWorkerPending.actionKey}
                       onClick={() => void actOutcome(topWorkerPending, "confirmed")}
                     >
                       Looks real
@@ -2089,7 +2095,7 @@ export default function HomePage() {
                     <button
                       type="button"
                       className="btn sm ghost"
-                      disabled={outcomeBusy === topWorkerPending.issueUrl}
+                      disabled={outcomeBusy === topWorkerPending.actionKey}
                       onClick={() => void actOutcome(topWorkerPending, "junk")}
                     >
                       Not real
@@ -2491,7 +2497,7 @@ export default function HomePage() {
             <div className="td-worker-review">
               <div className="td-worker-review-head">review needed</div>
               {workerPending.map((p) => (
-                <div className="td-worker-review-row" key={p.issueUrl}>
+                <div className="td-worker-review-row" key={p.actionKey}>
                   <span className="pill muted">issue</span>
                   <span className="td-worker-review-body">
                     <strong>{p.workerName}</strong> filed &ldquo;{p.title ?? "a new issue"}&rdquo;
@@ -2501,7 +2507,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     className="btn sm primary"
-                    disabled={outcomeBusy === p.issueUrl}
+                    disabled={outcomeBusy === p.actionKey}
                     onClick={() => void actOutcome(p, "confirmed")}
                   >
                     Looks real
@@ -2509,7 +2515,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     className="btn sm ghost"
-                    disabled={outcomeBusy === p.issueUrl}
+                    disabled={outcomeBusy === p.actionKey}
                     onClick={() => void actOutcome(p, "junk")}
                   >
                     Not real

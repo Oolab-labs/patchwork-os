@@ -1227,6 +1227,7 @@ export function tryHandleRecipeRoute(
     void (async () => {
       const parsedBody = await readJsonBody<{
         issueUrl?: string;
+        ref?: { tool?: unknown; id?: unknown };
         disposition?: string;
         recipeName?: string;
         workerClass?: string;
@@ -1244,6 +1245,7 @@ export function tryHandleRecipeRoute(
         if (
           respondIfUnknownBodyKeys(res, parsed, [
             "issueUrl",
+            "ref",
             "disposition",
             "recipeName",
             "workerClass",
@@ -1254,10 +1256,36 @@ export function tryHandleRecipeRoute(
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error }));
         };
-        const { issueUrl, disposition, recipeName, workerClass } = parsed;
-        if (typeof issueUrl !== "string" || !/^https?:\/\//.test(issueUrl)) {
+        const { issueUrl, ref, disposition, recipeName, workerClass } = parsed;
+        // Exactly one key shape. Never guess which the caller meant: a coerced
+        // key lands in the ledger under a name nothing looks up, which reads
+        // downstream as "nobody confirmed this".
+        if (issueUrl !== undefined && ref !== undefined) {
           respond400(
-            "`issueUrl` must be an http(s) URL (the filed issue/PR URL).",
+            "Send either `issueUrl` or `ref`, not both — they are alternative keys for the same record.",
+          );
+          return;
+        }
+        if (ref !== undefined) {
+          if (
+            typeof ref !== "object" ||
+            ref === null ||
+            typeof ref.tool !== "string" ||
+            typeof ref.id !== "string" ||
+            !ref.tool.trim() ||
+            !ref.id.trim()
+          ) {
+            respond400(
+              "`ref` must be `{ tool, id }` with non-empty strings (the tool that performed the action and the id it returned).",
+            );
+            return;
+          }
+        } else if (
+          typeof issueUrl !== "string" ||
+          !/^https?:\/\//.test(issueUrl)
+        ) {
+          respond400(
+            "`issueUrl` must be an http(s) URL (the filed issue/PR URL), or send `ref: { tool, id }` for an action with no URL.",
           );
           return;
         }
@@ -1287,16 +1315,28 @@ export function tryHandleRecipeRoute(
           );
           return;
         }
-        store.upsert({
-          issueUrl,
-          disposition,
-          checkedAt: Date.now(),
-          origin: "manual",
-          ...(recipeName ? { recipeName } : {}),
-          ...(workerClass ? { workerClass } : {}),
-        });
+        const keyFields =
+          ref !== undefined
+            ? { ref: { tool: ref.tool as string, id: ref.id as string } }
+            : { issueUrl: issueUrl as string };
+        try {
+          store.upsert({
+            ...keyFields,
+            disposition,
+            checkedAt: Date.now(),
+            origin: "manual",
+            ...(recipeName ? { recipeName } : {}),
+            ...(workerClass ? { workerClass } : {}),
+          });
+        } catch (err) {
+          // The store refuses a record nothing could look up (e.g. a tool name
+          // that would produce a URL-shaped key). Surface it as a 400 — it is
+          // a bad request, not a server fault.
+          respond400(err instanceof Error ? err.message : String(err));
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, issueUrl, disposition }));
+        res.end(JSON.stringify({ ok: true, ...keyFields, disposition }));
       } catch (err) {
         respond500(res, err);
       }

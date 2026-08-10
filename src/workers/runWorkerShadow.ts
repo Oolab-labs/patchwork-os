@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
 import { classifyActionClass } from "./actionClass.js";
+import { deriveActionKey } from "./actionRef.js";
 import { backtestWorker, formatBacktestReport } from "./backtest.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./outcomeStore.js";
 import {
@@ -406,10 +407,32 @@ export function runWorkerBacktest(opts: RunWorkerShadowOpts = {}): string {
 
 /** One filing awaiting an operator disposition — the confirm queue's unit. */
 export interface PendingConfirmation {
-  /** The captured filing URL — the confirm key. Today only `github.create_issue`
-   *  captures a URL to the run log, so these are issue URLs; a future PR-filing
-   *  recipe tool would flow through unchanged. */
-  issueUrl: string;
+  /**
+   * The captured filing URL, when the tool returned one. Present for
+   * `github.create_issue`-shaped filings; ABSENT for an action whose tool
+   * exposes no permalink (`todoist.create_task` and most write tools).
+   *
+   * Consumers must key off `actionKey`, not this — see the note there. It is
+   * retained because the dashboard renders it as a clickable link when it
+   * exists, and "no link to show" is different from "no action to confirm".
+   */
+  issueUrl?: string;
+  /**
+   * The canonical join key for this filing — a URL, or `"<tool>:<id>"`.
+   *
+   * This is the field the confirm queue is keyed and deduped by. Before
+   * #1319 the queue was URL-only, which meant a withheld non-URL action was
+   * never OFFERED for confirmation: the trust fold withheld it and the UI had
+   * no way to resolve it, so it could never earn trust through any path. A
+   * gate that can withhold an action it cannot let you approve is worse than
+   * no gate — it is an invisible permanent denial.
+   */
+  actionKey: string;
+  /**
+   * Structured reference for a non-URL filing, ready to POST to `/outcomes`.
+   * Absent when `issueUrl` is the key.
+   */
+  ref?: { tool: string; id: string };
   recipeName: string;
   workerId: string;
   workerName: string;
@@ -466,20 +489,29 @@ export function computePendingConfirmations(
       const ac = classifyActionClass(step.tool);
       if (ac.reversibility === "reversible") continue; // never needs confirming
       const out = step.output as Record<string, unknown> | undefined;
+      // Key by the same rule the trust fold uses (#1319). Keying these two
+      // differently is the failure this queue exists to prevent: the fold
+      // would withhold an action the queue never surfaced for confirmation.
+      const actionKey = deriveActionKey(step.tool, out);
+      if (!actionKey) continue; // genuinely unreferenceable — nothing to confirm
       const url =
-        out && typeof out.url === "string" ? (out.url as string) : null;
-      if (!url) continue;
+        out && typeof out.url === "string" ? (out.url as string) : undefined;
+      const ref = url
+        ? undefined
+        : { tool: step.tool, id: actionKey.slice(step.tool.length + 1) };
       const title =
         out && typeof out.title === "string" && out.title.trim()
           ? (out.title as string)
           : undefined;
-      const disp = store.getDisposition(url);
+      const disp = store.getDisposition(actionKey);
       if (disp === "confirmed" || disp === "junk") continue; // already actioned
-      // unknown / no record → pending. Dedup by URL, keep the newest filing.
-      const prev = byUrl.get(url);
+      // unknown / no record → pending. Dedup by key, keep the newest filing.
+      const prev = byUrl.get(actionKey);
       if (!prev || run.at > prev.filedAt) {
-        byUrl.set(url, {
-          issueUrl: url,
+        byUrl.set(actionKey, {
+          actionKey,
+          ...(url ? { issueUrl: url } : {}),
+          ...(ref ? { ref } : {}),
           recipeName: run.recipeName,
           workerId: w.id,
           workerName: w.name,
@@ -513,16 +545,26 @@ export function formatPendingConfirmations(
     "",
   ];
   for (const p of pending) {
-    lines.push(p.title ? `  "${p.title}"` : `  ${p.issueUrl}`);
-    if (p.title) lines.push(`    ${p.issueUrl}`);
+    // The argument the operator must actually type. A URL filing takes the URL
+    // positionally; a non-URL one takes --tool/--id. Printing the ready-to-run
+    // command matters more than usual here: the id is an opaque connector
+    // string nobody can retype from memory.
+    const arg = p.ref
+      ? `--tool ${p.ref.tool} --id ${p.ref.id}`
+      : (p.issueUrl ?? p.actionKey);
+    const headline = p.title ?? p.issueUrl ?? p.actionKey;
+    lines.push(p.title ? `  "${headline}"` : `  ${headline}`);
+    if (p.title && (p.issueUrl || p.ref)) {
+      lines.push(`    ${p.issueUrl ?? p.actionKey}`);
+    }
     lines.push(
       `    filed by ${p.workerName} (${p.recipeName}) · ${p.classKey} · ${rel(p.filedAt)}`,
     );
     lines.push(
-      `    confirm: patchwork outcomes confirm ${p.issueUrl} --recipe ${p.recipeName} --class ${p.classKey}`,
+      `    confirm: patchwork outcomes confirm ${arg} --recipe ${p.recipeName} --class ${p.classKey}`,
     );
     lines.push(
-      `    reject:  patchwork outcomes reject ${p.issueUrl} --recipe ${p.recipeName} --class ${p.classKey}`,
+      `    reject:  patchwork outcomes reject ${arg} --recipe ${p.recipeName} --class ${p.classKey}`,
     );
     lines.push("");
   }

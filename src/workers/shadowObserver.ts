@@ -164,8 +164,13 @@ export function foldOutcome(
     outcomeStore?: OutcomeStore;
     /**
      * Key the outcome join on tool-name + external id rather than on
-     * `output.url` alone. Default false = the historical URL-only behaviour.
-     * See the note at the join site below for why this is gated.
+     * `output.url` alone. Defaults to TRUE (#1319).
+     *
+     * Retained as an explicit opt-OUT rather than deleted: it is the only way
+     * to reproduce the historical labelling when replaying an old run log, and
+     * `foldJoinDelta` needs both sides to report a divergence at all. Passing
+     * `false` restores the pre-#1319 behaviour, in which a non-reversible
+     * success carrying no URL earned full trust with no confirmation.
      */
     strictOutcomeJoin?: boolean;
   },
@@ -179,28 +184,29 @@ export function foldOutcome(
   // PR URL). Reversible successes never consult the store — they are always durable.
   const outcomeStore =
     ac.reversibility !== "reversible" ? opts.outcomeStore : undefined;
-  // The join key for this action. Legacy behaviour keyed on `output.url`
-  // alone, which meant any write tool returning no URL skipped the human
-  // confirmation check entirely and fell through to good:true below — trust
-  // for work nobody ever looked at. `deriveActionKey` generalises this to
-  // tool-name + external id (see actionRef.ts), which every write tool has.
+  // The join key for this action. The historical rule keyed on `output.url`
+  // alone, so any write tool returning no URL skipped the human-confirmation
+  // check entirely and fell through to good:true below — full earned trust for
+  // work nobody ever looked at. `deriveActionKey` keys on tool-name + external
+  // id instead (see actionRef.ts), which every write tool already has.
   //
-  // GATED, on purpose. Turning the generalisation on makes previously-
-  // unjoinable successes reachable by the WITHHOLD branch below, which
-  // de-rates every worker that earned trust from a non-URL action. That is
-  // the correct end state, but it is a live change to the dial the gate reads,
-  // so it ships measured rather than assumed: `strictOutcomeJoin` defaults to
-  // false (byte-identical to the URL-only behaviour) and the shadow report
-  // counts what WOULD change. Flipping the default is a separate change.
-  const url =
-    outcomeStore && step.output && typeof step.output.url === "string"
-      ? step.output.url
-      : null;
-  const key = opts.strictOutcomeJoin
-    ? outcomeStore
-      ? deriveActionKey(step.tool, step.output)
-      : null
-    : url;
+  // Now ON by default (#1319). The blast radius was measured over the real run
+  // log before flipping — ONE step changed label (a butler-errand
+  // `todoist.create_task`, good -> withheld). It is small for a reason worth
+  // knowing: of 63 non-reversible successes, 50 are `agent` steps that capture
+  // no output at all and 12 are `http.post` whose id sits inside a JSON string
+  // body, so only 1 is keyable today. Fixing the key made the mechanism
+  // correct; it did not make it REACH much. Widening that coverage is a
+  // separate piece of work (step-output capture), deliberately not smuggled in
+  // here.
+  const key =
+    (opts.strictOutcomeJoin ?? true)
+      ? outcomeStore
+        ? deriveActionKey(step.tool, step.output)
+        : null
+      : outcomeStore && step.output && typeof step.output.url === "string"
+        ? step.output.url
+        : null;
   const disposition = key ? (outcomeStore?.getDisposition(key) ?? null) : null;
   // A human REJECTION demotes IMMEDIATELY. Junk is durable evidence of failure
   // the moment it lands, so — like any outright failure (status ≠ ok above) — it

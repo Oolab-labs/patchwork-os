@@ -289,7 +289,14 @@ export class OutcomeStore {
    * would silently discard an operator's explicit judgment.
    */
   upsert(record: OutcomeRecord): void {
-    if (!keyForRecord(record)) {
+    // Canonicalise a `ref` directly rather than via `keyForRecord`, which
+    // swallows the reason and returns null. The WRITE path must report WHY —
+    // "your tool name is URL-shaped" and "you sent no key at all" send an
+    // operator to completely different places, and a misdiagnosis here costs
+    // them a hunt through the wrong file.
+    if (record.ref) {
+      canonicalActionRef(record.ref); // throws AmbiguousActionRefError, with cause
+    } else if (!keyForRecord(record)) {
       throw new AmbiguousActionRefError(
         "An outcome record needs a usable key — either `issueUrl` or a `ref` with a tool and an id. Refusing to write a record nothing can look up.",
       );

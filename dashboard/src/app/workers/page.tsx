@@ -218,12 +218,18 @@ function ConsideredApproval() {
 
 type Disposition = "confirmed" | "junk" | "unknown";
 interface OutcomeRecord {
-  issueUrl: string;
+  issueUrl?: string;
+  ref?: { tool: string; id: string };
   disposition: Disposition;
   checkedAt: number;
   recipeName?: string;
   workerClass?: string;
 }
+/** Display/dedup key for a record under either key shape. */
+function outcomeKey(o: OutcomeRecord): string {
+  return o.ref ? `${o.ref.tool}:${o.ref.id}` : (o.issueUrl ?? "(no key)");
+}
+
 interface OutcomesResponse {
   outcomes: OutcomeRecord[];
 }
@@ -241,7 +247,12 @@ function dispositionStyle(d: Disposition): CSSProperties {
 }
 
 interface PendingConfirmation {
-  issueUrl: string;
+  /** Present only when the filing tool returned a URL; absent for e.g. Todoist. */
+  issueUrl?: string;
+  /** Canonical join key — a URL, or "<tool>:<id>". Always present; key off this. */
+  actionKey: string;
+  /** Structured reference for a non-URL filing, posted straight to /outcomes. */
+  ref?: { tool: string; id: string };
   recipeName: string;
   workerId: string;
   workerName: string;
@@ -325,14 +336,15 @@ function ReviewQueue({
   }
 
   async function act(p: PendingConfirmation, disposition: "confirmed" | "junk") {
-    setBusy(`${p.issueUrl}:${disposition}`);
+    setBusy(`${p.actionKey}:${disposition}`);
     setErr(null);
     try {
       const res = await fetch(apiPath("/api/bridge/outcomes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          issueUrl: p.issueUrl,
+          // Exactly one key shape — the route rejects both together.
+          ...(p.ref ? { ref: p.ref } : { issueUrl: p.issueUrl }),
           disposition,
           recipeName: p.recipeName,
           workerClass: p.classKey,
@@ -402,7 +414,20 @@ function ReviewQueue({
                 marginTop: 2,
               }}
             >
-              <UrlCell url={p.issueUrl} />
+              {p.issueUrl ? (
+                <UrlCell url={p.issueUrl} />
+              ) : (
+                // No permalink exists for this action (the tool returns none).
+                // Show the reference rather than an empty cell — "nothing to
+                // link to" must not read as "nothing here".
+                <span
+                  className="muted"
+                  style={{ fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)" }}
+                  title={p.actionKey}
+                >
+                  {p.actionKey}
+                </span>
+              )}
               <span className="muted" style={{ fontSize: "var(--fs-xs)" }}>
                 {relTime(p.filedAt, now)}
                 {expert ? ` · ${p.classKey}` : ""}
@@ -453,14 +478,18 @@ function PastVerdicts({ expert }: { expert: boolean }) {
   ).length;
   const junkCount = outcomes.filter((o) => o.disposition === "junk").length;
 
-  async function setDisposition(issueUrl: string, disposition: Disposition) {
-    setBusy(`${issueUrl}:${disposition}`);
+  async function setDisposition(o: OutcomeRecord, disposition: Disposition) {
+    setBusy(`${outcomeKey(o)}:${disposition}`);
     setErr(null);
     try {
       const res = await fetch(apiPath("/api/bridge/outcomes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueUrl, disposition }),
+        // Exactly one key shape — the route rejects both together.
+        body: JSON.stringify({
+          ...(o.ref ? { ref: o.ref } : { issueUrl: o.issueUrl }),
+          disposition,
+        }),
       });
       if (!res.ok) {
         setErr(`Update failed (${res.status})`);
@@ -524,7 +553,7 @@ function PastVerdicts({ expert }: { expert: boolean }) {
         return (
           <div
             className="suggestion-row"
-            key={o.issueUrl}
+            key={o.issueUrl ?? outcomeKey(o)}
             style={{
               display: "flex",
               alignItems: "center",
@@ -535,13 +564,22 @@ function PastVerdicts({ expert }: { expert: boolean }) {
             <span className="pill" style={dispositionStyle(o.disposition)}>
               {expert ? o.disposition : DISPOSITION_LABEL[o.disposition]}
             </span>
-            <UrlCell url={o.issueUrl} />
+            {o.issueUrl ? (
+              <UrlCell url={o.issueUrl} />
+            ) : (
+              <span
+                className="muted"
+                style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}
+              >
+                {outcomeKey(o)}
+              </span>
+            )}
             {ctx && <span className="pill muted">{ctx}</span>}
             <button
               type="button"
               className="btn sm primary"
               disabled={busy !== null || o.disposition === "confirmed"}
-              onClick={() => setDisposition(o.issueUrl, "confirmed")}
+              onClick={() => setDisposition(o, "confirmed")}
             >
               Looks real
             </button>
@@ -549,7 +587,7 @@ function PastVerdicts({ expert }: { expert: boolean }) {
               type="button"
               className="btn sm ghost"
               disabled={busy !== null || o.disposition === "junk"}
-              onClick={() => setDisposition(o.issueUrl, "junk")}
+              onClick={() => setDisposition(o, "junk")}
             >
               Not real
             </button>
