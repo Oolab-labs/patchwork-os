@@ -16,7 +16,8 @@
     "direction, so writes deserve per-tool review rather than a sweep.",
     "",
     "2026-08-10 batch 1 (#1311): 144 entries cleared \u2014 every connector tool declaring isWrite:false, plus two camelCase aliases that were governed differently from the identical canonical tool.",
-    "Remaining 42 are declared WRITES. Each needs a real judgement about whether it can be undone; loosening is the dangerous direction, so these get per-tool review, not a sweep."
+    "Remaining 42 are declared WRITES. Each needs a real judgement about whether it can be undone; loosening is the dangerous direction, so these get per-tool review, not a sweep.",
+    "2026-08-10 batch 2 (#1311): 8 irreversible writes given a real domain (messaging, db-write). Reversibility unchanged \u2014 this batch loosens nothing; it only stops them sharing one undifferentiated bucket."
   ],
   "allow": [
     "airtable.create_record",
@@ -27,7 +28,6 @@
     "confluence.appendToPage",
     "confluence.createPage",
     "datadog.muteMonitor",
-    "discord.send_message",
     "grafana.create_annotation",
     "hubspot.createNote",
     "intercom.closeConversation",
@@ -49,16 +49,9 @@
     "pagerduty.create_incident",
     "pagerduty.resolve_incident",
     "pipedrive.create_deal",
-    "postgres.query",
     "posthog.capture_event",
-    "resend.cancel_email",
-    "resend.send_email",
     "salesforce.create_record",
-    "sendgrid.send_email",
-    "snowflake.execute_query",
     "supabase.upload_file",
-    "telegram.send_message",
-    "twilio.send_sms",
     "zendesk.addComment",
     "zendesk.updateStatus"
   ]

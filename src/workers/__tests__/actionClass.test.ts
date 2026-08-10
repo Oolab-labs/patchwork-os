@@ -292,3 +292,38 @@ describe("connector reads (#1311 batch 1)", () => {
     }
   });
 });
+
+describe("irreversible writes get a domain, not a discount (#1311 batch 2)", () => {
+  it("keeps reversibility exactly as the catch-all had it", () => {
+    // The whole safety argument for this batch. These tools were already
+    // irreversible via the `other` default; `messaging` and `db-write` are
+    // irreversible too, and blast tier comes from the tool NAME
+    // (classifyTool), not from the domain. So nothing about what the gate
+    // permits changes — only which bucket the evidence lands in.
+    for (const tool of [
+      "discord.send_message",
+      "telegram.send_message",
+      "twilio.send_sms",
+      "sendgrid.send_email",
+      "resend.send_email",
+      "postgres.query",
+      "snowflake.execute_query",
+    ]) {
+      expect(
+        classifyActionClass(tool, {}).reversibility,
+        `${tool} must stay irreversible`,
+      ).toBe("irreversible");
+    }
+  });
+
+  it("separates sending mail from running SQL", () => {
+    // A single `other` bucket could not tell these apart, so evidence from
+    // one would have counted toward the other. "May send mail" and "may run
+    // arbitrary SQL" are different authorities.
+    const mail = classifyActionClass("sendgrid.send_email", {});
+    const sql = classifyActionClass("postgres.query", {});
+    expect(mail.domain).toBe("messaging");
+    expect(sql.domain).toBe("db-write");
+    expect(mail.key).not.toBe(sql.key);
+  });
+});
