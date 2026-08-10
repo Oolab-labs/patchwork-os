@@ -10,36 +10,38 @@
  * call, in every session. `npm run build` and the whole test suite stayed green,
  * because nothing here ever looked at the tarball.
  */
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveHookScriptPath } from "../preToolUseHook.js";
-import { ensureCmdShim } from "../winShim.js";
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 
 /**
  * File list `npm publish` would produce, without hitting the network.
  *
- * `ensureCmdShim` because npm on Windows is `npm.cmd` and `execFileSync` with
- * `shell:false` resolves only `.exe` via PATHEXT — the repo's established
- * spawn-site pattern (src/winShim.ts).
+ * Runs through a shell deliberately. On Windows npm is `npm.cmd`, and since
+ * the CVE-2024-27980 fix Node refuses to spawn a `.cmd`/`.bat` without a
+ * shell — `execFileSync("npm", …)` fails ENOENT and `execFileSync("npm.cmd",
+ * …)` fails EINVAL, which is exactly the pair CI walked through. A shell
+ * resolves the shim via PATHEXT and works unchanged on POSIX. Passing one
+ * command string rather than an args array also avoids Node's DEP0190
+ * warning about unescaped args under `shell: true`; it is safe here because
+ * the command is a constant with nothing interpolated into it.
+ *
+ * --ignore-scripts: `npm pack` otherwise runs the `prepare` lifecycle (husky),
+ * which has no bearing on the file list and is not a test's business to fire.
  */
+const PACK_CMD = "npm pack --dry-run --json --ignore-scripts";
+
 function packedFiles(): string[] {
-  // --ignore-scripts: `npm pack` otherwise runs the `prepare` lifecycle
-  // (husky), which has no bearing on the file list and is not something a
-  // test should be triggering.
-  const out = execFileSync(
-    ensureCmdShim("npm"),
-    ["pack", "--dry-run", "--json", "--ignore-scripts"],
-    {
-      cwd: repoRoot,
-      encoding: "utf8",
-      maxBuffer: 32 * 1024 * 1024,
-      timeout: 90_000,
-    },
-  );
+  const out = execSync(PACK_CMD, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: 90_000,
+  });
   const parsed = JSON.parse(out) as Array<{ files: Array<{ path: string }> }>;
   return (parsed[0]?.files ?? []).map((f) => f.path.replace(/\\/g, "/"));
 }
