@@ -319,7 +319,11 @@ describe("strict join is the DEFAULT (#1319)", () => {
    * change starts capturing agent output, this test flips and the de-rate
    * becomes large; that should be a deliberate decision, not a surprise.
    */
-  it("agent steps (no captured output) are unaffected by the flip", () => {
+  it("agent steps are unaffected by the flip — withheld under BOTH rules", () => {
+    // Still the point #1319 made (the join flip does not touch agent steps,
+    // which is why its blast radius was one step), but the value changed: they
+    // are now withheld outright rather than folded as earned trust. See
+    // agentStepNotEvidence.test.ts for why.
     const agentStep = {
       tool: "agent",
       status: "ok" as const,
@@ -333,7 +337,7 @@ describe("strict join is the DEFAULT (#1319)", () => {
           outcomeStore: new OutcomeStore(dir),
           strictOutcomeJoin: strict,
         }),
-      ).toEqual({ fold: true, good: true });
+      ).toEqual({ fold: false });
     }
   });
 });

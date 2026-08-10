@@ -15,6 +15,19 @@ import { classifyTool, type RiskTier } from "../riskTier.js";
  * magnitude band. (worker-ramp-v2)
  */
 
+/**
+ * The step "tool" name for an agent (reasoning) step.
+ *
+ * Defined once and imported by every site that special-cases it, because the
+ * two that mattered — the gate's carve-out in `workerGate.ts` and the trust
+ * fold in `shadowObserver.ts` — each hardcoded the literal independently and
+ * then DRIFTED: the gate excluded agent steps as "not a gated action-class"
+ * while the fold happily counted them as earned trust. A shared constant does
+ * not by itself keep the two policies in agreement, but it makes the set of
+ * places that must agree greppable from one symbol.
+ */
+export const AGENT_STEP_TOOL = "agent";
+
 export type Reversibility = "reversible" | "compensable" | "irreversible";
 
 /**

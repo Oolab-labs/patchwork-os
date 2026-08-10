@@ -5,6 +5,7 @@ import {
 import { classifyTool, getRiskTierMap } from "../riskTier.js";
 import {
   type ActionClass,
+  AGENT_STEP_TOOL,
   classifyActionClass,
   knownActionTools,
 } from "./actionClass.js";
@@ -335,7 +336,7 @@ export function decideWorkerAction(
   // worker on its agent step while the real file.write flowed. Let it through;
   // the downstream tool steps still gate. The tier gate (composed as a floor by
   // the caller) still applies its own policy to the agent step.
-  if (toolName === "agent") {
+  if (toolName === AGENT_STEP_TOOL) {
     return {
       ...base,
       action: "allow",
