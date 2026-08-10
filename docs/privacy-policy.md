@@ -137,7 +137,7 @@ Your preference is stored in `~/.claude/ide/analytics.json` (mode `0600`).
 
 At the end of each session, a single anonymized summary is POSTed to `https://analytics.claude-ide-bridge.dev/v1/usage`:
 
-- Bridge version (e.g. `1.1.0-beta.4`)
+- Bridge version (e.g. `1.2.0-beta.1`)
 - Session duration in milliseconds
 - Per-tool counts: `{tool: string, calls: number, errors: number, p50Ms: number, p95Ms: number}`
   - **Built-in tool names** (a fixed allowlist — `getDiagnostics`, `readFile`, `runCommand`, etc.) are sent verbatim

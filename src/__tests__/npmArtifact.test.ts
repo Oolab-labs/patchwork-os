@@ -42,8 +42,34 @@ function packedFiles(): string[] {
     maxBuffer: 32 * 1024 * 1024,
     timeout: 90_000,
   });
-  const parsed = JSON.parse(out) as Array<{ files: Array<{ path: string }> }>;
-  return (parsed[0]?.files ?? []).map((f) => f.path.replace(/\\/g, "/"));
+  const parsed: unknown = JSON.parse(out);
+
+  // npm changed this shape in v12: an ARRAY of pack results became an OBJECT
+  // keyed by package name. The publish workflow runs `npm install -g npm@latest`
+  // before testing, so it hit v12 while every PR job was still on v11 — the
+  // release failed on a test that had been green all day. Accept both.
+  //
+  //   npm 11: [ { files: [ { path } ] } ]
+  //   npm 12: { "patchwork-os": { files: [ { path } ] } }
+  const entries = Array.isArray(parsed)
+    ? (parsed as Array<{ files?: Array<{ path: string }> }>)
+    : Object.values(
+        (parsed ?? {}) as Record<string, { files?: Array<{ path: string }> }>,
+      );
+  const files = entries.flatMap((e) => e?.files ?? []);
+
+  // Fail loudly on the NEXT shape change rather than returning an empty list.
+  // Without this the failure reads "expected [] to include <path>", which
+  // accuses the packaging of a defect the packaging does not have — and an
+  // assertion phrased the other way round would have passed vacuously.
+  if (files.length === 0) {
+    throw new Error(
+      `npm pack returned no files — likely another --json shape change ` +
+        `(npm ${execSync("npm -v", { encoding: "utf8" }).trim()}). ` +
+        `Raw output began: ${out.slice(0, 200)}`,
+    );
+  }
+  return files.map((f) => f.path.replace(/\\/g, "/"));
 }
 
 describe("npm artifact", () => {
