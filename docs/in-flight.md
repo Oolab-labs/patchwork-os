@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-10 `fix/init-dispatch-binary-name` — README-review phase 2 of 3. `init` meant two different commands depending on which of the three bins you typed, and the check keyed off `process.env._` — a shell convenience variable npx does not set to the resolved bin. So `npx patchwork-os@beta init` fell through to `basename(argv[1])` = `index` (from `dist/index.js`) and landed in the LEGACY IDE-bridge installer, while the README, the docs and the tool's own `--help` all described the other command. Verified empirically against the published 1.1.0-beta.4 before writing a line. Fix: extract `resolveInitTarget` (src/initDispatch.ts) — `init` is the Patchwork setup for every name EXCEPT `claude-ide-bridge`, unrecognised names included, because defaulting an unknown invocation to legacy is precisely what broke published onboarding. Blast radius was real and is the part to scrutinise: 5 existing init.test.ts tests went red because they spawned dist with no bin name and relied on that same default. They exercise the legacy installer (as the file header says), so they now NAME the bin rather than inheriting an accident. Also fixes `--help` advertising `init [--workspace <dir>]`, a legacy-only flag, for a command that takes `--with-connectors`. This is what makes README item 3 (`patchwork init --with-connectors`) true rather than requiring a README workaround. 8 tests: 4 pure + 4 e2e spawning the built dist, because the bug was never a wrong rule — it was a correct-looking condition reading the wrong variable, which a pure test cannot catch.
 
 
 

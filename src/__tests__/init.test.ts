@@ -142,6 +142,15 @@ describe("gen-claude-md --write", () => {
 // init (file-write steps only — extension install is skipped in CI)
 // ---------------------------------------------------------------------------
 
+/**
+ * `init` means the Patchwork setup for every bin except `claude-ide-bridge`
+ * (src/initDispatch.ts). These tests exercise the LEGACY IDE-bridge installer,
+ * as the file header says — so they must name that bin. They previously relied
+ * on it being the default for an unrecognised name, which is the accident that
+ * sent `npx patchwork-os@beta init` to the wrong command.
+ */
+const LEGACY_BIN_ENV = { _: "/usr/local/bin/claude-ide-bridge" } as const;
+
 describe("init --workspace", () => {
   it("writes CLAUDE.md and bridge-tools.md to a non-existent workspace directory", () => {
     const base = makeTmpDir();
@@ -151,7 +160,11 @@ describe("init --workspace", () => {
     const result = spawnSync("node", [distIndex, "init", "--workspace", ws], {
       input: "n\n",
       encoding: "utf-8",
-      env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      env: {
+        ...process.env,
+        ...LEGACY_BIN_ENV,
+        CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true",
+      },
       timeout: 30_000,
     });
 
@@ -174,7 +187,11 @@ describe("init --workspace", () => {
     const opts = {
       input: "n\n",
       encoding: "utf-8" as const,
-      env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      env: {
+        ...process.env,
+        ...LEGACY_BIN_ENV,
+        CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true",
+      },
       timeout: 30_000,
     };
 
@@ -210,6 +227,7 @@ describe("init --workspace", () => {
       encoding: "utf-8",
       env: {
         ...process.env,
+        ...LEGACY_BIN_ENV,
         CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true",
         CLAUDE_CONFIG_DIR: configDir,
         HOME: fakeHome,
@@ -251,6 +269,7 @@ describe("init --workspace", () => {
       encoding: "utf-8",
       env: {
         ...process.env,
+        ...LEGACY_BIN_ENV,
         CLAUDE_CONFIG_DIR: configDir,
         HOME: fakeHome,
       },
@@ -373,7 +392,11 @@ describe("init --workspace @import patch", () => {
     const result = spawnSync("node", [distIndex, "init", "--workspace", ws], {
       input: "n\n",
       encoding: "utf-8",
-      env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      env: {
+        ...process.env,
+        ...LEGACY_BIN_ENV,
+        CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true",
+      },
       timeout: 30_000,
     });
 
