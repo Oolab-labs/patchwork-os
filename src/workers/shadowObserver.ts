@@ -1,5 +1,6 @@
 import { categoriseHaltReason } from "../recipes/haltCategory.js";
 import { classifyActionClass, type Reversibility } from "./actionClass.js";
+import { deriveActionKey } from "./actionRef.js";
 import {
   DEFAULT_GRADUATION_CONFIG,
   type GraduationConfig,
@@ -157,7 +158,17 @@ export type FoldDecision = { fold: false } | { fold: true; good: boolean };
 export function foldOutcome(
   step: FoldStep,
   runAt: number,
-  opts: { now?: number; windowMs: number; outcomeStore?: OutcomeStore },
+  opts: {
+    now?: number;
+    windowMs: number;
+    outcomeStore?: OutcomeStore;
+    /**
+     * Key the outcome join on tool-name + external id rather than on
+     * `output.url` alone. Default false = the historical URL-only behaviour.
+     * See the note at the join site below for why this is gated.
+     */
+    strictOutcomeJoin?: boolean;
+  },
 ): FoldDecision {
   if (!step.tool) return { fold: false };
   if (step.status !== "ok") return { fold: true, good: false };
@@ -168,11 +179,29 @@ export function foldOutcome(
   // PR URL). Reversible successes never consult the store — they are always durable.
   const outcomeStore =
     ac.reversibility !== "reversible" ? opts.outcomeStore : undefined;
+  // The join key for this action. Legacy behaviour keyed on `output.url`
+  // alone, which meant any write tool returning no URL skipped the human
+  // confirmation check entirely and fell through to good:true below — trust
+  // for work nobody ever looked at. `deriveActionKey` generalises this to
+  // tool-name + external id (see actionRef.ts), which every write tool has.
+  //
+  // GATED, on purpose. Turning the generalisation on makes previously-
+  // unjoinable successes reachable by the WITHHOLD branch below, which
+  // de-rates every worker that earned trust from a non-URL action. That is
+  // the correct end state, but it is a live change to the dial the gate reads,
+  // so it ships measured rather than assumed: `strictOutcomeJoin` defaults to
+  // false (byte-identical to the URL-only behaviour) and the shadow report
+  // counts what WOULD change. Flipping the default is a separate change.
   const url =
     outcomeStore && step.output && typeof step.output.url === "string"
       ? step.output.url
       : null;
-  const disposition = url ? (outcomeStore?.getDisposition(url) ?? null) : null;
+  const key = opts.strictOutcomeJoin
+    ? outcomeStore
+      ? deriveActionKey(step.tool, step.output)
+      : null
+    : url;
+  const disposition = key ? (outcomeStore?.getDisposition(key) ?? null) : null;
   // A human REJECTION demotes IMMEDIATELY. Junk is durable evidence of failure
   // the moment it lands, so — like any outright failure (status ≠ ok above) — it
   // must NOT sit withheld for the durability window ("demotion is instant", see
@@ -184,9 +213,33 @@ export function foldOutcome(
     return { fold: false }; // pending — survives the window before it earns trust
   // Past the window: an unactioned filing (unknown / no record) is WITHHELD —
   // unactioned ≠ correct (trust-by-neglect fix). Confirmed / no-url → good:true.
-  if (url && (disposition === "unknown" || disposition === null))
+  if (key && (disposition === "unknown" || disposition === null))
     return { fold: false }; // withheld — not evidence
   return { fold: true, good: true };
+}
+
+/**
+ * How `foldOutcome` would label this step under BOTH join rules — the measured
+ * blast radius of turning `strictOutcomeJoin` on, without turning it on.
+ *
+ * Returns null when the two agree (the overwhelmingly common case, and the
+ * only case an operator does not need to see).
+ */
+export function foldJoinDelta(
+  step: FoldStep,
+  runAt: number,
+  opts: { now?: number; windowMs: number; outcomeStore?: OutcomeStore },
+): { tool: string; lenient: FoldDecision; strict: FoldDecision } | null {
+  const lenient = foldOutcome(step, runAt, {
+    ...opts,
+    strictOutcomeJoin: false,
+  });
+  const strict = foldOutcome(step, runAt, { ...opts, strictOutcomeJoin: true });
+  const same =
+    lenient.fold === strict.fold &&
+    (!lenient.fold || !strict.fold || lenient.good === strict.good);
+  if (same) return null;
+  return { tool: step.tool ?? "(none)", lenient, strict };
 }
 
 export class WorkerShadowObserver {

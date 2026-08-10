@@ -29,8 +29,10 @@ export interface OutcomesCliResult {
 }
 
 const OUTCOMES_USAGE = `Usage:
-  patchwork outcomes confirm <issue-url> [--recipe <name>] [--class <actionClass>]
-  patchwork outcomes reject  <issue-url> [--recipe <name>] [--class <actionClass>]
+  patchwork outcomes confirm <issue-url>          [--recipe <name>] [--class <actionClass>]
+  patchwork outcomes confirm --tool <t> --id <id> [--recipe <name>] [--class <actionClass>]
+  patchwork outcomes reject  <issue-url>          [--recipe <name>] [--class <actionClass>]
+  patchwork outcomes reject  --tool <t> --id <id> [--recipe <name>] [--class <actionClass>]
   patchwork outcomes list [--json]
   patchwork outcomes pending [--json]
 
@@ -44,6 +46,10 @@ cannot self-confirm its own filings.
   list      print all recorded outcomes     (--json for raw output)
   pending   list filings still awaiting confirmation + the exact confirm command
 
+  --tool <tool> --id <id>  reference an action that returned no URL, by the tool
+                           that performed it plus the id it returned (e.g.
+                           --tool todoist.create_task --id AaBbCcDdEeFfGgHh).
+                           Both are required together; never mixed with a URL.
   --recipe <name>       stamp the filing recipe onto the record (audit context)
   --class <actionClass> stamp the action class onto the record (audit context)
 `;
@@ -78,35 +84,73 @@ export function runOutcomesCli(
   }
 
   if (sub === "confirm" || sub === "reject") {
-    const issueUrl = args[1];
-    if (!issueUrl || issueUrl.startsWith("-")) {
+    const positional = args[1];
+    const refTool = flagValue(args, "--tool");
+    const refId = flagValue(args, "--id");
+    const usingRef = refTool !== undefined || refId !== undefined;
+
+    // Never guess which form the operator meant. A bare string that happens
+    // to look like neither is an error, not something to coerce into a key
+    // nothing will look up.
+    if (usingRef && positional && !positional.startsWith("-")) {
       return {
-        stderr: `Error: \`outcomes ${sub}\` requires an <issue-url>.\n\n${OUTCOMES_USAGE}`,
+        stderr: `Error: pass EITHER an <issue-url> OR --tool/--id, not both (got "${positional}" alongside --tool/--id).\n`,
         exitCode: 1,
       };
     }
-    if (!/^https?:\/\//.test(issueUrl)) {
-      return {
-        stderr: `Error: <issue-url> must be an http(s) URL (got "${issueUrl}"). Pass the issue's GitHub URL exactly as the worker filed it.\n`,
-        exitCode: 1,
-      };
+    if (usingRef) {
+      if (
+        !refTool ||
+        !refId ||
+        refTool.startsWith("-") ||
+        refId.startsWith("-")
+      ) {
+        return {
+          stderr: `Error: --tool and --id must BOTH be given, with values (e.g. --tool todoist.create_task --id AaBbCcDdEeFfGgHh).\n`,
+          exitCode: 1,
+        };
+      }
+    } else {
+      if (!positional || positional.startsWith("-")) {
+        return {
+          stderr: `Error: \`outcomes ${sub}\` requires an <issue-url>, or --tool <tool> --id <id> for an action with no URL.\n\n${OUTCOMES_USAGE}`,
+          exitCode: 1,
+        };
+      }
+      if (!/^https?:\/\//.test(positional)) {
+        return {
+          stderr: `Error: <issue-url> must be an http(s) URL (got "${positional}"). Pass the issue's URL exactly as the worker filed it, or use --tool <tool> --id <id> for an action that has no URL.\n`,
+          exitCode: 1,
+        };
+      }
     }
+
     const disposition: OutcomeDisposition =
       sub === "confirm" ? "confirmed" : "junk";
     const recipeName = flagValue(args, "--recipe");
     const workerClass = flagValue(args, "--class");
     const record: OutcomeRecord = {
-      issueUrl,
+      ...(usingRef
+        ? { ref: { tool: refTool as string, id: refId as string } }
+        : { issueUrl: positional }),
       disposition,
       checkedAt: deps.now,
       origin: "manual",
       ...(recipeName ? { recipeName } : {}),
       ...(workerClass ? { workerClass } : {}),
     };
-    deps.store.upsert(record);
+    try {
+      deps.store.upsert(record);
+    } catch (err) {
+      return {
+        stderr: `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+        exitCode: 1,
+      };
+    }
+    const what = usingRef ? `${refTool}:${refId}` : positional;
     return {
       stdout:
-        `Recorded ${disposition} for ${issueUrl}\n` +
+        `Recorded ${disposition} for ${what}\n` +
         "The trust ramp folds this on its next replay — run `patchwork workers shadow` to see the dial move.\n",
       exitCode: 0,
     };
@@ -126,7 +170,13 @@ export function formatOutcomeList(records: OutcomeRecord[]): string {
   const lines = records.map((r) => {
     const when = new Date(r.checkedAt).toISOString();
     const ctx = [r.recipeName, r.workerClass].filter(Boolean).join(" · ");
-    return `  ${r.disposition.padEnd(9)} ${r.issueUrl}${ctx ? `  (${ctx})` : ""}  @ ${when}`;
+    // Either key shape renders; a row carrying neither cannot be written any
+    // more (upsert refuses it) but may exist in an older log, so it is shown
+    // as an explicit hole rather than a blank.
+    const what = r.ref
+      ? `${r.ref.tool}:${r.ref.id}`
+      : (r.issueUrl ?? "(no key — unusable row)");
+    return `  ${r.disposition.padEnd(9)} ${what}${ctx ? `  (${ctx})` : ""}  @ ${when}`;
   });
   return `${records.length} recorded outcome(s):\n${lines.join("\n")}\n`;
 }

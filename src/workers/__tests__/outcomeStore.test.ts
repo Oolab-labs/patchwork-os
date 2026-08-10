@@ -194,10 +194,10 @@ describe("OutcomeStore", () => {
     store.upsert(rec("https://x/issues/3", "junk", 3));
     const all = store.readAll();
     expect(all).toHaveLength(2);
-    expect(all.find((r) => r.issueUrl.endsWith("/1"))?.disposition).toBe(
+    expect(all.find((r) => r.issueUrl?.endsWith("/1"))?.disposition).toBe(
       "confirmed",
     );
-    expect(all.find((r) => r.issueUrl.endsWith("/3"))?.disposition).toBe(
+    expect(all.find((r) => r.issueUrl?.endsWith("/3"))?.disposition).toBe(
       "junk",
     );
   });
@@ -227,7 +227,7 @@ describe("OutcomeStore", () => {
       });
       expect(store.getDisposition("https://x/issues/1143")).toBe("junk");
       expect(
-        store.readAll().find((r) => r.issueUrl.endsWith("/1143"))?.origin,
+        store.readAll().find((r) => r.issueUrl?.endsWith("/1143"))?.origin,
       ).toBe("manual");
     });
 
