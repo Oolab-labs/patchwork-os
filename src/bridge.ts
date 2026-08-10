@@ -42,6 +42,7 @@ import {
   getApiKeysPresent,
   loadConfig as loadPatchworkConfig,
 } from "./patchworkConfig.js";
+import { patchworkPath } from "./patchworkHome.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
@@ -1218,7 +1219,10 @@ export class Bridge {
     // on the default `driver: "none"` bridge — otherwise the decision-trace
     // WRITE path and the enrichment reverse-lookup silently disappear and
     // ctxSaveTrace returns tool-not-found.
-    const patchworkDir = path.join(os.homedir(), ".patchwork");
+    // #1265: resolve through the helper so PATCHWORK_HOME is authoritative.
+    // These three are audit ledgers; evidence landing somewhere other than where
+    // the operator set it is the worst shape this bug can take.
+    const patchworkDir = patchworkPath();
     this.commitIssueLinkLog = new CommitIssueLinkLog({
       dir: patchworkDir,
       logger: this.logger,
@@ -1238,11 +1242,10 @@ export class Bridge {
     // speed, and re-reading per request would put a file stat on every call for
     // a file that is usually absent.
     //
-    // Deliberately uses the identity module's own path resolution rather than
-    // `patchworkDir` above: `defaultRosterPath()` honours PATCHWORK_HOME, which
-    // most of this file's ~/.patchwork paths do not. That inconsistency
-    // predates this change and is not resolved here — but a roster ignoring the
-    // documented override would be a new instance of it.
+    // Uses the identity module's own path resolution rather than `patchworkDir`
+    // above. Both now honour PATCHWORK_HOME (#1265 — the ledger roots in this
+    // file were converted), so this is no longer the inconsistency the comment
+    // here used to describe; it is simply that the roster owns its own default.
     this.server.roster = loadRoster();
     this.logger.info(`[patchwork] ${describeRoster(this.server.roster)}`);
 
