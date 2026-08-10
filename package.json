@@ -80,6 +80,7 @@
     "scripts/gen-mcp-config.sh",
     "scripts/mcp-stdio-shim.cjs",
     "scripts/postinstall.mjs",
+    "scripts/patchwork-approval-hook.sh",
     "scripts/start-vps.sh",
     "scripts/gen-claude-desktop-config.sh",
     "scripts/smoke/run-all.mjs",
