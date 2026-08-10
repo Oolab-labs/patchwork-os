@@ -24,7 +24,27 @@ import {
   storeSecretJsonSync,
 } from "./tokenStorage.js";
 
-const TODOIST_BASE = "https://api.todoist.com/rest/v2";
+// Todoist retired REST v2 — it answers 410 Gone, so every call through this
+// connector failed regardless of the token. The unified API is v1; it keeps the
+// same paths but wraps LIST responses in { results, next_cursor }.
+const TODOIST_BASE = "https://api.todoist.com/api/v1";
+
+/** A v1 list response. Single-resource endpoints still return the object. */
+interface TodoistListEnvelope<T> {
+  results: T[];
+  next_cursor: string | null;
+}
+
+/**
+ * Unwrap a v1 list response. Tolerates a bare array so a future shape change,
+ * or an endpoint that never adopted the envelope, degrades to the old
+ * behaviour instead of throwing.
+ */
+function unwrapList<T>(body: unknown): T[] {
+  if (Array.isArray(body)) return body as T[];
+  const env = body as TodoistListEnvelope<T> | null;
+  return env && Array.isArray(env.results) ? env.results : [];
+}
 
 export interface TodoistTokens {
   apiToken: string;
@@ -279,7 +299,7 @@ export class TodoistConnector extends BaseConnector {
           status: res.status,
         });
       }
-      return res.json() as Promise<TodoistTask[]>;
+      return unwrapList<TodoistTask>(await res.json());
     });
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
@@ -425,7 +445,7 @@ export class TodoistConnector extends BaseConnector {
           status: res.status,
         });
       }
-      return res.json() as Promise<TodoistProject[]>;
+      return unwrapList<TodoistProject>(await res.json());
     });
     if ("error" in result) throw new Error(result.error.message);
     return result.data;

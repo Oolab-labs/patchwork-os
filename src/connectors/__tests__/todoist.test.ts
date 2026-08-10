@@ -469,3 +469,52 @@ describe("TodoistConnector.normalizeError", () => {
     expect(err.retryable).toBe(true);
   });
 });
+
+describe("Todoist API v1 (REST v2 was retired)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.TODOIST_API_KEY;
+    vi.resetModules();
+  });
+
+  it("unwraps the v1 list envelope", async () => {
+    // The reason this connector was entirely non-functional: REST v2 answers
+    // 410 Gone, and v1 wraps lists in { results, next_cursor } rather than
+    // returning a bare array. Verified against the live API on 2026-08-10.
+    process.env.TODOIST_API_KEY = "test-token";
+    const tasks = [makeFakeTask(), makeFakeTask({ id: "t2", content: "Walk" })];
+    global.fetch = mockFetch(true, 200, { results: tasks, next_cursor: null });
+
+    vi.resetModules();
+    const { TodoistConnector } = await import("../todoist.js");
+    const out = await new TodoistConnector().getTasks();
+
+    expect(out).toHaveLength(2);
+    expect(out[0]?.id).toBe(tasks[0]?.id);
+  });
+
+  it("still accepts a bare array", async () => {
+    // Deliberately tolerant: an endpoint that never adopted the envelope, or a
+    // future shape change, degrades to the old behaviour instead of throwing.
+    process.env.TODOIST_API_KEY = "test-token";
+    global.fetch = mockFetch(true, 200, [makeFakeTask()]);
+
+    vi.resetModules();
+    const { TodoistConnector } = await import("../todoist.js");
+    expect(await new TodoistConnector().getTasks()).toHaveLength(1);
+  });
+
+  it("calls the v1 base URL, not the retired REST v2 one", async () => {
+    process.env.TODOIST_API_KEY = "test-token";
+    global.fetch = mockFetch(true, 200, { results: [], next_cursor: null });
+
+    vi.resetModules();
+    const { TodoistConnector } = await import("../todoist.js");
+    await new TodoistConnector().getTasks();
+
+    const url = (global.fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as string;
+    expect(url).toContain("/api/v1/");
+    expect(url).not.toContain("/rest/v2/");
+  });
+});
