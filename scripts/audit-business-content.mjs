@@ -71,6 +71,16 @@ const TERMS = [
   { re: /\breserved for Pro\b/i, label: "named tier" },
   { re: /\bactivate the Pro\b/i, label: "named tier" },
   { re: /\bpro-tier\.md\b/i, label: "out-of-repo pricing doc" },
+  // Open-core framing. Added in the same pass and for a worse reason than the
+  // patterns above it: those were written from the claims already found, so
+  // the gate could only ever confirm the fix. It passed green while "ships
+  // free in OSS core" survived 130 lines from an edit in the same file, and
+  // while an accepted ADR said it too. Naming a feature's side of the
+  // free/paid line is packaging in the same way naming a tier is.
+  {
+    re: /\bOSS[- ](?:core|vs)\b|\bfree OSS\b|\bOSS[- ]vs[- ]Pro\b/i,
+    label: "open-core packaging",
+  },
   // A price with a per-unit denominator ("$50/worker/mo"). The unit list is
   // deliberately narrow — it must not match provider token rates like
   // "$3 / 1M tokens", which the cost router documents legitimately.
