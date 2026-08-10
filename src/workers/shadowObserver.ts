@@ -1,5 +1,9 @@
 import { categoriseHaltReason } from "../recipes/haltCategory.js";
-import { classifyActionClass, type Reversibility } from "./actionClass.js";
+import {
+  AGENT_STEP_TOOL,
+  classifyActionClass,
+  type Reversibility,
+} from "./actionClass.js";
 import { deriveActionKey } from "./actionRef.js";
 import {
   DEFAULT_GRADUATION_CONFIG,
@@ -146,6 +150,7 @@ type FoldStep = Pick<RunRecord["steps"][number], "tool" | "status" | "output">;
  * junk check runs BEFORE the durability window — a human rejection is durable
  * evidence of failure the moment it lands, so it demotes instantly, like any
  * outright failure; only confirmed/unknown successes wait out the window):
+ *   - agent (reasoning) step, ANY status       → WITHHOLD (not a durable action; see below)
  *   - failure (status ≠ ok)                    → count, good:false (durable evidence of failure)
  *   - success, no `now`                        → count, good:true (back-compat status-only)
  *   - success, non-reversible, junk (any age)  → count, good:false (human-rejected → demotes now)
@@ -176,6 +181,31 @@ export function foldOutcome(
   },
 ): FoldDecision {
   if (!step.tool) return { fold: false };
+  // An agent (reasoning) step is NOT evidence, in either direction.
+  //
+  // The gate already decided this: `decideWorkerAction` carves `agent` out
+  // explicitly as "not a gated action-class", because the subprocess only
+  // produces an output variable and any tools it calls gate on their OWN
+  // class. The fold did not mirror that, so the two components disagreed
+  // about what an agent step IS — the gate said "not a durable action", the
+  // fold said "an irreversible action that succeeded, credit it". That is
+  // drift, not design, and it ran one way: 50 agent successes in the real run
+  // log folded as good:true, unconfirmed positives that no human ever saw.
+  //
+  // Currently latent rather than exploitable — `agent` classifies as
+  // `other:irreversible:medium` and no worker manifest owns the `other`
+  // domain, so the gate floors that class to L0 regardless of accrued
+  // evidence (verified across the shipped templates AND the live workers
+  // dir). But it is ARMED: adding `other` to any worker's `owns` would
+  // instantly convert those unconfirmed credits into real trust, which is
+  // not something anyone editing an `owns` list would expect. See the
+  // companion guard test.
+  //
+  // Withheld in BOTH directions on purpose. Counting a failed agent step as
+  // evidence of worker unreliability is equally wrong: the step failing says
+  // something about a model call, not about whether this worker can be
+  // trusted with a side effect. Neither credit nor penalty.
+  if (step.tool === AGENT_STEP_TOOL) return { fold: false };
   if (step.status !== "ok") return { fold: true, good: false };
   // Success. Without a wall-clock, keep the prior status-only fold (back-compat).
   if (opts.now === undefined) return { fold: true, good: true };
