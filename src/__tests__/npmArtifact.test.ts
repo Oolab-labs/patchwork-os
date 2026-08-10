@@ -15,16 +15,31 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveHookScriptPath } from "../preToolUseHook.js";
+import { ensureCmdShim } from "../winShim.js";
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 
-/** File list `npm publish` would produce, without hitting the network. */
+/**
+ * File list `npm publish` would produce, without hitting the network.
+ *
+ * `ensureCmdShim` because npm on Windows is `npm.cmd` and `execFileSync` with
+ * `shell:false` resolves only `.exe` via PATHEXT — the repo's established
+ * spawn-site pattern (src/winShim.ts).
+ */
 function packedFiles(): string[] {
-  const out = execFileSync("npm", ["pack", "--dry-run", "--json"], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  });
+  // --ignore-scripts: `npm pack` otherwise runs the `prepare` lifecycle
+  // (husky), which has no bearing on the file list and is not something a
+  // test should be triggering.
+  const out = execFileSync(
+    ensureCmdShim("npm"),
+    ["pack", "--dry-run", "--json", "--ignore-scripts"],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      timeout: 90_000,
+    },
+  );
   const parsed = JSON.parse(out) as Array<{ files: Array<{ path: string }> }>;
   return (parsed[0]?.files ?? []).map((f) => f.path.replace(/\\/g, "/"));
 }
@@ -43,5 +58,5 @@ describe("npm artifact", () => {
 
     const relative = path.relative(repoRoot, hookPath).replace(/\\/g, "/");
     expect(packedFiles()).toContain(relative);
-  }, 60_000);
+  }, 120_000);
 });
