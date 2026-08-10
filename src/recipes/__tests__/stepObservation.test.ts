@@ -318,3 +318,22 @@ describe("silent-fail marker keeps its reason (#butler-demo)", () => {
     expect(detectSilentFail("[step skipped: nothing to do]")).not.toBeNull();
   });
 });
+
+describe("agent driver enum matches the runtime (#1311 sibling drift)", () => {
+  // The schema's driver enum and DOWNSHIFT_KNOWN_DRIVERS are hand-maintained
+  // lists that must track agentExecutor's branches. `local` drifted out once
+  // (audit 2026-06-10) and `subprocess` drifted out again — rejecting the
+  // shipped butler-errand template, which needs a sandbox-capable driver to
+  // demonstrate the flag it exists for. A recipe that runs but will not lint
+  // is the worst shape: valid in production, rejected at the door.
+  it("accepts every driver the executor actually branches on", async () => {
+    const { generateSchemaSet } = await import("../schemaGenerator.js");
+    const set = generateSchemaSet();
+    const json = JSON.stringify(set);
+    for (const driver of ["subprocess", "claude-code", "codex", "local"]) {
+      expect(json, `${driver} missing from the generated schema`).toContain(
+        `"${driver}"`,
+      );
+    }
+  });
+});

@@ -26,6 +26,7 @@ const DOWNSHIFT_KNOWN_DRIVERS = new Set([
   "gemini",
   "anthropic",
   "codex",
+  "subprocess",
   "local",
 ]);
 
