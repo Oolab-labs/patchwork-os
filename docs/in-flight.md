@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-10 `docs/readme-onboarding-accuracy` — README-review phase 3 of 3 (the README itself). Rewrites the top half against the nine-part structure while preserving the headline, three-part decision model, feature map, comparison link and telemetry section. Every corrected claim was re-verified against the code, not the review notes: `approvalGate` defaults to "off" (src/server.ts) and worker autonomy is flag-gated, so both are now stated as OPT-IN with a defaults table — the previous text presented them as baseline behaviour, which is the one inaccuracy that could actually get someone hurt. Morning Brief rewritten from the real recipe (gmail/calendar/github/linear/git + claude-code): no drafted replies, no overnight-agent inspection, no clipboard, no Ollama-via-`--local` (`--local` skips bridge dispatch). `panic` blocks write-tier tools, not "all automation". Adds the zero-connector `daily-status` first-success step, the npm-install-vs-repo split for the dashboard, and a local-first section that says plainly which traffic DOES leave the machine (model + connector calls). Two claims I wrote and then had to correct before shipping: the Linear step is NOT optional (no `when:` guard, so a missing connector halts the run) and `patchwork start` warns rather than starting a dashboard that isn't in the npm package. Depends on #1324/#1325/#1326 being PUBLISHED, not just merged — the install section describes fixes that are on main but not on npm.
 
 
 
