@@ -1,6 +1,6 @@
 # Mr. Butler — walking skeleton (2026-08-05)
 
-Source: SecuStar "Patchwork" deck (`~/Downloads/PatchWork.pptx`, 16 slides). Butler is the
+Source: a prospective partner's deck (held off-repo). Butler is the
 preconfigured personal assistant that ships with the platform; partners build the
 professional workers. Feasibility assessed 2026-08-05 — verdict **build, as a reference
 worker bundle, not a new subsystem**.
