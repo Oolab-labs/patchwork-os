@@ -122,6 +122,27 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
   "linear.listIssues": "issue-read",
   "slack.postMessage": "messaging",
 
+  // ── outbound messaging (#1311 batch 2) ──────────────────────────────────
+  // Reversibility is UNCHANGED: these already classified irreversible via the
+  // catch-all, and `messaging` is irreversible too. Blast tier is derived from
+  // the tool name (classifyTool), not the domain, so it does not move either.
+  // The only effect is that a sent message stops sharing a trust bucket with
+  // every other unclassified write — which is what makes the bucket mean
+  // something. Nothing is loosened by this block.
+  "discord.send_message": "messaging",
+  "telegram.send_message": "messaging",
+  "twilio.send_sms": "messaging",
+  "sendgrid.send_email": "messaging",
+  "resend.send_email": "messaging",
+  "resend.cancel_email": "messaging",
+
+  // ── arbitrary SQL (#1311 batch 2) ───────────────────────────────────────
+  // Also unchanged in reversibility. Separated from `messaging` because
+  // "this worker may run SQL" and "this worker may send mail" are different
+  // authorities, and a single `other` bucket could not tell them apart.
+  "postgres.query": "db-write",
+  "snowflake.execute_query": "db-write",
+
   // ── connector reads (#1311 batch 1) ─────────────────────────────────────
   // Derived from the registry's own `isWrite: false`, never guessed from the
   // name. Writes are deliberately NOT swept: each needs a real reversibility
@@ -309,6 +330,12 @@ const REVERSIBILITY_BY_DOMAIN: Record<string, Reversibility> = {
   "fs-read": "reversible",
   shell: "irreversible", // arbitrary side effects — assume unrecoverable
   messaging: "irreversible", // a sent message can't be unsent reliably
+  // Arbitrary SQL against a live database (#1311 batch 2). Irreversible for
+  // the same reason `shell` is: the statement may be DDL or an unbounded
+  // DELETE, and nothing here can know. Same reversibility the catch-all
+  // already gave these tools — this only stops them sharing one bucket with
+  // every other unclassified action.
+  "db-write": "irreversible",
   http: "irreversible", // a POST may not be undoable
   issue: "compensable", // close / delete the created issue
   "issue-read": "reversible", // read-only issue queries
