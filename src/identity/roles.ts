@@ -21,7 +21,7 @@
  *    single-admin workspace to choose between administering and approving, and
  *    the usual workaround is to quietly grant `admin` the approve capability —
  *    which destroys the separation the roles exist to express.
- *  - **Capabilities are coarse.** Nine of them, not fifty. A permission model
+ *  - **Capabilities are coarse.** Eight of them, not fifty. A permission model
  *    nobody can hold in their head gets bypassed, and the audience for this one
  *    includes a controller and a security reviewer, not only an engineer.
  */
@@ -64,9 +64,16 @@ export type Capability =
   /** Change what the workspace permits — limits, ceilings, forbidden actions. */
   | "policy.manage"
   /** Connect and disconnect external systems, and hold their credentials. */
-  | "systems.manage"
-  /** Plan, payment method, invoices. */
-  | "billing.manage";
+  | "systems.manage";
+// Deliberately absent: a billing capability. A plan, a payment method and an
+// invoice are properties of an *organisation*, and this runtime is single-tenant
+// — one bridge, one workspace, one user — so there is nothing here for such a
+// capability to govern and no code that could enforce it. ADR-0019 puts
+// organisation-scoped concerns in `patchwork-control-plane`; that is where a
+// billing authority belongs, next to the identity it would be scoped to. A
+// capability naming an outcome its runtime cannot produce is worse than a
+// missing one: it reads as a control that exists. See the roles test for the
+// gate that keeps this from being re-added by habit.
 
 const ALL: readonly Capability[] = [
   "workspace.read",
@@ -77,7 +84,6 @@ const ALL: readonly Capability[] = [
   "members.manage",
   "policy.manage",
   "systems.manage",
-  "billing.manage",
 ];
 
 /**

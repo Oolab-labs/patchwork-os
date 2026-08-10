@@ -45,9 +45,23 @@ function member(over: Partial<Member> = {}): Member {
 describe("roles", () => {
   it("owner holds every capability", () => {
     const caps = capabilitiesFor(["owner"]);
-    expect(caps.has("billing.manage")).toBe(true);
+    expect(caps.has("systems.manage")).toBe(true);
     expect(caps.has("action.approve")).toBe(true);
     expect(caps.has("policy.manage")).toBe(true);
+  });
+
+  it("names no commercial capability", () => {
+    // A gate, not a note. `billing.manage` was declared here with no
+    // implementing code and no enforcement point; a plan or an invoice is a
+    // property of an organisation, which ADR-0019 scopes to the control plane,
+    // not to this single-tenant runtime. The failure mode is quiet — such a
+    // capability reads to a reviewer as a control that exists — so the tree is
+    // asserted rather than the habit trusted.
+    const commercial = /billing|invoice|plan|price|pricing|tier|subscription/i;
+    const offenders = [...capabilitiesFor(["owner"])].filter((c) =>
+      commercial.test(c),
+    );
+    expect(offenders).toEqual([]);
   });
 
   it("auditor can read and can change nothing", () => {
@@ -63,11 +77,6 @@ describe("roles", () => {
     expect(roleGrants(["admin"], "policy.manage")).toBe(true);
     expect(roleGrants(["admin"], "members.manage")).toBe(true);
     expect(roleGrants(["admin"], "action.approve")).toBe(false);
-  });
-
-  it("admin does not get billing.manage", () => {
-    expect(roleGrants(["admin"], "billing.manage")).toBe(false);
-    expect(roleGrants(["owner"], "billing.manage")).toBe(true);
   });
 
   it("operator may propose but not approve", () => {
@@ -369,7 +378,7 @@ describe("resolvePrincipal", () => {
     // do everything — but now with a name a record can hold.
     const p = resolvePrincipal(loadRoster("/nonexistent/members.json"));
     expect(p?.id).toBe(IMPLICIT_OWNER_ID);
-    expect(principalCan(p, "billing.manage")).toBe(true);
+    expect(principalCan(p, "policy.manage")).toBe(true);
   });
 
   it("refuses an anonymous caller once a real roster exists", () => {
