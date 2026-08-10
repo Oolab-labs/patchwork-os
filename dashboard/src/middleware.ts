@@ -20,6 +20,51 @@ import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
 const ALLOW_UNAUTHENTICATED =
   process.env.DASHBOARD_ALLOW_UNAUTHENTICATED === "1";
 
+/** Mirror of the localStorage key in `useNavMode`, written as a cookie so the
+ *  edge can read it. localStorage is invisible here, and a client-side
+ *  redirect would paint the dense Overview first — which is precisely the page
+ *  a Simple-mode user chose not to see. */
+export const NAV_MODE_COOKIE = "patchwork.navMode";
+
+/**
+ * Simple mode lands on Butler, not the Overview deck.
+ *
+ * Butler is the large-print, single-column, accessibility-led page; Overview is
+ * the densest screen in the product. Someone who selects Simple mode has said
+ * they want less, so the dense deck is the wrong first thing to show them.
+ *
+ * Only a FRESH landing is redirected — a navigation with no same-origin
+ * referer. An in-app click through to Overview carries one, so the page stays
+ * reachable from the sidebar and does not bounce. Without that check this would
+ * either loop, or silently delete the Overview (and with it the FirstRun
+ * onboarding funnel, which lives there and matters MOST to the non-technical
+ * users Simple mode is for).
+ */
+export function butlerLandingForTest(req: NextRequest): NextResponse | null {
+  return butlerLanding(req);
+}
+
+function butlerLanding(req: NextRequest): NextResponse | null {
+  if (req.method !== "GET") return null;
+  const path = req.nextUrl.pathname;
+  if (path !== "/" && path !== "/dashboard") return null;
+  if (req.cookies.get(NAV_MODE_COOKIE)?.value !== "simple") return null;
+
+  // Same-origin referer ⇒ the user clicked through from inside the app; honour
+  // it. Absent or cross-origin ⇒ a fresh landing.
+  const referer = req.headers.get("referer");
+  if (referer) {
+    try {
+      if (new URL(referer).origin === req.nextUrl.origin) return null;
+    } catch {
+      // Unparseable referer — treat as a fresh landing.
+    }
+  }
+  const url = req.nextUrl.clone();
+  url.pathname = path === "/dashboard" ? "/dashboard/butler" : "/butler";
+  return NextResponse.redirect(url);
+}
+
 /**
  * The negative-lookahead matcher that decides which paths the session gate
  * runs on. Defined as the literal string that `config.matcher` (below)
@@ -108,7 +153,7 @@ export async function middleware(req: NextRequest) {
         { status: 503 },
       );
     }
-    return NextResponse.next();
+    return butlerLanding(req) ?? NextResponse.next();
   }
 
   // Login page itself must be reachable without a session. Next.js
@@ -124,7 +169,9 @@ export async function middleware(req: NextRequest) {
   const cookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   const session = await verifySession(cookie);
   if (!session.valid) return unauthenticated(req);
-  return NextResponse.next();
+  // AFTER auth: an unauthenticated visitor must reach the login page, not be
+  // bounced to Butler and then to login.
+  return butlerLanding(req) ?? NextResponse.next();
 }
 
 export const config = {

@@ -58,6 +58,29 @@ function writeStoredMode(mode: NavMode): void {
   } catch {
     // private mode / quota — mode still applies for this session
   }
+  writeModeCookie(mode);
+}
+
+/**
+ * Mirror the mode into a cookie. localStorage is invisible to Next middleware,
+ * and Simple mode has to be known BEFORE the first paint — a client-side
+ * redirect would render the dense Overview and then bounce, showing the user
+ * exactly the page they opted out of.
+ *
+ * Not a security boundary and never read as one: it only decides which of two
+ * pages a GET lands on. SameSite=Lax so a cross-site navigation still carries
+ * it (that IS the fresh-landing case), and no `secure` flag because the
+ * dashboard is routinely served over plain http on localhost.
+ */
+function writeModeCookie(mode: NavMode): void {
+  try {
+    const oneYear = 60 * 60 * 24 * 365;
+    document.cookie = `${STORAGE_KEY}=${mode}; path=/; max-age=${oneYear}; samesite=lax`;
+  } catch {
+    // No document (SSR) or cookies disabled — the sidebar still works from
+    // localStorage; only the landing redirect degrades, back to today's
+    // behaviour of always landing on Overview.
+  }
 }
 
 /**
@@ -70,7 +93,12 @@ export function useNavMode(): [NavMode, (mode: NavMode) => void] {
   const [mode, setModeState] = useState<NavMode>("advanced");
 
   useEffect(() => {
-    setModeState(readStoredMode());
+    const resolved = readStoredMode();
+    setModeState(resolved);
+    // Seed the cookie for users whose mode predates it (or who default to
+    // simple on a first-run browser) — otherwise the landing redirect would
+    // only ever work for people who toggled the switch after this shipped.
+    writeModeCookie(resolved);
   }, []);
 
   const setMode = useCallback((next: NavMode) => {
