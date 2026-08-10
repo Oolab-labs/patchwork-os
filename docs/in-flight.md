@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-10 `fix/npm-artifact-approval-hook` — README-review phase 1 of 3 (onboarding is broken on the published artifact). `patchwork-os init` writes the absolute path of `scripts/patchwork-approval-hook.sh` into the user's real `~/.claude/settings.json` as a PreToolUse command, but `files[]` never shipped that script — so an npm-installed user gets a global Claude Code config pointing at a file that does not exist, on every tool call, in every session. Verified against the published 1.1.0-beta.4 tarball, not inferred. Second half: init printed "open http://localhost:3200" unconditionally, though `dashboard/` is a Next.js app needing its own install+build and is likewise absent from the tarball — adding it to `files[]` would NOT fix that (a 10x bigger tarball and a still-dead port), so the next-steps text now branches on dashboard presence and tells npm users where to get it. New `npmArtifact.test.ts` asserts over `npm pack --dry-run` — the whole suite was green while the artifact was broken because nothing here had ever looked at the tarball. Follow-ups, separate PRs: `patchwork init` vs `patchwork-os init` dispatch (npx lands in the LEGACY installer — `invokedBinaryName()` reads `process.env._`, which npx does not set to the bin), and the `engines.node >=20` claim that no CI job tests.
 
 
 

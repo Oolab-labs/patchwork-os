@@ -159,6 +159,51 @@ describe("patchwork-init", () => {
     expect(out).not.toMatch(/Restart Claude Code/);
   });
 
+  /** Run init with stdout captured, returning everything it printed. */
+  async function captureInit(
+    argv: string[],
+    opts: Parameters<typeof runPatchworkInit>[1],
+  ): Promise<string> {
+    const writes: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+      writes.push(chunk.toString());
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await runPatchworkInit(argv, opts);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+    return writes.join("");
+  }
+
+  // An npm install ships no `dashboard/` (it's a Next.js app needing its own
+  // build), but init printed "open http://localhost:3200" regardless — sending
+  // every npm-installed user to a dead port on their very first command.
+  it("does not advertise the dashboard when it is not installed", async () => {
+    const out = await captureInit([], { home: fakeHome, dashboardDir: null });
+
+    expect(out).not.toMatch(/localhost:3200/);
+    expect(out).toMatch(/not part of the npm package/);
+    // The zero-connector first-success step must survive the renumbering.
+    expect(out).toMatch(/recipe run daily-status/);
+  });
+
+  it("still advertises the dashboard from a repo checkout", async () => {
+    // findDashboardDir only returns a directory that actually exists, so the
+    // repo-checkout case must be set up that way to be a real rehearsal.
+    const { mkdirSync } = await import("node:fs");
+    const dashboardDir = join(fakeHome, "dashboard");
+    mkdirSync(dashboardDir, { recursive: true });
+    writeFileSync(join(dashboardDir, "package.json"), "{}");
+
+    const out = await captureInit([], { home: fakeHome, dashboardDir });
+
+    expect(out).toMatch(/localhost:3200/);
+    expect(out).not.toMatch(/not part of the npm package/);
+  });
+
   it("preserves unrelated PreToolUse hooks already in settings.json", async () => {
     const { mkdirSync } = await import("node:fs");
     const ccDir = join(fakeHome, ".claude");
