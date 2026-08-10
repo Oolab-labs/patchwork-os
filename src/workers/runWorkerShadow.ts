@@ -6,12 +6,21 @@ import { classifyActionClass } from "./actionClass.js";
 import { backtestWorker, formatBacktestReport } from "./backtest.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./outcomeStore.js";
 import {
+  DEFAULT_DURABILITY_WINDOW_MS,
   type DecisionRecord,
   type RunRecord,
   WorkerShadowObserver,
   type WorkerShadowReport,
 } from "./shadowObserver.js";
 import { buildShadowReport, formatShadowReport } from "./shadowReport.js";
+import {
+  advanceWatermark,
+  loadTrustCheckpoint,
+  saveTrustCheckpoint,
+  shouldIngestRun,
+  type TrustWatermark,
+  trustCheckpointPathFor,
+} from "./trustCheckpoint.js";
 import type { WorkerManifest } from "./worker.js";
 import type { WorkerLevelStore } from "./workerLevelStore.js";
 import { loadWorkersFromDir } from "./workerLoader.js";
@@ -20,8 +29,18 @@ import { loadWorkersFromDir } from "./workerLoader.js";
  * I/O entry for the shadow logger: read the REAL logs the bridge already
  * writes — `~/.patchwork/runs.jsonl` (RecipeRunLog → the dial's evidence) and
  * `~/.claude/ide/activity-*.jsonl` (the live gate's approval decisions) — and
- * produce the trust-dial + ramp-vs-gate report. Fully read-only; touches
- * nothing. Empty logs are honest, not an error (new workers have no activity).
+ * produce the trust-dial + ramp-vs-gate report. Empty logs are honest, not an
+ * error (new workers have no activity).
+ *
+ * The reporting paths (`getWorkerShadowData`, `runWorkerShadowReport`,
+ * `runWorkerBacktest`) are read-only and touch nothing.
+ *
+ * `loadWorkerTrustForRecipe` is NOT: since backlog #10 it also WRITES a
+ * per-recipe trust checkpoint under `<patchworkDir>/worker_trust/`. That is
+ * deliberate — the dial's evidence used to live only inside a run log that
+ * rotates, so a worker was silently un-earned whenever its runs aged out. The
+ * write is best-effort and never fails a gate decision; see
+ * [trustCheckpoint.ts](./trustCheckpoint.ts).
  */
 
 export interface RunWorkerShadowOpts {
@@ -269,9 +288,16 @@ export function loadWorkerTrustForRecipe(
     // Same durable-outcome labelling as the dial (one source of truth): the live
     // gate must not count a recent non-reversible success that could still be
     // reverted. Real Date.now() in production; tests inject opts.now.
+    // Durable trust (backlog #10). Seed the dial from the checkpoint BEFORE
+    // replaying, so evidence whose runs have rotated out of runs.jsonl is not
+    // silently un-earned. Missing/corrupt checkpoint ⇒ empty store, i.e. exactly
+    // the previous replay-only behaviour.
+    const checkpointPath = trustCheckpointPathFor(patchworkDir, recipeName);
+    const checkpoint = loadTrustCheckpoint(checkpointPath);
     const observer = new WorkerShadowObserver(workers, {
       now: opts.now ?? Date.now(),
       outcomeStore: new OutcomeStore(resolveOutcomeLogDir(opts.patchworkDir)),
+      store: checkpoint.store,
     });
     const worker = observer.workerForRecipe(recipeName);
     if (!worker) return null;
@@ -286,7 +312,52 @@ export function loadWorkerTrustForRecipe(
     const runs = readRuns(patchworkDir, [recipeName]).sort(
       (a, b) => a.at - b.at,
     );
-    for (const run of runs) observer.ingestRun(run);
+    // Fold only runs the checkpoint has not already absorbed. Without this the
+    // replay would re-count every checkpointed run on each invocation and
+    // inflate the dial toward autonomy on no new evidence — a fail-OPEN bug,
+    // strictly worse than the fail-CLOSED loss this checkpoint exists to fix.
+    let watermark: TrustWatermark = {
+      watermarkAt: checkpoint.watermarkAt,
+      idsAtWatermark: checkpoint.idsAtWatermark,
+    };
+
+    // Only SETTLED runs may be checkpointed. The durable-outcome fold is
+    // time-dependent: a recent non-reversible success is WITHHELD, and the very
+    // same run must count as evidence later, once it is past the durability
+    // window. Checkpointing it on first sight would advance the watermark past
+    // it forever, so it could never be re-evaluated and that evidence could
+    // never accrue — the dial would silently cap itself. Two existing tests
+    // caught exactly this.
+    //
+    // So: settled runs fold into the saved checkpoint; the recent tail is
+    // replayed live on every evaluation and deliberately NOT saved. The tail is
+    // bounded by the durability window, and those runs are still in the run log
+    // by definition, so replaying them is both cheap and safe.
+    const settledCutoff =
+      (opts.now ?? Date.now()) - DEFAULT_DURABILITY_WINDOW_MS;
+    let folded = 0;
+    const tail: RunRecord[] = [];
+    for (const run of runs) {
+      if (!shouldIngestRun(run, watermark)) continue;
+      if (run.at > settledCutoff) {
+        tail.push(run); // provisional — replay, never checkpoint
+        continue;
+      }
+      observer.ingestRun(run);
+      watermark = advanceWatermark(watermark, run);
+      folded++;
+    }
+    if (folded > 0) {
+      try {
+        // Saved BEFORE the tail is folded in, so the checkpoint holds only
+        // settled evidence and the tail cannot be double-counted next time.
+        saveTrustCheckpoint(checkpointPath, observer.levelStore, watermark);
+      } catch {
+        // Never let a checkpoint write failure break a live gate decision. The
+        // worst case is the previous behaviour: replay from the run log.
+      }
+    }
+    for (const run of tail) observer.ingestRun(run);
     return { worker, store: observer.levelStore };
   })();
 
