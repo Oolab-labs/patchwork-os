@@ -173,15 +173,18 @@ describe("foldOutcome: the join gate", () => {
 
   /**
    * THE BUG, PINNED. A compensable success with no URL was folded as earned
-   * trust — full credit for an action no human ever confirmed. This asserts
-   * the pre-fix behaviour is still what the default (lenient) path does, so
-   * PR1 is provably inert; the strict path below is what changes it.
+   * trust — full credit for an action no human ever confirmed. Reachable now
+   * only by opting out explicitly (#1318 shipped this as the default; #1319
+   * flipped it). Kept so the historical labelling stays covered — replaying an
+   * old run log needs it, and a regression that silently restored it would
+   * otherwise pass unnoticed.
    */
-  it("default (lenient) join still credits an unconfirmed non-URL action", () => {
+  it("the historical (opt-out) join still credits an unconfirmed non-URL action", () => {
     const d = foldOutcome(todoistStep, settled, {
       now,
       windowMs: WINDOW,
       outcomeStore: new OutcomeStore(dir),
+      strictOutcomeJoin: false,
     });
     expect(d).toEqual({ fold: true, good: true });
   });
@@ -239,6 +242,92 @@ describe("foldOutcome: the join gate", () => {
     for (const strict of [false, true]) {
       expect(
         foldOutcome(step, settled, {
+          now,
+          windowMs: WINDOW,
+          outcomeStore: new OutcomeStore(dir),
+          strictOutcomeJoin: strict,
+        }),
+      ).toEqual({ fold: true, good: true });
+    }
+  });
+});
+
+describe("strict join is the DEFAULT (#1319)", () => {
+  let dir: string;
+  const WINDOW = 24 * 60 * 60 * 1000;
+  const now = 1_800_000_000_000;
+  const settled = now - WINDOW * 2;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), "outcome-default-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const todoistStep = {
+    tool: "todoist.create_task",
+    status: "ok" as const,
+    output: TODOIST_CREATE_OUTPUT,
+  };
+
+  /**
+   * The behavioural change. With NO flag passed, an unconfirmed non-URL
+   * action is now WITHHELD. Before #1319 this same call returned
+   * `{fold:true, good:true}` — full trust for work nobody confirmed.
+   */
+  it("withholds an unconfirmed non-URL action with no flag passed", () => {
+    expect(
+      foldOutcome(todoistStep, settled, {
+        now,
+        windowMs: WINDOW,
+        outcomeStore: new OutcomeStore(dir),
+      }),
+    ).toEqual({ fold: false });
+  });
+
+  it("still credits it once confirmed, with no flag passed", () => {
+    const store = new OutcomeStore(dir);
+    store.upsert({
+      ref: { tool: "todoist.create_task", id: "AaBbCcDdEeFfGgHh" },
+      disposition: "confirmed",
+      checkedAt: now,
+      origin: "manual",
+    });
+    expect(
+      foldOutcome(todoistStep, settled, {
+        now,
+        windowMs: WINDOW,
+        outcomeStore: store,
+      }),
+    ).toEqual({ fold: true, good: true });
+  });
+
+  it("explicit false still reproduces the historical labelling", () => {
+    expect(
+      foldOutcome(todoistStep, settled, {
+        now,
+        windowMs: WINDOW,
+        outcomeStore: new OutcomeStore(dir),
+        strictOutcomeJoin: false,
+      }),
+    ).toEqual({ fold: true, good: true });
+  });
+
+  /**
+   * The measured blast radius, pinned. `agent` steps capture no output, so
+   * they key to null and are UNAFFECTED by the flip — 50 of the 63
+   * non-reversible successes in the real run log are these. If a future
+   * change starts capturing agent output, this test flips and the de-rate
+   * becomes large; that should be a deliberate decision, not a surprise.
+   */
+  it("agent steps (no captured output) are unaffected by the flip", () => {
+    const agentStep = {
+      tool: "agent",
+      status: "ok" as const,
+      output: undefined,
+    };
+    for (const strict of [false, true]) {
+      expect(
+        foldOutcome(agentStep, settled, {
           now,
           windowMs: WINDOW,
           outcomeStore: new OutcomeStore(dir),

@@ -255,3 +255,60 @@ describe("GET /outcomes/pending", () => {
     expect(JSON.parse(body)).toEqual({ pending: [] });
   });
 });
+
+describe("POST /outcomes — ref key (actions with no URL)", () => {
+  it("records a disposition keyed by { tool, id } (200)", async () => {
+    const { status, body } = await postOutcome({
+      ref: { tool: "todoist.create_task", id: "AaBbCcDdEeFfGgHh" },
+      disposition: "confirmed",
+    });
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toMatchObject({
+      ok: true,
+      ref: { tool: "todoist.create_task", id: "AaBbCcDdEeFfGgHh" },
+      disposition: "confirmed",
+    });
+    const { outcomes } = JSON.parse(getOutcomes().body);
+    expect(outcomes[0]).toMatchObject({
+      ref: { tool: "todoist.create_task", id: "AaBbCcDdEeFfGgHh" },
+      disposition: "confirmed",
+    });
+  });
+
+  it("refuses both key shapes at once rather than guessing (400)", async () => {
+    const { status, body } = await postOutcome({
+      issueUrl: URL_A,
+      ref: { tool: "t", id: "1" },
+      disposition: "confirmed",
+    });
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/not both/i);
+  });
+
+  it("rejects a malformed ref (400)", async () => {
+    for (const ref of [
+      { tool: "t" },
+      { id: "1" },
+      { tool: "", id: "1" },
+      { tool: "t", id: "   " },
+      { tool: 5, id: "1" },
+    ]) {
+      const { status } = await postOutcome({
+        ref: ref as never,
+        disposition: "confirmed",
+      });
+      expect(status).toBe(400);
+    }
+  });
+
+  it("surfaces a store refusal as 400, not 500", async () => {
+    // A URL-shaped tool name would produce a key colliding with the legacy
+    // issueUrl namespace; the store throws and the route must not 500.
+    const { status, body } = await postOutcome({
+      ref: { tool: "https://evil", id: "1" },
+      disposition: "confirmed",
+    });
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/URL-shaped/i);
+  });
+});
