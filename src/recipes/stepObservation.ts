@@ -79,12 +79,19 @@ const SILENT_FAIL_PATTERNS: Array<{ regex: RegExp; reason: string }> = [
   // Used by `executeAgent` when an API key is missing or the LLM
   // returns nothing. Not surfaced as JSON, so the runner never saw it.
   {
-    regex: /^\s*\[agent step (skipped|failed):/i,
+    // Capture the WHOLE marker, not just its prefix. `matched` is built from
+    // m[0], so a prefix-only pattern threw away everything after the colon —
+    // and that is where the reason lives. A real refusal ("worker autonomy
+    // requires the subprocess or codex driver ... refusing to run
+    // un-sandboxed") logged as the bare string "[agent step failed:", turning
+    // a precise safety message into an opaque failure that had to be
+    // diagnosed by reading the source.
+    regex: /^\s*\[agent step (skipped|failed):[^\]]*\]?/i,
     reason: "agent step skipped or failed (string placeholder)",
   },
   // Generic step-skipped marker in case more callers adopt it.
   {
-    regex: /^\s*\[step (skipped|failed):/i,
+    regex: /^\s*\[step (skipped|failed):[^\]]*\]?/i,
     reason: "step skipped or failed (string placeholder)",
   },
 ];

@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   NAV_SECTIONS,
+  SIMPLE_NAV_SECTIONS,
   MOBILE_PRIMARY_HREFS,
   flatRoutes,
   findRoute,
@@ -117,6 +118,29 @@ describe("navRoutes contract", () => {
   it("every route declares an icon so the sidebar never falls back to a generic glyph", () => {
     for (const r of flatRoutes()) {
       expect(r.icon, `route ${r.href} is missing an icon`).toBeTruthy();
+    }
+  });
+});
+
+describe("Butler is reachable in Simple mode", () => {
+  const hrefs = (s: typeof SIMPLE_NAV_SECTIONS) =>
+    s.flatMap((sec) => sec.routes.map((r) => r.href));
+
+  it("appears in the simple menu, not only the advanced one", () => {
+    // It was in NAV_SECTIONS only, so a user in Simple mode could not reach
+    // Butler at all. Backwards: Butler is the large-print, single-column,
+    // accessibility-led page — the one surface built for somebody who wants
+    // less, not more. The simpler menu was hiding the simplest page.
+    expect(hrefs(SIMPLE_NAV_SECTIONS)).toContain("/butler");
+    expect(hrefs(NAV_SECTIONS)).toContain("/butler");
+  });
+
+  it("every simple route also exists in the advanced menu", () => {
+    // Simple is a SUBSET, not a separate menu that can drift. A route only
+    // reachable in Simple mode would be invisible to anyone who switched.
+    const advanced = new Set(hrefs(NAV_SECTIONS));
+    for (const href of hrefs(SIMPLE_NAV_SECTIONS)) {
+      expect(advanced, `${href} missing from NAV_SECTIONS`).toContain(href);
     }
   });
 });

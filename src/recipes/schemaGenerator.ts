@@ -482,6 +482,14 @@ function generateRecipeSchema(
           "gemini",
           "anthropic",
           "codex",
+          // `subprocess` is the canonical id for the Claude CLI driver —
+          // agentExecutor branches on it directly (`driver === "subprocess"`),
+          // `--driver subprocess` is the documented flag, and it is one of the
+          // drivers worker autonomy REQUIRES for its tool sandbox. Omitting it
+          // here rejected a valid recipe: the shipped butler-errand template,
+          // which needs a sandbox-capable driver to demonstrate the very flag
+          // it exists for. Exactly the drift the `local` note below records.
+          "subprocess",
           // `local` (self-hosted Ollama / LM Studio) is a fully implemented
           // runtime driver and already valid in the downshift enum below and in
           // DOWNSHIFT_KNOWN_DRIVERS — omitting it here made FLAG_SCHEMA_LINT
