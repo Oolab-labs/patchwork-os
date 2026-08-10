@@ -23,7 +23,7 @@ Three ideas, one runtime:
 
 ## Status: beta
 
-Version `1.1.0-beta.x`. The decision layer, recipes, connectors and IDE bridge all work and are dogfooded daily, but interfaces still move between betas and some surfaces are rougher than others. Pin an exact version if you are building on it.
+Version `1.2.0-beta.x`. The decision layer, recipes, connectors and IDE bridge all work and are dogfooded daily, but interfaces still move between betas and some surfaces are rougher than others. Pin an exact version if you are building on it.
 
 **The safety features are opt-in, not the default.** This matters more than any other line in this README:
 
