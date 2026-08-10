@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-10 `feat/durable-trust-checkpoint` — persist WorkerLevelStore off the rotating run log (backlog #10); adds src/workers/trustCheckpoint.ts, no gate-semantics change — CLI session
+_Nothing in flight._
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
 #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
