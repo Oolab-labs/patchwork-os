@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-10 `chore/node-engines-match-ci` — README-review phase 3 of 3. `engines.node` said `>=20.0.0`, every workflow pins Node 22, and the README said "Node 22+" — so the package advertised support for a Node version no job has ever tested, and the repo contradicted itself. Raised the floor to match what CI actually proves rather than lowering the README to match an untested claim; the README needed no change. Ships as a drift GUARD, not a one-off bump: `enginesMatchCi.test.ts` scrapes every `node-version:` in `.github/workflows/` and fails if the declared floor sits below the oldest Node in the matrix, so re-introducing the gap requires adding that version to CI first. Verified red-then-green (`expected 20 to be greater than or equal to 22`) and the scrape asserts it found at least one version, so an empty result cannot pass vacuously. Semver-relevant: narrows the supported range, so it wants a release note.
 
 
 
