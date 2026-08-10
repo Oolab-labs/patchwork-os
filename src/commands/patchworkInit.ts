@@ -86,7 +86,10 @@ function findDashboardDir(): string | null {
   return null;
 }
 
-export function ensureDashboardEnv(patchworkDir: string): {
+export function ensureDashboardEnv(
+  patchworkDir: string,
+  dashboardDirOverride?: string | null,
+): {
   password: string;
   generated: boolean;
 } {
@@ -107,7 +110,10 @@ export function ensureDashboardEnv(patchworkDir: string): {
     mode: 0o600,
   });
   // Also write dashboard/.env.local so Next.js picks up credentials without start-all sourcing
-  const dashDir = findDashboardDir();
+  const dashDir =
+    dashboardDirOverride !== undefined
+      ? dashboardDirOverride
+      : findDashboardDir();
   if (dashDir) {
     const localPath = join(dashDir, ".env.local");
     let local = existsSync(localPath) ? readFileSync(localPath, "utf8") : "";
@@ -213,7 +219,17 @@ interface InitResult {
 
 export async function runPatchworkInit(
   argv: string[],
-  opts: { cwd?: string; home?: string; quiet?: boolean } = {},
+  opts: {
+    cwd?: string;
+    home?: string;
+    quiet?: boolean;
+    /**
+     * Override dashboard discovery. Tests inject `null` to exercise the
+     * npm-install shape, where the Next.js app is not on disk at all —
+     * unreachable otherwise, since a repo checkout always finds it.
+     */
+    dashboardDir?: string | null;
+  } = {},
 ): Promise<InitResult> {
   const parsed = parseArgs(argv);
   if ("help" in parsed) {
@@ -244,7 +260,9 @@ export async function runPatchworkInit(
   }
   log(`  ✓ ~/.patchwork scaffolded\n`);
 
-  const dashEnv = ensureDashboardEnv(patchworkDir);
+  const dashboardDir =
+    opts.dashboardDir !== undefined ? opts.dashboardDir : findDashboardDir();
+  const dashEnv = ensureDashboardEnv(patchworkDir, dashboardDir);
   if (dashEnv.generated)
     log(`  ✓ ~/.patchwork/.env created with dashboard credentials\n`);
 
@@ -380,12 +398,27 @@ export async function runPatchworkInit(
     ? `\n  Dashboard password: ${dashEnv.password}  (saved to ~/.patchwork/.env)\n`
     : "";
 
-  log(`${restartLine}${dashPasswordLine}
-Next:
-  1. patchwork start                           # launch bridge + dashboard
+  // The dashboard is a Next.js app that ships only in a repo checkout, not in
+  // the npm tarball (it needs its own `npm install` + `next build`). Printing
+  // "open http://localhost:3200" unconditionally sent every npm-installed user
+  // to a port nothing is listening on.
+  const dashboardSteps =
+    dashboardDir !== null
+      ? `  1. patchwork start                           # launch bridge + dashboard
   2. open http://localhost:3200                # dashboard (use password printed above)
   3. patchwork-os recipe run daily-status      # zero-config: yesterday's commits + today's hints
-  4. patchwork-os init --with-connectors       # add gmail/github/linear/etc. recipes\n`);
+  4. patchwork-os init --with-connectors       # add gmail/github/linear/etc. recipes\n`
+      : `  1. patchwork start                           # launch the bridge
+  2. patchwork-os recipe run daily-status      # zero-config: yesterday's commits + today's hints
+  3. patchwork-os init --with-connectors       # add gmail/github/linear/etc. recipes
+
+  The web dashboard is not part of the npm package — it ships with the repo.
+  To run it: clone https://github.com/Oolab-labs/patchwork-os, then
+  \`cd dashboard && npm install && npm run build && npm start\`.\n`;
+
+  log(`${restartLine}${dashPasswordLine}
+Next:
+${dashboardSteps}`);
 
   return {
     configPath,
