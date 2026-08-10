@@ -8,7 +8,7 @@
  * The bug is that the default became the common case. The map was written
  * against MCP-style camelCase names (`createLinearIssue`); the connector waves
  * then registered ~200 tools under dotted ids (`linear.createIssue`) and nobody
- * extended it. At the time this gate was written, 193 of 218 registered recipe
+ * extended it. At the time this gate was written, 186 of 211 TRACKED registered recipe
  * tools were unclassified.
  *
  * ## Why that is worth failing CI over, given the default is safe
@@ -42,11 +42,17 @@
  * `registerTool({ ...listIssues, id: "linear.listIssues" })`), which is the
  * right direction for a gate to err.
  *
+ * It enumerates via `git ls-files`, NOT the directory. Reading the directory
+ * picks up untracked local work — this tree carries several such tool files —
+ * which seeds the ratchet with ids that do not exist in CI, where they read as
+ * stale entries and fail the build. That is how this gate first went red.
+ *
  * Usage: node scripts/audit-tool-classification.mjs
  * Exit:  0 clean · 1 drift · 2 script/config error
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -79,16 +85,24 @@ function registeredIds() {
   const ids = new Set();
   let files;
   try {
-    files = readdirSync(path.join(root, TOOLS_DIR)).filter((f) =>
-      f.endsWith(".ts"),
-    );
+    // TRACKED files only. Reading the directory instead would include untracked
+    // local work (this tree carries several such tool files), seeding the
+    // ratchet with ids that do not exist in CI — where they then read as stale
+    // entries and fail the build. That is exactly how this gate first went red.
+    files = execFileSync("git", ["ls-files", `${TOOLS_DIR}/*.ts`], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 8 * 1024 * 1024,
+    })
+      .split("\n")
+      .filter(Boolean)
+      .filter((f) => !f.includes("__tests__"));
   } catch (err) {
-    console.error(`[tool-class] cannot read ${TOOLS_DIR}: ${err.message}`);
+    console.error(`[tool-class] cannot list ${TOOLS_DIR}: ${err.message}`);
     process.exit(2);
   }
   for (const f of files) {
-    if (f.includes("__tests__")) continue;
-    const text = readFileSync(path.join(root, TOOLS_DIR, f), "utf8");
+    const text = readFileSync(path.join(root, f), "utf8");
     for (const m of text.matchAll(
       /\bid:\s*"([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)"/g,
     )) {
