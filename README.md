@@ -19,7 +19,13 @@ Three ideas, one runtime:
 
 - **Every decision leaves a receipt.** What was done, why it was allowed, and how it turned out — durable, replayable, explainable via `patchwork judgments`, the dashboard's traces page, and `patchwork gate explain`. When you approve something, you find out later whether you were right.
 
-![Patchwork OS dashboard](docs/images/dashboard-overview.png)
+**An agent wants to write a file. With the gate on, it waits — and shows you exactly what it would do:**
+
+![The approval queue: a pending createFile call showing its risk tier, whether it can be undone, and the full content it would write, with Approve and Reject](docs/images/approval-queue.png)
+
+**You approve. The call proceeds, and both halves are on the record:**
+
+![The activity stream showing two events — an approval_decision marked approved, and the createFile tool call that followed it, succeeding in 4ms](docs/images/decision-receipt.png)
 
 ## Status: beta
 
