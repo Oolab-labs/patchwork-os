@@ -6,6 +6,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.0-beta.1] — 2026-08-10
+
+A minor bump rather than another `beta.N`, because this is a feature line: workspace identity, a third terminal gate state (`forbid`), the prospective control boundary, durable approvals and trust evidence, and the Butler surface — plus, at the end, four fixes to onboarding that a review of the public README turned up.
+
+**The published onboarding path was broken, and these are the fixes.** If you installed `1.1.0-beta.4` from npm, `patchwork-os init` wrote a PreToolUse hook into your real `~/.claude/settings.json` pointing at a script that was never shipped in the tarball. Re-run `patchwork-os init` after upgrading to repair the entry.
+
+### Added
+
+- **Workspace identity** (`src/identity/`): members, roles (`owner`/`admin`/`operator`/`approver`/`auditor`/`worker`) and segregation of duties, loaded from `members.json` at bridge startup. Fail-soft — a missing or malformed roster yields one implicit owner, byte-identical to previous behaviour. Not yet wired to authorisation: it exists so a decision record can name a real member (#1228, #1230).
+- **`forbid` — a third terminal gate state** that no approval unlocks, evaluated before the agent carve-out, reversibility short-circuit and all trust maths, because any branch running earlier is a path around it. Configured via `forbidRules`, entirely opt-in (#1231, #1233, #1249).
+- **Control boundary**: `previewActions` buckets candidate actions into *may do now / needs approval / not permitted* **before** anything is attempted, routed through the same decision path as enforcement so preview and gate cannot drift. Exposed as `GET /workers/boundary` and a three-column dashboard view (#1236, #1239–#1244).
+- **Durable approvals** (ADR-0018): approval requests survive a bridge restart, with risk-tiered timeouts (low 5 min / medium 1 h / high 4 h), live-configurable (#1214, #1245, #1246).
+- **Durable trust evidence**: per-recipe trust checkpoints so a worker is no longer silently un-earned when its runs rotate out of `runs.jsonl` (#1307).
+- **Actor attribution** on gate decisions, stored as a snapshot rather than a roster reference so a rename cannot rewrite history (#1232, #1235).
+- **Butler**: durable fact store and memory tools, an ambient memory card in the MCP instructions block, task-management action classes with an errands worker, standing permissions, an HTTP surface, and a large-print page (#1271–#1273, #1278–#1280, #1317).
+- **Codex driver**: `--driver codex`, selectable as a recipe agent-step driver (#1199–#1201).
+- **`fan_out` agent sub-steps**, budget-admitted per iteration (#1257).
+- **MCP elicitation** for missing required recipe vars (#1223).
+
+### Fixed
+
+#### Onboarding — the published npm artifact
+- `scripts/patchwork-approval-hook.sh` is now in `files[]`. `init` writes its absolute path into the user's `~/.claude/settings.json`, so excluding it left an npm-installed user with a global Claude Code config pointing at a nonexistent script (#1324).
+- `init` no longer advertises a dashboard that is not in the npm package; the next-steps text branches on whether one is present (#1324).
+- `init` means the same command whichever bin you type. The check keyed off `process.env._`, which npx does not set to the resolved bin, so `npx patchwork-os@beta init` silently ran the *legacy* IDE-bridge installer instead of the documented setup (#1325).
+- `engines.node` raised to `>=22.0.0` to match the only Node version CI tests, with a guard that fails if the declared floor drifts below the CI matrix again (#1326).
+
+#### Trust evidence integrity
+Four related fixes, each closing a path where unconfirmed work became earned trust:
+- Outcomes key on the action (`tool:id`) rather than a URL that no tool in the real run log ever returned (#1318).
+- The strict outcome join is now the default: a non-reversible success with no recorded human disposition is withheld, not credited (#1319).
+- Agent (reasoning) steps stop counting as evidence in either direction — the gate always carved them out, the fold never mirrored it, and 50 unconfirmed agent successes were folding as earned trust (#1320).
+- An action that cannot be identified is not an approved one: unkeyable non-reversible successes are withheld rather than falling through (#1322).
+
+#### Other
+- The shadow gate now agrees with the gate it shadows, and honours the worker's own forbids (#1299, #1300).
+- Connector reads were classified as irreversible and gated; irreversible writes were missing a real domain (#1313, #1314).
+- Audit ledgers ignored `PATCHWORK_HOME` (#1308).
+- Butler: undo was a trust escalator; the approvals section could not render and reject reported the wrong outcome (#1292, #1296, #1316).
+- Todoist targeted a retired API version (#1315).
+- `--help` advertised a verb that does not exist, and omitted two that do (#1304).
+- 40+ further fixes across recipes, dashboard, OAuth, CI and deploy scripts.
+
+### Notes
+
+- The VS Code extension stays at `1.4.25` — only its docs changed this cycle, no handler code.
+- **The safety features remain opt-in.** `approvalGate` defaults to `"off"` and the worker autonomy gate is behind `PATCHWORK_FLAG_WORKER_AUTONOMY`. Nothing is gated on a fresh install until you enable it.
+
+---
+
 ## [1.1.0-beta.4] — 2026-07-17
 
 Five new trust-architecture layers (deterministic policy enforcement, circuit breakers, ephemeral rollback, flight-recorder replay for flat recipes) plus dashboard/copilot recipe & worker creation, followed by a 20-pass bug-mining sweep that found and fixed 28 defects — most in a recurring class: a safety gate, audit-reason capture, cache-freshness rule, or response-check present on one code path but silently absent from a logically-identical sibling (single-item vs. bulk action, one dashboard entry point vs. another, one write chokepoint vs. another).

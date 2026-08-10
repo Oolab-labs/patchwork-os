@@ -4,7 +4,7 @@ Patchwork OS ships an npm package, IDE extensions, a Docker image, an OAuth 2.0 
 
 ## Supported Versions
 
-The current prerelease channel is **beta** (`patchwork-os@1.1.0-beta.x`).
+The current prerelease channel is **beta** (`patchwork-os@1.2.0-beta.x`).
 
 | Channel | Status | Get fixes? |
 |---|---|---|
@@ -72,7 +72,7 @@ Out of scope (please do not test against without permission):
 
 For users running Patchwork OS:
 
-- Pin to a specific `1.1.0-beta.X` rather than the floating `@beta` or `@latest` tag if reproducibility matters more than fast updates.
+- Pin to a specific `1.2.0-beta.X` rather than the floating `@beta` or `@latest` tag if reproducibility matters more than fast updates.
 - The bridge auth token in `~/.claude/ide/<port>.lock` is mode `0o600`; preserve those permissions.
 - The write kill switch (`PATCHWORK_WRITES_DISABLED`) is captured at startup and frozen — do not rely on runtime mutation to disable writes.
 - For remote deployments, always front the bridge with a TLS-terminating reverse proxy. See [docs/remote-access.md](docs/remote-access.md).
