@@ -169,6 +169,12 @@ export const SIMPLE_NAV_SECTIONS: NavSection[] = [
     routes: [
       { href: "/", label: "Overview", icon: "home" },
       { href: "/inbox", label: "Inbox", icon: "inbox" },
+      // Butler belongs in Simple mode MORE than in Advanced, not less. It is
+      // the large-print, single-column, accessibility-led page — the one
+      // surface built for somebody who wants less, not more. Omitting it here
+      // meant the simpler menu hid the simplest page, and a user in Simple
+      // mode could not reach Butler at all.
+      { href: "/butler", label: "Butler", paletteLabel: "Home — Butler", icon: "person" },
     ],
   },
   {

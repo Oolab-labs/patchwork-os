@@ -37,6 +37,12 @@ steps:
     into: existing
 
   - agent:
+      # REQUIRED, not stylistic. With PATCHWORK_FLAG_WORKER_AUTONOMY on, an
+      # agent step in a worker recipe must name a driver that can enforce a
+      # tool sandbox; agentExecutor refuses to run un-sandboxed otherwise. This
+      # recipe exists to demonstrate that flag, so without this line the demo
+      # halts at step 2 and never reaches the gated write.
+      driver: subprocess
       prompt: |
         The user asked for: {{request}}
 

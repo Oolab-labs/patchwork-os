@@ -289,3 +289,32 @@ describe("captureForRunlog — exotic values", () => {
     expect(() => captureForRunlog(big)).not.toThrow();
   });
 });
+
+describe("silent-fail marker keeps its reason (#butler-demo)", () => {
+  // The real refusal this was found on: worker autonomy declined to run an
+  // agent step whose driver could not enforce a tool sandbox. The message said
+  // exactly that, and the run record recorded the bare string
+  // "[agent step failed:" — the pattern matched only the prefix, and `matched`
+  // is built from m[0]. A precise safety message became an opaque failure that
+  // had to be diagnosed by reading the source.
+  const REAL =
+    "[agent step failed: worker autonomy requires the subprocess or codex driver to enforce its tool sandbox — set the agent step (or recipe) driver to `subprocess`/`claude-code`/`codex`; refusing to run un-sandboxed]";
+
+  it("carries the reason, not just the prefix", () => {
+    const hit = detectSilentFail(REAL);
+    expect(hit).not.toBeNull();
+    expect(hit?.matched).toContain("worker autonomy");
+    expect(hit?.matched).not.toBe("[agent step failed:");
+  });
+
+  it("still caps the fragment so a huge blob cannot flood the log", () => {
+    const hit = detectSilentFail(`[agent step failed: ${"x".repeat(500)}]`);
+    expect(hit?.matched.length).toBeLessThanOrEqual(120);
+  });
+
+  it("still detects a bare prefix with no reason after it", () => {
+    // Back-compat: some callers emit the marker with nothing following.
+    expect(detectSilentFail("[agent step failed:")).not.toBeNull();
+    expect(detectSilentFail("[step skipped: nothing to do]")).not.toBeNull();
+  });
+});
