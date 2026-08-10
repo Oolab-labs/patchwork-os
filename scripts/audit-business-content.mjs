@@ -60,6 +60,24 @@ const TERMS = [
   { re: /\brevenue (path|model|stream)\b/i, label: "revenue model" },
   { re: /\bpricing (model|strategy|tier|page)\b/i, label: "pricing strategy" },
   { re: /\bTAM\b/, label: "market sizing" },
+  // Named first-party tiers. Added 2026-08-10: the terms above match the
+  // vocabulary of a strategy document, but the leak that actually reached
+  // users was a setup guide saying a token "is issued when you activate the
+  // Pro plan" — an offer, in a numbered install step, that this gate read as
+  // clean. Naming a tier IS packaging even when no price is quoted.
+  { re: /\bPro[- ](?:tier|plan)\b/i, label: "named tier" },
+  { re: /\bTeam[- ](?:tier|plan)\b/i, label: "named tier" },
+  { re: /\bEnterprise[- ](?:tier|plan)\b/i, label: "named tier" },
+  { re: /\breserved for Pro\b/i, label: "named tier" },
+  { re: /\bactivate the Pro\b/i, label: "named tier" },
+  { re: /\bpro-tier\.md\b/i, label: "out-of-repo pricing doc" },
+  // A price with a per-unit denominator ("$50/worker/mo"). The unit list is
+  // deliberately narrow — it must not match provider token rates like
+  // "$3 / 1M tokens", which the cost router documents legitimately.
+  {
+    re: /\$\s?\d[\d,.]*\s*(?:\/|per\s)\s*(?:worker|seat|user|mo\b|month)/i,
+    label: "unit price",
+  },
   { re: /\bchurn rate\b/i, label: "churn" },
   { re: /\bupsell\b/i, label: "upsell" },
   // Competitor funding intelligence — the specific shape that prompted this:

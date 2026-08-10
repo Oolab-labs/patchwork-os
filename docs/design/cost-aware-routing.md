@@ -130,7 +130,7 @@ Opt-in (absent config ⇒ byte-identical) · composes with judge→refine (route
 3. **`downshift` semantics:** author-ordered list (the recipe author asserts each fallback is "good enough"), **no engine capability/tier taxonomy.** → **Recommend author-ordered.**
 4. **Breach vs downshift layering:** admission denial **halts**; `downshift` only picks a cheaper model below the admit gate. → **Recommend this layering** (retry-cheaper-on-denial deferred as a stretch flag).
 5. **Subscription USD framing:** docs/hint state plainly that `usdMax` on a subscription driver is **notional list-equivalent**, not real money. → **Recommend explicit wording.**
-6. **OSS vs Pro boundary:** does a *local, per-recipe* `usdMax` ship in the free OSS core? → ✅ **DECIDED (2026-06-03): ships free in OSS core.** Only cross-recipe / centralized billing is reserved for Pro.
+6. **Repository boundary:** does a *local, per-recipe* `usdMax` ship in this repo? → ✅ **DECIDED (2026-06-03): yes, it ships here.** Anything cross-recipe or centralised is organisation-scoped and out of scope for this repository ([ADR-0019](../adr/0019-open-core-boundary.md)).
 7. **Chained-runner scope:** the chained-runner wrapper (`yamlRunner ~2560`) discards `.usage` and bypasses the budget today. Cover sub-recipe/chained calls in this work, or document as out-of-scope for now? → **Recommend out-of-scope for v1, documented.**
 
 ## 8. Test plan (per phase)

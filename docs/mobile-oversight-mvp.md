@@ -15,7 +15,8 @@ The approval infrastructure already exists and is solid:
 - `src/approvalHttp.ts` — `routeApprovalRequest` handles `POST /approvals`, `POST /approve/:id`, `POST /reject/:id`
 - `dashboard/src/app/approvals/` — full desktop approval UI with risk signals, params, countdowns
 - `src/server.ts` — bridge webhook dispatcher already calls `dispatchApprovalWebhook` (HTTPS only, SSRF-guarded)
-- `docs/business/pro-tier.md` — target: FCM/APNS push + hosted dashboard at `app.patchwork.dev`
+- (FCM/APNS push and a hosted dashboard are tracked outside this repository — see
+  [ADR-0019](adr/0019-open-core-boundary.md); nothing here depends on them)
 
 **What is missing for mobile oversight:**
 
@@ -202,10 +203,11 @@ Agent 4 starts once all three pass unit tests.
 
 ## Out of scope for MVP
 
-- Native iOS / Android apps (PWA is sufficient for approve/reject; revisit at Pro tier launch)
+- Native iOS / Android apps (PWA is sufficient for approve/reject)
 - Notification batching / digest (single-call granularity is correct for oversight)
-- Shared team approval delegation (Team tier feature per `pro-tier.md`)
-- Offline approve/reject (requires synced state; punt to Pro hosted dashboard)
+- Shared team approval delegation (organisation-scoped; belongs to the control plane
+  per [ADR-0019](adr/0019-open-core-boundary.md), not here)
+- Offline approve/reject (requires synced state; deferred)
 
 ---
 

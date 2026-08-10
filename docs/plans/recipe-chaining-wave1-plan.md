@@ -475,7 +475,7 @@ Agent 1 (Chaining Engine)
 - **Zendesk** — Wave 1.5 (lower recipe leverage)
 - **Bidirectional sync** — one-shot recipes only, no listeners/polling
 - **Recipe marketplace / registry** — local YAML only
-- **Hosted recipe sync** — Pro tier feature, deferred
+- **Hosted recipe sync** — deferred; out of scope for this repo
 
 ---
 
