@@ -74,6 +74,7 @@ import {
   repairBridgeToolsRulesIfStale,
 } from "./bridgeToolsRules.js";
 import { findEditor, parseConfig } from "./config.js";
+import { resolveInitTarget } from "./initDispatch.js";
 import {
   detectWorkspaceSymlinkInstall,
   PATCHWORK_PACKAGE_NAME,
@@ -323,7 +324,7 @@ if (
       `  ${binName} init                          # set up ~/.patchwork + Claude Code hooks\n` +
       `  ${binName} start-all                     # bridge + Claude + dashboard\n\n` +
       `Get started\n` +
-      `  init [--workspace <dir>]                  Scaffold ~/.patchwork; register CC hooks\n` +
+      `  init [--with-connectors]                  Scaffold ~/.patchwork; register CC hooks\n` +
       `  install-extension                         Install the VS Code / Cursor / Windsurf extension\n` +
       `  start-all [--no-dashboard]                Launch bridge + Claude --ide + dashboard\n` +
       `  orchestrator                              Multi-IDE-window meta-bridge\n\n` +
@@ -376,9 +377,15 @@ if (process.argv[2] === "patchwork-init") {
   process.exit(0);
 }
 
-// `patchwork-os init` → dashboard setup, not IDE bridge installer.
-// patchwork init / claude-ide-bridge init still go to the bridge path below.
-if (process.argv[2] === "init" && invokedBinaryName() === "patchwork-os") {
+// `init` → Patchwork setup for every bin except the legacy `claude-ide-bridge`,
+// which keeps the old IDE-bridge installer (that path is still reachable below).
+// Unrecognised bin names resolve here too — see src/initDispatch.ts: keying this
+// off `process.env._` sent `npx patchwork-os@beta init` into the legacy
+// installer, because npx leaves `_` as the parent's value.
+if (
+  process.argv[2] === "init" &&
+  resolveInitTarget(invokedBinaryName()) === "patchwork"
+) {
   const { runPatchworkInit } = await import("./commands/patchworkInit.js");
   await runPatchworkInit(process.argv.slice(3));
   process.exit(0);
