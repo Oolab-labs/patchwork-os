@@ -296,8 +296,25 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
           tool: "githubCreateIssue",
           status: "ok" as const,
           durationMs: 1,
+          // Identifiable since #1322: a non-reversible success nobody can refer
+          // to is WITHHELD, so a url-less earning phase accrues nothing. The
+          // filings must be referenceable AND confirmed to climb the ramp —
+          // that is the policy, not a fixture workaround.
+          output: { url: `https://github.com/o/r/issues/g${i}-${k}` },
         })),
       });
+    }
+    // Confirm every earning filing, as an operator would.
+    const confirmStore = new OutcomeStore(dir);
+    for (let i = 0; i < 18; i++) {
+      for (let k = 0; k < 5; k++) {
+        confirmStore.upsert({
+          issueUrl: `https://github.com/o/r/issues/g${i}-${k}`,
+          disposition: "confirmed",
+          checkedAt: 1,
+          origin: "manual",
+        });
+      }
     }
     const trust = loadWorkerTrustForRecipe("triage-failing-tests-autofile", {
       workersDir: WORKERS_DIR,
@@ -409,6 +426,7 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
   });
 
   it("does NOT reuse the cache across a materially different `now` even with an unchanged runs.jsonl (durability-window regression)", () => {
+    const PR_URL = "https://github.com/o/r/pull/7";
     // Regression: the cache must not ignore `now`. A non-reversible success
     // is WITHHELD until it survives the durability window (~24h); the same
     // recipe/mtime queried once with real `now` and once with `now` pushed
@@ -424,8 +442,24 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
       doneAt: 1,
       durationMs: 1,
       stepResults: [
-        { id: "s1", tool: "githubCreatePR", status: "ok", durationMs: 1 },
+        {
+          id: "s1",
+          tool: "githubCreatePR",
+          status: "ok",
+          durationMs: 1,
+          // Identifiable + confirmed (#1322) so this test still exercises the
+          // DURABILITY WINDOW rather than the unidentifiable withhold — the
+          // two would otherwise be indistinguishable and the assertion below
+          // would pass for the wrong reason.
+          output: { url: PR_URL },
+        },
       ],
+    });
+    new OutcomeStore(dir).upsert({
+      issueUrl: PR_URL,
+      disposition: "confirmed",
+      checkedAt: 1,
+      origin: "manual",
     });
 
     const fresh = loadWorkerTrustForRecipe("dependency-bump", {

@@ -24,6 +24,23 @@ function issueRun(at: number, status: "ok" | "error", nSteps = 5): RunRecord {
   };
 }
 
+// A run whose every step carries a distinct captured URL. Used for the
+// earning phase: since #1322 a non-reversible success that cannot be
+// identified is WITHHELD, so a worker can only climb the ramp on filings that
+// are both referenceable AND confirmed. A url-less earning phase would now
+// accrue nothing, which is the policy working, not a fixture bug.
+function issueRunUrls(at: number, urls: string[]): RunRecord {
+  return {
+    recipeName: "file-issues",
+    at,
+    steps: urls.map((url) => ({
+      tool: "githubCreateIssue",
+      status: "ok" as const,
+      output: { url },
+    })),
+  };
+}
+
 // A single filing carrying a captured issue URL (as github.create_issue does).
 function issueRunUrl(at: number, url: string): RunRecord {
   return {
@@ -124,16 +141,29 @@ describe("backtestWorker", () => {
 
   describe("outcome-store parity (matches the live dial labelling)", () => {
     const URL = "https://github.com/o/r/issues/99";
-    // 18 dwell-separated url-less clean filings → the worker earns L4 on `issue`,
-    // so by the 19th filing the ramp would BYPASS.
-    const earned = Array.from({ length: 18 }, (_, i) =>
-      issueRun(i * SEVEN_HOURS, "ok"),
+    // 18 dwell-separated clean filings (5 steps each) → the worker earns L4 on
+    // `issue`, so by the 19th filing the ramp would BYPASS. Each step carries a
+    // distinct URL and every one is CONFIRMED in the store: post-#1322 an
+    // unidentifiable non-reversible success earns nothing, so the earning phase
+    // has to be made of the thing that actually earns.
+    const earnedUrls = Array.from({ length: 18 }, (_, run) =>
+      Array.from(
+        { length: 5 },
+        (_, step) => `https://github.com/o/r/issues/e${run}-${step}`,
+      ),
+    );
+    const earned = earnedUrls.map((urls, i) =>
+      issueRunUrls(i * SEVEN_HOURS, urls),
+    );
+    /** Every earning filing confirmed — the baseline every store below starts from. */
+    const EARNED: Record<string, OutcomeDisposition> = Object.fromEntries(
+      earnedUrls.flat().map((u) => [u, "confirmed" as OutcomeDisposition]),
     );
 
     it("a durable JUNK filing scores as a BAD outcome (false-allow), not a spurious good", () => {
       const history = [...earned, issueRunUrl(18 * SEVEN_HOURS, URL)];
       const withStore = backtestWorker(issuer, history, {
-        outcomeStore: fakeStore({ [URL]: "junk" }),
+        outcomeStore: fakeStore({ ...EARNED, [URL]: "junk" }),
       });
       const statusOnly = backtestWorker(issuer, history); // no store → old behaviour
       // The junk filing is the differentiator: with the store it is a BAD outcome
@@ -150,7 +180,7 @@ describe("backtestWorker", () => {
     it("a durable UNKNOWN filing is WITHHELD — excluded from the divergence sample", () => {
       const history = [...earned, issueRunUrl(18 * SEVEN_HOURS, URL)];
       const withUnknown = backtestWorker(issuer, history, {
-        outcomeStore: fakeStore({ [URL]: "unknown" }),
+        outcomeStore: fakeStore({ ...EARNED, [URL]: "unknown" }),
       });
       const statusOnly = backtestWorker(issuer, history); // scores the filing as good
       // The unknown filing has no ground truth → not scored (one fewer considered)
@@ -161,7 +191,7 @@ describe("backtestWorker", () => {
     it("a durable CONFIRMED filing scores as good — same as the status-only path", () => {
       const history = [...earned, issueRunUrl(18 * SEVEN_HOURS, URL)];
       const withConfirmed = backtestWorker(issuer, history, {
-        outcomeStore: fakeStore({ [URL]: "confirmed" }),
+        outcomeStore: fakeStore({ ...EARNED, [URL]: "confirmed" }),
       });
       const statusOnly = backtestWorker(issuer, history);
       expect(withConfirmed.considered).toBe(statusOnly.considered);
@@ -180,11 +210,11 @@ describe("backtestWorker", () => {
       const history = [...earned, issueRunUrl(RECENT, URL)];
       const junk = backtestWorker(issuer, history, {
         now: nowInsideWindow,
-        outcomeStore: fakeStore({ [URL]: "junk" }),
+        outcomeStore: fakeStore({ ...EARNED, [URL]: "junk" }),
       });
       const unknown = backtestWorker(issuer, history, {
         now: nowInsideWindow,
-        outcomeStore: fakeStore({ [URL]: "unknown" }),
+        outcomeStore: fakeStore({ ...EARNED, [URL]: "unknown" }),
       });
       expect(
         junk.divergences.some(

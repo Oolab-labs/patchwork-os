@@ -24,6 +24,7 @@ import {
 } from "../recipeOrchestration.js";
 import { RecipeRunLog } from "../runLog.js";
 import type { RecordGateDecisionInput } from "../workerGateDecisionLog.js";
+import { OutcomeStore } from "../workers/outcomeStore.js";
 
 /** Seed durable, dwell-separated successes so the worker earns autonomy on
  *  `tool`'s class (ancient timestamps → durable under durable-outcome labels). */
@@ -44,8 +45,26 @@ function seedEarned(dir: string, recipeName: string, tool: string, n = 18) {
         tool,
         status: "ok" as const,
         durationMs: 1,
+        // Identifiable since #1322 — a non-reversible success that cannot be
+        // referred to is WITHHELD, so a url-less seed earns nothing and every
+        // "earned action" test below would silently be testing an UNEARNED
+        // worker instead.
+        output: { url: `https://github.com/o/r/pull/${tool}-${i}-${k}` },
       })),
     });
+  }
+  // ...and confirmed, as an operator would: earning now requires a human
+  // disposition, not merely a step that did not error.
+  const store = new OutcomeStore(dir);
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < 5; k++) {
+      store.upsert({
+        issueUrl: `https://github.com/o/r/pull/${tool}-${i}-${k}`,
+        disposition: "confirmed",
+        checkedAt: 1,
+        origin: "manual",
+      });
+    }
   }
 }
 

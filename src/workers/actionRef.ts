@@ -122,6 +122,44 @@ export function deriveActionKey(
     return null;
   }
   const rec = output as Record<string, unknown>;
+  const direct = scanForId(tool, rec);
+  if (direct) return direct;
+  // ONE level down, through a JSON `body` string.
+  //
+  // An HTTP tool returns the transport envelope — `{status, ok, body}` — with
+  // the created resource's id inside `body` as an unparsed JSON string. That is
+  // the single real shape in the run log that carries a perfectly good
+  // identifier the top-level scan cannot see (12 steps, all `http.post`).
+  //
+  // Deliberately narrow. This parses a payload we already received and reads
+  // the SAME id fields as above — it does not invent a value, guess a remote
+  // URL scheme, or reach into a service-specific shape. That distinction is
+  // why synthesising a Todoist permalink was rejected but this is not: one
+  // fabricates an identifier from a convention we do not control, the other
+  // reads one the service actually sent us.
+  //
+  // `body` only, and one level only. Speculatively adding `data`/`result`/
+  // `payload` would be guesswork with no evidence behind it, and each extra
+  // guess is another way to key an action to something that is not its
+  // identity — which silently attaches a human's confirmation to the wrong
+  // action. If another envelope shape shows up in a real run log, add it then,
+  // with that log as the justification.
+  const body = rec.body;
+  if (typeof body !== "string" || !body.trim()) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null; // not JSON — genuinely unidentifiable
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  return scanForId(tool, parsed as Record<string, unknown>);
+}
+
+/** The id scan itself, shared by the top level and the one-level `body` dip. */
+function scanForId(tool: string, rec: Record<string, unknown>): string | null {
   for (const field of ID_FIELDS) {
     if (!Object.hasOwn(rec, field)) continue;
     const raw = rec[field];
