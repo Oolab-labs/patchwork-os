@@ -21,11 +21,15 @@ subsystems like the worker-trust gate, the recipe runner, or the bridge
 init/shim path), add a line here. Remove the line once the PR merges (or
 mark it merged and delete on the next sweep).
 
-Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity if known>`
+Format: `- <date> `<branch-or-PR>` — <one-line scope> — <session/chat identity if known>`
+
+The branch or PR **must be in backticks** — `scripts/audit-in-flight.mjs` only
+checks entries that name one that way, so an unquoted entry is silently not
+verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-10 `feat/durable-trust-checkpoint` — persist WorkerLevelStore off the rotating run log (backlog #10); adds src/workers/trustCheckpoint.ts, no gate-semantics change — CLI session
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
 #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
