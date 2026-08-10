@@ -240,3 +240,55 @@ describe("personal task management", () => {
     expect(classifyActionClass("todoist.create_task").domain).not.toBe("other");
   });
 });
+
+describe("connector reads (#1311 batch 1)", () => {
+  // Before this batch, 186 of 211 registered tools had no domain and fell
+  // through to `other:irreversible`. That is a safe default — it fails CLOSED —
+  // but it had become the common case, and it gated plain read operations
+  // behind human approval.
+
+  it("classifies declared reads as reversible so they bypass the gate", () => {
+    // Real registered ids, taken from the tool definitions. An earlier draft
+    // of this test invented plausible snake_case names that no tool uses; it
+    // failed loudly, but a differently-wrong guess would have passed while
+    // asserting nothing.
+    for (const tool of [
+      "stripe.listCharges",
+      "stripe.getCustomer",
+      "datadog.getMonitor",
+      "airtable.list_records",
+      "airtable.get_record",
+    ]) {
+      const ac = classifyActionClass(tool, {});
+      expect(ac.reversibility, `${tool} must be reversible`).toBe("reversible");
+      expect(ac.domain, `${tool} must not be the catch-all`).not.toBe("other");
+    }
+  });
+
+  it("gives a camelCase alias the same class as its canonical tool", () => {
+    // Registered as `registerTool({ ...canonical, id: "..." })` — the SAME
+    // action under a second name. Classifying one and not the other governs
+    // half the callers and leaves the rest on the irreversible default.
+    expect(classifyActionClass("linear.listIssues", {}).key).toBe(
+      classifyActionClass("linear.list_issues", {}).key,
+    );
+    expect(classifyActionClass("slack.postMessage", {}).key).toBe(
+      classifyActionClass("slack.post_message", {}).key,
+    );
+  });
+
+  it("does NOT quietly reclassify writes", () => {
+    // The guard on this batch. Reads are mechanical — `isWrite: false` is
+    // declared by the tool, and a read cannot be irreversible. Writes each need
+    // a real judgement about whether they can be undone, and loosening is the
+    // dangerous direction, so they must stay on the conservative default until
+    // reviewed one by one.
+    for (const tool of [
+      "linear.createIssue",
+      "linear.updateIssue",
+      "linear.addComment",
+    ]) {
+      expect(classifyActionClass(tool, {}).reversibility).toBe("irreversible");
+    }
+  });
+});
