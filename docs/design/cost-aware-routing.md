@@ -1,6 +1,6 @@
 # Design: Cross-driver cost-aware model routing
 
-**Status:** ACCEPTED (direction) — Phase 0 in progress. Two product decisions made 2026-06-03: estimation is **warn-only** (`estimateUnmeasured` defaults to `false`); a local per-recipe `usdMax` **ships free in OSS core**. (The implementing ADR is written in the final phase.)
+**Status:** ACCEPTED (direction) — Phase 0 in progress. Two product decisions made 2026-06-03: estimation is **warn-only** (`estimateUnmeasured` defaults to `false`); a local per-recipe `usdMax` **ships in this repository**. (The implementing ADR is written in the final phase.)
 **Date:** 2026-06-03
 **Author:** generated from a grounded design workflow (6 subsystem maps → 3 independent design stances → adversarial critique → synthesis), then fact-checked against source.
 
@@ -121,7 +121,7 @@ Opt-in (absent config ⇒ byte-identical) · composes with judge→refine (route
 - **Phase 1 — driver token fidelity.** Make API drivers report tokens; `makeProviderDriverFn` returns `AgentResult`. **One behavior shift to changelog:** recipes that *already* set `tokensMax` AND use openai/grok/gemini start being measured (they fail open today) and could begin halting — a scoped correctness fix.
 - **Phase 2 — static price table asset.** `priceTable.json` + loader + override precedence + CI staleness ratchet. Consumed by nobody yet; lands so prices can be reviewed for accuracy independently.
 - **Phase 3 — `budget.usdMax` enforcement (the headline).** Extend `RunBudget` in place; add `usdMax` + `estimateUnmeasured` (default **false**) to schema/validation/parser; reuse `budget_exceeded`; dashboard renders `$`/`≈$`. **This alone closes the deferred-usdMax gap and is a reasonable stopping point if routing is descoped.**
-- **Phase 4 — opt-in per-step `downshift` routing.** Add the field + pure `costRouter`, wire at both agent sites, cross-field validation mirroring #859, parser passthrough. **+ write the ADR** (price-table source/refresh, fail-open USD semantics, estimate-warns-never-halts, `estimateUnmeasured=false`, OSS-vs-Pro boundary).
+- **Phase 4 — opt-in per-step `downshift` routing.** Add the field + pure `costRouter`, wire at both agent sites, cross-field validation mirroring #859, parser passthrough. **+ write the ADR** (price-table source/refresh, fail-open USD semantics, estimate-warns-never-halts, `estimateUnmeasured=false`, repository boundary per ADR-0019).
 
 ## 7. Decisions for you (recommended answer in **bold**)
 
@@ -130,7 +130,7 @@ Opt-in (absent config ⇒ byte-identical) · composes with judge→refine (route
 3. **`downshift` semantics:** author-ordered list (the recipe author asserts each fallback is "good enough"), **no engine capability/tier taxonomy.** → **Recommend author-ordered.**
 4. **Breach vs downshift layering:** admission denial **halts**; `downshift` only picks a cheaper model below the admit gate. → **Recommend this layering** (retry-cheaper-on-denial deferred as a stretch flag).
 5. **Subscription USD framing:** docs/hint state plainly that `usdMax` on a subscription driver is **notional list-equivalent**, not real money. → **Recommend explicit wording.**
-6. **OSS vs Pro boundary:** does a *local, per-recipe* `usdMax` ship in the free OSS core? → ✅ **DECIDED (2026-06-03): ships free in OSS core.** Only cross-recipe / centralized billing is reserved for Pro.
+6. **Repository boundary:** does a *local, per-recipe* `usdMax` ship in this repo? → ✅ **DECIDED (2026-06-03): yes, it ships here.** Anything cross-recipe or centralised is organisation-scoped and out of scope for this repository ([ADR-0019](../adr/0019-open-core-boundary.md)).
 7. **Chained-runner scope:** the chained-runner wrapper (`yamlRunner ~2560`) discards `.usage` and bypasses the budget today. Cover sub-recipe/chained calls in this work, or document as out-of-scope for now? → **Recommend out-of-scope for v1, documented.**
 
 ## 8. Test plan (per phase)

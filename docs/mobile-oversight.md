@@ -90,10 +90,16 @@ npm start
 
 The relay listens on `PORT` (default 3001). It must be reachable over HTTPS from the bridge.
 
-### Option B: Hosted (Pro tier)
+### Option B: Point at an already-running relay
 
-The relay is hosted at `https://notify.patchwork.dev`. Your `PUSH_RELAY_TOKEN` is issued
-when you activate the Pro plan. Skip to step 2.
+If a relay is already running for you — someone else's deployment, or a hosted one —
+you need only its URL and a `PUSH_RELAY_TOKEN` issued by whoever operates it. Set both
+and skip to step 2; nothing else in this guide changes.
+
+How such a relay is obtained, operated or charged for is not covered here: this
+repository documents the runtime, not any commercial offering built on it
+([ADR-0019](adr/0019-open-core-boundary.md)). Option A above is fully self-contained
+and needs nobody's permission.
 
 ### FCM setup (Android)
 

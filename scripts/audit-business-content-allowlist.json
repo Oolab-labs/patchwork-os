@@ -21,6 +21,21 @@
       "reason": "The open-core boundary needs a public rationale, and LICENSING.md depends on it. Keeping an accepted ADR intact is also better practice than editing the record to satisfy a linter. Note the ADR itself rules pricing/packaging/tiers out of this repo — this entry covers the reasoning for the boundary, not any pricing detail. Decided 2026-08-07."
     },
     {
+      "file": "docs/adr/0015-cost-aware-routing.md",
+      "term": "open-core packaging",
+      "reason": "An accepted ADR recording that a local per-recipe usdMax ships here. It quotes no price and makes no offer — it records which side of the repository boundary a feature landed on, which is the decision the ADR exists to preserve. Same precedent as the ADR-0019 and ADR-0008 entries: an offer to a reader gets rewritten, a decision record gets a reviewable line. The design doc that fed this ADR was reworded instead (2026-08-10), because it is a working document rather than an accepted record."
+    },
+    {
+      "file": "docs/adr/0008-connector-scope-decision.md",
+      "term": "named tier",
+      "reason": "An accepted ADR recording why the approval loop was descoped from connector Wave 1. It quotes no price and makes no offer — it names a tier only to explain what it deliberately did NOT build here, and line 80 says outright that the material is not in this repository. Same precedent as the ADR-0019 entry: editing an accepted decision record to satisfy a linter is worse than an allowlist line. Distinct from the setup-guide text fixed at the same time (2026-08-10), which instructed a reader to activate a plan — an offer, and correctly rewritten rather than allowlisted."
+    },
+    {
+      "file": "docs/adr/0008-connector-scope-decision.md",
+      "term": "out-of-repo pricing doc",
+      "reason": "Same ADR, same reason. The reference is to a document explicitly described as living outside this repository — the citation records the boundary rather than crossing it."
+    },
+    {
       "file": "CHANGELOG.md",
       "term": "free tier",
       "reason": "Gemini's API free tier exhausting its daily quota — a model-provider limit that changed a recipe's driver. Engineering, not our commercial model."
