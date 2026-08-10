@@ -1,6 +1,11 @@
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+  type ActionRef,
+  AmbiguousActionRefError,
+  canonicalActionRef,
+} from "./actionRef.js";
 
 /**
  * Outcome disposition for a filed issue. Drives the trust signal the ramp
@@ -38,8 +43,24 @@ export function resolveOutcomeLogDir(override?: string): string {
 }
 
 export interface OutcomeRecord {
-  /** GitHub issue URL — the lookup key. */
-  issueUrl: string;
+  /**
+   * GitHub issue URL — the legacy lookup key, and still the key for any row
+   * that has one. Optional ONLY because `ref` is the alternative; exactly one
+   * of `issueUrl` / `ref` must be present or the row cannot be keyed at all
+   * (see `parseOutcomeLog`, which now REPORTS such rows rather than dropping
+   * them silently).
+   */
+  issueUrl?: string;
+  /**
+   * Tool-scoped reference for an action that has no URL — the generalisation
+   * that lets a worker earn trust from actions that are not GitHub issues.
+   * Keyed via `canonicalActionRef` to `"<tool>:<id>"`, a namespace that cannot
+   * collide with `issueUrl` (asserted, not assumed — see actionRef.ts).
+   *
+   * Existing rows are NOT migrated: a URL is already a fine key, and rewriting
+   * the file the autonomy gate rests on to gain uniformity is a bad trade.
+   */
+  ref?: ActionRef;
   disposition: OutcomeDisposition;
   /** Epoch ms when this record was written by the ingester. */
   checkedAt: number;
@@ -80,36 +101,89 @@ interface OutcomeLogCacheEntry {
   size: number;
   dispositions: Map<string, OutcomeDisposition>;
   records: Map<string, OutcomeRecord>;
+  /** Rows that could not be keyed or parsed — see `UnkeyableRow`. */
+  unkeyable: UnkeyableRow[];
 }
 const outcomeLogCache = new Map<string, OutcomeLogCacheEntry>();
+
+/**
+ * A row the parser could not turn into a lookup key.
+ *
+ * These used to be `continue`d silently. That is the quiet-corruption vector
+ * this file most needs to avoid: the outcome log is the ONLY record of which
+ * worker actions a human actually blessed, so a row that vanishes on read
+ * looks exactly like a row nobody ever wrote — and the difference is whether
+ * a worker earned its autonomy. They are still skipped (a row with no key is
+ * genuinely unusable), but they are now COUNTED and reportable.
+ */
+export interface UnkeyableRow {
+  /** 1-based line number in the log, so an operator can go find it. */
+  line: number;
+  reason: "malformed-json" | "no-key" | "no-disposition" | "bad-ref";
+  /** First 120 chars of the offending line, for identification. */
+  excerpt: string;
+}
+
+/**
+ * The lookup key for a record: its `ref` (canonicalised) when present,
+ * otherwise its legacy `issueUrl`. Returns null when neither yields one.
+ */
+function keyForRecord(r: OutcomeRecord): string | null {
+  if (r.ref) {
+    try {
+      return canonicalActionRef(r.ref);
+    } catch {
+      return null;
+    }
+  }
+  return r.issueUrl?.trim() || null;
+}
 
 function parseOutcomeLog(logPath: string): {
   dispositions: Map<string, OutcomeDisposition>;
   records: Map<string, OutcomeRecord>;
+  unkeyable: UnkeyableRow[];
 } {
   const dispositions = new Map<string, OutcomeDisposition>();
   const records = new Map<string, OutcomeRecord>();
-  if (!existsSync(logPath)) return { dispositions, records };
+  const unkeyable: UnkeyableRow[] = [];
+  if (!existsSync(logPath)) return { dispositions, records, unkeyable };
   const text = readFileSync(logPath, "utf-8");
-  for (const line of text.split("\n")) {
-    const t = line.trim();
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const t = (lines[i] ?? "").trim();
     if (!t) continue;
+    const excerpt = t.slice(0, 120);
+    let r: OutcomeRecord;
     try {
-      const r = JSON.parse(t) as OutcomeRecord;
-      if (!r.issueUrl || !r.disposition) continue;
-      // A manual disposition is sticky against a later ingester write for
-      // the same issueUrl — an automated poll must not silently erase an
-      // operator's explicit judgment call. A later manual write (the
-      // operator changing their own mind) always applies normally.
-      const existing = records.get(r.issueUrl);
-      if (existing?.origin === "manual" && r.origin !== "manual") continue;
-      dispositions.set(r.issueUrl, r.disposition);
-      records.set(r.issueUrl, r);
+      r = JSON.parse(t) as OutcomeRecord;
     } catch {
-      /* skip malformed lines */
+      unkeyable.push({ line: i + 1, reason: "malformed-json", excerpt });
+      continue;
     }
+    if (!r.disposition) {
+      unkeyable.push({ line: i + 1, reason: "no-disposition", excerpt });
+      continue;
+    }
+    const key = keyForRecord(r);
+    if (!key) {
+      unkeyable.push({
+        line: i + 1,
+        reason: r.ref ? "bad-ref" : "no-key",
+        excerpt,
+      });
+      continue;
+    }
+    // A manual disposition is sticky against a later ingester write for
+    // the same key — an automated poll must not silently erase an
+    // operator's explicit judgment call. A later manual write (the
+    // operator changing their own mind) always applies normally.
+    const existing = records.get(key);
+    if (existing?.origin === "manual" && r.origin !== "manual") continue;
+    dispositions.set(key, r.disposition);
+    records.set(key, r);
   }
-  return { dispositions, records };
+  return { dispositions, records, unkeyable };
 }
 
 /** Fresh parse + fresh stat, always (used to (re)seed the shared cache). */
@@ -123,8 +197,8 @@ function loadOutcomeLogEntry(logPath: string): OutcomeLogCacheEntry {
   } catch {
     /* file absent — still cacheable at (-1, -1) */
   }
-  const { dispositions, records } = parseOutcomeLog(logPath);
-  return { mtimeMs, size, dispositions, records };
+  const { dispositions, records, unkeyable } = parseOutcomeLog(logPath);
+  return { mtimeMs, size, dispositions, records, unkeyable };
 }
 
 /** The shared entry for `logPath`, reparsing only if the file actually changed. */
@@ -176,15 +250,50 @@ export class OutcomeStore {
    * evidence). A filing with no recorded disposition can neither raise nor
    * lower trust. (#1064)
    */
-  getDisposition(issueUrl: string): OutcomeDisposition | null {
-    return getOutcomeLogEntry(this.logPath).dispositions.get(issueUrl) ?? null;
+  getDisposition(key: string): OutcomeDisposition | null {
+    return getOutcomeLogEntry(this.logPath).dispositions.get(key) ?? null;
   }
 
   /**
-   * Persist a disposition for `issueUrl`. Later calls supersede earlier ones
-   * (both on disk via append, and in the shared in-memory cache).
+   * Disposition for a tool-scoped action reference (the non-URL join). Same
+   * null semantics as `getDisposition`. A ref that cannot be canonicalised
+   * returns null rather than throwing — this is a read path, and the fold
+   * must never crash on a malformed stored ref.
+   */
+  getDispositionForRef(ref: ActionRef): OutcomeDisposition | null {
+    let key: string;
+    try {
+      key = canonicalActionRef(ref);
+    } catch {
+      return null;
+    }
+    return this.getDisposition(key);
+  }
+
+  /**
+   * Rows in the log that carry no usable lookup key (or no disposition, or
+   * are not valid JSON). Empty in the healthy case. Surfaced so an operator
+   * can be TOLD the ledger has holes instead of a confirmation quietly going
+   * missing — the whole point of counting these rather than skipping them.
+   */
+  unkeyableRows(): UnkeyableRow[] {
+    return getOutcomeLogEntry(this.logPath).unkeyable;
+  }
+
+  /**
+   * Persist a disposition. Later calls supersede earlier ones for the same
+   * key (both on disk via append, and in the shared in-memory cache).
+   *
+   * Throws when the record carries neither a usable `ref` nor an `issueUrl`:
+   * a row written with no key is invisible to every reader, so accepting it
+   * would silently discard an operator's explicit judgment.
    */
   upsert(record: OutcomeRecord): void {
+    if (!keyForRecord(record)) {
+      throw new AmbiguousActionRefError(
+        "An outcome record needs a usable key — either `issueUrl` or a `ref` with a tool and an id. Refusing to write a record nothing can look up.",
+      );
+    }
     const line = `${JSON.stringify(record)}\n`;
     appendFileSync(this.logPath, line, "utf-8");
     // Re-seed the shared cache from the post-write file state so this write
