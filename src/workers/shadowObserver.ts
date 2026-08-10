@@ -156,7 +156,8 @@ type FoldStep = Pick<RunRecord["steps"][number], "tool" | "status" | "output">;
  *   - success, non-reversible, junk (any age)  → count, good:false (human-rejected → demotes now)
  *   - success, non-reversible, pre-window      → WITHHOLD (provisional; not yet durable)
  *   - success, non-reversible, unknown/null    → WITHHOLD (unactioned ≠ correct; trust-by-neglect fix)
- *   - success, otherwise (reversible / confirmed / no url / no store) → count, good:true
+ *   - success, non-reversible, UNKEYABLE + store → WITHHOLD (unidentifiable ≠ approved)
+ *   - success, otherwise (reversible / confirmed / no store) → count, good:true
  */
 export type FoldDecision = { fold: false } | { fold: true; good: boolean };
 
@@ -248,9 +249,31 @@ export function foldOutcome(
   if (!isDurableSuccess(ac.reversibility, runAt, opts.now, opts.windowMs))
     return { fold: false }; // pending — survives the window before it earns trust
   // Past the window: an unactioned filing (unknown / no record) is WITHHELD —
-  // unactioned ≠ correct (trust-by-neglect fix). Confirmed / no-url → good:true.
+  // unactioned ≠ correct (trust-by-neglect fix). Confirmed → good:true.
   if (key && (disposition === "unknown" || disposition === null))
     return { fold: false }; // withheld — not evidence
+  // UNKEYABLE, and non-reversible, with a store configured. The action cannot
+  // be referred to at all, so no human could ever have ruled on it — and the
+  // withhold branch above, which is guarded on `key`, does not fire. Without
+  // this the step falls through to good:true: "we cannot identify this action"
+  // silently becomes "a human approved it". That is the same fallthrough
+  // #1318/#1319 closed twice already, in its last remaining form, and it lands
+  // on the riskiest actions rather than the safest — `http.post` classifies
+  // `http:irreversible:medium` and brand-exposed.
+  //
+  // Scoped to "a store is configured" on purpose. When no OutcomeStore is
+  // wired at all, nothing can ever be confirmed, so withholding here would
+  // silently zero every non-reversible action for callers that never opted
+  // into outcome tracking (the pure-fold tests, and any backtest run without
+  // a store). That is a deployment state, not a property of the action, and
+  // conflating the two would be a much larger behaviour change smuggled in
+  // under a narrower one.
+  //
+  // Scoped to the strict join as well: the opt-out path exists ONLY to
+  // reproduce the historical labelling byte-for-byte when replaying an old run
+  // log, and a withhold it never had would defeat that.
+  if (!key && outcomeStore && (opts.strictOutcomeJoin ?? true))
+    return { fold: false }; // withheld — unidentifiable
   return { fold: true, good: true };
 }
 

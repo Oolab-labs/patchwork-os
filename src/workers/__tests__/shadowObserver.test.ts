@@ -338,16 +338,29 @@ describe("WorkerShadowObserver — outcome verification (junk → good:false)", 
     expect(issueRow(junk)!.mean).toBeLessThan(issueRow(baseline)!.mean);
   });
 
-  it("a durable filing with no captured URL falls through to good:true (back-compat)", () => {
+  it("a durable filing with NO identifier is WITHHELD when a store is configured (#1322)", () => {
+    // Reverses this test's original assertion, deliberately. It used to pin
+    // "no captured URL falls through to good:true (back-compat)" — that
+    // fallthrough is the bug: an action nobody can refer to cannot have been
+    // confirmed by anyone, so crediting it turns "unidentifiable" into
+    // "approved". Withheld now: no observation at all.
     const obs = new WorkerShadowObserver([issuer], {
       cfg: CFG,
       now,
       outcomeStore: fakeStore({ [URL]: "junk" }),
     });
-    obs.ingestRun(durableFiling()); // no output.url → no lookup
+    obs.ingestRun(durableFiling()); // no identifier → nothing to look up
+    expect(issueRow(obs)?.observations ?? 0).toBe(0);
+  });
+
+  it("...but still falls through when NO store is configured (scope boundary)", () => {
+    // With no store wired, nothing can ever be confirmed, so withholding here
+    // would silently zero every non-reversible action for callers that never
+    // opted into outcome tracking. A deployment state, not a property of the
+    // action.
     const baseline = new WorkerShadowObserver([issuer], { cfg: CFG, now });
     baseline.ingestRun(durableFiling());
-    expect(issueRow(obs)!.mean).toBe(issueRow(baseline)!.mean);
+    expect(issueRow(baseline)!.observations).toBeGreaterThan(0);
   });
 });
 
