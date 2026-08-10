@@ -139,6 +139,12 @@ jobs:
       # only shrink.
       - name: Audit PATCHWORK_HOME ratchet (gating)
         run: node scripts/audit-patchwork-home.mjs
+      # Action-class coverage ratchet (#1311). An unclassified tool is treated
+      # as irreversible, so it is gated behind human approval even when it is a
+      # read, and its trust evidence lands in one undifferentiated bucket. The
+      # list of unclassified tools may only shrink.
+      - name: Audit tool classification ratchet (gating)
+        run: node scripts/audit-tool-classification.mjs
       # Relative links in tracked markdown. Removing documents during the
       # licensing pass broke three, and they were only caught by hand.
       - name: Audit doc links (gating)
