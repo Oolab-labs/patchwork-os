@@ -1,5 +1,3 @@
-import os from "node:os";
-import path from "node:path";
 import type { ActivityLog } from "../activityLog.js";
 import type { AutomationHooks } from "../automation.js";
 import { getButlerFactStore } from "../butler/sharedStore.js";
@@ -10,6 +8,7 @@ import { DecisionTraceLog } from "../decisionTraceLog.js";
 import { getLocalEmbedFn } from "../embeddings/index.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { FileLock } from "../fileLock.js";
+import { patchworkPath } from "../patchworkHome.js";
 import type { LoadedPluginTool } from "../pluginLoader.js";
 import type { ProbeResults } from "../probe.js";
 import type { McpTransport } from "../transport.js";
@@ -446,7 +445,9 @@ export function registerAllTools(
   // unconditionally, even on a stock `driver: "none"` bridge that doesn't wire
   // these logs. Fall back to a default ~/.patchwork-backed store so the tools
   // are always available — the bridge normally passes its own shared instances.
-  const patchworkDir = path.join(os.homedir(), ".patchwork");
+  // #1265: same resolution as the bridge's own ledgers, so a fallback store
+  // never lands in a different directory than the one the bridge is using.
+  const patchworkDir = patchworkPath();
   const commitIssueLinkLog =
     commitIssueLinkLogArg ?? new CommitIssueLinkLog({ dir: patchworkDir });
   const decisionTraceLog =

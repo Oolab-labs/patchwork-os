@@ -133,6 +133,12 @@ jobs:
       # remember to extend.
       - name: Audit business content (gating)
         run: node scripts/audit-business-content.mjs
+      # PATCHWORK_HOME ratchet (#1265). Setting the override relocates some
+      # state and silently leaves the rest — including the audit ledgers — at
+      # ~/.patchwork. The list of files still resolving the path by hand may
+      # only shrink.
+      - name: Audit PATCHWORK_HOME ratchet (gating)
+        run: node scripts/audit-patchwork-home.mjs
       # Relative links in tracked markdown. Removing documents during the
       # licensing pass broke three, and they were only caught by hand.
       - name: Audit doc links (gating)
