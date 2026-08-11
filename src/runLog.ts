@@ -438,6 +438,45 @@ export class RecipeRunLog {
     return null;
   }
 
+  /**
+   * Runs that rotation moved into `runs.jsonl.1`, newest last. Empty when no
+   * archive exists.
+   *
+   * Read directly from disk and NOT merged into the in-memory ring: the ring
+   * backs the dashboard's run list, which wants the live window, whereas the
+   * trust replay wants every run it can still prove happened. Folding the
+   * archive into the ring would change what every display path shows in order
+   * to serve one reader.
+   *
+   * This is a TRUST-path accessor. `runs.jsonl` is capped by bytes while the
+   * durability window is defined in time, so a busy log can rotate a worker's
+   * filing away before it ever settles — 18.2h of retention against a 24h
+   * window, when this was found. #1334 stopped rotation deleting those rows;
+   * this is the half that reads them back.
+   */
+  readArchive(): RecipeRun[] {
+    const archive = `${this.file}.1`;
+    let raw: string;
+    try {
+      raw = readFileSync(archive, "utf-8");
+    } catch {
+      return []; // absent is the normal case
+    }
+    const byKey = new Map<string, RecipeRun>();
+    for (const line of raw.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const parsed = JSON.parse(t) as RecipeRun;
+        if (typeof parsed.seq !== "number") continue;
+        byKey.set(runKey(parsed), parsed);
+      } catch {
+        /* skip malformed */
+      }
+    }
+    return Array.from(byKey.values());
+  }
+
   /** Test/inspection helper — current in-memory size. */
   size(): number {
     return this.runs.length;

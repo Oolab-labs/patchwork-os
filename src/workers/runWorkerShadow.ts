@@ -1,10 +1,12 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { patchworkHome } from "../patchworkHome.js";
 import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
 import { classifyActionClass } from "./actionClass.js";
 import { deriveActionKey } from "./actionRef.js";
 import { backtestWorker, formatBacktestReport } from "./backtest.js";
+import { evidenceRetention } from "./evidenceRetention.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./outcomeStore.js";
 import {
   DEFAULT_DURABILITY_WINDOW_MS,
@@ -83,9 +85,28 @@ function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
     // `query` clamps limit to 500, but it now scans the full-history ring, so
     // this is the 500 most-recent runs OF THIS RECIPE — ample per-worker, and no
     // longer evictable by unrelated traffic.
-    const rows = names
+    const live = names
       ? names.flatMap((recipe) => log.query({ recipe, limit: 500 }))
       : log.query({ limit: 500 });
+    // Include runs rotation moved to `runs.jsonl.1`. The live file is capped by
+    // BYTES while the durability window is defined in TIME, so a busy log
+    // rotates a worker's filing away before it can settle — 18.2h of retention
+    // against a 24h window, on the machine where this was found, which made
+    // compensable and irreversible trust unearnable in principle rather than
+    // merely slow. #1334 stopped rotation from deleting those rows; without
+    // this read they were preserved somewhere nothing looked.
+    //
+    // Dedup by taskId across both files: a crash between rotation's archive
+    // write and its trim can legitimately leave the same run in each, and
+    // counting it twice would inflate the dial with evidence that happened once.
+    const archived = names
+      ? log.readArchive().filter((r) => names.includes(r.recipeName))
+      : log.readArchive();
+    const merged = new Map<string, (typeof live)[number]>();
+    for (const r of [...archived, ...live]) {
+      merged.set(r.taskId ? `task:${r.taskId}` : `seq:${r.seq}`, r);
+    }
+    const rows = Array.from(merged.values());
     return rows.map((r) => ({
       recipeName: r.recipeName,
       at: r.doneAt ?? r.startedAt ?? r.createdAt,
@@ -371,7 +392,18 @@ export function runWorkerShadowReport(opts: RunWorkerShadowOpts = {}): string {
   if (data.workers.length === 0) {
     return `No worker manifests found in ${data.workersDir}.\nAdd *.worker.yaml there (e.g. copy templates/workers/) and re-run.\n`;
   }
-  return `${formatShadowReport(data.workers)}\n(scanned ${data.runsScanned} recipe runs, ${data.decisionsScanned} gate decisions · read-only)\n`;
+  // Surface the retention cliff here rather than only in a log nobody reads.
+  // A starved ledger does not look like a problem on this report — every dial
+  // simply reads low, which is indistinguishable from a worker that has not
+  // done much yet. Saying it out loud is the whole point: the read-side version
+  // of this bug was fixed once and survived a layer down precisely because
+  // nothing measured whether the invariant still held.
+  const retention = evidenceRetention(
+    opts.patchworkDir ?? patchworkHome(),
+    opts.now !== undefined ? { now: opts.now } : {},
+  );
+  const warning = retention.sufficient ? "" : `\n⚠ ${retention.summary}\n`;
+  return `${formatShadowReport(data.workers)}${warning}\n(scanned ${data.runsScanned} recipe runs, ${data.decisionsScanned} gate decisions · read-only)\n`;
 }
 
 /**
