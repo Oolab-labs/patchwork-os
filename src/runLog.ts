@@ -201,6 +201,24 @@ const DEFAULT_MEMORY_CAP = 500;
  * the most recent N lines.
  */
 const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
+
+/**
+ * The identity of a run for dedup purposes: its `taskId`.
+ *
+ * Explicitly NOT `seq`. `seq` is a per-instance counter against a shared file
+ * (eight construction sites, several writing), so unrelated runs collide on it
+ * routinely — 142 of 145 seqs in the live log, with the colliding runs a median
+ * 20 minutes apart. Keying on it silently deleted two-thirds of the run history,
+ * which is also the autonomy gate's evidence.
+ *
+ * The `seq:` fallback covers rows written before `taskId` existed. It keeps an
+ * old log deduping by its only available key rather than treating every row as
+ * a distinct run — wrong in the other direction, but wrong quietly and in the
+ * shape it already had.
+ */
+function runKey(r: RecipeRun): string {
+  return r.taskId ? `task:${r.taskId}` : `seq:${r.seq}`;
+}
 /** Disk-retention line cap. Exported so a reader that must see the FULL retained
  *  history (e.g. worker trust replay) can size its in-memory ring to match the
  *  disk, instead of being silently bounded by DEFAULT_MEMORY_CAP. */
@@ -671,7 +689,11 @@ export class RecipeRunLog {
 
   /** Incrementally read any new lines appended to the file since last load. */
   private syncFromDisk(): void {
-    const now = Date.now();
+    // `this.now()` (defaults to Date.now), not Date.now directly — the class
+    // already takes an injectable clock and reaching past it made the sync
+    // throttle untestable, so a test asserting freshness could only ever pass
+    // by accident of timing.
+    const now = this.now();
     if (now - this._lastSyncMs < _SYNC_MIN_INTERVAL_MS) return;
     this._lastSyncMs = now;
     try {
@@ -685,15 +707,52 @@ export class RecipeRunLog {
       if (sizeBefore <= this.lastFileSize) return;
       const raw = readFileSync(this.file, "utf-8");
       const lines = raw.split("\n");
+      // Upsert by taskId. This used to gate on `parsed.seq > this.seq`, which
+      // meant a CONCURRENT writer's run was invisible to this instance for as
+      // long as it stayed up — its seqs are drawn from an independent counter,
+      // so they are routinely equal to or below ours and every such row was
+      // silently skipped. That is a separate loss from the load-time dedup: it
+      // discarded runs as they ARRIVED, not merely on re-read.
+      const index = new Map<string, number>();
+      for (let i = 0; i < this.runs.length; i++) {
+        const r = this.runs[i];
+        if (r) index.set(runKey(r), i);
+      }
       for (const line of lines) {
         if (!line) continue;
         try {
           const parsed = JSON.parse(line) as RecipeRun;
           if (typeof parsed.seq !== "number") continue;
-          if (parsed.seq > this.seq) {
-            this.seq = parsed.seq;
-            this.runs.push(parsed);
-            if (this.runs.length > this.memoryCap) this.runs.shift();
+          if (parsed.seq > this.seq) this.seq = parsed.seq;
+          const key = runKey(parsed);
+          const at = index.get(key);
+          if (at !== undefined) {
+            // A row for a run we already hold. Take it only when it represents
+            // PROGRESS, never when it would rewind.
+            //
+            // `updateRunSteps` mutates the in-memory row and does NOT write to
+            // disk, so a live run's step results exist only here. Blindly
+            // replacing with the on-disk row would wipe the progress the
+            // dashboard is streaming. The old `seq > this.seq` gate protected
+            // this by accident (it skipped every existing run); removing that
+            // gate to see concurrent writers means the protection has to be
+            // stated on purpose.
+            const held = this.runs[at];
+            const heldIsLive = held?.status === "running";
+            const parsedIsTerminal = parsed.status !== "running";
+            if (!heldIsLive || parsedIsTerminal) this.runs[at] = parsed;
+            continue;
+          }
+          index.set(key, this.runs.length);
+          this.runs.push(parsed);
+          if (this.runs.length > this.memoryCap) {
+            this.runs.shift();
+            // Indices shifted by one — rebuild rather than track an offset.
+            index.clear();
+            for (let i = 0; i < this.runs.length; i++) {
+              const r = this.runs[i];
+              if (r) index.set(runKey(r), i);
+            }
           }
         } catch {
           /* skip malformed */
@@ -746,13 +805,28 @@ export class RecipeRunLog {
         // skip malformed line — never let one bad row break startup
       }
     }
-    // Dedup by seq, keeping the latest-appended row per run. The append-only log
-    // writes multiple rows per seq (running → terminal), and the sweep below
+    // Dedup by taskId, keeping the latest-appended row per run. The append-only
+    // log writes multiple rows per run (running → terminal), and the sweep below
     // historically appended a fresh "interrupted" row each restart; without this,
     // query()/getBySeq return stale/duplicate rows after a restart.
-    const bySeq = new Map<number, RecipeRun>();
-    for (const r of this.runs) bySeq.set(r.seq, r);
-    const deduped = Array.from(bySeq.values()).sort((a, b) => a.seq - b.seq);
+    //
+    // NOT by seq. `seq` is a per-INSTANCE counter (see `private seq`) but this
+    // file is shared by eight construction sites, several of which write, so two
+    // instances alive at once hand the same seq to unrelated runs. Deduping by it
+    // therefore DELETED runs: in the live log 142 of 145 seqs were shared, and
+    // 463 real runs collapsed to 146 visible ones. Since this file is also the
+    // trust ledger, two-thirds of the autonomy gate's evidence was being
+    // discarded on every read.
+    //
+    // taskId is safe as a key: across that same log no taskId disagreed with
+    // itself on `createdAt`, and none spanned two recipes. Fall back to the seq
+    // for any row predating taskId, so an old log still dedups rather than
+    // multiplying.
+    const byTask = new Map<string, RecipeRun>();
+    for (const r of this.runs) byTask.set(runKey(r), r);
+    const deduped = Array.from(byTask.values()).sort(
+      (a, b) => a.seq - b.seq || a.createdAt - b.createdAt,
+    );
     this.runs.length = 0;
     this.runs.push(...deduped);
     if (this.runs.length > this.memoryCap) {

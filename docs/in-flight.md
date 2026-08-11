@@ -29,7 +29,8 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-11 `fix/runlog-dedup-by-taskid` — The run log was DESTROYING runs. `seq` is a per-INSTANCE counter (`private seq = 0`, seeded from the file at construction, `++` per append) but `runs.jsonl` is shared by eight construction sites, several of which write — so two live instances hand the same seq to unrelated runs. In the live log 142 of 145 seqs were shared, colliding runs a median 20 min and up to 5.6h apart, and 463 real runs collapsed to 146 visible. The run log is also the trust ledger, so ~2/3 of the autonomy gate's evidence was discarded on every read. Two distinct losses fixed: (1) load-time dedup keyed on seq; (2) `syncFromDisk` gated on `parsed.seq > this.seq`, so a CONCURRENT writer's runs were invisible to a live bridge for as long as it stayed up — discarded as they ARRIVED, not just on re-read. Now keyed on `taskId`, verified safe against the real log (no taskId disagreed with itself on createdAt; none spanned two recipes; 393/460 had the expected running→terminal multi-row shape). Ring now matches the file exactly (407 = 407). CAUGHT MID-BUILD: removing the `seq >` gate also removed accidental protection for `updateRunSteps`, which mutates in-memory ONLY — a sync would have wiped a live run's streaming steps. Guard added (a disk row supersedes a held row only when the held one is not live, or the disk row is terminal), pinned from both directions. Also fixed `syncFromDisk` reaching past the class's injectable clock to `Date.now()`, which made the 250ms throttle untestable. Does NOT fix: seq-as-identity (`getBySeq` backs `/runs/[seq]` + replay — item B, needs a URL-contract decision) or rotation (item C — which FIRED during this session and destroyed the first successful governed errand). — in flight
+
 
 
 
