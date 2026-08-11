@@ -2138,7 +2138,7 @@ export async function runYamlRecipe(
           summary: step.agent
             ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
             : `tool ${approvalToolId}`,
-          params: step.agent ? undefined : (step as Record<string, unknown>),
+          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
           ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
         });
         if (!approved) {
@@ -3145,6 +3145,46 @@ export function render(template: string, ctx: RunContext): string {
         ? JSON.stringify(val)
         : String(val);
   });
+}
+
+/**
+ * The params a human is shown when asked to approve a gated step.
+ *
+ * The gate previously passed `step` verbatim — the raw YAML, BEFORE
+ * `executeStep` renders it — so an approver saw `content: "{{title}}"` and
+ * never the text that would be written. Observed live on `butler-errand`. The
+ * gate exists so a person can judge a compensable or irreversible action
+ * before it happens; approving an unrendered template is consent to whatever
+ * an earlier step happened to produce. It also made the persisted Decision
+ * Record evidence of what was PROPOSED rather than what was APPROVED, and for
+ * a gated action those must be the same string.
+ *
+ * Rendering here is safe: `deepRender` is pure string substitution over the run
+ * context — it executes nothing, so resolving early cannot double-run a step.
+ * The key skip-list mirrors `executeStep`'s param build, including leaving `do`
+ * raw (its `{{item.*}}` placeholders belong to a per-iteration scope and would
+ * render to empty strings against the outer ctx — showing an approver an empty
+ * sub-step would be worse than showing the template).
+ *
+ * The result passes through `captureForRunlog` because resolution can surface
+ * secrets the template did not contain: `{{api_key}}` is inert, its resolved
+ * value is not, and this payload is both displayed and PERSISTED (ADR-0018).
+ * Falls back to the raw step if rendering throws — an approval prompt that
+ * shows something is better than a run that dies building one.
+ */
+function resolveParamsForApproval(
+  step: Record<string, unknown>,
+  ctx: RunContext,
+): Record<string, unknown> {
+  try {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(step)) {
+      out[key] = key === "do" ? value : deepRender(value, ctx);
+    }
+    return (captureForRunlog(out) ?? out) as Record<string, unknown>;
+  } catch {
+    return step;
+  }
 }
 
 /** Recursively render all string leaves in a value (for nested params like blocks). */
