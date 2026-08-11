@@ -36,7 +36,16 @@ describe("in-flight step evidence survives an interruption", () => {
     return { status: "ok", durationMs: 5, ...over };
   }
 
-  /** Start a run, report steps, and abandon the instance without completing. */
+  /**
+   * Start a run, report steps, and abandon the instance without completing.
+   *
+   * `ownerPid: -1` stands in for the crashed process. The sweep that recovers
+   * these steps now fires only when the owning pid is provably gone (see
+   * `runLogSweepOwnership.test.ts`), and a single-process test would otherwise
+   * be simulating a crash while its own pid is still alive — which is the one
+   * case that must NOT sweep. A real crash leaves a dead pid, so this is the
+   * closer simulation, not a weaker one.
+   */
   function crashAfterSteps(steps: RunStepResult[]): void {
     const log = new RecipeRunLog({ dir });
     const seq = log.startRun({
@@ -44,6 +53,7 @@ describe("in-flight step evidence survives an interruption", () => {
       recipeName: "errand",
       trigger: "recipe",
       createdAt: Date.now(),
+      ownerPid: -1,
     });
     log.updateRunSteps(seq, steps);
     // No completeRun — this is the interruption.
