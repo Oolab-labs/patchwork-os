@@ -201,6 +201,12 @@ const DEFAULT_MEMORY_CAP = 500;
  * the most recent N lines.
  */
 const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
+/**
+ * Cap for `runs.jsonl.1`, the rotation archive. 8 MB ≈ eight rotations' worth
+ * of recoverable history — enough that a rotation during an investigation does
+ * not destroy the run being investigated, while still bounded on a laptop.
+ */
+const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024;
 
 /**
  * The identity of a run for dedup purposes: its `taskId`.
@@ -623,10 +629,56 @@ export class RecipeRunLog {
    * memoryCap). Best-effort — failure is logged and the next append
    * proceeds against the un-rotated file.
    */
+  /**
+   * Append rows being trimmed by rotation to `runs.jsonl.1`, and say so.
+   *
+   * Bounded: when the archive itself passes `MAX_ARCHIVE_BYTES` its own oldest
+   * rows are dropped — genuinely, this time. An unbounded archive on a laptop
+   * is its own failure, so the choice is deliberate and the warning says which
+   * kind of loss happened. Best-effort throughout: a failed archive write must
+   * never prevent the rotation that keeps the live file bounded.
+   */
+  private archiveDropped(dropped: string[]): void {
+    const archive = `${this.file}.1`;
+    try {
+      let existing = "";
+      try {
+        existing = readFileSync(archive, "utf8");
+      } catch {
+        /* no archive yet */
+      }
+      let lines = [...existing.split("\n").filter((l) => l.trim()), ...dropped];
+      let joined = lines.join("\n");
+      let archiveTrimmed = 0;
+      while (joined.length + 1 > MAX_ARCHIVE_BYTES && lines.length > 1) {
+        const keep = Math.max(1, Math.floor(lines.length / 2));
+        archiveTrimmed += lines.length - keep;
+        lines = lines.slice(-keep);
+        joined = lines.join("\n");
+      }
+      writeFileSync(archive, joined.length > 0 ? `${joined}\n` : "", {
+        mode: 0o600,
+      });
+      this.opts.logger?.warn?.(
+        `[runlog] rotate moved ${dropped.length} row(s) to ${path.basename(archive)}` +
+          (archiveTrimmed > 0
+            ? ` — and dropped ${archiveTrimmed} row(s) from the archive (over ${MAX_ARCHIVE_BYTES} bytes); trust evidence older than that is gone`
+            : ""),
+      );
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[runlog] rotate DROPPED ${dropped.length} row(s) — archive write failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
   private rotateDisk(): void {
     try {
       const raw = readFileSync(this.file, "utf8");
-      let lines = raw.split("\n").filter((l) => l.trim());
+      const original = raw.split("\n").filter((l) => l.trim());
+      let lines = original;
       if (lines.length > MAX_PERSIST_LINES) {
         lines = lines.slice(-MAX_PERSIST_LINES);
       }
@@ -635,6 +687,19 @@ export class RecipeRunLog {
         lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
         joined = lines.join("\n");
       }
+      // Everything about to be trimmed. This file is the autonomy gate's TRUST
+      // LEDGER, not only a display log, so dropping rows here silently deletes
+      // the evidence a worker's earned autonomy rests on — and in-memory state
+      // is unaffected, so nothing looks wrong at runtime. On 2026-08-11 this
+      // destroyed the first successful governed errand between one read of the
+      // file and the next. The durable mitigation (`worker_trust/` checkpoints)
+      // has never written a file, so nothing stood behind it.
+      //
+      // Archive rather than delete. This makes the loss RECOVERABLE; it does
+      // not make it invisible to the dial, which reads only the live file —
+      // preventing that is the checkpoint's job, separately.
+      const dropped = original.slice(0, original.length - lines.length);
+      if (dropped.length > 0) this.archiveDropped(dropped);
       // If we're down to a single line that still exceeds the cap, drop it
       // entirely. Without this guard the while-loop exits at length===1 and
       // we'd write an oversized row back, defeating rotation. A realistic
