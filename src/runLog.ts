@@ -10,6 +10,11 @@ import {
 import path from "node:path";
 import { withFileLockSync } from "./fileLockSync.js";
 import type { Logger } from "./logger.js";
+import {
+  appendStepEvidence,
+  isEvidenceBearing,
+  loadStepEvidence,
+} from "./runStepLedger.js";
 
 /**
  * RecipeRunLog — persistent audit trail of every recipe execution.
@@ -225,6 +230,22 @@ const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024;
 function runKey(r: RecipeRun): string {
   return r.taskId ? `task:${r.taskId}` : `seq:${r.seq}`;
 }
+
+/**
+ * Union of a run's own step list and the recovered in-flight rows, keyed by
+ * step id. The persisted row wins on a tie: the in-memory list of an
+ * interrupted run is whatever the crashed process last managed to hand over,
+ * and the ledger row is what actually reached disk.
+ */
+function mergeStepResults(
+  existing: RunStepResult[] | undefined,
+  recovered: RunStepResult[],
+): RunStepResult[] {
+  const byId = new Map<string, RunStepResult>();
+  for (const s of existing ?? []) if (s?.id) byId.set(s.id, s);
+  for (const s of recovered) if (s?.id) byId.set(s.id, s);
+  return Array.from(byId.values());
+}
 /** Disk-retention line cap. Exported so a reader that must see the FULL retained
  *  history (e.g. worker trust replay) can size its in-memory ring to match the
  *  disk, instead of being silently bounded by DEFAULT_MEMORY_CAP. */
@@ -266,6 +287,10 @@ export class RecipeRunLog {
   private readonly memoryCap: number;
   private lastFileSize = 0;
   private _lastSyncMs = 0;
+  /** seq → step ids already written to the in-flight evidence ledger. Keeps
+   *  `updateRunSteps` (which receives the FULL step list each call) from
+   *  re-appending every prior step on every step completion. */
+  private readonly persistedStepIds = new Map<number, Set<string>>();
   private readonly now: () => number;
 
   constructor(private readonly opts: RunLogOptions) {
@@ -552,6 +577,43 @@ export class RecipeRunLog {
     const run = this.runs[idx];
     if (!run || run.status !== "running") return;
     this.runs[idx] = { ...run, stepResults: [...stepResults] };
+    this.persistInFlightEvidence(this.runs[idx], stepResults);
+  }
+
+  /**
+   * Write the evidence-bearing steps of a still-running run to the sibling
+   * step ledger, so an interruption before `completeRun` no longer erases the
+   * record of actions that already happened. Only the steps this instance has
+   * not already written, and only the ones that carry evidence — see
+   * `isEvidenceBearing`. Rows land in `run_steps.jsonl`, never in `runs.jsonl`,
+   * because that file's byte cap is what starved the trust ledger.
+   */
+  private persistInFlightEvidence(
+    run: RecipeRun,
+    stepResults: RunStepResult[],
+  ): void {
+    if (!run.taskId) return; // no join key ⇒ nothing to fold it back onto
+    let written = this.persistedStepIds.get(run.seq);
+    if (!written) {
+      written = new Set();
+      this.persistedStepIds.set(run.seq, written);
+    }
+    for (const step of stepResults) {
+      if (!step?.id || written.has(step.id)) continue;
+      if (!isEvidenceBearing(step)) continue;
+      written.add(step.id);
+      appendStepEvidence(
+        this.opts.dir,
+        {
+          taskId: run.taskId,
+          seq: run.seq,
+          recipeName: run.recipeName,
+          at: this.now(),
+          step,
+        },
+        this.opts.logger,
+      );
+    }
   }
 
   /**
@@ -626,6 +688,10 @@ export class RecipeRunLog {
       }),
     };
     this.runs[idx] = finalized;
+    // The terminal row now carries the full step list, so the in-flight
+    // tracking for this run is dead weight. (The ledger's own rows age out via
+    // its size cap — they are only ever read for runs still marked "running".)
+    this.persistedStepIds.delete(seq);
     mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
     this.append(finalized);
   }
@@ -834,8 +900,11 @@ export class RecipeRunLog {
             // A row for a run we already hold. Take it only when it represents
             // PROGRESS, never when it would rewind.
             //
-            // `updateRunSteps` mutates the in-memory row and does NOT write to
-            // disk, so a live run's step results exist only here. Blindly
+            // `updateRunSteps` mutates the in-memory row; it writes only
+            // EVIDENCE-BEARING steps to the sibling step ledger, and never
+            // rewrites this run's row in `runs.jsonl`. So a live run's full
+            // step list still exists only here (the ledger is a crash-recovery
+            // subset, folded in at load, not a mirror). Blindly
             // replacing with the on-disk row would wipe the progress the
             // dashboard is streaming. The old `seq > this.seq` gate protected
             // this by accident (it skipped every existing run); removing that
@@ -941,14 +1010,22 @@ export class RecipeRunLog {
     // corrected terminal record so future reads see "interrupted" instead
     // of a permanently-stuck running entry.
     const now = this.now();
+    // Fold in-flight evidence back onto the runs it belongs to. Read lazily —
+    // most restarts sweep nothing, and this is startup path.
+    let evidence: Map<string, RunStepResult[]> | null = null;
     for (let i = 0; i < this.runs.length; i++) {
       const run = this.runs[i];
       if (!run || run.status !== "running") continue;
+      evidence ??= loadStepEvidence(this.opts.dir, this.opts.logger);
+      const recovered = run.taskId ? evidence.get(run.taskId) : undefined;
       const interrupted: RecipeRun = {
         ...run,
         status: "interrupted",
         doneAt: now,
         durationMs: now - run.createdAt,
+        ...(recovered?.length
+          ? { stepResults: mergeStepResults(run.stepResults, recovered) }
+          : {}),
       };
       this.runs[i] = interrupted;
       this.append(interrupted);

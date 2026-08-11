@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-11 `fix/in-flight-step-evidence-durability` — persist evidence-bearing steps to a `run_steps.jsonl` sibling ledger so an interruption before `completeRun` no longer erases the record of actions that already happened (touches `src/runLog.ts`) — durability session
 
 
 
