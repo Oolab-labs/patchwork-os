@@ -23,13 +23,25 @@ responsibilities:
   - Turn a stated request into a task on the user's personal list
   - Never act on a request it merely READ somewhere; only one the user made
 
-# Matches the recipe's actual steps. `tasks` covers todoist.create_task;
-# `tasks-read` covers the list read. Nothing aspirational — an `owns` entry
-# with no step to attach an observation to can never earn anything, it just
-# looks like coverage.
+# Matches the recipe's actual steps AND its `allowWrites`. `tasks` covers
+# todoist.create_task; `tasks-read` covers the list read; `fs-write` covers the
+# file.append receipt step. Nothing aspirational — an `owns` entry with no step
+# to attach an observation to can never earn anything, it just looks like
+# coverage.
+#
+# `fs-write` was missing while the recipe already declared file.append, and the
+# failure was silent in the worst direction: an unowned class does not error,
+# the gate floors it to L0, and because fs-write is reversible the write
+# happened anyway. So the receipt was written, the observation accrued against
+# a class the worker did not own, and `workers shadow` printed a NOT OWNED
+# warning nothing acted on. Adding it cannot widen anything — trust is per
+# (worker × class), so evidence earned on a reversible file write can never
+# unlock the compensable todoist write. Guarded by
+# src/workers/__tests__/manifestCoversRecipeWrites.test.ts.
 owns:
   - tasks-read
   - tasks
+  - fs-write
 
 # Capped at 1, BELOW the compensable auto-allow rung (L2), so every write stays
 # human-approved no matter how much trust accrues. That is the point of the
