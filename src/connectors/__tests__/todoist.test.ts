@@ -2,7 +2,49 @@ import crypto from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+// ── real-store sandbox ────────────────────────────────────────────────────────
+
+/**
+ * Every test in this file runs against a throwaway PATCHWORK_HOME.
+ *
+ * It did not, and that deleted a real credential. `handleTodoistDisconnect` →
+ * `clearTokens` → `deleteSecretJsonSync` unlinks
+ * `<PATCHWORK_HOME>/tokens/patchwork-os.todoist.enc` UNCONDITIONALLY — the
+ * backend branch only decides whether the keychain is also cleared. With
+ * PATCHWORK_HOME unset, that resolves to the developer's real `~/.patchwork`,
+ * so running this file removed a live Todoist connection from the machine.
+ * Reproduced with a canary: write a token to the real store, run this file,
+ * the token is gone.
+ *
+ * PATCHWORK_HOME is the ONLY knob that works here. Overriding `HOME` does not
+ * help: this file calls `delete process.env.HOME`, and `os.homedir()` then
+ * falls back to the passwd entry and returns the real home regardless of what
+ * the parent process set. A HOME-based sandbox therefore looks like isolation
+ * and provides none — it is a check that cannot fail.
+ *
+ * Consequently NOTHING in this file may `delete process.env.PATCHWORK_HOME`.
+ * Restore it to SANDBOX_HOME instead; unsetting it re-points the store at the
+ * developer's machine.
+ */
+const SANDBOX_HOME = mkdtempSync(join(os.tmpdir(), "todoist-sandbox-"));
+
+beforeEach(() => {
+  process.env.PATCHWORK_HOME = SANDBOX_HOME;
+});
+
+afterAll(() => {
+  rmSync(SANDBOX_HOME, { recursive: true, force: true });
+});
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,7 +102,7 @@ describe("todoist token helpers", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete process.env.HOME;
-    delete process.env.PATCHWORK_HOME;
+    process.env.PATCHWORK_HOME = SANDBOX_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
     delete process.env.TODOIST_API_KEY;
     if (existsSync(tmpDir)) {
@@ -335,7 +377,7 @@ describe("handleTodoistConnect", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete process.env.TODOIST_API_KEY;
-    delete process.env.PATCHWORK_HOME;
+    process.env.PATCHWORK_HOME = SANDBOX_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
   });
 
@@ -394,7 +436,7 @@ describe("handleTodoistConnect", () => {
     const stored = loadTokens();
     expect(stored?.apiToken).toBe("good-token");
 
-    delete process.env.PATCHWORK_HOME;
+    process.env.PATCHWORK_HOME = SANDBOX_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
     rmSync(tmpDir2, { recursive: true, force: true });
   });
@@ -417,7 +459,7 @@ describe("handleTodoistTest", () => {
       const result = await handleTodoistTest();
       expect(result.status).toBe(400);
     } finally {
-      delete process.env.PATCHWORK_HOME;
+      process.env.PATCHWORK_HOME = SANDBOX_HOME;
       rmSync(emptyHome, { recursive: true, force: true });
     }
   });
