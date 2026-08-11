@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-11 `fix/in-flight-step-evidence-durability` — persist evidence-bearing steps to a `run_steps.jsonl` sibling ledger so an interruption before `completeRun` no longer erases the record of actions that already happened (touches `src/runLog.ts`) — durability session
+- 2026-08-11 `fix/run-sweep-owner-liveness` — stamp running rows with their owning pid so the startup sweep only recovers runs whose process is provably gone; a concurrent reader was marking live runs `interrupted`, which made `completeRun` no-op and lost a successful run's whole record (touches `src/runLog.ts`) — durability session
 
 
 

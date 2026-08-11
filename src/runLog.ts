@@ -161,6 +161,22 @@ export interface RecipeRun {
    */
   manualRunId?: string;
   /**
+   * PID of the process that started this run.
+   *
+   * Exists so the startup sweep can tell "the bridge died mid-run" from
+   * "another process is running this right now". `runs.jsonl` is shared by
+   * eight construction sites, and the sweep marked every `"running"` row
+   * `interrupted` in the constructor — so any short-lived reader (a CLI verb,
+   * the dashboard, a second bridge) declared a live sibling's runs dead. That
+   * terminal row then beat the live one in `syncFromDisk`, and `completeRun`
+   * no-ops on a non-running row, so a run that SUCCEEDED recorded
+   * `interrupted` with zero steps.
+   *
+   * Optional: rows written before this field existed carry no stamp, and are
+   * swept exactly as before — an unknown owner is not evidence of a live one.
+   */
+  ownerPid?: number;
+  /**
    * Phase 0β provenance — files this run delivered to the inbox
    * (`~/.patchwork/inbox/`). One entry per `file.write` step whose
    * resolved path is inside the inbox dir; populated by yamlRunner.
@@ -229,6 +245,34 @@ const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024;
  */
 function runKey(r: RecipeRun): string {
   return r.taskId ? `task:${r.taskId}` : `seq:${r.seq}`;
+}
+
+/**
+ * Is the process that owns a running row still alive?
+ *
+ * `kill(pid, 0)` sends no signal — it only asks whether the pid is addressable.
+ * `EPERM` means the process exists but belongs to another user, which is still
+ * alive for our purposes.
+ *
+ * An ABSENT stamp returns false (⇒ sweep). Rows predating `ownerPid` must keep
+ * being recovered, and "we don't know" is not evidence of a live owner.
+ *
+ * The residual risk is pid reuse: an unrelated process inheriting a dead
+ * bridge's pid leaves a run stuck `"running"` forever. That is the direction to
+ * fail in — a visibly stuck row is recoverable and obvious, whereas the
+ * alternative silently rewrites a completed run's history, which is the bug
+ * being fixed.
+ */
+function isProcessAlive(pid: number | undefined): boolean {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException)?.code === "EPERM";
+  }
 }
 
 /**
@@ -540,9 +584,12 @@ export class RecipeRunLog {
     model?: string;
     parentSeq?: number;
     manualRunId?: string;
+    /** Test seam — defaults to this process. See `RecipeRun.ownerPid`. */
+    ownerPid?: number;
   }): number {
     const seq = ++this.seq;
     const run: RecipeRun = {
+      ownerPid: opts.ownerPid ?? process.pid,
       seq,
       taskId: opts.taskId,
       recipeName: opts.recipeName,
@@ -1005,10 +1052,17 @@ export class RecipeRunLog {
     if (this.runs.length > this.memoryCap) {
       this.runs.splice(0, this.runs.length - this.memoryCap);
     }
-    // Sweep: any run that is still `status:"running"` after loading was
-    // interrupted by a bridge restart. Flip in memory and append the
-    // corrected terminal record so future reads see "interrupted" instead
-    // of a permanently-stuck running entry.
+    // Sweep: a run still `status:"running"` after loading was interrupted by a
+    // bridge restart. Flip in memory and append the corrected terminal record
+    // so future reads see "interrupted" instead of a permanently-stuck entry.
+    //
+    // ONLY when its owning process is provably gone. This ran unconditionally,
+    // in the constructor, against a file eight construction sites share — so a
+    // `patchwork` CLI verb or a dashboard poll declared a live sibling's runs
+    // dead. The damage was not cosmetic: `syncFromDisk` hands the terminal row
+    // back to the owning bridge (terminal beats live, by design) and
+    // `completeRun` no-ops on a non-running row, so the real completion was
+    // never written and a SUCCESSFUL run recorded `interrupted`, zero steps.
     const now = this.now();
     // Fold in-flight evidence back onto the runs it belongs to. Read lazily —
     // most restarts sweep nothing, and this is startup path.
@@ -1016,6 +1070,7 @@ export class RecipeRunLog {
     for (let i = 0; i < this.runs.length; i++) {
       const run = this.runs[i];
       if (!run || run.status !== "running") continue;
+      if (isProcessAlive(run.ownerPid)) continue;
       evidence ??= loadStepEvidence(this.opts.dir, this.opts.logger);
       const recovered = run.taskId ? evidence.get(run.taskId) : undefined;
       const interrupted: RecipeRun = {
