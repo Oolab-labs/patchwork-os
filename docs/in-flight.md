@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-11 `fix/approval-shows-resolved-write` — render a gated step's templates before queueing the approval, so a human sees the write they are authorising instead of `content: "{{title}}"` (touches `src/recipes/yamlRunner.ts`) — durability session
 
 
 

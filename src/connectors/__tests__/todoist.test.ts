@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -404,10 +404,22 @@ describe("handleTodoistConnect", () => {
 
 describe("handleTodoistTest", () => {
   it("returns 400 when not connected", async () => {
-    vi.resetModules();
-    const { handleTodoistTest } = await import("../todoist.js");
-    const result = await handleTodoistTest();
-    expect(result.status).toBe(400);
+    // Point PATCHWORK_HOME at an empty dir. "Not connected" was asserted
+    // against the DEVELOPER'S real ~/.patchwork, so the test passed only while
+    // nobody running it had Todoist connected — it went intermittently red the
+    // moment someone did. A test about the absent-credential path must supply
+    // its own absence rather than borrow the machine's.
+    const emptyHome = mkdtempSync(join(os.tmpdir(), "todoist-unconnected-"));
+    process.env.PATCHWORK_HOME = emptyHome;
+    try {
+      vi.resetModules();
+      const { handleTodoistTest } = await import("../todoist.js");
+      const result = await handleTodoistTest();
+      expect(result.status).toBe(400);
+    } finally {
+      delete process.env.PATCHWORK_HOME;
+      rmSync(emptyHome, { recursive: true, force: true });
+    }
   });
 });
 
