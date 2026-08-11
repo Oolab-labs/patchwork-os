@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-11 `fix/test-suite-deletes-real-credentials` — todoist connector tests unlinked the developer's REAL ~/.patchwork token; sandbox PATCHWORK_HOME for the whole file (touches `src/connectors/__tests__/todoist.test.ts`) — durability session
 
 
 
