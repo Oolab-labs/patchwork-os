@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.0-beta.2] — 2026-08-11
+
+Documentation-only republish. No code changes — `dist/` is byte-for-byte the same as `1.2.0-beta.1`.
+
+`1.2.0-beta.1` was tagged before the rewritten README (#1328) and the approval-loop screenshots (#1332) merged, so npmjs.com served the pre-rewrite README: the old install instructions, no opt-in defaults table, and the old hero image. npm renders the README from the published tarball, so a README change only reaches it via a publish — hence a version bump for a docs change.
+
+### Changed
+
+- Ships the rewritten README: verified install path, the zero-connector `daily-status` first run, the corrected Morning Brief, the local-first network boundaries, and the defaults table stating that `approvalGate` and worker autonomy are **opt-in**.
+- Ships the approval → decision-receipt screenshots in place of the idle dashboard hero.
+
+---
+
 ## [1.2.0-beta.1] — 2026-08-10
 
 A minor bump rather than another `beta.N`, because this is a feature line: workspace identity, a third terminal gate state (`forbid`), the prospective control boundary, durable approvals and trust evidence, and the Butler surface — plus, at the end, four fixes to onboarding that a review of the public README turned up.
