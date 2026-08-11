@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-11 `fix/test-suite-deletes-real-credentials` — todoist connector tests unlinked the developer's REAL ~/.patchwork token; sandbox PATCHWORK_HOME for the whole file (touches `src/connectors/__tests__/todoist.test.ts`) — durability session
+- 2026-08-11 `chore/gate-connector-test-isolation` — CI gate so a connector test can never again unlink a real credential; ratchets the 41 pre-existing hazards (touches `scripts/`, `.github/workflows/ci.yml`) — durability session
 
 
 

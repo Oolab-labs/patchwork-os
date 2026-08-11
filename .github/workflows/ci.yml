@@ -139,6 +139,13 @@ jobs:
       # only shrink.
       - name: Audit PATCHWORK_HOME ratchet (gating)
         run: node scripts/audit-patchwork-home.mjs
+      # Connector-test store isolation (#1345). A disconnect test unlinked a
+      # REAL credential from the developer's machine: the unlink is
+      # unconditional, so the only protection is PATCHWORK_HOME still pointing
+      # at a sandbox when it runs. Overriding HOME does not work — the tests
+      # delete it and os.homedir() then reads the passwd entry.
+      - name: Audit connector test isolation (gating)
+        run: node scripts/audit-connector-test-isolation.mjs
       # Action-class coverage ratchet (#1311). An unclassified tool is treated
       # as irreversible, so it is gated behind human approval even when it is a
       # read, and its trust evidence lands in one undifferentiated bucket. The
