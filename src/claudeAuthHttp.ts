@@ -80,6 +80,51 @@ function deriveCodeChallenge(verifier: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Pasted-value normalisation
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn whatever the user pasted into `{ code, state }`.
+ *
+ * Anthropic's callback page renders the value as `<code>#<state>`, and users
+ * variously paste that verbatim, paste just the code, or paste the entire
+ * callback URL out of the address bar. All three must work.
+ *
+ * `state` matters: /v1/oauth/token rejects a body without it as
+ * `invalid_request_error / "Invalid request format"` — verified against the
+ * live endpoint 2026-08-12. Sending only `code` failed for every user, which
+ * is why the flow never worked regardless of what was pasted.
+ */
+export function parsePastedAuthCode(raw: string): {
+  code: string;
+  state?: string;
+} {
+  const trimmed = raw.trim();
+
+  // Full callback URL — pull code/state out of the query string.
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      const code = url.searchParams.get("code")?.trim();
+      const state = url.searchParams.get("state")?.trim();
+      if (code) return { code, state: state || undefined };
+    } catch {
+      // Not a parseable URL — fall through to the `#` handling below.
+    }
+  }
+
+  // `<code>#<state>` — the shape the callback page displays.
+  const hash = trimmed.indexOf("#");
+  if (hash !== -1) {
+    const code = trimmed.slice(0, hash).trim();
+    const state = trimmed.slice(hash + 1).trim();
+    return { code, state: state || undefined };
+  }
+
+  return { code: trimmed };
+}
+
+// ---------------------------------------------------------------------------
 // Body reader (reuse the same pattern as the bridge's other POST handlers)
 // ---------------------------------------------------------------------------
 
@@ -206,6 +251,20 @@ export async function handleClaudeAuthComplete(
   // Audit 2026-06-08 HIGH (auth-1): bound the fetch with an AbortController so a
   // slow/hung Anthropic endpoint can't keep the HTTP connection + session open
   // indefinitely. Map an abort to a 504 (distinct from a 502 network error).
+  // The pasted value may be `<code>#<state>`, a bare code, or the whole
+  // callback URL. Fall back to the session id for `state` — that is what we
+  // put in the authorize URL, so it round-trips correctly when the user pasted
+  // only the code half.
+  const { code: authCode, state: pastedState } = parsePastedAuthCode(code);
+  if (!authCode) {
+    jsonReply(res, 400, {
+      error: "missing_fields",
+      detail: "sessionId and code required",
+    });
+    return;
+  }
+  const authState = pastedState ?? session.sessionId;
+
   let tokenRes: Response;
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -219,7 +278,8 @@ export async function handleClaudeAuthComplete(
       body: new URLSearchParams({
         grant_type: "authorization_code",
         client_id: CLAUDE_OAUTH_CLIENT_ID,
-        code: code.trim(),
+        code: authCode,
+        state: authState,
         redirect_uri: CLAUDE_OAUTH_REDIRECT_URI,
         code_verifier: session.codeVerifier,
       }).toString(),
