@@ -200,5 +200,49 @@ implementations behind the same seam, delegating to GitHub/Google can be added
 later as a *third* provider without disturbing any consumer — mapped on the
 provider's `sub`, exactly as Phase B is.
 
+## Amendment — 2026-08-12: double-check completed, decision stands
+
+An earlier internal recommendation, made two days before this ADR, pointed the
+other way: delegate to GitHub/Google OAuth and own the roles rather than the
+passwords. The contradiction was flagged at the time, with a note that reversing
+would cost nothing because no code had been written against either answer.
+
+Re-verified 2026-08-12 against `main`: still true. `canApproveAction` has zero
+production references outside its own module and tests, and the dashboard
+session payload is still `` `v1.${expiresAt}` ``. Nothing has been built either
+way.
+
+**The decision stands.** The earlier recommendation was made without the two
+arguments that decide it — an authentication path that requires reaching a third
+party contradicts the free product's central property, and puts that third party
+in the evidence path for records whose purpose is to be defensible later. Its
+cost objection is real but bounded: password reset for a single-digit roster is
+a CLI command, and consumer OAuth remains addable behind the same seam.
+
+### Clarification: the licence line is whose directory, not which protocol
+
+The table above lists exactly one OIDC row, and it is control-plane. Read alone
+it implies that *any* OIDC implementation is reserved. ADR-0019 reserves
+**organisation** identity — SSO/SCIM, directory sync, provisioning — not the
+protocol.
+
+So, explicitly: a self-hoster signing in with their own GitHub or Google account
+is not organisation identity, and such a provider may be implemented **here,
+under MIT**, behind the same seam. What is reserved is federation against an
+organisation's identity provider and the directory machinery around it.
+
+This changes no decision and adds no work. It removes a reading under which a
+free-tier convenience would have been mistakenly treated as commercial.
+
+### What this cost
+
+Eight days labelled provisional while the answer was already written down. The
+review asked for a double-check on the reasoning; the reasoning had already
+been recorded in "Alternatives rejected" and needed only to be read. A decision
+left open is not free — it blocks the one subsystem that is built and unwired,
+and every day it stays open invites re-litigation rather than progress.
+
+## Alternatives rejected (continued)
+
 **Defaulting the actor to the implicit owner.** Rejected outright, and recorded
 here so it is not re-proposed as a shortcut. It fabricates evidence.
