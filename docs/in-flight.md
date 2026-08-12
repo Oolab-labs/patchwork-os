@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-12 `fix/redact-separator-variants` — a resolved `api_key` was never redacted (patterns enumerated spellings and missed the snake_case one); normalise separators once (touches `src/recipes/stepObservation.ts`) — durability session
+_Nothing in flight._
 
 
 
