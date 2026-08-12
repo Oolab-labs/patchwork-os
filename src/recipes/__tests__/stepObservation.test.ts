@@ -337,3 +337,50 @@ describe("agent driver enum matches the runtime (#1311 sibling drift)", () => {
     }
   });
 });
+
+/**
+ * Separator variants of the same secret name must all redact.
+ *
+ * `SENSITIVE_KEY_PATTERNS` was hand-maintained and carried BOTH separator
+ * spellings for some names (`client_secret` / `client-secret`,
+ * `refresh_token` / `refresh-token`) — but only `api-key` and `apikey`, never
+ * the snake_case `api_key` that recipe YAML naturally uses. So a resolved
+ * `api_key` reached the run log, the dashboard, and the approval payload in
+ * clear text.
+ *
+ * Found while making approval prompts show resolved values (#1343): rendering
+ * templates before showing them to a human is what turns an inert
+ * `{{api_key}}` into an actual credential in a persisted record.
+ *
+ * The fix normalises separators once rather than enumerating spellings, which
+ * is why this test asserts all three forms together — enumerating is the thing
+ * that failed.
+ */
+describe("captureForRunlog — separator variants of a secret key", () => {
+  const SECRET = "NOT-A-REAL-CREDENTIAL-abcdef123456";
+
+  for (const key of ["api_key", "api-key", "apikey", "API_KEY"]) {
+    it(`redacts ${key}`, () => {
+      const out = JSON.stringify(
+        captureForRunlog({ [key]: SECRET, keep: "ok" }),
+      );
+      expect(out).not.toContain(SECRET);
+      expect(out).toContain("ok"); // anchor: non-secret fields survive
+    });
+  }
+
+  for (const key of ["client_secret", "refresh_token", "access_token"]) {
+    it(`still redacts ${key}`, () => {
+      const out = JSON.stringify(captureForRunlog({ [key]: SECRET }));
+      expect(out).not.toContain(SECRET);
+    });
+  }
+
+  it("does not redact an innocuous key that merely resembles one", () => {
+    // Anchor against over-widening: "monkey" ends in "key", "tokenizer"
+    // contains "token". The second SHOULD redact (substring match is the
+    // existing, deliberate behaviour); the first must not.
+    const out = JSON.stringify(captureForRunlog({ monkey: "banana" }));
+    expect(out).toContain("banana");
+  });
+});
