@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-12 `docs/adr-0021-information-boundary` — ADR for the information boundary (what a model may know); records that `costRouter` is NOT the enforcement seam and `executeAgent` is (touches `docs/adr/`) — durability session
+_Nothing in flight._
 
 
 
