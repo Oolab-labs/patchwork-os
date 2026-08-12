@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-12 `docs/adr-0020-double-check` — close the eight-day-old ADR-0020 double-check: decision stands, plus a clarification that the open-core line is whose directory not which protocol (touches `docs/adr/`) — durability session
+- 2026-08-12 `docs/adr-0021-information-boundary` — ADR for the information boundary (what a model may know); records that `costRouter` is NOT the enforcement seam and `executeAgent` is (touches `docs/adr/`) — durability session
 
 
 
