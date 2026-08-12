@@ -172,10 +172,23 @@ const MAX_BYTES = 8 * 1024;
 // Case-insensitive substring match. Order: most specific first to avoid
 // accidentally matching narrower strings (none currently overlap, but
 // this is the convention).
+/**
+ * Substrings that mark a key as secret-bearing.
+ *
+ * Compared against a SEPARATOR-STRIPPED, lower-cased key (see
+ * `isSensitiveKey`), so each name is written once here and matches every
+ * spelling: `api_key`, `api-key`, `apiKey`, `API_KEY`.
+ *
+ * This list previously carried the spellings by hand and drifted: it had both
+ * `client_secret` and `client-secret`, both `refresh_token` and
+ * `refresh-token` — but only `api-key` and `apikey`, never the snake_case
+ * `api_key` that recipe YAML naturally uses. A resolved `api_key` therefore
+ * reached the run log, the dashboard and the approval payload in clear text.
+ * Enumerating spellings is what failed; normalising once is the fix.
+ */
 const SENSITIVE_KEY_PATTERNS = [
   "authorization",
-  "x-api-key",
-  "api-key",
+  "xapikey",
   "apikey",
   "password",
   "passwd",
@@ -183,14 +196,10 @@ const SENSITIVE_KEY_PATTERNS = [
   "token",
   "cookie",
   "session",
-  "private-key",
   "privatekey",
-  "client-secret",
-  "client_secret",
-  "refresh-token",
-  "refresh_token",
-  "access-token",
-  "access_token",
+  "clientsecret",
+  "refreshtoken",
+  "accesstoken",
 ];
 
 export const REDACTED = "[REDACTED]";
@@ -219,9 +228,11 @@ export function redactSecretsForPrompt<T extends Record<string, string>>(
 }
 
 function isSensitiveKey(key: string): boolean {
-  const lower = key.toLowerCase();
+  // Strip separators so one pattern covers every spelling a caller might use.
+  // `api_key`, `api-key`, `apiKey` and `API_KEY` all normalise to `apikey`.
+  const normalised = key.toLowerCase().replace(/[-_\s.]/g, "");
   for (const pattern of SENSITIVE_KEY_PATTERNS) {
-    if (lower.includes(pattern)) return true;
+    if (normalised.includes(pattern)) return true;
   }
   return false;
 }

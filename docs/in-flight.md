@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-11 `fix/butler-manifest-covers-recipe-writes` — Butler accrued evidence on fs-write its manifest did not own, so it could never become trust; guard test asserts every shipped worker owns its recipe's allowWrites (touches `templates/workers/`, `src/workers/__tests__/`) — durability session
+- 2026-08-12 `fix/redact-separator-variants` — a resolved `api_key` was never redacted (patterns enumerated spellings and missed the snake_case one); normalise separators once (touches `src/recipes/stepObservation.ts`) — durability session
 
 
 
