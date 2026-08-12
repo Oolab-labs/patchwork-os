@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-12 `docs/adr-0020-double-check` — close the eight-day-old ADR-0020 double-check: decision stands, plus a clarification that the open-core line is whose directory not which protocol (touches `docs/adr/`) — durability session
 
 
 
