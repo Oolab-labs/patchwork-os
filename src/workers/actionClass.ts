@@ -447,12 +447,78 @@ export function knownActionDomains(): string[] {
   return Object.keys(REVERSIBILITY_BY_DOMAIN);
 }
 
+/**
+ * Operator-supplied classification for tools the bridge does not ship.
+ *
+ * Returns the domain (and optionally an explicit reversibility) for a tool
+ * name, or `undefined` to leave it alone. Mirrors `registerTierResolver` in
+ * riskTier.ts, which solves the same problem for blast tier.
+ */
+export type ActionDomainResolver = (
+  toolName: string,
+) => { domain: string; reversibility?: Reversibility } | undefined;
+
+let actionDomainResolver: ActionDomainResolver | null = null;
+
+/**
+ * Register (or clear, with `null`) the resolver for unknown tools.
+ *
+ * OPERATOR-asserted, deliberately — never declared by the tool itself. A
+ * reversible action bypasses the gate unconditionally, so anything that could
+ * declare its own reversibility could declare itself out of governance. The
+ * thing being classified must not control its classification.
+ */
+export function registerActionDomainResolver(
+  fn: ActionDomainResolver | null,
+): void {
+  actionDomainResolver = fn;
+}
+
+/**
+ * Resolve a domain for a tool the built-in map does not cover.
+ *
+ * Consulted ONLY on a miss, which is the safety property: the resolver can
+ * never re-map, soften, or shadow a shipped mapping (no declaring `gitPush`
+ * reversible). A throw degrades to the conservative default rather than
+ * propagating — a crashing gate is an outage, and outages are the pressure
+ * that gets gates switched off.
+ */
+function resolveUnknownDomain(
+  toolName: string,
+): { domain: string; reversibility?: Reversibility } | undefined {
+  if (!actionDomainResolver) return undefined;
+  // The agent step is carved out of gating and withheld from the outcome fold
+  // by name (AGENT_STEP_TOOL), and it is absent from DOMAIN_BY_TOOL — so
+  // without this it would be resolver-reachable and could be re-declared
+  // reversible, softening a carve-out two other subsystems depend on.
+  if (toolName === AGENT_STEP_TOOL) return undefined;
+  try {
+    const resolved = actionDomainResolver(toolName);
+    if (!resolved || typeof resolved.domain !== "string" || !resolved.domain) {
+      return undefined;
+    }
+    return resolved;
+  } catch {
+    return undefined;
+  }
+}
+
 export function classifyActionClass(
   toolName: string,
   params?: Record<string, unknown>,
 ): ActionClass {
-  const domain = DOMAIN_BY_TOOL[toolName] ?? "other";
-  const reversibility = REVERSIBILITY_BY_DOMAIN[domain] ?? "irreversible";
+  const builtIn = DOMAIN_BY_TOOL[toolName];
+  const resolved =
+    builtIn === undefined ? resolveUnknownDomain(toolName) : undefined;
+  const domain = builtIn ?? resolved?.domain ?? "other";
+  // A resolver-supplied reversibility applies only to a domain the bridge does
+  // not already define. An unrecognised domain stays "irreversible" — the same
+  // fail-closed default an unmapped tool gets, so a typo in operator config
+  // narrows autonomy rather than widening it.
+  const reversibility =
+    REVERSIBILITY_BY_DOMAIN[domain] ??
+    (builtIn === undefined ? resolved?.reversibility : undefined) ??
+    "irreversible";
   const blastTier = classifyTool(toolName);
   // Instance-derived facet. Without it the key is a pure function of the tool
   // NAME, so a trivial instance and a catastrophic one share a trust cell and
