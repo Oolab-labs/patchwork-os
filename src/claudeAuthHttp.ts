@@ -27,8 +27,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 // Constants (extracted from the claude binary via strings analysis)
 // ---------------------------------------------------------------------------
 
-const CLAUDE_OAUTH_CLIENT_ID =
-  "https://claude.ai/oauth/claude-code-client-metadata";
+// Claude Code's public OAuth client id. It must be a UUID: claude.ai's
+// /oauth/authorize rejects a non-UUID client_id ("Input should be a valid
+// UUID") and renders an "OAuth Request Failed" page, so the client-metadata
+// URL that used to live here made the flow unreachable before the user could
+// even approve. Public by design — an OAuth public client id is an
+// identifier, not a secret; PKCE is what protects the exchange.
+const CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const CLAUDE_OAUTH_AUTH_URL = "https://claude.com/cai/oauth/authorize";
 const CLAUDE_OAUTH_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
 const CLAUDE_OAUTH_REDIRECT_URI =
@@ -77,6 +82,51 @@ function generateCodeVerifier(): string {
 
 function deriveCodeChallenge(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
+}
+
+// ---------------------------------------------------------------------------
+// Pasted-value normalisation
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn whatever the user pasted into `{ code, state }`.
+ *
+ * Anthropic's callback page renders the value as `<code>#<state>`, and users
+ * variously paste that verbatim, paste just the code, or paste the entire
+ * callback URL out of the address bar. All three must work.
+ *
+ * `state` matters: /v1/oauth/token rejects a body without it as
+ * `invalid_request_error / "Invalid request format"` — verified against the
+ * live endpoint 2026-08-12. Sending only `code` failed for every user, which
+ * is why the flow never worked regardless of what was pasted.
+ */
+export function parsePastedAuthCode(raw: string): {
+  code: string;
+  state?: string;
+} {
+  const trimmed = raw.trim();
+
+  // Full callback URL — pull code/state out of the query string.
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      const code = url.searchParams.get("code")?.trim();
+      const state = url.searchParams.get("state")?.trim();
+      if (code) return { code, state: state || undefined };
+    } catch {
+      // Not a parseable URL — fall through to the `#` handling below.
+    }
+  }
+
+  // `<code>#<state>` — the shape the callback page displays.
+  const hash = trimmed.indexOf("#");
+  if (hash !== -1) {
+    const code = trimmed.slice(0, hash).trim();
+    const state = trimmed.slice(hash + 1).trim();
+    return { code, state: state || undefined };
+  }
+
+  return { code: trimmed };
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +256,20 @@ export async function handleClaudeAuthComplete(
   // Audit 2026-06-08 HIGH (auth-1): bound the fetch with an AbortController so a
   // slow/hung Anthropic endpoint can't keep the HTTP connection + session open
   // indefinitely. Map an abort to a 504 (distinct from a 502 network error).
+  // The pasted value may be `<code>#<state>`, a bare code, or the whole
+  // callback URL. Fall back to the session id for `state` — that is what we
+  // put in the authorize URL, so it round-trips correctly when the user pasted
+  // only the code half.
+  const { code: authCode, state: pastedState } = parsePastedAuthCode(code);
+  if (!authCode) {
+    jsonReply(res, 400, {
+      error: "missing_fields",
+      detail: "sessionId and code required",
+    });
+    return;
+  }
+  const authState = pastedState ?? session.sessionId;
+
   let tokenRes: Response;
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -219,7 +283,8 @@ export async function handleClaudeAuthComplete(
       body: new URLSearchParams({
         grant_type: "authorization_code",
         client_id: CLAUDE_OAUTH_CLIENT_ID,
-        code: code.trim(),
+        code: authCode,
+        state: authState,
         redirect_uri: CLAUDE_OAUTH_REDIRECT_URI,
         code_verifier: session.codeVerifier,
       }).toString(),
