@@ -67,6 +67,38 @@ import {
 export const RECIPE_TASK_TIMEOUT_MS = 1_800_000;
 
 /**
+ * The text an agent step receives from a finished orchestrator task.
+ *
+ * A FAILED task must not read as an answer. Both call sites previously did
+ * `task.output ?? task.errorMessage ?? ""`, so when a task failed the driver's
+ * error text was returned as the agent's successful result — unmarked. The
+ * runner saw a normal answer, it flowed into the step's `into` variable, and on
+ * the observed occasion a worker proposed a gated external write whose title
+ * was "OpenAIApiDriver requires openai — install it with: npm install openai".
+ * A human was asked to approve that. The gate asking is what caught it.
+ *
+ * `makeProviderDriverFn` in `yamlRunner.ts` already marks every failure this
+ * way; only the orchestrator-backed path did not, which is precisely the kind
+ * of divergence that hides. Marking happens HERE, at the source, rather than by
+ * teaching `detectSilentFail` to recognise driver error text — enumerating the
+ * shapes an error can take is the mistake #1349 corrected in the redaction
+ * patterns, and it fails silently on every shape nobody thought of.
+ *
+ * Exported so both sites share one implementation and a test can pin it; they
+ * were byte-identical duplicates and still drifted from the third site.
+ */
+export function agentTextFromTask(task: {
+  output?: string;
+  errorMessage?: string;
+}): string {
+  if (task.output) return task.output;
+  if (task.errorMessage) {
+    return `[agent step failed: ${task.errorMessage.slice(0, 200)}]`;
+  }
+  return "";
+}
+
+/**
  * M3 — build the flat-runner approval fn backed by the bridge ApprovalQueue.
  * Returns true (allow) for steps below the gate threshold; otherwise queues a
  * human approval and resolves true only on an explicit "approved" decision
@@ -802,7 +834,7 @@ export class RecipeOrchestration {
               disallowedTools: callOpts.disallowedTools,
             }),
           });
-          return task.output ?? task.errorMessage ?? "";
+          return agentTextFromTask(task);
         };
         // Resolve the owning worker (if any) so replayed steps that fall
         // through to real execution still get the per-worker allowedTools
@@ -1498,7 +1530,7 @@ export class RecipeOrchestration {
           disallowedTools: callOpts.disallowedTools,
         }),
       });
-      return task.output ?? task.errorMessage ?? "";
+      return agentTextFromTask(task);
     };
     // M3 — flat-runner approval gate. Inject a queue-backed approval fn
     // whenever the bridge's approvalGate is engaged. The flat runner only
