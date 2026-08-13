@@ -121,6 +121,25 @@ describe("handleClaudeAuthComplete", () => {
   });
 });
 
+describe("authorize URL client_id", () => {
+  // claude.ai's /oauth/authorize rejects a non-UUID client_id with
+  // "Input should be a valid UUID" and renders "OAuth Request Failed", so the
+  // flow dies before the user can approve. The client-metadata URL previously
+  // used here is exactly that shape, and the failure is invisible from the
+  // bridge side: /start happily returns a URL that cannot work.
+  it("sends a UUID client_id, not a client-metadata URL", async () => {
+    const { res, result } = captureResponse();
+    await handleClaudeAuthStart(fakeReq("{}"), res);
+    const { url } = JSON.parse(result.body) as { url: string };
+    const clientId = new URL(url).searchParams.get("client_id") ?? "";
+
+    expect(clientId).not.toMatch(/^https?:\/\//);
+    expect(clientId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+});
+
 describe("token exchange sends state (Invalid request format bug)", () => {
   // Anthropic's /v1/oauth/token rejects the request with
   //   {"error":{"type":"invalid_request_error","message":"Invalid request format"}}

@@ -27,8 +27,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 // Constants (extracted from the claude binary via strings analysis)
 // ---------------------------------------------------------------------------
 
-const CLAUDE_OAUTH_CLIENT_ID =
-  "https://claude.ai/oauth/claude-code-client-metadata";
+// Claude Code's public OAuth client id. It must be a UUID: claude.ai's
+// /oauth/authorize rejects a non-UUID client_id ("Input should be a valid
+// UUID") and renders an "OAuth Request Failed" page, so the client-metadata
+// URL that used to live here made the flow unreachable before the user could
+// even approve. Public by design — an OAuth public client id is an
+// identifier, not a secret; PKCE is what protects the exchange.
+const CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const CLAUDE_OAUTH_AUTH_URL = "https://claude.com/cai/oauth/authorize";
 const CLAUDE_OAUTH_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
 const CLAUDE_OAUTH_REDIRECT_URI =
