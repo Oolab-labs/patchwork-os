@@ -29,29 +29,19 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-13 `feat/sqlite-run-store` — next slice of
-  [ADR-0022](adr/0022-durable-evidence-store.md). The seam landed in #1366
-  (`src/runStore/`: `RunRepository`, the JSONL adapter, and the conformance
-  contract both stores must pass). This slice adds the `node:sqlite`
-  implementation against that same contract, then dual-write + shadow-read.
-  Branch reserved, not yet cut. Will touch `src/runLog.ts`,
-  `src/runStepLedger.ts` and all 8 `RecipeRunLog` construction sites
-  (bridge.ts, index.ts ×3, yamlRunner, chainedRunner ×2, runWorkerShadow) —
-  anyone working in the recipe runner or the worker-trust replay path should
-  coordinate first. Folds in #1360 (`getBySeq` collisions): a real primary
-  key is that fix. Blocked-ish on #1365 — windows/24 is advisory, and it must
-  be blocking again before `node:sqlite` code relies on that cell for
-  coverage. — build session
-
-
-
-
-
-
-
-
-
-
+- 2026-08-13 `feat/runstore-dual-write` — third slice of
+  [ADR-0022](adr/0022-durable-evidence-store.md). The seam + conformance
+  contract landed in #1366; the SQLite store in #1370 (passes the same
+  contract; `task_id` is the PRIMARY KEY, which is #1324 as a schema
+  constraint). This slice wires DUAL-WRITE: JSONL stays the source of truth,
+  every write also goes to SQLite, and a shadow-read comparison reports
+  divergence — through the first rotation, before any flip. Branch reserved,
+  not yet cut. Will touch `src/runLog.ts` and all 8 `RecipeRunLog`
+  construction sites (bridge.ts, index.ts ×3, yamlRunner, chainedRunner ×2,
+  runWorkerShadow) — coordinate before touching the recipe runner or the
+  worker-trust replay path. Gate before the flip: replay #1324 / #1340 /
+  rotation loss against both stores; JSONL must visibly LOSE all three
+  (ADR-0022 §4). — build session
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
 #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
