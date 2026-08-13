@@ -15,9 +15,24 @@ import { SqliteRunRepository } from "../sqliteRunRepository.js";
 
 describe("SQLite run store — what JSONL could not do", () => {
   let dir: string;
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  let opened: SqliteRunRepository[] = [];
+
+  /** Track every instance so teardown can close it. An open file cannot be
+   *  unlinked on Windows, so a leaked handle makes `rmSync` throw EBUSY there
+   *  while POSIX deletes it silently — invisible locally, 57 failures in CI. */
+  const open = (): SqliteRunRepository => {
+    const r = new SqliteRunRepository({ dir });
+    opened.push(r);
+    return r;
+  };
+
   beforeEach(() => {
     dir = mkdtempSync(path.join(tmpdir(), "sqlite-runstore-"));
+    opened = [];
+  });
+  afterEach(() => {
+    for (const r of opened) r.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 
   const start = (
@@ -33,7 +48,7 @@ describe("SQLite run store — what JSONL could not do", () => {
     });
 
   it("writes a real database file", () => {
-    const repo = new SqliteRunRepository({ dir });
+    const repo = open();
     start(repo, "t-file");
     const db = path.join(dir, "runs.db");
     expect(existsSync(db)).toBe(true);
@@ -52,8 +67,8 @@ describe("SQLite run store — what JSONL could not do", () => {
    * `task_id`. Nothing is discarded and nothing has to be reconciled.
    */
   it("two runs with the same seq both survive (#1324)", () => {
-    const a = new SqliteRunRepository({ dir });
-    const b = new SqliteRunRepository({ dir });
+    const a = open();
+    const b = open();
 
     // `b` was constructed before `a` wrote anything, so both counters start at
     // 0 and both hand out seq 1 — precisely the live-log collision.
@@ -63,7 +78,7 @@ describe("SQLite run store — what JSONL could not do", () => {
       seqB,
     );
 
-    const ids = new SqliteRunRepository({ dir })
+    const ids = open()
       .query({ limit: 50 })
       .map((r) => r.taskId)
       .sort();
@@ -74,7 +89,7 @@ describe("SQLite run store — what JSONL could not do", () => {
    *  many times it is started. An accidental re-start updates rather than
    *  duplicating, so a run cannot fork into two histories. */
   it("re-starting the same taskId does not create a second run", () => {
-    const repo = new SqliteRunRepository({ dir });
+    const repo = open();
     start(repo, "t-dup");
     start(repo, "t-dup");
     expect(repo.size()).toBe(1);
@@ -88,7 +103,7 @@ describe("SQLite run store — what JSONL could not do", () => {
    * before it could settle.
    */
   it("retains far more rows than the JSONL cap would have held", () => {
-    const repo = new SqliteRunRepository({ dir });
+    const repo = open();
     for (let i = 0; i < 5_000; i++) {
       const seq = repo.startRun({
         taskId: `bulk-${i}`,

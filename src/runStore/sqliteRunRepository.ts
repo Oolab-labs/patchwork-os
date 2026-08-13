@@ -144,6 +144,7 @@ export class SqliteRunRepository implements RunRepository {
   private readonly now: () => number;
   private readonly isAlive: (pid: number | undefined) => boolean;
   private seq = 0;
+  private closed = false;
 
   constructor(private readonly opts: SqliteRunStoreOptions) {
     this.now = opts.now ?? Date.now;
@@ -160,8 +161,24 @@ export class SqliteRunRepository implements RunRepository {
     this.sweepInterrupted();
   }
 
+  /**
+   * Release the database handle. Idempotent, and never throws.
+   *
+   * Callers close defensively (teardown paths, error paths, a shutdown that
+   * may already have run), and a store whose cleanup can itself fail turns
+   * "we tidied up" into a new failure mode. On Windows this is not cosmetic:
+   * an open handle prevents the file being unlinked at all.
+   */
   close(): void {
-    this.db.close();
+    if (this.closed) return;
+    this.closed = true;
+    try {
+      this.db.close();
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[sqlite-runstore] close failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private maxSeq(): number {
