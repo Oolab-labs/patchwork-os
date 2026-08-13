@@ -143,16 +143,6 @@ intellij-plugin/.gradle/
 /docs/*-rows.json
 /docs/*-cells.json
 /docs/*-backtest-*.md
-/src/ta/
-/src/recipes/tools/__tests__/market.test.ts
-/src/recipes/tools/__tests__/ta.test.ts
-/src/recipes/tools/__tests__/taLedger.test.ts
-/src/recipes/tools/__tests__/watchlist.test.ts
-/src/recipes/tools/altscan.ts
-/src/recipes/tools/market.ts
-/src/recipes/tools/ta.ts
-/src/recipes/tools/taLedger.ts
-/src/recipes/tools/watchlist.ts
 
 # Codex CLI scaffolding (different coding agent tool, not used for this repo)
 /.codex/
