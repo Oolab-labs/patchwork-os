@@ -69,7 +69,10 @@ jobs:
       - name: Build
         run: npm run build
       - name: Test
-        run: npm test -- --reporter=dot --reporter=github-actions
+        # `--logHeapUsage` is added ONLY on the windows/24 cell, as a TEMPORARY
+        # probe for #1365 (see the two steps below). Scoped by expression so
+        # every other cell keeps its existing log volume.
+        run: npm test -- --reporter=dot --reporter=github-actions ${{ (matrix.os == 'windows-latest' && matrix.node-version == 24) && '--logHeapUsage' || '' }}
         # Bumped 5→10: the suite has grown past the old 5-minute ceiling (local
         # run: 335s of test time alone, no coverage overhead) and windows-latest
         # runners are consistently slower — CI was killing the step at ~5m0s-5m2s
@@ -77,6 +80,41 @@ jobs:
         # mid-run. Not a hang; confirmed via a full local `vitest run`
         # completing clean (8759 passed).
         timeout-minutes: 10
+
+      # ---- TEMPORARY probe for #1365. Remove with the issue. ----
+      #
+      # windows/24 fails with the process TREE killed ~75s after test output
+      # stops: no failing assertion, no vitest summary, and (since #1368) not
+      # even the wrapper's own exit line — so spawnSync never returns. That
+      # rules out a test failure, a vitest non-zero exit, and a signalled child
+      # whose parent survives. What is left is an external kill, with OOM the
+      # leading candidate.
+      #
+      # These two steps run ONLY on that cell and ONLY after it fails, so they
+      # cost nothing anywhere else and cannot mask the failure they measure.
+      - name: "#1365 probe — Windows kill records"
+        if: ${{ failure() && matrix.os == 'windows-latest' && matrix.node-version == 24 }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Write-Host "=== Memory ==="
+          Get-CimInstance Win32_OperatingSystem |
+            Select-Object TotalVisibleMemorySize, FreePhysicalMemory | Format-List
+          Write-Host "=== Application/System errors in the last 15 min ==="
+          $since = (Get-Date).AddMinutes(-15)
+          Get-WinEvent -FilterHashtable @{LogName='Application','System'; Level=1,2; StartTime=$since} -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated, Id, ProviderName, Message | Format-List
+
+      # The discriminator. singleFork collapses vitest's concurrent workers into
+      # one process, cutting peak memory sharply. If the suite goes GREEN here
+      # while the normal run died, memory is confirmed and pooling is the fix.
+      # If it dies the same way, the OOM hypothesis is wrong and #1365 needs a
+      # different attack — which is the more valuable outcome of the two.
+      - name: "#1365 probe — retry with singleFork"
+        if: ${{ failure() && matrix.os == 'windows-latest' && matrix.node-version == 24 }}
+        continue-on-error: true
+        timeout-minutes: 15
+        run: npm test -- --reporter=dot --pool=forks --poolOptions.forks.singleFork --logHeapUsage
       - name: Coverage (enforce 71% lines / 62% branches / 70% functions)
         run: npm run test:coverage -- --reporter=dot --reporter=github-actions
         timeout-minutes: 8
