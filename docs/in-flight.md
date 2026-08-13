@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-13 `fix/orchestrator-failure-not-agent-answer` — a failed orchestrator task was returned as the agent step's answer, so a driver error became a proposed gated write (touches `src/recipeOrchestration.ts`) — durability session
+_Nothing in flight._
 
 
 
