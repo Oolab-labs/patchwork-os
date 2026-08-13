@@ -53,6 +53,7 @@ import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { invalidateRecipesCache } from "./recipesHttp.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
+import { AmbiguousActionRefError } from "./workers/actionRef.js";
 import type { OutcomeStore } from "./workers/outcomeStore.js";
 
 /**
@@ -1330,9 +1331,24 @@ export function tryHandleRecipeRoute(
           });
         } catch (err) {
           // The store refuses a record nothing could look up (e.g. a tool name
-          // that would produce a URL-shaped key). Surface it as a 400 — it is
+          // that would produce a URL-shaped key). Surface THAT as a 400 — it is
           // a bad request, not a server fault.
-          respond400(err instanceof Error ? err.message : String(err));
+          //
+          // Classified on the source's own typed signal, never on message
+          // text. Everything else escaping `upsert` comes from the
+          // `appendFileSync` to outcome-log.jsonl, and answering a disk fault
+          // with 400 + the raw message was wrong twice over: it told the
+          // operator their input was malformed when the WRITE failed (a 500
+          // says "retry", a 400 says "stop, you are wrong"), and it echoed a
+          // filesystem path back to the caller (CodeQL js/stack-trace-exposure
+          // #141). The operator's confirmation is the only thing that moves a
+          // worker's dial on a non-reversible action, so a lost disposition
+          // misreported as user error is evidence quietly going missing.
+          if (err instanceof AmbiguousActionRefError) {
+            respond400(err.message);
+          } else {
+            respond500(res, err, "POST /outcomes upsert");
+          }
           return;
         }
         res.writeHead(200, { "Content-Type": "application/json" });
