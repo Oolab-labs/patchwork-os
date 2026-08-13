@@ -29,18 +29,19 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-13 `feat/durable-evidence-store` — implements
-  [ADR-0022](adr/0022-durable-evidence-store.md) (decision landed in #1362):
-  move `runs` + `run_steps` off JSONL to embedded SQLite (`node:sqlite`,
-  engines →22.5, Node 24 added to the CI matrix) behind a repository
-  interface, via dual-write + shadow-read through the first rotation rather
-  than a cutover; JSONL demoted to the append-only export path. Branch
-  reserved, not yet cut. Will touch `src/runLog.ts`, `src/runStepLedger.ts`
-  and all 8 `RecipeRunLog` construction sites (bridge.ts, index.ts ×3,
-  yamlRunner, chainedRunner ×2, runWorkerShadow) — anyone working in the
-  recipe runner or the worker-trust replay path should coordinate first.
-  Folds in #1360 (`getBySeq` collisions): a real primary key is that fix. —
-  build session
+- 2026-08-13 `feat/sqlite-run-store` — next slice of
+  [ADR-0022](adr/0022-durable-evidence-store.md). The seam landed in #1366
+  (`src/runStore/`: `RunRepository`, the JSONL adapter, and the conformance
+  contract both stores must pass). This slice adds the `node:sqlite`
+  implementation against that same contract, then dual-write + shadow-read.
+  Branch reserved, not yet cut. Will touch `src/runLog.ts`,
+  `src/runStepLedger.ts` and all 8 `RecipeRunLog` construction sites
+  (bridge.ts, index.ts ×3, yamlRunner, chainedRunner ×2, runWorkerShadow) —
+  anyone working in the recipe runner or the worker-trust replay path should
+  coordinate first. Folds in #1360 (`getBySeq` collisions): a real primary
+  key is that fix. Blocked-ish on #1365 — windows/24 is advisory, and it must
+  be blocking again before `node:sqlite` code relies on that cell for
+  coverage. — build session
 
 
 
