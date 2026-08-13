@@ -62,7 +62,7 @@ patchwork-os init
 
 `init` scaffolds `~/.patchwork`, seeds local-only recipes, and registers Patchwork's PreToolUse hook in `~/.claude/settings.json`. Restart Claude Code afterwards — it reads hooks at session start.
 
-**Prereqs:** Node 22+. macOS, Linux, and native Windows (no WSL).
+**Prereqs:** Node 22.5+. macOS, Linux, and native Windows (no WSL).
 
 Two things worth knowing before you start:
 

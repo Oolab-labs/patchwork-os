@@ -31,6 +31,15 @@ export interface RepositoryHarness {
   repo: RunRepository;
   /** A second, independent instance over the same storage. */
   reopen: () => RunRepository;
+  /**
+   * Release every handle the factory opened, before the directory is removed.
+   *
+   * Not optional politeness. On Windows an open file cannot be unlinked, so a
+   * store holding a file handle makes `rmSync` throw `EBUSY` and every test in
+   * the suite fails in teardown — while POSIX deletes the open file happily and
+   * shows green. A local macOS run structurally cannot catch it.
+   */
+  cleanup?: () => void;
 }
 
 export type RepositoryFactory = (dir: string) => RepositoryHarness;
@@ -63,7 +72,12 @@ export function describeRunRepositoryContract(
       dir = mkdtempSync(path.join(tmpdir(), "run-repo-contract-"));
       h = factory(dir);
     });
-    afterEach(() => rmSync(dir, { recursive: true, force: true }));
+    afterEach(() => {
+      // Handles first, then the directory — the reverse order throws EBUSY on
+      // Windows and turns a clean run into 57 teardown failures.
+      h?.cleanup?.();
+      rmSync(dir, { recursive: true, force: true });
+    });
 
     const start = (
       over: Partial<Parameters<RunRepository["startRun"]>[0]> = {},
