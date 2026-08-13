@@ -29,7 +29,14 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-13 `docs/adr-0022-durable-evidence-store` — ADR-0022: move `runs` +
+  `run_steps` off JSONL to embedded SQLite (`node:sqlite`, engines →22.5)
+  behind a repository interface, via dual-write + shadow-read rather than a
+  cutover; JSONL demoted to the append-only export path. Docs only in this PR —
+  no code. Implementation will touch `src/runLog.ts`, `src/runStepLedger.ts`
+  and the 8 `RecipeRunLog` construction sites, so anyone working in the recipe
+  runner or the worker-trust replay path should coordinate before it starts. —
+  build session
 
 
 
