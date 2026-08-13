@@ -101,10 +101,24 @@ describe("SQLite run store — what JSONL could not do", () => {
    * measured in BYTES while the durability window is defined in TIME, and
    * nothing reconciled them, so a busy recipe could delete a worker's filing
    * before it could settle.
+   *
+   * ROWS is chosen against a measurement, not picked round. The live log held
+   * 1,123 rows in 851,327 bytes (~758 B/row), so the 1 MB cap lands near
+   * ~1,380 rows. 2,000 clears it decisively while staying honest about what is
+   * being demonstrated.
+   *
+   * The generous timeout is for Windows, not for slack: every startRun +
+   * completeRun is its own WAL transaction, and Windows fsync (plus Defender)
+   * makes that ~30x slower than POSIX — 528 ms locally versus a 15 s timeout
+   * on windows-latest. The store is not slow; per-row transactions are, and
+   * production writes one run at a time.
    */
-  it("retains far more rows than the JSONL cap would have held", () => {
+  it("retains far more rows than the JSONL cap would have held", {
+    timeout: 60_000,
+  }, () => {
     const repo = open();
-    for (let i = 0; i < 5_000; i++) {
+    const ROWS = 2_000;
+    for (let i = 0; i < ROWS; i++) {
       const seq = repo.startRun({
         taskId: `bulk-${i}`,
         recipeName: "noisy",
@@ -118,7 +132,7 @@ describe("SQLite run store — what JSONL could not do", () => {
         stepResults: [],
       });
     }
-    expect(repo.size()).toBe(5_000);
+    expect(repo.size()).toBe(ROWS);
     // And the oldest is still there — the property that actually matters, since
     // rotation dropped precisely the oldest rows.
     expect(repo.query({ limit: 1, recipe: "noisy", since: 1_000 }).length).toBe(
