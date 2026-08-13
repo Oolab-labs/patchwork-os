@@ -98,6 +98,35 @@ function fallbackToVitest() {
     stdio: "inherit",
     shell: process.platform === "win32",
   });
+
+  // Say WHY the child failed. `result.status` is null when the process was
+  // killed by a signal or never spawned, so `status ?? 1` turned "killed by
+  // SIGSEGV" and "npx not found" into an indistinguishable bare exit 1 — no
+  // signal, no error, no message. CI is the only place this path runs (it is
+  // taken whenever no bridge lock exists), which is exactly where nobody can
+  // attach a debugger.
+  //
+  // This is not hypothetical tidying: #1365 (windows-latest + node 24) fails
+  // through this branch with no vitest summary and no failing test, and the
+  // reason it has stayed unexplained is that the one process that knew —
+  // this one — discarded the evidence on its way out.
+  if (result.error) {
+    console.error(
+      `[test-via-bridge] could not run vitest: ${result.error.message}`,
+    );
+    process.exit(1);
+  }
+  if (result.signal) {
+    console.error(
+      `[test-via-bridge] vitest was KILLED by ${result.signal} — the suite did ` +
+        `not finish, so a missing summary above is the cause, not a symptom. ` +
+        `Usual suspects: OOM (heap or runner memory) and a watchdog kill.`,
+    );
+    process.exit(1);
+  }
+  if (result.status !== 0) {
+    console.error(`[test-via-bridge] vitest exited ${result.status}`);
+  }
   process.exit(result.status ?? 1);
 }
 
