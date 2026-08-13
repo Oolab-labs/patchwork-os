@@ -19,8 +19,15 @@ jobs:
       fail-fast: false
       matrix:
         # Node 20 reached EOL April 2026; removed from GitHub-hosted runners Sept 2026.
+        #
+        # 24 is here because ADR-0022 puts `node:sqlite` — an EXPERIMENTAL API —
+        # in the trust-evidence path. Testing 22 alone would let a Node-side
+        # change to that API reach users before it reached us, which is the one
+        # risk that decision knowingly took on. Both OSes: this repo's history
+        # says Windows is where the platform-specific bugs hide (see the
+        # windows-latest notes above and PRs #497-#501).
         os: [ubuntu-latest, windows-latest]
-        node-version: [22]
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
