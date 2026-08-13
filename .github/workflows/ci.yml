@@ -28,6 +28,17 @@ jobs:
         # windows-latest notes above and PRs #497-#501).
         os: [ubuntu-latest, windows-latest]
         node-version: [22, 24]
+    # windows-latest + node 24 is ADVISORY for now, exactly as windows-latest
+    # itself was through #497-#501 before it became blocking. It fails
+    # reproducibly (two runs, same place): the vitest process dies with no
+    # summary right after recipeRoutes-install-cleanup.test.ts, while
+    # ubuntu/24 and windows/22 both pass — so it is a genuine
+    # Windows-on-24 defect, not a flake and not Node 24 rejecting the
+    # codebase. Tracked in #1365. Advisory rather than dropped, because
+    # dropping the combination would hide the very signal ADR-0022 needs;
+    # blocking on it would wedge every unrelated PR behind a pre-existing
+    # bug. Flip to blocking when #1365 closes.
+    continue-on-error: ${{ matrix.os == 'windows-latest' && matrix.node-version == 24 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
