@@ -23,22 +23,32 @@ jobs:
         # 24 is here because ADR-0022 puts `node:sqlite` — an EXPERIMENTAL API —
         # in the trust-evidence path. Testing 22 alone would let a Node-side
         # change to that API reach users before it reached us, which is the one
-        # risk that decision knowingly took on. Both OSes: this repo's history
-        # says Windows is where the platform-specific bugs hide (see the
-        # windows-latest notes above and PRs #497-#501).
+        # risk that decision knowingly took on.
         os: [ubuntu-latest, windows-latest]
         node-version: [22, 24]
-    # windows-latest + node 24 is ADVISORY for now, exactly as windows-latest
-    # itself was through #497-#501 before it became blocking. It fails
-    # reproducibly (two runs, same place): the vitest process dies with no
-    # summary right after recipeRoutes-install-cleanup.test.ts, while
-    # ubuntu/24 and windows/22 both pass — so it is a genuine
-    # Windows-on-24 defect, not a flake and not Node 24 rejecting the
-    # codebase. Tracked in #1365. Advisory rather than dropped, because
-    # dropping the combination would hide the very signal ADR-0022 needs;
-    # blocking on it would wedge every unrelated PR behind a pre-existing
-    # bug. Flip to blocking when #1365 closes.
-    continue-on-error: ${{ matrix.os == 'windows-latest' && matrix.node-version == 24 }}
+        exclude:
+          # windows + 24 is EXCLUDED, not advisory. It fails reproducibly and
+          # unexplainedly: the process TREE dies ~75-83s after test output
+          # stops, with no failing assertion, no vitest summary, not even the
+          # wrapper's own exit line (#1368), and — per the #1365 probe — no
+          # Windows resource-kill record and 13.4 GiB free. Failing test,
+          # vitest non-zero exit, signalled-child, step timeout and OOM are all
+          # eliminated. See #1365.
+          #
+          # Excluded rather than left `continue-on-error`, deliberately. A
+          # permanently-red advisory job is WORSE than an absent one: it cannot
+          # be told apart from a real regression, so it would silently destroy
+          # the very node:sqlite signal ADR-0022 added 24 for — and it trains
+          # everyone to scroll past a failing job.
+          #
+          # What this costs, stated so nobody assumes otherwise: only the
+          # INTERSECTION is dark. ubuntu/24 covers the Node 24 runtime
+          # (including node:sqlite); windows/22 covers Windows. Windows-specific
+          # behaviour of a Node-24-only API is the uncovered case — narrow, but
+          # real, and it is exactly where a filesystem API is most likely to
+          # differ. Reinstate this cell when #1365 is understood.
+          - os: windows-latest
+            node-version: 24
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
