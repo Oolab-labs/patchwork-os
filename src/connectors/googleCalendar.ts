@@ -24,7 +24,21 @@ import {
 } from "./tokenStorage.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
-const REDIRECT_URI = connectorRedirectUri("google-calendar");
+/**
+ * Resolved per CALL, never frozen at import (#1266).
+ *
+ * `connectorRedirectUri()` reads PATCHWORK_DASHBOARD_URL -> PATCHWORK_BRIDGE_URL
+ * -> a localhost default. Binding it to a module-level `const` captured
+ * whichever values existed when the module first loaded, so any later change
+ * was ignored and the connector kept building auth URLs against a stale base
+ * until the process restarted — with no error to explain the mismatch.
+ *
+ * The redirect URI must match what the OAuth app has registered, so a stale
+ * one fails at the provider, far from the cause.
+ */
+function redirectUri(): string {
+  return connectorRedirectUri("google-calendar");
+}
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 function getTokenPath() {
   const dir =
@@ -150,7 +164,7 @@ export function getStatus(): ConnectorStatus {
 function buildAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: clientId(),
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri(),
     response_type: "code",
     scope: SCOPES.join(" "),
     access_type: "offline",
@@ -170,7 +184,7 @@ async function exchangeCode(
       code,
       client_id: clientId(),
       client_secret: clientSecret(),
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri(),
       grant_type: "authorization_code",
     }).toString(),
   });
