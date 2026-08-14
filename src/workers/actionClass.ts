@@ -156,6 +156,67 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
   "postgres.query": "db-write",
   "snowflake.execute_query": "db-write",
 
+  // ── tracker / docs / support writes (#1311 batch 3) ─────────────────────
+  // The per-tool review batch 1 deferred and batch 2 began. Every id below is
+  // a declared WRITE, so each carries a stated inverse rather than a guess
+  // from its name — the question asked of each was "what is the concrete act
+  // that undoes this, and what residue does it leave?".
+  //
+  // Two different things happen in this block, and they are kept apart on
+  // purpose:
+  //   * DEBUCKETING (no reversibility change) — the tool stays irreversible
+  //     and only stops sharing one bucket with every other unclassified write.
+  //   * LOOSENING (irreversible → compensable) — the tool has a real inverse.
+  //     This is the dangerous direction, so it is claimed only where the
+  //     inverse is an ordinary, supported operation of the product itself.
+  //
+  // Issue trackers. Inverse: delete or close the issue, revert the field, or
+  // delete the comment — all first-class operations in Jira and Linear. The
+  // residue (a watcher may have seen it, a notification already went out) is
+  // exactly what `compensable` means as distinct from `reversible`.
+  "jira.create_issue": "issue",
+  "jira.add_comment": "issue",
+  "jira.update_status": "issue",
+  "linear.createIssue": "issue",
+  "linear.updateIssue": "issue",
+  "linear.addComment": "issue",
+  "meetingNotes.createLinearIssues": "issue",
+
+  // Work trackers. Same inverse (delete the item / the comment); separate
+  // domain because "may file engineering issues" and "may act on the task
+  // board" are different authorities, and `tasks` already exists and is
+  // already compensable for the same stated reason (#1268).
+  "asana.add_task_comment": "tasks",
+  "monday.create_item": "tasks",
+
+  // Knowledge bases. Inverse: delete the page, or restore the previous
+  // version — both products keep page history, which is what makes this a
+  // real inverse rather than a hopeful one.
+  //
+  // `obsidian.write_note` is deliberately NOT here despite looking like a
+  // sibling: it overwrites a vault file with no version history and is not
+  // covered by the WriteEffectLedger that makes `fs-write` reversible, so
+  // its prior content is simply gone. It stays on the ratchet.
+  "notion.createPage": "docs-write",
+  "notion.appendBlock": "docs-write",
+  "confluence.createPage": "docs-write",
+  "confluence.appendToPage": "docs-write",
+
+  // Customer-facing support. Split by what the act actually IS, not by which
+  // product it belongs to:
+  //   * replying/commenting DELIVERS text to a customer (usually by email).
+  //     That is a sent message and cannot be unsent — DEBUCKETING only, it
+  //     stays irreversible, and `messaging` is where sent things live.
+  //   * flipping ticket state is reopenable in both products — a genuine
+  //     inverse, so `support` is compensable. Kept out of `issue` because
+  //     "may close a customer's ticket" is a different authority from "may
+  //     close an engineering issue", and it is brand-exposed in a way an
+  //     internal tracker is not.
+  "intercom.replyToConversation": "messaging",
+  "zendesk.addComment": "messaging",
+  "intercom.closeConversation": "support",
+  "zendesk.updateStatus": "support",
+
   // ── connector reads (#1311 batch 1) ─────────────────────────────────────
   // Derived from the registry's own `isWrite: false`, never guessed from the
   // name. Writes are deliberately NOT swept: each needs a real reversibility
@@ -366,6 +427,16 @@ const REVERSIBILITY_BY_DOMAIN: Record<string, Reversibility> = {
   // list showed the task, a collaborator may have seen it. "Undoable" and
   // "as if it never happened" are not the same claim.
   tasks: "compensable",
+  // Knowledge-base page writes (#1311 batch 3). Compensable, not reversible:
+  // both Notion and Confluence keep page history, so "delete the page" and
+  // "restore the previous version" are ordinary supported operations — but a
+  // reader may already have seen it and a watch notification already fired.
+  "docs-write": "compensable",
+  // Customer-facing ticket STATE (#1311 batch 3) — not ticket text, which is
+  // classified `messaging` and stays irreversible. Reopening a ticket is a
+  // first-class operation in both Zendesk and Intercom, so the inverse is
+  // real; the residue is that the customer was told it was closed.
+  support: "compensable",
   payments: "irreversible", // a settled charge/transfer has no generic inverse;
   // a refund is a NEW compensating action with residue (fees kept, two
   // statement lines), not an undo — see src/recipes/fileRollback.ts's note.
@@ -424,6 +495,10 @@ const BRAND_EXPOSED_DOMAINS = new Set([
   "vcs-push",
   "vcs-merge",
   "issue",
+  // A customer watched their ticket close. Internal knowledge-base pages
+  // (`docs-write`) are deliberately NOT here — the failure is embarrassing
+  // internally, not customer-visible.
+  "support",
   "http",
   "payments", // a wrong charge is a customer-visible, reputational failure
 ]);

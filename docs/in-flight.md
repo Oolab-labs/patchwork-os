@@ -29,7 +29,24 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-14 `fix/1311-batch3-tracker-writes` — #1311 batch 3: the per-tool
+  review of declared WRITES that batch 1 deferred and batch 2 began. 17 tracker
+  / knowledge-base / support tools taken off the classification ratchet (34 →
+  17). Two distinct moves, kept apart on purpose: 15 LOOSENED
+  (irreversible → compensable) only where the inverse is an ordinary supported
+  operation of the product — delete/close the issue, restore the page version,
+  reopen the ticket; 2 DEBUCKETED only (`intercom.replyToConversation`,
+  `zendesk.addComment` stay irreversible — they deliver text to a customer and
+  a sent message has no inverse). New domains `docs-write` and `support`;
+  `support` is brand-exposed, `docs-write` deliberately is not. Touches
+  `src/workers/actionClass.ts` — the autonomy gate — so it collides with any
+  other trust-gate work. Deliberately left on the ratchet:
+  `obsidian.write_note` (looks like a sibling of the Notion/Confluence page
+  writes but overwrites with no version history and no WriteEffectLedger) and
+  `outcomes.classify_issues` (writes the outcome-log the trust ramp READS —
+  classifying it is a governance question about a worker writing its own
+  evidence, not a reversibility one). Remaining 17 are CRM and
+  infrastructure writes.
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
 #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
