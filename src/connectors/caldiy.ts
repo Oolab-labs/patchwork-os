@@ -20,8 +20,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { unlinkSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
@@ -112,7 +111,7 @@ export function saveTokens(tokens: CalDiyTokens): void {
 
 export function clearTokens(): void {
   try {
-    const p = path.join(homedir(), ".patchwork", "tokens", "caldiy.json");
+    const p = patchworkPath("tokens", "caldiy.json");
     unlinkSync(p);
   } catch {
     /* already gone */

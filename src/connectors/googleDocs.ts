@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
@@ -30,9 +29,7 @@ function redirectUri(): string {
 const DOCS_API = "https://docs.googleapis.com";
 
 function getTokenPath() {
-  const dir =
-    process.env.PATCHWORK_TOKEN_DIR ??
-    path.join(homedir(), ".patchwork", "tokens");
+  const dir = process.env.PATCHWORK_TOKEN_DIR ?? patchworkPath("tokens");
   return path.join(dir, "google-docs.json");
 }
 
@@ -458,6 +455,7 @@ export async function getDocumentText(
   return extractTextFromElements(content);
 }
 
+import { patchworkPath } from "../patchworkHome.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
 const pendingStates = createOAuthStateStore({ namespace: "googleDocs" });

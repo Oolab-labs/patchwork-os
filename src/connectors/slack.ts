@@ -14,8 +14,8 @@
 
 import crypto from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 import { writeFileAtomicSync } from "../writeFileAtomic.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
@@ -36,9 +36,7 @@ const SCOPES = [
 ].join(",");
 
 function getPatchworkTokensDir(): string {
-  const patchworkHome =
-    process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork");
-  return path.join(patchworkHome, "tokens");
+  return patchworkPath("tokens");
 }
 
 function getLegacyTokenPath(): string {

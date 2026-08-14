@@ -14,7 +14,6 @@
 
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { CONNECTORS } from "./connectorRegistry.js";
@@ -42,9 +41,7 @@ function redirectUri(): string {
   return connectorRedirectUri("gmail");
 }
 function getTokenPath() {
-  const dir =
-    process.env.PATCHWORK_TOKEN_DIR ??
-    path.join(homedir(), ".patchwork", "tokens");
+  const dir = process.env.PATCHWORK_TOKEN_DIR ?? patchworkPath("tokens");
   return path.join(dir, "gmail.json");
 }
 
@@ -273,6 +270,7 @@ async function fetchUserEmail(accessToken: string): Promise<string> {
 
 // ── State map (in-memory CSRF protection) ────────────────────────────────────
 
+import { patchworkPath } from "../patchworkHome.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
 const pendingStates = createOAuthStateStore({ namespace: "gmail" });

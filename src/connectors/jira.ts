@@ -8,8 +8,7 @@
  */
 
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -487,9 +486,7 @@ function isAtlassianCloudHost(rawUrl: string): boolean {
 }
 
 function getLegacyTokenPath(): string {
-  const patchworkHome =
-    process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork");
-  return path.join(patchworkHome, "tokens", "jira.json");
+  return patchworkPath("tokens", "jira.json");
 }
 
 export function loadTokens(): JiraTokens | null {

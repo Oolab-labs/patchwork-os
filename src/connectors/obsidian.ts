@@ -15,9 +15,8 @@
  */
 
 import { unlinkSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
 import { Agent, fetch as undiciFetch } from "undici";
+import { patchworkPath } from "../patchworkHome.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -75,7 +74,7 @@ export function saveTokens(tokens: ObsidianTokens): void {
 
 export function clearTokens(): void {
   try {
-    const p = path.join(homedir(), ".patchwork", "tokens", "obsidian.json");
+    const p = patchworkPath("tokens", "obsidian.json");
     unlinkSync(p);
   } catch {
     /* already gone */

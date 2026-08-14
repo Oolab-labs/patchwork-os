@@ -19,8 +19,7 @@
 
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { readSecret } from "./secrets.js";
 import {
@@ -123,7 +122,7 @@ export interface McpTokenFile {
 }
 
 function tokenPath(vendor: VendorId): string {
-  return path.join(homedir(), ".patchwork", "tokens", `${vendor}-mcp.json`);
+  return patchworkPath("tokens", `${vendor}-mcp.json`);
 }
 
 function tokenStorageProvider(vendor: VendorId): string {

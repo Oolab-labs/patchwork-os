@@ -22,8 +22,8 @@
 
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
 import {
@@ -91,9 +91,7 @@ function authBase(): string {
 }
 
 function getTokenPath() {
-  const dir =
-    process.env.PATCHWORK_TOKEN_DIR ??
-    path.join(homedir(), ".patchwork", "tokens");
+  const dir = process.env.PATCHWORK_TOKEN_DIR ?? patchworkPath("tokens");
   return path.join(dir, "salesforce.json");
 }
 

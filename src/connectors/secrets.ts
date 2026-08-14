@@ -35,14 +35,11 @@
  */
 
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 
 /** Absolute path the helper reads from. */
 export function secretsFilePath(): string {
-  const patchworkHome =
-    process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork");
-  return path.join(patchworkHome, ".secrets.json");
+  return patchworkPath(".secrets.json");
 }
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
