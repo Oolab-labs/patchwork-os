@@ -29,21 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-14 `feat/runstore-flip-gate` — seventh slice of
-  [ADR-0022](adr/0022-durable-evidence-store.md). Merged so far: seam +
-  contract (#1366), SQLite store (#1370), dual-write (#1372),
-  `appendDirect` (#1373), wiring at the `append()` chokepoint (#1374), and
-  backfill + compare with the `patchwork runstore` verb. The mirror can now
-  be seeded and checked; against the REAL log it reproduces all 424 runs
-  from 1,123 raw lines and agrees on every compared field.
-  This slice is the FLIP GATE itself (ADR-0022 §4): replay #1324, #1340 and
-  rotation loss against both stores and require JSONL to visibly LOSE all
-  three. Nothing flips before that passes. Branch reserved, not yet cut.
-  Still pending and NOT in this slice: the deferred `ExperimentalWarning`
-  suppression at an entry point, and enabling
-  `PATCHWORK_FLAG_RUNSTORE_MIRROR` on the live bridge (an operator
-  decision — the mirror must be backfilled first or every pre-existing run
-  reports as a difference). — build session
+_Nothing in flight._
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
 #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
