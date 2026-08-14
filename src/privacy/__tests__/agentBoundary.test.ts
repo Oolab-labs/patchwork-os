@@ -133,3 +133,55 @@ describe("executeAgent enforces the information boundary (ADR-0021)", () => {
     expect(result.text).toContain("information boundary");
   });
 });
+
+describe("executeAgent resolves its own destination from config", () => {
+  const CFG = {
+    destinations: {
+      "remote-narrow": {
+        type: "remote",
+        classifications: ["public"],
+        drivers: ["anthropic"],
+      },
+    },
+  };
+
+  it("enforces without the caller passing a destination", async () => {
+    // The property that makes the boundary unconditional: four dispatch sites
+    // exist in the flat runner alone, and a boundary depending on each of them
+    // remembering to pass a destination is a boundary with four bypasses.
+    const ran = vi.fn(async () => ({ text: "out" }));
+    const result = await executeAgent(
+      {
+        prompt: "synthetic prompt",
+        driver: "anthropic",
+        boundary: { dataPolicy: { classification: "confidential" } },
+      },
+      { localFn: ran, loadPrivacyConfigFn: () => CFG } as never,
+    );
+    expect(ran).not.toHaveBeenCalled();
+    expect(result.text).toContain("information boundary");
+  });
+
+  it("enforces even when the step declares NO policy at all", async () => {
+    // Default `internal` against a destination cleared only for `public`.
+    // A step that declares nothing is still governed once the operator has
+    // opted in by registering destinations.
+    const ran = vi.fn(async () => ({ text: "out" }));
+    const result = await executeAgent(
+      { prompt: "synthetic prompt", driver: "anthropic" },
+      { localFn: ran, loadPrivacyConfigFn: () => CFG } as never,
+    );
+    expect(ran).not.toHaveBeenCalled();
+    expect(result.text).toContain("information boundary");
+  });
+
+  it("stays inert when no destinations are configured", async () => {
+    const ran = vi.fn(async () => ({ text: "out" }));
+    await executeAgent({ prompt: "synthetic prompt", driver: "local" }, {
+      localFn: ran,
+      loadPatchworkConfig: () => ({}),
+      loadPrivacyConfigFn: () => undefined,
+    } as never);
+    expect(ran).toHaveBeenCalled();
+  });
+});
