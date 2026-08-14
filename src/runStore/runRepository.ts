@@ -104,6 +104,22 @@ export interface RunRepository {
   /** Finish a run. Must be durable before returning. */
   completeRun(seq: number, input: CompleteRunInput): void;
 
+  /**
+   * Record an ALREADY-FINISHED run in one shot, allocating its `seq`.
+   *
+   * This is not a convenience wrapper around start+complete — it is the
+   * dominant production write path, used by the flat and chained runners and
+   * the CLI (5 call sites, versus 2 for `startRun`). Omitting it was a real
+   * design error in the first cut of this interface: dual-write would have
+   * silently missed every run written this way, and then reported divergence
+   * on all of them.
+   *
+   * Implementations must derive `hadStepErrors` from `stepResults` exactly as
+   * `completeRun` does, so a run recorded through this path is
+   * indistinguishable from one recorded through the lifecycle path.
+   */
+  appendDirect(run: Omit<RecipeRun, "seq">): void;
+
   /** Query runs, newest first. */
   query(q?: RunQuery): RecipeRun[];
 

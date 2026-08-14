@@ -372,6 +372,55 @@ export class SqliteRunRepository implements RunRepository {
       );
   }
 
+  appendDirect(run: Omit<RecipeRun, "seq">): void {
+    const seq = ++this.seq;
+    // Derived here, not trusted from the caller, and by the same rule
+    // `completeRun` uses — a run recorded through this path must be
+    // indistinguishable from one recorded through the lifecycle path.
+    const hadStepErrors = (run.stepResults ?? []).some(
+      (s) => s.status === "error",
+    );
+    const extra: Row = {};
+    for (const k of EXTRA_KEYS) {
+      const v = (run as unknown as Row)[k];
+      if (v !== undefined) extra[k] = v;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO runs (task_id, seq, recipe_name, trigger, status, created_at,
+                           started_at, done_at, duration_ms, model, output_tail,
+                           error_message, parent_seq, manual_run_id, owner_pid,
+                           had_step_errors, step_results, extra)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(task_id) DO UPDATE SET
+           seq=excluded.seq, status=excluded.status, done_at=excluded.done_at,
+           duration_ms=excluded.duration_ms, output_tail=excluded.output_tail,
+           error_message=excluded.error_message,
+           had_step_errors=excluded.had_step_errors,
+           step_results=excluded.step_results, extra=excluded.extra`,
+      )
+      .run(
+        run.taskId,
+        seq,
+        run.recipeName,
+        run.trigger,
+        run.status,
+        run.createdAt,
+        run.startedAt ?? null,
+        run.doneAt ?? null,
+        run.durationMs ?? null,
+        run.model ?? null,
+        run.outputTail ?? null,
+        run.errorMessage ?? null,
+        run.parentSeq ?? null,
+        run.manualRunId ?? null,
+        run.ownerPid ?? null,
+        hadStepErrors ? 1 : 0,
+        run.stepResults ? JSON.stringify(run.stepResults) : null,
+        Object.keys(extra).length > 0 ? JSON.stringify(extra) : null,
+      );
+  }
+
   query(q: RunQuery = {}): RecipeRun[] {
     const where: string[] = [];
     const args: unknown[] = [];

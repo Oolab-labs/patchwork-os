@@ -72,6 +72,9 @@ const brokenMirror = (): RunRepository => ({
   completeRun: () => {
     throw new Error("mirror down");
   },
+  appendDirect: () => {
+    throw new Error("mirror down");
+  },
   query: () => {
     throw new Error("mirror down");
   },
@@ -99,6 +102,11 @@ class LyingMirror implements RunRepository {
     // Silently records the wrong outcome: the #1341 shape, where a run that
     // succeeded is remembered as having been interrupted.
     this.inner.completeRun(seq, { ...i, status: "interrupted" });
+  }
+  appendDirect(run: Omit<RecipeRun, "seq">): void {
+    // Lies on this path too, in the same direction: a finished run is
+    // recorded as though it had been interrupted.
+    this.inner.appendDirect({ ...run, status: "interrupted" });
   }
   query(q: RunQuery = {}): RecipeRun[] {
     return this.inner.query(q);
@@ -209,6 +217,54 @@ describe("dual-write safety rules", () => {
 
     repo.query({ limit: 10 });
     expect(divergences.some((d) => d.detail.includes("row count"))).toBe(true);
+  });
+
+  /**
+   * The mirror must actually RECEIVE the dominant write path.
+   *
+   * This test exists because a mutation caught nothing: deleting the mirror's
+   * `appendDirect` call left all 62 conformance cases green. They read through
+   * the primary, so an empty mirror is invisible to them — the exact shape of
+   * failure this migration is meant to prevent, sitting in the migration
+   * tooling itself. Asserted against the mirror DIRECTLY, not via the pair.
+   */
+  it("appendDirect reaches the mirror, not just the primary", () => {
+    const mirror = sqliteMirror();
+    const repo = build(mirror);
+
+    repo.appendDirect({
+      taskId: "t-direct-mirrored",
+      recipeName: "direct",
+      trigger: "cron",
+      status: "done",
+      createdAt: 1_000,
+      doneAt: 2_000,
+      durationMs: 1_000,
+    });
+
+    expect(
+      mirror.query({ limit: 10 }).map((r) => r.taskId),
+      "the mirror must hold the run, or dual-write is not mirroring the path production mostly uses",
+    ).toEqual(["t-direct-mirrored"]);
+  });
+
+  /** ...and the pair must agree about it, with no divergence reported. */
+  it("appendDirect leaves the two stores in agreement", () => {
+    const repo = build(sqliteMirror());
+    for (let i = 0; i < 3; i++) {
+      repo.appendDirect({
+        taskId: `t-direct-agree-${i}`,
+        recipeName: "direct",
+        trigger: "cron",
+        status: "done",
+        createdAt: 1_000 + i,
+        doneAt: 2_000 + i,
+        durationMs: 1_000,
+      });
+    }
+    repo.query({ limit: 50 });
+    repo.size();
+    expect(divergences, JSON.stringify(divergences)).toEqual([]);
   });
 
   /** Agreement must be silent. A comparison that always fires tells you

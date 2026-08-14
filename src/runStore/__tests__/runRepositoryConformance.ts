@@ -237,6 +237,70 @@ export function describeRunRepositoryContract(
       expect(h.repo.getChildSeqs(parent)).toContain(child);
     });
 
+    /**
+     * `appendDirect` is the DOMINANT production write path — the flat and
+     * chained runners and the CLI use it (5 call sites, versus 2 for
+     * `startRun`). The first cut of this interface omitted it entirely, which
+     * would have made dual-write silently miss every run recorded this way
+     * and then report divergence on all of them.
+     */
+    it("appendDirect records a finished run and allocates a seq", () => {
+      h.repo.appendDirect({
+        taskId: "t-direct",
+        recipeName: "direct",
+        trigger: "cron",
+        status: "done",
+        createdAt: 1_000,
+        doneAt: 2_000,
+        durationMs: 1_000,
+        stepResults: [step("d1")],
+      });
+      const run = h.repo
+        .query({ limit: 10 })
+        .find((r) => r.taskId === "t-direct");
+      expect(run?.status).toBe("done");
+      expect(run?.seq, "a seq must be allocated").toBeGreaterThan(0);
+      expect(run?.stepResults?.map((s) => s.id)).toEqual(["d1"]);
+    });
+
+    /** Derived, never trusted from the caller — and by the same rule
+     *  `completeRun` uses, so a run is indistinguishable whichever path
+     *  recorded it. A flat-green "done" that hides a failed step is precisely
+     *  the dishonest state `hadStepErrors` exists to prevent. */
+    it("appendDirect derives hadStepErrors from the steps", () => {
+      h.repo.appendDirect({
+        taskId: "t-direct-err",
+        recipeName: "direct",
+        trigger: "cron",
+        status: "done",
+        createdAt: 1_000,
+        doneAt: 2_000,
+        durationMs: 1_000,
+        stepResults: [step("ok1"), step("bad", "error")],
+      });
+      const run = h.repo
+        .query({ limit: 10 })
+        .find((r) => r.taskId === "t-direct-err");
+      expect(run?.hadStepErrors).toBe(true);
+    });
+
+    it("an appendDirect run is durable to a second instance", () => {
+      h.repo.appendDirect({
+        taskId: "t-direct-durable",
+        recipeName: "direct",
+        trigger: "cron",
+        status: "done",
+        createdAt: 1_000,
+        doneAt: 2_000,
+        durationMs: 1_000,
+      });
+      const seen = h
+        .reopen()
+        .query({ limit: 50 })
+        .find((r) => r.taskId === "t-direct-durable");
+      expect(seen?.status).toBe("done");
+    });
+
     it("getBySeq returns null for an unknown seq", () => {
       expect(h.repo.getBySeq(999_999)).toBeNull();
     });

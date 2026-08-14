@@ -173,6 +173,15 @@ export class DualWriteRunRepository implements RunRepository {
     this.safely("completeRun", () => this.mirror.completeRun(seq, input));
   }
 
+  appendDirect(run: Omit<RecipeRun, "seq">): void {
+    this.primary.appendDirect(run);
+    // No seq to mirror here: each store allocates its own for this path. They
+    // agree because both counters advance in lockstep over the same call
+    // sequence — and if they ever stop agreeing, the comparison says so
+    // instead of the mismatch hiding.
+    this.safely("appendDirect", () => this.mirror.appendDirect(run));
+  }
+
   query(q: RunQuery = {}): RecipeRun[] {
     const primary = this.primary.query(q);
     if (!this.comparing) return primary;
