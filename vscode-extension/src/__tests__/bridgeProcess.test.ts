@@ -45,6 +45,53 @@ vi.mock("node:child_process", async (importOriginal) => {
 import * as vscode from "vscode";
 import { BridgeProcess, validateShellArgs } from "../bridgeProcess";
 
+/**
+ * Resolve once `spawn()` has attached its `stderr` "data" listener.
+ *
+ * These tests emit stderr on a mock child process to assert it reaches the
+ * failure message. An EventEmitter DROPS an event with no listener, so the
+ * emit must not happen before the listener is attached — and `spawn()` awaits
+ * several times (sentinel release, binary validation) before attaching it, so
+ * the attachment lands an unknown number of turns after `spawn()` is called.
+ *
+ * This was previously a fixed `setTimeout(30)`, which is a bet on how long
+ * that takes. It is comfortable on a developer machine and marginal on a
+ * loaded Windows runner, where losing the bet drops the stderr and the
+ * assertion sees the generic timeout message instead (#1379). The earlier fix
+ * attempt raised the surrounding lock-poll deadline 200ms -> 1000ms, which
+ * widens the window rather than closing it: any fixed delay is still a bet.
+ *
+ * Waiting for the listener itself removes the bet. The bounded deadline exists
+ * so a genuine regression (a listener that is never attached) fails loudly
+ * instead of hanging until the suite timeout, which would look like a
+ * different bug.
+ */
+function whenStderrListenerAttached(timeoutMs = 2_000): Promise<void> {
+  if (mockChildProcess.stderr.listenerCount("data") > 0) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      mockChildProcess.stderr.off("newListener", onNewListener);
+      reject(
+        new Error(
+          `spawn() never attached a stderr "data" listener within ${timeoutMs}ms`,
+        ),
+      );
+    }, timeoutMs);
+    function onNewListener(event: string | symbol): void {
+      if (event !== "data") return;
+      mockChildProcess.stderr.off("newListener", onNewListener);
+      clearTimeout(timer);
+      // `newListener` fires BEFORE the listener is added, but the awaiting
+      // continuation is a microtask and cannot run until `.on()` has returned,
+      // so the listener is attached by the time the caller emits.
+      resolve();
+    }
+    mockChildProcess.stderr.on("newListener", onNewListener);
+  });
+}
+
 let tmpDir: string;
 let output: {
   appendLine: ReturnType<typeof vi.fn>;
@@ -323,7 +370,7 @@ describe("BridgeProcess — stderr captured in failure message", () => {
     const spawnPromise = proc.spawn();
 
     // Emit stderr from the mock child process before the timeout fires
-    await new Promise((r) => setTimeout(r, 30));
+    await whenStderrListenerAttached();
     mockChildProcess.stderr.emit(
       "data",
       Buffer.from("Error: address already in use ::54321\n"),
@@ -347,7 +394,7 @@ describe("BridgeProcess — stderr captured in failure message", () => {
 
     // First spawn: emit stale stderr then time out
     const spawnPromise1 = proc.spawn();
-    await new Promise((r) => setTimeout(r, 30));
+    await whenStderrListenerAttached();
     mockChildProcess.stderr.emit(
       "data",
       Buffer.from("OLD ERROR from attempt 1\n"),
@@ -366,7 +413,7 @@ describe("BridgeProcess — stderr captured in failure message", () => {
 
     // Second spawn: emit different stderr
     const spawnPromise2 = proc.spawn();
-    await new Promise((r) => setTimeout(r, 30));
+    await whenStderrListenerAttached();
     mockChildProcess.stderr.emit(
       "data",
       Buffer.from("NEW ERROR from attempt 2\n"),
@@ -457,5 +504,50 @@ describe("validateShellArgs", () => {
 
   it("does not throw when no args are passed", () => {
     expect(() => validateShellArgs([])).not.toThrow();
+  });
+});
+
+describe("whenStderrListenerAttached (#1379 regression guard)", () => {
+  it("waits for the listener however late it attaches, not for a fixed delay", async () => {
+    // The property the old `setTimeout(30)` did not have: it waits for the
+    // event, not the clock. 200ms is comfortably past any fixed delay that was
+    // used here, so a helper rewritten as a sleep fails this outright.
+    //
+    // HONEST LIMIT, measured rather than assumed: this does NOT catch someone
+    // reverting the CALL SITES to `setTimeout(30)`. Verified by doing exactly
+    // that — the suite still passes locally, because 30ms is ample on a
+    // developer machine. That is the whole nature of #1379: the race only
+    // loses on a loaded Windows runner, so no local test can fail on it.
+    // What this fixes is the production race; what it guards is the helper's
+    // semantics. Those are different claims and only the first is a fix.
+    mockChildProcess.stderr.removeAllListeners();
+    const attached = whenStderrListenerAttached();
+    const received: string[] = [];
+
+    setTimeout(() => {
+      mockChildProcess.stderr.on("data", (c: Buffer) =>
+        received.push(c.toString()),
+      );
+    }, 200);
+
+    await attached;
+    mockChildProcess.stderr.emit("data", Buffer.from("late-listener"));
+    expect(received).toEqual(["late-listener"]);
+  }, 5_000);
+
+  it("resolves immediately when a listener is already attached", async () => {
+    mockChildProcess.stderr.removeAllListeners();
+    mockChildProcess.stderr.on("data", () => {});
+    await expect(whenStderrListenerAttached(50)).resolves.toBeUndefined();
+  });
+
+  it("rejects loudly rather than hanging when no listener ever attaches", async () => {
+    // A never-attached listener is a real regression in spawn(). Without the
+    // bounded deadline it would hang to the suite timeout and present as an
+    // unrelated failure.
+    mockChildProcess.stderr.removeAllListeners();
+    await expect(whenStderrListenerAttached(60)).rejects.toThrow(
+      /never attached a stderr "data" listener/,
+    );
   });
 });
