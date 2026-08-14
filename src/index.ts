@@ -253,6 +253,7 @@ const KNOWN_SUBCOMMANDS = [
   "panic",
   "halts",
   "judgments",
+  "runstore",
   "analytics",
   "doctor",
   "codex",
@@ -2341,6 +2342,70 @@ if (process.argv[2] === "panic") {
 // per-category breakdown plus the 5 most-recent halt reasons. Default
 // window is "overnight" (since 6pm yesterday local) so it lines up with
 // "what halted while I was asleep?".
+if (process.argv[2] === "runstore") {
+  const sub = process.argv[3];
+  const args = process.argv.slice(4);
+  const json = args.includes("--json");
+  if (!sub || sub === "--help" || sub === "-h") {
+    process.stdout.write(
+      "Usage: patchwork runstore <backfill|compare> [--json]\n" +
+        "\n" +
+        "  backfill   seed the ADR-0022 shadow mirror from runs.jsonl (idempotent)\n" +
+        "  compare    report where the authoritative store and the mirror disagree\n" +
+        "\n" +
+        "Both are READ-ONLY with respect to runs.jsonl. The mirror is never\n" +
+        "consulted for answers; it exists to be compared until it has earned a\n" +
+        "flip. Backfill first — an unseeded mirror reports every pre-existing\n" +
+        "run as a difference, and a signal that always fires means nothing.\n",
+    );
+    process.exit(0);
+  }
+  if (sub !== "backfill" && sub !== "compare") {
+    process.stderr.write(`Unknown runstore subcommand: "${sub}"\n`);
+    process.exit(1);
+  }
+  void (async () => {
+    const os = await import("node:os");
+    const pathMod = await import("node:path");
+    const { SqliteRunRepository } = await import(
+      "./runStore/sqliteRunRepository.js"
+    );
+    const { backfillMirror, compareStores, formatCompare } = await import(
+      "./runStore/backfillMirror.js"
+    );
+    const dir = process.env.PATCHWORK_HOME
+      ? process.env.PATCHWORK_HOME
+      : pathMod.join(os.homedir(), ".patchwork");
+    const mirror = new SqliteRunRepository({
+      dir: pathMod.join(dir, "runstore-mirror"),
+    });
+    try {
+      if (sub === "backfill") {
+        const r = backfillMirror(dir, mirror);
+        if (json) {
+          process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
+        } else {
+          process.stdout.write(
+            `Seeded the mirror from ${r.rawSourceLines} raw line(s) → ` +
+              `${r.sourceRows} distinct run(s); mirror now holds ${r.mirrorRows}.\n` +
+              'Raw lines exceed runs because a run appends a "running" row and ' +
+              "later a terminal one; readers take the last. Not loss.\n",
+          );
+        }
+        process.exit(0);
+      }
+      const r = compareStores(dir, mirror);
+      process.stdout.write(
+        json ? `${JSON.stringify(r, null, 2)}\n` : formatCompare(r),
+      );
+      // Non-zero on disagreement so this is usable as a gate before the flip.
+      process.exit(r.agree ? 0 : 1);
+    } finally {
+      mirror.close();
+    }
+  })();
+}
+
 if (process.argv[2] === "halts") {
   const args = process.argv.slice(3);
   const wantHelp = args.includes("--help") || args.includes("-h");

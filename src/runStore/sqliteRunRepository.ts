@@ -473,7 +473,13 @@ export class SqliteRunRepository implements RunRepository {
         run.parentSeq ?? null,
         run.manualRunId ?? null,
         run.ownerPid ?? null,
-        run.hadStepErrors ? 1 : 0,
+        // ABSENT stays absent. `run.hadStepErrors ? 1 : 0` turned a row that
+        // never carried the field into an explicit `false`, which the
+        // migration rehearsal surfaced as 52 spurious differences against the
+        // real log. Mirroring must reproduce the source, not normalise it —
+        // an observer that quietly improves its input cannot be used to judge
+        // whether the input was reproduced.
+        run.hadStepErrors === undefined ? null : run.hadStepErrors ? 1 : 0,
         run.stepResults ? JSON.stringify(run.stepResults) : null,
         Object.keys(extra).length > 0 ? JSON.stringify(extra) : null,
       );
