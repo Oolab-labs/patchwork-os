@@ -152,10 +152,43 @@ migration costs nothing extra.
 ### 4. The migration must be able to fail
 
 The shadow-read comparison is the verification, and it only counts if it can go
-red. Before the flip, three known bugs are replayed against both stores, and
-**JSONL must visibly lose all three**: #1324's `seq` collisions, #1340's
-in-flight steps, and rotation-time evidence loss. If the new store does not
-demonstrably win on each, the migration has not earned itself and does not ship.
+red.
+
+**AMENDED 2026-08-14 — the original criterion is no longer satisfiable, and
+that is a finding rather than a technicality.** It read: replay #1324, #1340
+and rotation loss against both stores, and *JSONL must visibly lose all three*.
+Checked against the code, two of the three no longer reproduce, because we
+fixed them in the meantime:
+
+- **#1324** — `runKey()` keys on `taskId`, so JSONL resolves a `seq` collision
+  at read time and loses nothing.
+- **#1340** — `append()` persists to a sibling ledger and `loadStepEvidence`
+  folds it back, so in-flight steps survive.
+
+That criterion was written while those bugs were fresh and was not revisited
+when the fixes landed. Demanding a loss that can no longer happen would leave
+the flip permanently blocked — or invite quietly waiving the gate, which is how
+a gate stops meaning anything.
+
+**The amended gate.** One of the three still separates the stores by losing
+data, and it is the one this ADR was really about:
+
+- **Rotation.** `runs.jsonl` caps at 1 MB live plus an 8 MB archive and trims
+  the OLDEST rows; they are gone from disk, not archived. Demonstrated in
+  `src/runStore/__tests__/flipGate.test.ts`: a worker filing written first,
+  then buried under ~10.5 MB of one noisy recipe's traffic, is absent from the
+  raw bytes of BOTH files while SQLite retains all 5,001 rows. Asserted against
+  the bytes rather than through a reader — a reader could omit a row for its own
+  reasons; the bytes cannot — and guarded against passing vacuously on an empty
+  log.
+
+The other two are now differences in KIND, not in loss: JSONL resolves a
+collision when reading, SQLite refuses it when writing. Prevention beats
+resolution — a constraint cannot be forgotten by a future reader — but it is
+not evidence loss, and the gate does not claim it is.
+
+**Also required before the flip, unchanged:** shadow-read comparison against
+real traffic showing no divergence, through at least one rotation.
 
 ## Consequences
 
