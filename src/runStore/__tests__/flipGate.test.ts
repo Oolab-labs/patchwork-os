@@ -98,7 +98,7 @@ describe("ADR-0022 flip gate — what the new store actually buys", () => {
    * durability in TIME, and nothing reconciles the two. A high-frequency
    * recipe therefore evicts a worker's filing before it can settle — which is
    * not slow trust, it is trust that cannot be earned in principle. Every row
-   * here belongs to ONE noisy recipe, exactly as `gigsecure-withdrawal-alert`
+   * here belongs to ONE noisy recipe, exactly as `noisy-recipe`
    * held 85% of the live log.
    */
   it("JSONL loses the oldest evidence to rotation; SQLite does not", () => {

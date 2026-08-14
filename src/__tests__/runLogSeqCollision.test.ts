@@ -55,20 +55,20 @@ describe("run log: colliding seqs must not destroy runs", () => {
   it("keeps BOTH runs when two instances hand out the same seq", () => {
     seed([
       row(12540, "yaml:butler-errand:1", "butler-errand", 1000),
-      row(12540, "yaml:gigsecure:2", "gigsecure-withdrawal-alert", 2000),
+      row(12540, "yaml:noisy-recipe:2", "noisy-recipe", 2000),
     ]);
     const log = new RecipeRunLog({ dir });
     const all = log.query({ limit: 500 });
     expect(all.map((r) => r.recipeName).sort()).toEqual([
       "butler-errand",
-      "gigsecure-withdrawal-alert",
+      "noisy-recipe",
     ]);
   });
 
   it("a per-recipe query still finds the run the collision used to hide", () => {
     seed([
       row(12540, "yaml:butler-errand:1", "butler-errand", 1000),
-      row(12540, "yaml:gigsecure:2", "gigsecure-withdrawal-alert", 2000),
+      row(12540, "yaml:noisy-recipe:2", "noisy-recipe", 2000),
     ]);
     const log = new RecipeRunLog({ dir });
     expect(log.query({ recipe: "butler-errand", limit: 500 })).toHaveLength(1);
