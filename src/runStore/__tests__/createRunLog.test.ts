@@ -19,6 +19,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { RecipeRunLog } from "../../runLog.js";
 import {
   createRecipeRunLog,
   mirrorEnabled,
@@ -32,15 +33,29 @@ const OFF = {} as NodeJS.ProcessEnv;
 describe("run-log mirror wiring", () => {
   let dir: string;
   let readers: SqliteRunRepository[];
+  let logs: RecipeRunLog[];
 
   beforeEach(() => {
     dir = mkdtempSync(path.join(tmpdir(), "wire-mirror-"));
     readers = [];
+    logs = [];
   });
   afterEach(() => {
+    // Close the run logs too, not just the readers: with the mirror on, the
+    // run log owns a database handle. Leaving it open makes `rmSync` throw
+    // EBUSY on Windows while POSIX deletes the open file silently — the leak
+    // is invisible on macOS and fails the whole file on windows-latest.
+    for (const l of logs) l.close();
     for (const r of readers) r.close();
     rmSync(dir, { recursive: true, force: true });
   });
+
+  /** Build a run log and track it for teardown. */
+  const makeLog = (env: NodeJS.ProcessEnv, extra: object = {}) => {
+    const l = createRecipeRunLog({ dir, env, ...extra });
+    logs.push(l);
+    return l;
+  };
 
   const mirrorDir = () => path.join(dir, "runstore-mirror");
   const readMirror = () => {
@@ -78,7 +93,7 @@ describe("run-log mirror wiring", () => {
 
   describe("off (the default)", () => {
     it("creates no mirror and behaves as before", () => {
-      const log = createRecipeRunLog({ dir, env: OFF });
+      const log = makeLog(OFF);
       log.appendDirect(finishedRun("t-off"));
 
       expect(existsSync(mirrorDir()), "no mirror directory").toBe(false);
@@ -94,7 +109,7 @@ describe("run-log mirror wiring", () => {
      * all three funnel through `append()`.
      */
     it("mirrors every write path", () => {
-      const log = createRecipeRunLog({ dir, env: ON });
+      const log = makeLog(ON);
 
       // 1. appendDirect — the dominant production path.
       log.appendDirect(finishedRun("t-direct"));
@@ -130,7 +145,7 @@ describe("run-log mirror wiring", () => {
     });
 
     it("mirrors rows identically, including seq", () => {
-      const log = createRecipeRunLog({ dir, env: ON });
+      const log = makeLog(ON);
       log.appendDirect(finishedRun("t-same"));
 
       const primary = log.query({ limit: 10 })[0];
@@ -146,7 +161,7 @@ describe("run-log mirror wiring", () => {
      *  JSONL readers take the last; the mirror upserts. Both must end up
      *  saying the same thing, or every long-running run reports divergence. */
     it("a run that starts then finishes ends up terminal, not duplicated", () => {
-      const log = createRecipeRunLog({ dir, env: ON });
+      const log = makeLog(ON);
       const seq = log.startRun({
         taskId: "t-twice",
         recipeName: "demo",
@@ -165,6 +180,47 @@ describe("run-log mirror wiring", () => {
       expect(rows[0]?.status).toBe("done");
     });
 
+    /**
+     * That `close()` genuinely RELEASES the handle, observable on every
+     * platform.
+     *
+     * Written because deleting the factory's disposer was caught only by
+     * Windows (EBUSY on teardown) and passed 7/7 on POSIX. A leak that one
+     * platform reports and the others ignore is one most people never see.
+     * Here the released handle is proved by USING it: once closed, the next
+     * write can no longer reach the mirror and says so.
+     */
+    it("close() releases the mirror handle, not just the reference", () => {
+      const warnings: string[] = [];
+      const log = makeLog(ON, {
+        logger: { warn: (m: string) => warnings.push(m) } as never,
+      });
+      log.appendDirect(finishedRun("t-before-close"));
+      expect(warnings.filter((w) => w.includes("write failed"))).toEqual([]);
+
+      log.close();
+
+      // The row still lands in the authoritative store...
+      log.appendDirect(finishedRun("t-after-close"));
+      expect(log.query({ limit: 10 }).map((r) => r.taskId)).toContain(
+        "t-after-close",
+      );
+      // ...and the mirror is genuinely gone, reported rather than silent.
+      expect(
+        warnings.some((w) => w.includes("shadow mirror write failed")),
+        `expected a mirror-write failure after close; saw ${JSON.stringify(warnings)}`,
+      ).toBe(true);
+    });
+
+    it("close() is idempotent", () => {
+      const log = makeLog(ON);
+      log.appendDirect(finishedRun("t-idem"));
+      expect(() => {
+        log.close();
+        log.close();
+      }).not.toThrow();
+    });
+
     /** Fail-soft, same rule as the mirror itself: an OBSERVER that cannot
      *  start must not take down the store it is observing. */
     it("an unopenable mirror leaves a working run log", () => {
@@ -176,9 +232,7 @@ describe("run-log mirror wiring", () => {
       expect(existsSync(mirrorDir())).toBe(true);
 
       const warnings: string[] = [];
-      const log = createRecipeRunLog({
-        dir,
-        env: ON,
+      const log = makeLog(ON, {
         logger: { warn: (m: string) => warnings.push(m) } as never,
       });
 

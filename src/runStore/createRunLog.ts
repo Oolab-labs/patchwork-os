@@ -75,5 +75,8 @@ export function createRecipeRunLog(opts: CreateRunLogOptions): RecipeRunLog {
     mirror: (run) => mirror.mirrorRow(run),
     onMirrorFailure: (message) =>
       logger?.warn?.(`[runstore] shadow mirror write failed: ${message}`),
+    // The factory opened this handle, so the factory supplies the way to
+    // release it. `RecipeRunLog.close()` is the caller's single lever.
+    onClose: () => mirror.close(),
   });
 }

@@ -322,6 +322,16 @@ export interface RunLogOptions {
   mirror?: (run: RecipeRun) => void;
   /** Called when the mirror throws. Must not throw. */
   onMirrorFailure?: (message: string) => void;
+  /**
+   * Release whatever the mirror holds. Invoked by `close()`.
+   *
+   * Exists because a factory that OPENS a resource must give callers a way to
+   * release it. Without this the mirror's file handle was unreachable — the
+   * caller only ever receives a `RecipeRunLog`. On POSIX that is merely untidy;
+   * on Windows an open handle cannot be unlinked, so the directory could not
+   * be removed at all.
+   */
+  onClose?: () => void;
 }
 
 export interface RunQuery {
@@ -354,6 +364,7 @@ export class RecipeRunLog {
    *  `updateRunSteps` (which receives the FULL step list each call) from
    *  re-appending every prior step on every step completion. */
   private readonly persistedStepIds = new Map<number, Set<string>>();
+  private closed = false;
   private readonly now: () => number;
 
   constructor(private readonly opts: RunLogOptions) {
@@ -794,6 +805,26 @@ export class RecipeRunLog {
     } catch (err) {
       this.opts.logger?.warn?.(
         `[runlog] append failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Release resources held on behalf of this run log — today, the ADR-0022
+   * mirror's database handle. Idempotent and never throws: callers close from
+   * teardown and shutdown paths, and a cleanup that can itself fail just turns
+   * one problem into two.
+   *
+   * The run log itself needs no closing; `runs.jsonl` is opened per write.
+   */
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    try {
+      this.opts.onClose?.();
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[runlog] close failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
