@@ -57,7 +57,7 @@ That was accurate when measured and is **not** the state today. Measured
 | Retention span | **58.8h** (window is 24h — currently sufficient) |
 | File size | 851,327 bytes — **81.2% of the 1 MB rotation cap** |
 | `runs.jsonl.1` (rotation archive) | **does not exist — has never been written** |
-| Highest-volume recipe | `gigsecure-withdrawal-alert`, 953 rows (**85%**) |
+| Highest-volume recipe | one high-frequency recipe, 953 rows (**85%**) |
 | `butler-errand` (the governed worker) | 26 rows (2.3%) |
 
 This changes the argument, and the honest version is weaker but still decisive.
