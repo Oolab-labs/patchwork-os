@@ -29,7 +29,17 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-14 `docs/repo-privacy-rules` — adds a Repository Privacy section to
+  CLAUDE.md: what may never enter a public artefact (the local ledgers, real
+  third-party names, operational statistics attributed to a named party), where
+  a disclosure-is-the-harm finding goes instead of a public issue, and the fact
+  that `audit-business-content` reads tracked markdown only, so a green gate is
+  not a clean scan. These rules existed only in transient session context —
+  grepping CLAUDE.md and every rules file for them returned nothing. Written
+  INLINE rather than as `.claude/rules/repo-privacy.md` because that directory
+  is gitignored (`.gitignore:62`): every rule file CLAUDE.md `@import`s today is
+  untracked and exists only on the machine that wrote it, so a fresh clone gets
+  none of them. Docs-only, no code paths touched.
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
 #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
