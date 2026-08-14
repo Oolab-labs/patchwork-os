@@ -47,6 +47,21 @@ export interface StartRunInput {
   manualRunId?: string;
   /** Test seam — defaults to this process. See `RecipeRun.ownerPid`. */
   ownerPid?: number;
+  /**
+   * Adopt this `seq` instead of minting one. MIRRORING ONLY.
+   *
+   * Exists because dual-write is otherwise unusable: both stores mint their
+   * own per-instance counter, so a mirrored run would carry a different `seq`
+   * in each store, on every row. Comparison would then report a difference
+   * every single time — and a divergence signal that always fires is
+   * indistinguishable from one that never does. The noise would hide exactly
+   * the real disagreement the comparison exists to catch.
+   *
+   * Ordinary callers must not pass this. It is not a way to choose an id: the
+   * value is meaningless outside the process that minted it (#1324), which is
+   * precisely why `task_id` is the real identity.
+   */
+  seq?: number;
 }
 
 /** Arguments to {@link RunRepository.completeRun}. Mirrors `RecipeRunLog.completeRun`. */
