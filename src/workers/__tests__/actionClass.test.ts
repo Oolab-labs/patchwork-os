@@ -410,12 +410,107 @@ describe("tracker / docs / support writes (#1311 batch 3)", () => {
         "utf8",
       ),
     ) as { allow: string[] };
-    expect(allowlist.allow.length).toBeGreaterThan(0);
+    // Batch 3 asserted this list was non-empty, as a guard against the test
+    // passing vacuously. Batch 4 emptied it, and emptiness is now asserted
+    // directly by the batch-4 block below — so the vacuity concern is covered
+    // there and this test keeps only the invariant that matters: ANY entry
+    // that reappears must be genuinely unclassified.
     for (const tool of allowlist.allow) {
       expect(
         classifyActionClass(tool, {}).domain,
         `${tool} is on the ratchet but IS classified — delete its line`,
       ).toBe("other");
     }
+  });
+});
+
+describe("CRM + infrastructure writes (#1311 batch 4 — the last 17)", () => {
+  const DEBUCKETED: Array<[tool: string, domain: string]> = [
+    ["airtable.create_record", "crm-write"],
+    ["hubspot.createNote", "crm-write"],
+    ["pipedrive.create_deal", "crm-write"],
+    ["salesforce.create_record", "crm-write"],
+    ["pagerduty.create_incident", "incident"],
+    ["pagerduty.acknowledge_incident", "incident"],
+    ["pagerduty.add_incident_note", "incident"],
+    ["pagerduty.resolve_incident", "incident"],
+    ["datadog.muteMonitor", "monitoring-control"],
+    ["grafana.create_annotation", "telemetry-write"],
+    ["posthog.capture_event", "telemetry-write"],
+    ["cloudflare.create_dns_record", "infra"],
+    ["circleci.trigger_pipeline", "infra"],
+    ["supabase.upload_file", "storage-write"],
+    ["obsidian.write_note", "storage-write"],
+    ["caldiy.cancel_booking", "scheduling"],
+    ["outcomes.classify_issues", "trust-evidence"],
+  ];
+
+  it.each(DEBUCKETED)("puts %s in the %s domain", (tool, domain) => {
+    expect(classifyActionClass(tool, {}).domain).toBe(domain);
+  });
+
+  it("loosens NOTHING — every one stays irreversible", () => {
+    // The entire safety argument for this batch. These already classified
+    // irreversible via the `other` catch-all; each new domain is irreversible
+    // too, and blast tier derives from the tool NAME, so what the gate permits
+    // is byte-identical before and after. If this test ever goes red, the
+    // change under review is a LOOSENING and needs the per-tool argument
+    // batch 3 applied to trackers — not a bulk sweep.
+    for (const [tool] of DEBUCKETED) {
+      expect(
+        classifyActionClass(tool, {}).reversibility,
+        `${tool} must stay irreversible`,
+      ).toBe("irreversible");
+    }
+  });
+
+  it("keeps muting alerts apart from writing telemetry", () => {
+    // Both touch observability; only one makes the system quieter about
+    // failure. Sharing a bucket would let annotation-writing evidence
+    // authorise alert suppression.
+    const mute = classifyActionClass("datadog.muteMonitor", {});
+    const annotate = classifyActionClass("grafana.create_annotation", {});
+    expect(mute.domain).toBe("monitoring-control");
+    expect(annotate.domain).toBe("telemetry-write");
+    expect(mute.key).not.toBe(annotate.key);
+  });
+
+  it("gives the trust-evidence writer a domain of its own", () => {
+    // `outcomes.classify_issues` writes the outcome-log the ramp READS. It
+    // must never share a bucket with ordinary world-changing actions, because
+    // evidence about it is evidence about the evidence system.
+    const c = classifyActionClass("outcomes.classify_issues", {});
+    expect(c.domain).toBe("trust-evidence");
+    expect(c.reversibility).toBe("irreversible");
+    expect(c.key).not.toBe(classifyActionClass("file.write", {}).key);
+  });
+
+  it("marks only the externally-visible failures as brand-exposed", () => {
+    expect(
+      classifyActionClass("cloudflare.create_dns_record", {}).brandExposed,
+    ).toBe(true);
+    expect(classifyActionClass("caldiy.cancel_booking", {}).brandExposed).toBe(
+      true,
+    );
+    // Internal: embarrassing, not reputational.
+    expect(
+      classifyActionClass("pagerduty.create_incident", {}).brandExposed,
+    ).toBe(false);
+    expect(
+      classifyActionClass("salesforce.create_record", {}).brandExposed,
+    ).toBe(false);
+  });
+
+  it("leaves the ratchet EMPTY — every registered tool is now classified", () => {
+    const allowlist = JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../scripts/audit-tool-classification-allowlist.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as { allow: string[] };
+    expect(allowlist.allow).toEqual([]);
   });
 });
