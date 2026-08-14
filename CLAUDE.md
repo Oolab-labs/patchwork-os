@@ -8,6 +8,87 @@ This repo is the **single-tenant Patchwork OS** (one bridge, one workspace, one 
 - **Open-core boundary — [ADR-0019](docs/adr/0019-open-core-boundary.md).** This repo is MIT and stays MIT. `patchwork-multitenant` is ALSO MIT, and its **scope is frozen to infrastructure** (tenant provisioning, proxy, container plumbing). **Do not add governance features there** — organisation identity, policy inheritance, retention, signed audit export and approval routing belong in the separate non-MIT `patchwork-control-plane`. This rule exists because the default is silently wrong: those features would ship MIT just by being built where they naturally fit, and a published MIT commit cannot be withdrawn. The architectural line: **the open runtime emits evidence, only the control plane attests to it** — the local JSONL ledgers stay open-format and fully usable standalone.
 - VPS/deploy scripts (`redeploy.sh`, `.env.prod`) live on the production box, not in either repo.
 
+## Repository Privacy
+
+> Deliberately inline rather than in `.claude/rules/`. That directory is
+> **gitignored** (`.gitignore:62`), so every file there exists only on the
+> machine that wrote it — a fresh clone gets none of them. A privacy rule
+> living in an untracked file is a privacy rule nobody else has.
+
+**This repository is MIT-licensed and world-readable, permanently.** Treat every
+artefact as published the moment it is pushed: source, tests, fixtures, docs,
+**commit messages, PR titles and bodies, issue text, and branch names**.
+
+Commit messages and merged PR bodies are the ones people forget. They cannot be
+quietly edited later — a force-push rewrites history others may already have
+fetched, and a merged PR body is mirrored into notification email the moment it
+lands. **The scan happens before the commit, never after the merge.**
+
+### Never commit, quote, paste or attach
+
+The local ledgers, in whole or in excerpt: `runs.jsonl` (and its rotation
+archive `runs.jsonl.1`), `runs.db` / the run-store mirror, `run_steps.jsonl`,
+`outcome-log.jsonl`, `worker_gate_decisions.jsonl`, `approval_log.jsonl`.
+
+They hold real task titles, captured output tails, third-party issue URLs and
+external record ids. `patchwork runstore compare --json` prints their contents:
+real operator data wearing the shape of a diagnostic blob, and not safe to paste
+into an issue, a PR body or a fixture.
+
+Measurements taken *from* these files are fine; the contents are not. Cite "the
+log retained 18 hours against a 24-hour window", never the rows.
+
+### Never name a third party or an outside individual
+
+No real third-party organisation names, domains, email addresses, customer
+identifiers or account-specific recipe names in code, tests, docs or commit
+text. Use neutral placeholders — `noisy-recipe`, `example.test`, `acct-0001`.
+
+A real name already present in the tree is **not** permission to add more. It is
+a defect not yet dealt with.
+
+**Connector product names are the deliberate exception.** `jira`, `notion`,
+`zendesk`, `cloudflare` and their siblings are shipped tool ids in public source
+— unavoidable, and harmless alone. What must never appear is a product name
+*paired with what anyone here does with it*: who uses it, how often, on what
+schedule, at what volume.
+
+### Never publish an operational statistic about a named party
+
+"Recipe X is 85% of run volume" discloses two things: a fact about X, and that
+we are positioned to measure it. The name may be public; the behaviour is not.
+
+**The measurement is welcome, the attribution is not.** Write "one
+high-frequency recipe held 85% of the log" — the engineering point survives, the
+disclosure does not. Same rule for counts, volumes, schedules and error rates.
+
+### Where a sensitive finding goes
+
+A finding whose *disclosure is itself the harm* — "this file exposes X", "this
+endpoint leaks Y" — does not go in a public issue, because the issue is the
+exploit. It goes to the private operations tracker. Do not open a public issue
+describing where confidential material is, or was: the pointer is the
+disclosure, even when the material itself stays out.
+
+### Privacy and governance features: fixtures pull real names in by gravity
+
+Label taxonomies, destination registries, allow/deny lists and their fixtures
+attract real-world names — a real vendor is the obvious example to reach for,
+and reaching for it is the mistake. **Every example must be synthetic.** A
+privacy engine that leaks in its own test data is the sharpest possible own
+goal. Worker and errand fixtures follow the same rule: a worker's tasks are the
+operator's real errands, so never use a real task title in a fixture, doc or
+screenshot.
+
+### The gate is not the scan
+
+`scripts/audit-business-content.mjs` reads **tracked markdown** for commercial
+content. It does not read commit messages. It does not read code or tests. It
+cannot recognise a real third-party name used as a neutral-looking identifier.
+
+**A green gate is not a clean scan.** Before every commit, push and PR, read the
+diff, the commit text and the branch name yourself.
+
 ## Documentation
 
 Comply with all docs in `/documents/`. Consult before changes:
