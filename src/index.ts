@@ -1312,11 +1312,10 @@ if (
 // Patchwork: `patchwork recipe list` — enumerate installed recipes.
 if (process.argv[2] === "recipe" && process.argv[3] === "list") {
   (async () => {
-    const { listInstalledRecipes, printInstalledList } = await import(
-      "./commands/recipeInstall.js"
+    const { resolveRecipeList, printRecipeList } = await import(
+      "./commands/recipeList.js"
     );
-    const entries = listInstalledRecipes();
-    printInstalledList(entries);
+    printRecipeList(await resolveRecipeList());
     process.exit(0);
   })();
 }

@@ -29,6 +29,22 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-14 `fix/1360-recipe-list-bridge-view` — #1360 read path only. `recipe
+  list` called the wrong one of TWO exported functions named
+  `listInstalledRecipes`: the one in `commands/recipeInstall.ts` enumerates
+  install DIRECTORIES (`if (!statSync(itemPath).isDirectory()) continue;`),
+  while the one in `recipesHttp.ts` runs two passes — flat recipe files, then
+  install dirs — and is what `GET /recipes`, the dashboard and the orchestrator
+  use. The directory-only view was not merely smaller: it also printed any
+  directory containing a `.yaml` as an installed recipe, so it was part
+  omission and part phantom. New `src/commands/recipeList.ts` prefers a live
+  bridge and ALWAYS states which view answered, because the old failure was
+  silent — a short list was indistinguishable from a short installation.
+  DELIBERATELY NOT INCLUDED: `recipe enable` / `disable`, which resolve only
+  via the marker mechanism and throw for every top-level recipe while the
+  bridge's `setRecipeEnabled` handles both. That changes which mechanism is
+  WRITTEN and wants its own review, so #1360 stays open after this.
+
 _Nothing in flight._
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
