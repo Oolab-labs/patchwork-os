@@ -41,6 +41,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
+import { patchworkHome } from "../patchworkHome.js";
 
 export const TRACES_EXPORT_VERSION = 1;
 
@@ -133,7 +134,7 @@ interface RowEnvelope {
 }
 
 function defaultPatchworkDir(): string {
-  return path.join(os.homedir(), ".patchwork");
+  return patchworkHome();
 }
 
 function defaultActivityDir(): string {

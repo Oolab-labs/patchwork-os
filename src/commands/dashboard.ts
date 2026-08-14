@@ -20,9 +20,9 @@ import {
   renameSync,
   statSync,
 } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import { patchworkHome } from "../patchworkHome.js";
 import { ensureCmdShimIfKnown } from "../winShim.js";
 
 export interface RunEntry {
@@ -263,8 +263,7 @@ function openInEditor(item: InboxItem): void {
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
 export async function runDashboard(deps: DashboardDeps = {}): Promise<void> {
-  const patchworkDir =
-    deps.patchworkDir ?? path.join(os.homedir(), ".patchwork");
+  const patchworkDir = deps.patchworkDir ?? patchworkHome();
   const out = deps.stdout ?? process.stdout;
   const isTTY = !deps.noTTY && out.isTTY === true;
   const getNow = deps.now ?? (() => new Date());

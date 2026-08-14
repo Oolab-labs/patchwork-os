@@ -92,6 +92,7 @@ import {
   PATCHWORK_PACKAGE_NAME,
   SYMLINK_INSTALL_FIX,
 } from "./installGuard.js";
+import { patchworkHome, patchworkPath } from "./patchworkHome.js";
 import { treeKill } from "./processTree.js";
 import { PACKAGE_VERSION, semverGt } from "./version.js";
 import { ensureCmdShim } from "./winShim.js";
@@ -1630,7 +1631,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
           );
           process.exit(1);
         }
-        resolvedLedgerDir = ledgerDir ?? path.join(os.homedir(), ".patchwork");
+        resolvedLedgerDir = ledgerDir ?? patchworkHome();
         process.stdout.write(
           `  Attempt id: ${resolvedAttempt} (ledger: ${resolvedLedgerDir})\n`,
         );
@@ -1659,7 +1660,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
           "./runStore/createRunLog.js"
         );
         const runLog = createRecipeRunLog({
-          dir: path.join(os.homedir(), ".patchwork"),
+          dir: patchworkHome(),
         });
         const startedAt = Date.now();
         const stepResultsForLog = extractRunLogStepResults(run.result);
@@ -1719,7 +1720,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "install") {
         const { installRecipeFromFile } = await import(
           "./recipes/installer.js"
         );
-        const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+        const recipesDir = patchworkPath("recipes");
         const result = installRecipeFromFile(path.resolve(source), {
           recipesDir,
         });
@@ -1797,7 +1798,7 @@ if (process.argv[2] === "suggest") {
 
       // Wire up the bridge's standard log paths. The CLI reads from
       // disk; it doesn't need a running bridge.
-      const patchworkDir = path.join(os.homedir(), ".patchwork");
+      const patchworkDir = patchworkHome();
       const activityLog = new ActivityLog();
       // Find the most recent activity log file (any port). For the
       // suggest CLI we union all of them.
@@ -2144,14 +2145,10 @@ if (process.argv[2] === "kill-switch") {
           setFlag(KILL_SWITCH_WRITES, engage, true);
           // Audit in a sibling CLI-only JSONL (v2-I10: bridge-only writes
           // go to decision_traces.jsonl; CLI fallback is distinct).
-          const os = await import("node:os");
           const path = await import("node:path");
           const fs = await import("node:fs");
-          const cliTraceFile = path.join(
-            process.env.PATCHWORK_HOME ??
-              path.join(os.default.homedir(), ".patchwork"),
-            "decision_traces.cli.jsonl",
-          );
+          const { patchworkPath } = await import("./patchworkHome.js");
+          const cliTraceFile = patchworkPath("decision_traces.cli.jsonl");
           const dir = path.dirname(cliTraceFile);
           if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
           const entry = JSON.stringify({
@@ -2376,7 +2373,6 @@ if (process.argv[2] === "runstore") {
     process.exit(1);
   }
   void (async () => {
-    const os = await import("node:os");
     const pathMod = await import("node:path");
     const { SqliteRunRepository } = await import(
       "./runStore/sqliteRunRepository.js"
@@ -2384,9 +2380,7 @@ if (process.argv[2] === "runstore") {
     const { backfillMirror, compareStores, formatCompare } = await import(
       "./runStore/backfillMirror.js"
     );
-    const dir = process.env.PATCHWORK_HOME
-      ? process.env.PATCHWORK_HOME
-      : pathMod.join(os.homedir(), ".patchwork");
+    const dir = patchworkHome();
     const mirror = new SqliteRunRepository({
       dir: pathMod.join(dir, "runstore-mirror"),
     });
@@ -3806,7 +3800,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "watch") {
               "./runStore/createRunLog.js"
             );
             const runLog = createRecipeRunLog({
-              dir: path.join(os.homedir(), ".patchwork"),
+              dir: patchworkHome(),
             });
             const now = Date.now();
             const stepResultsForLog = extractRunLogStepResults(
@@ -5082,8 +5076,7 @@ if (process.argv[2] === "gate") {
         formatGateDecisionHistory,
         formatGateDecisionDiff,
       } = await import("./workerGateDecisionLog.js");
-      const patchworkDir =
-        process.env.PATCHWORK_HOME ?? path.join(os.homedir(), ".patchwork");
+      const patchworkDir = patchworkHome();
       const log = new WorkerGateDecisionLog({ dir: patchworkDir });
       const decisions = log.query({ workerId, classKey, limit });
 
@@ -5189,7 +5182,7 @@ if (process.argv[2] === "launchd") {
     // First-run guard: if the user hasn't run `patchwork init` yet, launching
     // the dashboard renders an empty panel with no signpost. Print an
     // actionable pointer instead and exit cleanly.
-    const cfgPath = path.join(os.homedir(), ".patchwork", "config.json");
+    const cfgPath = patchworkPath("config.json");
     if (!existsSync(cfgPath) && !process.argv[2]) {
       process.stdout.write(
         `No Patchwork config found at ${cfgPath}.\n\n` +

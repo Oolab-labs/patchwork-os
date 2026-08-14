@@ -30,9 +30,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
-
+import { patchworkHome } from "../patchworkHome.js";
 import { type Member, memberCan, parseMember } from "./members.js";
 import type { Capability } from "./roles.js";
 
@@ -70,10 +69,7 @@ function implicitRoster(): Roster {
 /** Default location: `~/.patchwork/members.json`, honouring `PATCHWORK_HOME`. */
 export function defaultRosterPath(): string {
   const home = process.env.PATCHWORK_HOME?.trim();
-  return join(
-    home && home !== "" ? home : join(homedir(), ".patchwork"),
-    "members.json",
-  );
+  return join(home && home !== "" ? home : patchworkHome(), "members.json");
 }
 
 /**
@@ -176,7 +172,7 @@ export function resolvePrincipal(
     return roster.implicit ? (roster.members[0] ?? null) : null;
   }
   const m = findMember(roster, memberId);
-  if (!m || !m.active) return null;
+  if (!m?.active) return null;
   return m;
 }
 

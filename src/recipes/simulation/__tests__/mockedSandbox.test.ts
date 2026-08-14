@@ -18,6 +18,7 @@ import path from "node:path";
 import { Ajv } from "ajv";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecipeDryRunPlan } from "../../../commands/recipe.js";
+import { patchworkPath } from "../../../patchworkHome.js";
 import { type RecipeRun, RecipeRunLog } from "../../../runLog.js";
 import type { ChainedRecipe } from "../../chainedRunner.js";
 import { generateSimulationSchema } from "../../schemaGenerator.js";
@@ -377,8 +378,14 @@ describe("branch resolution (mocked overlay)", () => {
 // ── Routing (runRecipeSimulate hard guards) ────────────────────────────────
 
 describe("runRecipeSimulate routing", () => {
+  // Writes where the CLI READS. Previously this joined `os.homedir()`
+  // directly, which meant two things at once: the test wrote into the
+  // operator's REAL ~/.patchwork/recipes (leaving files behind on every run),
+  // and once the resolver started honouring PATCHWORK_HOME (#1265) the write
+  // and the read landed in different trees. Both are fixed by resolving the
+  // same way the code under test does.
   function writeRecipe(name: string, body: string): void {
-    const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+    const recipesDir = patchworkPath("recipes");
     mkdirSync(recipesDir, { recursive: true });
     writeFileSync(path.join(recipesDir, `${name}.yaml`), body);
   }
