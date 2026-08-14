@@ -217,6 +217,74 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
   "intercom.closeConversation": "support",
   "zendesk.updateStatus": "support",
 
+  // ── CRM + infrastructure writes (#1311 batch 4) ─────────────────────────
+  // The last 17 on the ratchet, and the batch that finishes #1311.
+  //
+  // DEBUCKETING ONLY. Every domain below is irreversible, which is exactly
+  // what these tools already got from the `other` catch-all, and blast tier
+  // comes from the tool NAME (classifyTool) rather than the domain. So this
+  // block changes NOTHING about what the gate permits — it only stops
+  // seventeen unrelated authorities sharing one undifferentiated bucket,
+  // which is what made that bucket meaningless as evidence.
+  //
+  // Several of these are arguably compensable — a CRM record can be deleted,
+  // an incident resolved, a monitor unmuted. Those claims are deliberately
+  // NOT made here. Loosening is the dangerous direction and each needs the
+  // same per-tool argument batch 3 applied to trackers; withholding it costs
+  // only over-restriction, which is the safe failure. Anyone making that case
+  // later does it in a change that can be reviewed on its own merits.
+
+  // Customer-record systems. Distinct from `tasks`/`issue`: this is business
+  // data about a third party, not our own work item.
+  "airtable.create_record": "crm-write",
+  "hubspot.createNote": "crm-write",
+  "pipedrive.create_deal": "crm-write",
+  "salesforce.create_record": "crm-write",
+
+  // Incident lifecycle. Creating one PAGES A HUMAN, and no later action
+  // un-pages them — the clearest irreversible-by-side-effect case in the set.
+  // Ack/resolve/note share the domain because they act on the same object and
+  // the same on-call audience.
+  "pagerduty.create_incident": "incident",
+  "pagerduty.acknowledge_incident": "incident",
+  "pagerduty.add_incident_note": "incident",
+  "pagerduty.resolve_incident": "incident",
+
+  // Suppressing alerting is its OWN authority, deliberately not `monitoring`
+  // alongside annotations: muting is the one action here that makes the system
+  // quieter about failure. Unmuting restores the monitor, never the page that
+  // was not sent during the window.
+  "datadog.muteMonitor": "monitoring-control",
+
+  // Telemetry writes — additive, observational, no control effect.
+  "grafana.create_annotation": "telemetry-write",
+  "posthog.capture_event": "telemetry-write",
+
+  // Live infrastructure. DNS propagation and a triggered pipeline both escape
+  // our control the moment they start: resolver caches obey TTLs we do not
+  // own, and a pipeline that has begun deploying cannot be un-begun.
+  "cloudflare.create_dns_record": "infra",
+  "circleci.trigger_pipeline": "infra",
+
+  // Object/file writes with no pre-image. `obsidian.write_note` was held back
+  // from batch 3's docs group for exactly this reason: it overwrites with no
+  // version history and is not covered by the WriteEffectLedger that makes
+  // `fs-write` reversible, so the prior content is simply gone.
+  "supabase.upload_file": "storage-write",
+  "obsidian.write_note": "storage-write",
+
+  // Cancelling someone's booking is visible to the other party immediately
+  // and re-booking is a new negotiation, not an undo.
+  "caldiy.cancel_booking": "scheduling",
+
+  // Writes the outcome-log THAT THE TRUST RAMP READS. Its own domain because
+  // the risk is categorically different from every other entry: this is not
+  // an action in the world, it is an action on the evidence the gate uses to
+  // decide future actions. Classifying it does not make it safe — the real
+  // control is that a worker must never reach it, which is a forbid-rule and
+  // an interface question, not a reversibility one (see #1311).
+  "outcomes.classify_issues": "trust-evidence",
+
   // ── connector reads (#1311 batch 1) ─────────────────────────────────────
   // Derived from the registry's own `isWrite: false`, never guessed from the
   // name. Writes are deliberately NOT swept: each needs a real reversibility
@@ -437,6 +505,22 @@ const REVERSIBILITY_BY_DOMAIN: Record<string, Reversibility> = {
   // first-class operation in both Zendesk and Intercom, so the inverse is
   // real; the residue is that the customer was told it was closed.
   support: "compensable",
+  // ── #1311 batch 4 — all irreversible, all unchanged from the catch-all ──
+  // Each of these tools already classified irreversible via `other`. Giving
+  // them a domain changes which bucket their evidence lands in and nothing
+  // else. Where a genuine inverse plausibly exists (delete the CRM record,
+  // resolve the incident, unmute the monitor), the claim is deliberately left
+  // unmade — see the block in DOMAIN_BY_TOOL.
+  "crm-write": "irreversible",
+  incident: "irreversible", // creating one pages a human; no action un-pages
+  "monitoring-control": "irreversible", // unmuting restores the monitor, not the missed page
+  "telemetry-write": "irreversible", // an emitted event is downstream immediately
+  infra: "irreversible", // DNS caches and started pipelines escape our control
+  "storage-write": "irreversible", // overwrite with no pre-image
+  scheduling: "irreversible", // the counterparty already saw the cancellation
+  // Acts on the EVIDENCE the gate reasons from, not on the world. The control
+  // that matters is unreachability from a recipe step, not reversibility.
+  "trust-evidence": "irreversible",
   payments: "irreversible", // a settled charge/transfer has no generic inverse;
   // a refund is a NEW compensating action with residue (fees kept, two
   // statement lines), not an undo — see src/recipes/fileRollback.ts's note.
@@ -499,6 +583,12 @@ const BRAND_EXPOSED_DOMAINS = new Set([
   // (`docs-write`) are deliberately NOT here — the failure is embarrassing
   // internally, not customer-visible.
   "support",
+  // #1311 batch 4. Only the two whose failure is visible OUTSIDE the company:
+  // a bad DNS record takes the public site down, and a cancelled booking is
+  // seen by the person who booked it. Incidents, CRM rows, telemetry and
+  // storage writes are internal — embarrassing, not reputational.
+  "infra",
+  "scheduling",
   "http",
   "payments", // a wrong charge is a customer-visible, reputational failure
 ]);
