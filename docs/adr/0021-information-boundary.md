@@ -15,9 +15,13 @@
 >   operator believing they had labelled something when they had not.
 > - **Phase 2 (the decision)** — built, all five values, pure and model-free.
 >   `narrowest()` enforces the never-widen rule.
-> - **Phase 3 (receipts)** — the SINK is wired (`recordBoundaryDecisionFn`) and
->   every decision including `ALLOW` emits one, but no durable store is
->   attached yet. Enforcement deliberately does NOT depend on the sink being
+> - **Phase 3 (receipts)** — built. `src/privacy/boundaryReceiptLog.ts`
+>   persists to `boundary_receipts.jsonl` alongside the gate's decision
+>   record, same shape and same directory mode. It has NO FIELD FOR THE
+>   PAYLOAD, by construction: a privacy audit log containing the prompts
+>   would be the largest unclassified copy of exactly the material the
+>   boundary protects. Only declared metadata is stored — classification,
+>   category names, destination, decision, reason. Enforcement deliberately does NOT depend on the sink being
 >   configured — a boundary that refuses only when its audit trail happens to
 >   be wired could be disabled by removing the sink.
 > - **`ALLOW_REDACTED` REFUSES.** Redaction is not implemented, so a step that

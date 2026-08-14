@@ -185,3 +185,44 @@ describe("executeAgent resolves its own destination from config", () => {
     expect(ran).toHaveBeenCalled();
   });
 });
+
+describe("receipts name the RESOLVED destination", () => {
+  it("records where the data was actually going, not what the caller passed", () => {
+    // Regression guard. The first wiring read `input.boundary.destination.id`,
+    // which is undefined on the normal path where the destination is resolved
+    // from config — so every receipt recorded a decision with no record of the
+    // destination, which is the field that makes it an audit trail rather than
+    // a counter.
+    const receipts: Array<Record<string, unknown>> = [];
+    const ran = vi.fn(async () => ({ text: "out" }));
+    return executeAgent(
+      {
+        prompt: "synthetic prompt",
+        driver: "anthropic",
+        boundary: { dataPolicy: { classification: "confidential" } },
+      },
+      {
+        localFn: ran,
+        loadPrivacyConfigFn: () => ({
+          destinations: {
+            "remote-narrow": {
+              type: "remote",
+              classifications: ["public"],
+              drivers: ["anthropic"],
+            },
+          },
+        }),
+        recordBoundaryDecisionFn: (r: Record<string, unknown>) =>
+          receipts.push(r),
+      } as never,
+    ).then(() => {
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0]).toMatchObject({
+        destinationId: "remote-narrow",
+        destinationType: "remote",
+        classification: "confidential",
+      });
+      expect(receipts[0]?.destinationId).toBeDefined();
+    });
+  });
+});
