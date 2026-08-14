@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ModelChoice } from "./adapters/index.js";
 import {
@@ -209,9 +209,31 @@ export function getApiKeysPresent(): Record<ApiKeyProvider, boolean> {
 // cuts the per-webhook 9+ kernel-call burst to ~1 per 30 s at steady state.
 const _configCache = new Map<
   string,
-  { result: PatchworkConfig; expires: number }
+  { result: PatchworkConfig; expires: number; mtimeMs: number; size: number }
 >();
 const _CONFIG_TTL_MS = 30_000;
+
+/**
+ * Identity of the file backing a cache entry.
+ *
+ * The TTL alone was not enough: a cached entry stayed authoritative for 30s
+ * regardless of what happened to the file, so an operator's hand edit was
+ * invisible to the next read — and every runtime write is a read-modify-write
+ * built on that read, so the edit was then written straight over. Silently
+ * (#1361).
+ *
+ * `-1` for a missing file is a real value, not a sentinel for "unknown": it
+ * distinguishes "no config on disk" from any real stat, so creating or
+ * deleting the file both count as a change.
+ */
+function fileStamp(path: string): { mtimeMs: number; size: number } {
+  try {
+    const st = statSync(path);
+    return { mtimeMs: st.mtimeMs, size: st.size };
+  } catch {
+    return { mtimeMs: -1, size: -1 };
+  }
+}
 
 /** Clear the loadConfig cache. Exposed for tests and after saveConfig. */
 export function clearConfigCache(): void {
@@ -234,8 +256,19 @@ export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
   // Say so when an override is active but the real config was left behind.
   warnIfLegacyConfigStranded("config.json");
   const now = Date.now();
+  const stamp = fileStamp(path);
   const cached = _configCache.get(path);
-  if (cached && now < cached.expires) return cached.result;
+  // Serve from cache only when the file is BOTH un-expired and unchanged.
+  // Size as well as mtime, because a filesystem whose timestamps are coarse
+  // can give an edit the same mtime as the write before it.
+  if (
+    cached &&
+    now < cached.expires &&
+    cached.mtimeMs === stamp.mtimeMs &&
+    cached.size === stamp.size
+  ) {
+    return cached.result;
+  }
   if (!existsSync(path)) {
     const fromStore = loadApiKeysFromSecureStore();
     const result: PatchworkConfig = withHomeDefaults(
@@ -243,7 +276,11 @@ export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
         ? { ...DEFAULTS, apiKeys: fromStore }
         : { ...DEFAULTS },
     );
-    _configCache.set(path, { result, expires: now + _CONFIG_TTL_MS });
+    _configCache.set(path, {
+      result,
+      expires: now + _CONFIG_TTL_MS,
+      ...stamp,
+    });
     return result;
   }
   const raw = readFileSync(path, "utf8");
@@ -297,7 +334,11 @@ export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
   // Don't cache migrated configs — the file has just been rewritten; next load
   // should see the stripped version. This path is once-per-key, not hot.
   if (!migrated)
-    _configCache.set(path, { result, expires: now + _CONFIG_TTL_MS });
+    _configCache.set(path, {
+      result,
+      expires: now + _CONFIG_TTL_MS,
+      ...stamp,
+    });
   return result;
 }
 
