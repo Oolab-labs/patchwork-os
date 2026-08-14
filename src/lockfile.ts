@@ -4,6 +4,21 @@ import os from "node:os";
 import path from "node:path";
 import type { Logger } from "./logger.js";
 
+/** Parse a lock file, or null when it is missing, a symlink, or not JSON. */
+function readLockContent(
+  lockPath: string,
+): { pid?: unknown; nonce?: unknown } | null {
+  try {
+    // lstat, not stat: a symlink here is not a lock we should reason about —
+    // it is something to remove, which the existing O_EXCL/O_NOFOLLOW path
+    // already handles.
+    if (fs.lstatSync(lockPath).isSymbolicLink()) return null;
+    return JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
 export class LockFileManager {
   private lockFilePath: string | null = null;
   private cleanedUp = false;
@@ -65,6 +80,19 @@ export class LockFileManager {
       fs.chmodSync(lockPath, 0o600);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+        // RECLAIMING HERE IS CORRECT, and a liveness check would be a
+        // regression. `write()` runs only AFTER `findAndListen()` has bound the
+        // port (bridge.ts step 5 precedes step 7), so we demonstrably own the
+        // port this lock names — whatever wrote it is not serving it, whether
+        // or not its pid is still alive.
+        //
+        // An earlier version of this fix refused when the recorded pid was
+        // alive. That protects nothing (binding already proved ownership) and
+        // breaks a real case: pids are recycled, so a stale lock naming a pid
+        // some unrelated process now holds would stop the bridge starting
+        // altogether. The ownership problem this file had is in `delete()`,
+        // where a departing process could remove its SUCCESSOR's lock — and
+        // that is guarded by nonce, not by liveness.
         // Force-remove whatever is at lockPath (regular file or stale symlink).
         // We do NOT lstat+check first — that introduces a TOCTOU race.
         // After rmSync, O_EXCL ensures we fail if a new file/symlink appears in the
@@ -102,13 +130,28 @@ export class LockFileManager {
   delete(): void {
     if (this.cleanedUp) return;
     this.cleanedUp = true;
-    if (this.lockFilePath) {
-      try {
-        fs.unlinkSync(this.lockFilePath);
-        this.logger.debug(`Lock file removed: ${this.lockFilePath}`);
-      } catch {
-        // best-effort
+    if (!this.lockFilePath) return;
+    try {
+      // Only remove the lock if it is STILL OURS. A process shutting down
+      // after a successor has claimed the same path would otherwise delete the
+      // successor's lock, leaving a healthy bridge that no client can find.
+      // The nonce exists for exactly this check and `cleanStale()` already
+      // uses it; this path did not.
+      const content = readLockContent(this.lockFilePath);
+      if (
+        content &&
+        this.ownNonce !== null &&
+        content.nonce !== this.ownNonce
+      ) {
+        this.logger.debug(
+          `Lock file ${this.lockFilePath} now belongs to another process — leaving it`,
+        );
+        return;
       }
+      fs.unlinkSync(this.lockFilePath);
+      this.logger.debug(`Lock file removed: ${this.lockFilePath}`);
+    } catch {
+      // best-effort
     }
   }
 
