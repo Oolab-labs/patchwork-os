@@ -29,7 +29,7 @@ export class JsonlRunRepository implements RunRepository {
 
   /**
    * Escape hatch for callers still reaching for `RecipeRunLog`-only methods
-   * (`record`, `appendDirect`, `readArchive`). Those are deliberately absent
+   * (`record`, `readArchive`). Those are deliberately absent
    * from `RunRepository` — `readArchive` in particular is a JSONL rotation
    * detail with no meaning in a store that does not rotate by bytes.
    *
@@ -49,6 +49,10 @@ export class JsonlRunRepository implements RunRepository {
 
   completeRun(seq: number, input: CompleteRunInput): void {
     this.log.completeRun(seq, input);
+  }
+
+  appendDirect(run: Omit<RecipeRun, "seq">): void {
+    this.log.appendDirect(run);
   }
 
   query(q: RunQuery = {}): RecipeRun[] {

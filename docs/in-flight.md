@@ -29,19 +29,21 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-13 `feat/runstore-dual-write` — third slice of
-  [ADR-0022](adr/0022-durable-evidence-store.md). The seam + conformance
-  contract landed in #1366; the SQLite store in #1370 (passes the same
-  contract; `task_id` is the PRIMARY KEY, which is #1324 as a schema
-  constraint). This slice wires DUAL-WRITE: JSONL stays the source of truth,
-  every write also goes to SQLite, and a shadow-read comparison reports
-  divergence — through the first rotation, before any flip. Branch reserved,
-  not yet cut. Will touch `src/runLog.ts` and all 8 `RecipeRunLog`
-  construction sites (bridge.ts, index.ts ×3, yamlRunner, chainedRunner ×2,
-  runWorkerShadow) — coordinate before touching the recipe runner or the
-  worker-trust replay path. Gate before the flip: replay #1324 / #1340 /
-  rotation loss against both stores; JSONL must visibly LOSE all three
-  (ADR-0022 §4). — build session
+- 2026-08-14 `feat/runstore-wire-sites` — fifth slice of
+  [ADR-0022](adr/0022-durable-evidence-store.md). Mechanism merged: seam +
+  shared contract (#1366), SQLite store (#1370), dual-write with shadow
+  reads (#1372), and `appendDirect` — the DOMINANT production write path,
+  missing from the first cut of the interface. This slice finally WIRES the
+  8 `RecipeRunLog` construction sites (bridge.ts, index.ts x3, yamlRunner,
+  chainedRunner x2, runWorkerShadow) behind a factory + default-off flag,
+  so a mirror can be switched on without changing behaviour when it is off.
+  Note `record` and `readArchive` are still NOT on the interface (2 call
+  sites each) — decide per site whether to widen the interface or leave
+  that site on `RecipeRunLog` directly. Touches the recipe runner and the
+  worker-trust replay path; coordinate before working in either. Also lands
+  the deferred `ExperimentalWarning` suppression at an entry point. Flip
+  gate unchanged: #1324 / #1340 / rotation loss replayed against both
+  stores, JSONL must visibly LOSE all three (ADR-0022 §4). — build session
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
 #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
