@@ -1,5 +1,17 @@
 #!/usr/bin/env node
 
+// Silence the one-per-process `node:sqlite` ExperimentalWarning (ADR-0022).
+// FIRST, before anything can import node:sqlite — the warning fires at import
+// time, so installing this later would suppress nothing. Entry point only:
+// it mutates global process state, which no leaf module should do on import.
+// Unrelated warnings still surface; that is the property its tests guard.
+{
+  const { suppressSqliteExperimentalWarning } = await import(
+    "./runStore/suppressSqliteWarning.js"
+  );
+  suppressSqliteExperimentalWarning();
+}
+
 // Load .env from repo root if present (connector credentials, etc.).
 // Uses Node 20.6+ native dotenv loader; falls back to manual parse for older Node.
 {
