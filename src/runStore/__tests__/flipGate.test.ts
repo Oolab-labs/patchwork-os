@@ -67,11 +67,19 @@ describe("ADR-0022 flip gate — what the new store actually buys", () => {
   };
 
   /**
-   * A run whose serialized size is ~2 KB, matching a real one carrying an
-   * `outputTail`. Realistic size is what makes this test affordable: the caps
-   * are 1 MB + 8 MB, so ~4,600 rows of this size cross both. Tiny synthetic
-   * rows would need ~12,000 and prove the same thing more slowly.
+   * Caps shrunk from 1 MB / 8 MB to 8 KB / 24 KB.
+   *
+   * The MECHANISM is what matters — trim the oldest, bound the archive, drop
+   * what falls off — and it is identical at any scale. Running it at the real
+   * magnitude means ~10.5 MB of writes and ~10 whole-file rewrites, which was
+   * comfortable on macOS and pushed the Windows CI job past its 10-minute
+   * ceiling, killing the entire suite. Testing the magnitude tests the
+   * filesystem; testing the mechanism tests the code.
    */
+  const SMALL_LIVE = 8 * 1024;
+  const SMALL_ARCHIVE = 24 * 1024;
+
+  /** ~2 KB serialized, like a real run carrying an `outputTail`. */
   const bulkyRun = (i: number): Omit<RecipeRun, "seq"> => ({
     taskId: `bulk-${i}`,
     recipeName: "noisy-neighbour",
@@ -94,7 +102,12 @@ describe("ADR-0022 flip gate — what the new store actually buys", () => {
    * held 85% of the live log.
    */
   it("JSONL loses the oldest evidence to rotation; SQLite does not", () => {
-    const log = new RecipeRunLog({ dir, memoryCap: MAX_PERSIST_LINES });
+    const log = new RecipeRunLog({
+      dir,
+      memoryCap: MAX_PERSIST_LINES,
+      maxPersistBytes: SMALL_LIVE,
+      maxArchiveBytes: SMALL_ARCHIVE,
+    });
     logs.push(log);
     const mirror = openMirror();
 
@@ -113,7 +126,9 @@ describe("ADR-0022 flip gate — what the new store actually buys", () => {
     for (const r of log.query({ limit: 5 })) mirror.mirrorRow(r);
 
     // Bury it: enough bulk to exceed 1 MB live AND the 8 MB archive.
-    const BULK = 5_000;
+    // ~80 KB against 8 KB + 24 KB of capacity — several rotations, and the
+    // oldest rows pushed out of the archive entirely.
+    const BULK = 40;
     for (let i = 0; i < BULK; i++) {
       log.appendDirect(bulkyRun(i));
       const [newest] = log.query({ limit: 1 });
@@ -124,7 +139,7 @@ describe("ADR-0022 flip gate — what the new store actually buys", () => {
     expect(
       liveBytes,
       "the live file must have rotated at least once",
-    ).toBeLessThan(2 * 1024 * 1024);
+    ).toBeLessThan(SMALL_LIVE * 3);
 
     // Guard against passing vacuously: an EMPTY log would also "lose" the row.
     const readable = log.query({ limit: MAX_PERSIST_LINES });
@@ -147,11 +162,36 @@ describe("ADR-0022 flip gate — what the new store actually buys", () => {
       "JSONL is expected to LOSE this row from disk entirely — if it survived, " +
         "the caps or the volume changed and this test no longer demonstrates anything",
     ).toBe(false);
-    // ...and the reader agrees with the bytes.
-    expect(readable.some((r) => r.taskId === filing.taskId)).toBe(false);
-    expect(log.readArchive().some((r) => r.taskId === filing.taskId)).toBe(
+    // ...and a FRESH reader agrees with the bytes.
+    //
+    // Fresh, not `log`, and the distinction is the point. The instance that
+    // wrote the row still holds it in its in-memory ring, so it keeps
+    // answering with data that no longer exists on disk. The loss only becomes
+    // visible to a process that reads the file cold — i.e. after a bridge
+    // restart, or to the trust replay, which is exactly how this class of bug
+    // stays hidden while someone is watching a live dashboard.
+    const fresh = new RecipeRunLog({
+      dir,
+      memoryCap: MAX_PERSIST_LINES,
+      maxPersistBytes: SMALL_LIVE,
+      maxArchiveBytes: SMALL_ARCHIVE,
+    });
+    logs.push(fresh);
+    expect(
+      fresh
+        .query({ limit: MAX_PERSIST_LINES })
+        .some((r) => r.taskId === filing.taskId),
+      "a cold reader must not see the evicted row",
+    ).toBe(false);
+    expect(fresh.readArchive().some((r) => r.taskId === filing.taskId)).toBe(
       false,
     );
+    // The writing instance still serves it from memory — recorded because it
+    // is the reason the eviction goes unnoticed, not an incidental detail.
+    expect(
+      readable.some((r) => r.taskId === filing.taskId),
+      "the writing instance still has it cached — this is why the loss is silent",
+    ).toBe(true);
 
     // SQLite: still there.
     const survived = mirror

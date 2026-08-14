@@ -323,6 +323,19 @@ export interface RunLogOptions {
   /** Called when the mirror throws. Must not throw. */
   onMirrorFailure?: (message: string) => void;
   /**
+   * TEST SEAM — override the rotation caps.
+   *
+   * Production must use the module defaults; these exist so a test can
+   * exercise rotation and eviction on KILOBYTES instead of the ~10 MB the real
+   * caps require. That is not just speed: the real volume forces ~10 whole-file
+   * rewrites, which pushed the Windows CI job past its 10-minute ceiling and
+   * killed the entire suite. Testing the mechanism at small scale checks the
+   * same logic; testing the magnitude checks the filesystem.
+   */
+  maxPersistBytes?: number;
+  /** TEST SEAM — see `maxPersistBytes`. */
+  maxArchiveBytes?: number;
+  /**
    * Release whatever the mirror holds. Invoked by `close()`.
    *
    * Exists because a factory that OPENS a resource must give callers a way to
@@ -790,7 +803,7 @@ export class RecipeRunLog {
         // rewrites when needed. Without this, runs.jsonl grows unbounded.
         try {
           const st = statSync(this.file);
-          if (st.size > MAX_PERSIST_BYTES) this.rotateDisk();
+          if (st.size > this.maxPersistBytes) this.rotateDisk();
         } catch (err) {
           const code = (err as NodeJS.ErrnoException).code;
           if (code !== "ENOENT") throw err;
@@ -827,6 +840,14 @@ export class RecipeRunLog {
         `[runlog] close failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  private get maxPersistBytes(): number {
+    return this.opts.maxPersistBytes ?? MAX_PERSIST_BYTES;
+  }
+
+  private get maxArchiveBytes(): number {
+    return this.opts.maxArchiveBytes ?? MAX_ARCHIVE_BYTES;
   }
 
   /** Hand one durable row to the migration mirror. Never throws — the mirror
@@ -876,7 +897,7 @@ export class RecipeRunLog {
       let lines = [...existing.split("\n").filter((l) => l.trim()), ...dropped];
       let joined = lines.join("\n");
       let archiveTrimmed = 0;
-      while (joined.length + 1 > MAX_ARCHIVE_BYTES && lines.length > 1) {
+      while (joined.length + 1 > this.maxArchiveBytes && lines.length > 1) {
         const keep = Math.max(1, Math.floor(lines.length / 2));
         archiveTrimmed += lines.length - keep;
         lines = lines.slice(-keep);
@@ -888,7 +909,7 @@ export class RecipeRunLog {
       this.opts.logger?.warn?.(
         `[runlog] rotate moved ${dropped.length} row(s) to ${path.basename(archive)}` +
           (archiveTrimmed > 0
-            ? ` — and dropped ${archiveTrimmed} row(s) from the archive (over ${MAX_ARCHIVE_BYTES} bytes); trust evidence older than that is gone`
+            ? ` — and dropped ${archiveTrimmed} row(s) from the archive (over ${this.maxArchiveBytes} bytes); trust evidence older than that is gone`
             : ""),
       );
     } catch (err) {
@@ -909,7 +930,7 @@ export class RecipeRunLog {
         lines = lines.slice(-MAX_PERSIST_LINES);
       }
       let joined = lines.join("\n");
-      while (joined.length + 1 > MAX_PERSIST_BYTES && lines.length > 1) {
+      while (joined.length + 1 > this.maxPersistBytes && lines.length > 1) {
         lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
         joined = lines.join("\n");
       }
@@ -931,9 +952,9 @@ export class RecipeRunLog {
       // we'd write an oversized row back, defeating rotation. A realistic
       // offender is `RunStepResult.registrySnapshot` which is unbounded
       // user JSON.
-      if (lines.length === 1 && joined.length + 1 > MAX_PERSIST_BYTES) {
+      if (lines.length === 1 && joined.length + 1 > this.maxPersistBytes) {
         this.opts.logger?.warn?.(
-          `[runlog] rotate dropped 1 oversized row (${joined.length} bytes > ${MAX_PERSIST_BYTES} cap)`,
+          `[runlog] rotate dropped 1 oversized row (${joined.length} bytes > ${this.maxPersistBytes} cap)`,
         );
         lines = [];
         joined = "";
