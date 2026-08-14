@@ -117,6 +117,7 @@ import {
 import { evaluateWhen } from "./whenGuard.js";
 import { resolveWorkspaceRoot } from "./workspaceRoot.js";
 import "./tools/index.js";
+import { patchworkPath } from "../patchworkHome.js";
 
 /**
  * Bundled-templates directory used as a third allowed root for nested-recipe
@@ -1300,6 +1301,18 @@ export async function runYamlRecipe(
   // `C:\Users\...`. Now we resolve both sides through `path.resolve()`
   // and use `path.relative()` to detect containment so the comparison is
   // separator-agnostic. Also case-insensitive on Win32 (NTFS).
+  // NOT converted to `patchworkPath()` (#1265), deliberately. A recipe
+  // writes to a literal `~/.patchwork/inbox/...` path, and `~` is expanded
+  // via `os.homedir()` elsewhere in the write path. Resolving only THIS
+  // side through PATCHWORK_HOME makes the two disagree whenever the
+  // override is set: the file lands under $HOME while the containment
+  // check looks under the override, so provenance is silently skipped and
+  // `inboxOutputs` stays empty. Caught by the suite, not by review.
+  //
+  // Converting this needs `~` expansion to route through the same helper,
+  // which changes where recipe file writes LAND. That is a real blast
+  // radius and belongs in its own change, so yamlRunner.ts stays on the
+  // ratchet.
   const inboxDirAbs = path.resolve(
     path.join(os.homedir(), ".patchwork", "inbox"),
   );
@@ -2858,9 +2871,7 @@ export async function runYamlRecipe(
         const { createRecipeRunLog } = await import(
           "../runStore/createRunLog.js"
         );
-        const { homedir } = await import("node:os");
-        const resolvedLogDir =
-          deps.logDir ?? path.join(homedir(), ".patchwork");
+        const resolvedLogDir = deps.logDir ?? patchworkPath();
         const log = createRecipeRunLog({ dir: resolvedLogDir });
         log.appendDirect({
           taskId: `yaml:${recipe.name}:${recipeStartedAt}`,
@@ -2895,7 +2906,7 @@ export async function runYamlRecipe(
         // Read notification channel from ~/.patchwork/config.json
         let notifyChannel = "";
         try {
-          const cfgPath = path.join(os.homedir(), ".patchwork", "config.json");
+          const cfgPath = patchworkPath("config.json");
           const cfg = JSON.parse(readFileSync(cfgPath, "utf-8")) as Record<
             string,
             unknown

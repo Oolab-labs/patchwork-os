@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { patchworkPath } from "../patchworkHome.js";
 
 // These imports will fail until src/recipeOrchestration.ts exists.
 let RecipeOrchestration: any;
@@ -515,9 +516,11 @@ describe("RecipeOrchestration", () => {
       ledgerDir?: string;
     };
     expect(passedDeps.manualRunId).toBe("deadbeefdeadbeefdeadbeefdeadbeef");
-    expect(passedDeps.ledgerDir).toMatch(
-      /[/\\]\.patchwork[/\\]webhook-effect-ledger$/,
-    );
+    // Compared against `patchworkPath`, not a literal `.patchwork` segment:
+    // the ledger dir now honours PATCHWORK_HOME (#1265), and under an override
+    // there is no `.patchwork` component at all. Asserting the old shape would
+    // fail precisely when the override works.
+    expect(passedDeps.ledgerDir).toBe(patchworkPath("webhook-effect-ledger"));
   });
 
   it("fireYamlRecipe() — omits manualRunId/ledgerDir when no deliveryId is given (scheduler/dashboard-fired runs)", async () => {
