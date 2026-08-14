@@ -1,7 +1,33 @@
 # ADR-0021: The Information Boundary — What May a Model Know?
 
-**Status:** Proposed
+**Status:** Accepted — Phases 1 and 2 implemented 2026-08-14; Phase 3 partial
 **Date:** 2026-08-12
+
+> **Implementation note, 2026-08-14.** The decision point exists at
+> `executeAgent` (`src/recipes/agentExecutor.ts`), evaluated before dispatch,
+> with the pure decision in `src/privacy/dataPolicy.ts`. What is and is not
+> built, stated exactly:
+>
+> - **Phase 1 (declared labels)** — built. `parseDataPolicy` reads a step's
+>   `data_policy`; absent means `internal` and behaves as before, so existing
+>   recipes are unaffected. An UNRECOGNISED classification is refused rather
+>   than defaulted: silently reading a typo as `internal` would leave an
+>   operator believing they had labelled something when they had not.
+> - **Phase 2 (the decision)** — built, all five values, pure and model-free.
+>   `narrowest()` enforces the never-widen rule.
+> - **Phase 3 (receipts)** — the SINK is wired (`recordBoundaryDecisionFn`) and
+>   every decision including `ALLOW` emits one, but no durable store is
+>   attached yet. Enforcement deliberately does NOT depend on the sink being
+>   configured — a boundary that refuses only when its audit trail happens to
+>   be wired could be disabled by removing the sink.
+> - **`ALLOW_REDACTED` REFUSES.** Redaction is not implemented, so a step that
+>   must have a category removed is refused rather than sent unredacted.
+>   "We know something must be removed and cannot remove it" has to fail
+>   closed; the alternative sends the data and records that it should not have.
+> - **Not built, unchanged from below:** detection, purpose-based
+>   minimisation, least-data routing, policy packs. Destinations are supplied
+>   by the caller; a configuration surface for registering them is the next
+>   slice, and until one exists the boundary is inert on every install.
 **Bounded by:** [ADR-0019](0019-open-core-boundary.md) — the engine is MIT and
 lives here; organisation-wide policy is control-plane. See "Open-core boundary".
 **Related:** [ADR-0016](0016-approval-hook-fail-closed.md) (fail-closed gating),
