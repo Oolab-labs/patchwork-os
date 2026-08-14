@@ -15,8 +15,6 @@
     "shape of this bug."
   ],
   "allow": [
-    "src/activationMetrics.ts",
-    "src/approvalPersistence.ts",
     "src/bridge.ts",
     "src/commands/dashboard.ts",
     "src/commands/recipe.ts",
@@ -44,7 +42,6 @@
     "src/recipeOrchestration.ts",
     "src/recipeRoutes.ts",
     "src/recipes/yamlRunner.ts",
-    "src/recipesHttp.ts",
-    "src/workers/outcomeStore.ts"
+    "src/recipesHttp.ts"
   ]
 }

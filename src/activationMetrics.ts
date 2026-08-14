@@ -24,9 +24,9 @@
  */
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { getAnalyticsPref } from "./analyticsPrefs.js";
+import { patchworkHome } from "./patchworkHome.js";
 import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 export interface ActivationMetrics {
@@ -60,8 +60,8 @@ const MAX_DAYS_RETAINED = 14;
 
 function resolveMetricsPath(configDir?: string): string {
   if (configDir) return path.join(configDir, METRICS_FILENAME);
-  const root =
-    process.env.PATCHWORK_HOME ?? path.join(os.homedir(), ".patchwork");
+  // `patchworkHome()` pins a relative override at read time (see its comment).
+  const root = patchworkHome();
   return path.join(root, METRICS_FILENAME);
 }
 
