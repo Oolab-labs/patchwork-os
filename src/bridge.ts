@@ -1123,7 +1123,7 @@ export class Bridge {
   private registerRecipeTriggerPrograms(): void {
     if (!this.automationHooks) return;
     try {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       const collected = collectEventTriggerPrograms(recipesDir, {
         logger: this.logger,
       });
@@ -1333,7 +1333,7 @@ export class Bridge {
           workdir: this.config.workspace,
         });
         // Patchwork: wire recipe server fns + build cron scheduler.
-        const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+        const recipesDir = patchworkPath("recipes");
         // One-shot scan for legacy `<name>.permissions.json` sidecars (alpha.36+
         // no longer generates them). Skipped under NODE_ENV=test.
         warnAboutLegacyPermissionsSidecars(recipesDir);
@@ -1402,12 +1402,7 @@ export class Bridge {
           ? (opts) =>
               // biome-ignore lint/style/noNonNullAssertion: guarded by outer ternary
               this.recipeOrchestration!.fireYamlRecipe({
-                filePath: path.join(
-                  os.homedir(),
-                  ".patchwork",
-                  "recipes",
-                  `${opts.recipeName}.yaml`,
-                ),
+                filePath: patchworkPath("recipes", `${opts.recipeName}.yaml`),
                 name: opts.recipeName,
                 taskIdPrefix: `automation-recipe-${opts.recipeName}`,
                 triggerSourceSuffix: `automation:${opts.triggerSource}`,
@@ -1433,7 +1428,7 @@ export class Bridge {
       // guard is the safety floor — we never spawn tasks unless the operator
       // already enabled a driver. Pass --automation --automation-policy to add
       // policy-file hooks on top of the recipe triggers.
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       const collected = collectEventTriggerPrograms(recipesDir, {
         logger: this.logger,
       });
@@ -1455,12 +1450,7 @@ export class Bridge {
             ? (opts) =>
                 // biome-ignore lint/style/noNonNullAssertion: guarded by outer ternary
                 this.recipeOrchestration!.fireYamlRecipe({
-                  filePath: path.join(
-                    os.homedir(),
-                    ".patchwork",
-                    "recipes",
-                    `${opts.recipeName}.yaml`,
-                  ),
+                  filePath: patchworkPath("recipes", `${opts.recipeName}.yaml`),
                   name: opts.recipeName,
                   taskIdPrefix: `automation-recipe-${opts.recipeName}`,
                   triggerSourceSuffix: `automation:${opts.triggerSource}`,

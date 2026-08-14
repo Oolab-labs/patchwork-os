@@ -12,13 +12,13 @@ import {
   watch,
   writeFileSync,
 } from "node:fs";
-import os from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import "../recipes/tools/index.js";
 import { loadFixtureLibrary } from "../connectors/fixtureLibrary.js";
 import { MockConnector } from "../connectors/mockConnector.js";
+import { patchworkPath } from "../patchworkHome.js";
 import { applyTriggerInputDefaults } from "../recipeOrchestration.js";
 import {
   detectRequiredConnectors,
@@ -73,8 +73,25 @@ import { findYamlRecipePath } from "../recipesHttp.js";
 import type { RecipeRunLog } from "../runLog.js";
 import { findInstalledRecipeEntrypoint } from "./recipeInstall.js";
 
-const RECIPES_DIR = join(os.homedir(), ".patchwork", "recipes");
-const FIXTURES_DIR = join(os.homedir(), ".patchwork", "fixtures");
+/**
+ * Resolved per CALL, not bound at import (#1265/#1266).
+ *
+ * These were module-level constants. That was harmless while they read
+ * `os.homedir()`, which does not change during a process. Routing them
+ * through `patchworkPath()` makes them depend on PATCHWORK_HOME, which
+ * CAN change after import — so binding at import silently pins whichever
+ * value existed when this module first loaded.
+ *
+ * Same defect as the frozen OAuth redirect URI: the conversion is what
+ * turns a safe constant into a stale one, so the binding site has to move
+ * with it.
+ */
+function recipesDir(): string {
+  return patchworkPath("recipes");
+}
+function fixturesDir(): string {
+  return patchworkPath("fixtures");
+}
 const RECIPE_SCHEMA_HEADER =
   "# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json";
 const RECIPE_API_VERSION = "patchwork.sh/v1";
@@ -179,7 +196,7 @@ export function runNew(options: NewOptions): { path: string; content: string } {
     .replace(/\{\{date\}\}/g, today);
   const content = `${RECIPE_SCHEMA_HEADER}\n${body}`;
 
-  const outputDir = options.outputDir ?? RECIPES_DIR;
+  const outputDir = options.outputDir ?? recipesDir();
   if (!existsSync(outputDir)) {
     mkdirSync(outputDir, { recursive: true });
   }
@@ -423,7 +440,7 @@ async function runNewAiSuggest(
     throw new Error("Cancelled by user");
   }
 
-  const outputDir = options.outputDir ?? RECIPES_DIR;
+  const outputDir = options.outputDir ?? recipesDir();
   if (!existsSync(outputDir)) {
     mkdirSync(outputDir, { recursive: true });
   }
@@ -674,7 +691,7 @@ export async function runNewInteractive(
     throw new Error("Cancelled by user");
   }
 
-  const outputDir = options.outputDir ?? RECIPES_DIR;
+  const outputDir = options.outputDir ?? recipesDir();
   if (!existsSync(outputDir)) {
     mkdirSync(outputDir, { recursive: true });
   }
@@ -893,12 +910,12 @@ function lintStep(
   // Named ref (no extension, no separator) → check ~/.patchwork/recipes/.
   // Emit a warning rather than error: the recipe may be installed on the
   // deploy target but not the author's machine.
-  if (existsSync(RECIPES_DIR)) {
+  if (existsSync(recipesDir())) {
     let found: string | null = null;
     try {
       found =
-        findYamlRecipePath(RECIPES_DIR, ref) ??
-        (existsSync(join(RECIPES_DIR, ref)) ? join(RECIPES_DIR, ref) : null);
+        findYamlRecipePath(recipesDir(), ref) ??
+        (existsSync(join(recipesDir(), ref)) ? join(recipesDir(), ref) : null);
     } catch (err) {
       issues.push({
         level: "error",
@@ -909,7 +926,7 @@ function lintStep(
     if (!found) {
       issues.push({
         level: "warning",
-        message: `Step ${stepLabel}: '${field}: ${ref}' — recipe not found in ${RECIPES_DIR}`,
+        message: `Step ${stepLabel}: '${field}: ${ref}' — recipe not found in ${recipesDir()}`,
       });
     } else {
       issues.push(...lintChildRecipe(found, field, ref, stepLabel, visited));
@@ -1469,7 +1486,7 @@ function resolveNestedRecipeForDryPlan(
   // — TS resolves this through the same package that `import os from "node:os"`
   // uses. No dynamic require: this stays synchronous and ESM-friendly.
   const parentDir = dirname(parentRecipePath);
-  const userRecipesDir = join(os.homedir(), ".patchwork", "recipes");
+  const userRecipesDir = patchworkPath("recipes");
 
   const pathLike =
     /^([./]|\.\.[/\\]|[A-Za-z]:[/\\])/.test(ref) ||
@@ -1868,9 +1885,11 @@ export async function runPreflight(
   }
 
   if (options.requireFixtures && plan.connectorNamespaces) {
-    const fixturesDir = options.fixturesDir ?? FIXTURES_DIR;
+    const resolvedFixturesDir = options.fixturesDir ?? fixturesDir();
     for (const ns of plan.connectorNamespaces) {
-      const library = loadFixtureLibrary(join(fixturesDir, `${ns}.json`));
+      const library = loadFixtureLibrary(
+        join(resolvedFixturesDir, `${ns}.json`),
+      );
       if (!library) {
         issues.push({
           level: "error",
@@ -2325,9 +2344,9 @@ function resolveRecipePath(recipeRef: string): string {
   );
   const normalizedRef = recipeRef.replace(/\.(yaml|yml|json)$/i, "");
   const candidates = [
-    join(RECIPES_DIR, `${normalizedRef}.yaml`),
-    join(RECIPES_DIR, `${normalizedRef}.yml`),
-    join(RECIPES_DIR, `${normalizedRef}.json`),
+    join(recipesDir(), `${normalizedRef}.yaml`),
+    join(recipesDir(), `${normalizedRef}.yml`),
+    join(recipesDir(), `${normalizedRef}.json`),
     join(bundledDir, `${normalizedRef}.yaml`),
     join(bundledDir, `${normalizedRef}.yml`),
   ];
@@ -2339,7 +2358,7 @@ function resolveRecipePath(recipeRef: string): string {
   }
 
   // Install-dir resolution (DB-4): `recipe install` puts each recipe in
-  // its own subdir at `<RECIPES_DIR>/<install-name>/<entrypoint>.yaml`.
+  // its own subdir at `<recipesDir()>/<install-name>/<entrypoint>.yaml`.
   // Without this fallback, `recipe run <install-name>` errors with
   // "not found" even though `recipe list` displays the recipe — observed
   // in the 2026-04-29 dogfood pass.
@@ -2354,7 +2373,7 @@ function resolveRecipePath(recipeRef: string): string {
   }
 
   throw new Error(
-    `recipe "${basename(recipeRef)}" not found in ${RECIPES_DIR}`,
+    `recipe "${basename(recipeRef)}" not found in ${recipesDir()}`,
   );
 }
 
@@ -2533,7 +2552,7 @@ export async function runRecord(
 ): Promise<RecipeRecordResult> {
   const lint = runLint(recipePath);
   const issues = [...lint.issues];
-  const fixturesDir = options.fixturesDir ?? FIXTURES_DIR;
+  const resolvedFixturesDir = options.fixturesDir ?? fixturesDir();
   let recordedFixtures: string[] = [];
   let stepsRun = 0;
   let outputs: string[] = [];
@@ -2546,7 +2565,7 @@ export async function runRecord(
       );
       const run = await runYamlRecipe(recipe, {
         ...options.deps,
-        recordFixturesDir: fixturesDir,
+        recordFixturesDir: resolvedFixturesDir,
       });
       stepsRun = run.stepsRun;
       outputs = run.outputs;
@@ -2641,7 +2660,7 @@ export async function runTest(
   options: { fixturesDir?: string } = {},
 ): Promise<RecipeTestResult> {
   const lint = runLint(recipePath);
-  const fixturesDir = options.fixturesDir ?? FIXTURES_DIR;
+  const resolvedFixturesDir = options.fixturesDir ?? fixturesDir();
   const issues = [...lint.issues];
   let requiredFixtures: string[] = [];
   let stepsRun = 0;
@@ -2661,13 +2680,13 @@ export async function runTest(
   }
 
   const missingFixtures = requiredFixtures.filter(
-    (provider) => !existsSync(join(fixturesDir, `${provider}.json`)),
+    (provider) => !existsSync(join(resolvedFixturesDir, `${provider}.json`)),
   );
 
   for (const provider of missingFixtures) {
     issues.push({
       level: "error",
-      message: `Missing fixture library for connector '${provider}' at ${join(fixturesDir, `${provider}.json`)}`,
+      message: `Missing fixture library for connector '${provider}' at ${join(resolvedFixturesDir, `${provider}.json`)}`,
     });
   }
 
@@ -2729,7 +2748,7 @@ export async function runTest(
       } else {
         const mockConnectors = createMockToolConnectors(
           recipe.steps,
-          fixturesDir,
+          resolvedFixturesDir,
         );
         const run = await runYamlRecipe(recipe, {
           testMode: true,

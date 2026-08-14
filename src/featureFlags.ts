@@ -9,9 +9,9 @@
  */
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import os from "node:os";
 import { join } from "node:path";
 import { watchDirectoryWithFallback } from "./fsWatchWithFallback.js";
+import { patchworkHome } from "./patchworkHome.js";
 import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 /** Flag definition */
@@ -38,11 +38,7 @@ const FLAG_VALUES: Map<string, boolean> = new Map();
 
 /** Flag storage path */
 function getFlagsPath(): string {
-  return join(
-    process.env.PATCHWORK_HOME ?? join(os.homedir(), ".patchwork"),
-    "config",
-    "flags.json",
-  );
+  return join(patchworkHome(), "config", "flags.json");
 }
 
 /**

@@ -36,6 +36,7 @@ import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
+import { patchworkHome } from "../patchworkHome.js";
 import { TRACES_EXPORT_VERSION, type TraceSource } from "./tracesExport.js";
 
 export type ImportMode = "append" | "overwrite";
@@ -90,7 +91,7 @@ const SINGLE_FILE_TARGETS: Record<Exclude<TraceSource, "activity">, string> = {
 };
 
 function defaultPatchworkDir(): string {
-  return path.join(os.homedir(), ".patchwork");
+  return patchworkHome();
 }
 
 function defaultActivityDir(): string {
