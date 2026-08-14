@@ -17,31 +17,17 @@
     "",
     "2026-08-10 batch 1 (#1311): 144 entries cleared \u2014 every connector tool declaring isWrite:false, plus two camelCase aliases that were governed differently from the identical canonical tool.",
     "Remaining 42 are declared WRITES. Each needs a real judgement about whether it can be undone; loosening is the dangerous direction, so these get per-tool review, not a sweep.",
-    "2026-08-10 batch 2 (#1311): 8 irreversible writes given a real domain (messaging, db-write). Reversibility unchanged \u2014 this batch loosens nothing; it only stops them sharing one undifferentiated bucket."
+    "2026-08-10 batch 2 (#1311): 8 irreversible writes given a real domain (messaging, db-write). Reversibility unchanged \u2014 this batch loosens nothing; it only stops them sharing one undifferentiated bucket.",
+    "2026-08-14 batch 3 (#1311): 17 tracker / knowledge-base / support writes reviewed one by one. 15 given a real inverse (issue, tasks, docs-write, support \u2014 compensable); 2 (intercom.replyToConversation, zendesk.addComment) DEBUCKETED only, staying irreversible because they deliver text to a customer. obsidian.write_note deliberately left here: it overwrites with no version history and no WriteEffectLedger, so it has no inverse. outcomes.classify_issues also left here on purpose \u2014 it writes the outcome-log the trust ramp reads, so classifying it is a governance decision (a worker writing its own evidence), not a reversibility one."
   ],
   "allow": [
     "airtable.create_record",
-    "asana.add_task_comment",
     "caldiy.cancel_booking",
     "circleci.trigger_pipeline",
     "cloudflare.create_dns_record",
-    "confluence.appendToPage",
-    "confluence.createPage",
     "datadog.muteMonitor",
     "grafana.create_annotation",
     "hubspot.createNote",
-    "intercom.closeConversation",
-    "intercom.replyToConversation",
-    "jira.add_comment",
-    "jira.create_issue",
-    "jira.update_status",
-    "linear.addComment",
-    "linear.createIssue",
-    "linear.updateIssue",
-    "meetingNotes.createLinearIssues",
-    "monday.create_item",
-    "notion.appendBlock",
-    "notion.createPage",
     "obsidian.write_note",
     "outcomes.classify_issues",
     "pagerduty.acknowledge_incident",
@@ -51,8 +37,6 @@
     "pipedrive.create_deal",
     "posthog.capture_event",
     "salesforce.create_record",
-    "supabase.upload_file",
-    "zendesk.addComment",
-    "zendesk.updateStatus"
+    "supabase.upload_file"
   ]
 }

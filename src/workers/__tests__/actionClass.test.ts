@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   classifyActionClass,
@@ -283,10 +284,17 @@ describe("connector reads (#1311 batch 1)", () => {
     // a real judgement about whether they can be undone, and loosening is the
     // dangerous direction, so they must stay on the conservative default until
     // reviewed one by one.
+    // The three Linear writes this originally named were reviewed in batch 3
+    // and now carry a stated inverse, so they moved. The guard itself still
+    // holds and is retargeted at writes NOT yet reviewed — including
+    // `obsidian.write_note`, which looks like a sibling of the Notion and
+    // Confluence page writes batch 3 did loosen but has no version history to
+    // restore from.
     for (const tool of [
-      "linear.createIssue",
-      "linear.updateIssue",
-      "linear.addComment",
+      "obsidian.write_note",
+      "salesforce.create_record",
+      "cloudflare.create_dns_record",
+      "circleci.trigger_pipeline",
     ]) {
       expect(classifyActionClass(tool, {}).reversibility).toBe("irreversible");
     }
@@ -325,5 +333,89 @@ describe("irreversible writes get a domain, not a discount (#1311 batch 2)", () 
     expect(mail.domain).toBe("messaging");
     expect(sql.domain).toBe("db-write");
     expect(mail.key).not.toBe(sql.key);
+  });
+});
+
+describe("tracker / docs / support writes (#1311 batch 3)", () => {
+  // The per-tool review, as a table. Each row is a claim about the real world
+  // — "this act has THIS inverse" — and the test is what stops the claim from
+  // drifting away from the mapping later.
+  const REVIEWED: Array<[tool: string, key: string, brandExposed: boolean]> = [
+    // Inverse: delete/close the issue, revert the field, delete the comment.
+    ["jira.create_issue", "issue:compensable:medium", true],
+    ["jira.add_comment", "issue:compensable:medium", true],
+    ["jira.update_status", "issue:compensable:medium", true],
+    ["linear.createIssue", "issue:compensable:medium", true],
+    ["linear.updateIssue", "issue:compensable:medium", true],
+    ["linear.addComment", "issue:compensable:medium", true],
+    ["meetingNotes.createLinearIssues", "issue:compensable:medium", true],
+    // Inverse: delete the item / the comment.
+    ["asana.add_task_comment", "tasks:compensable:medium", false],
+    ["monday.create_item", "tasks:compensable:medium", false],
+    // Inverse: delete the page or restore the prior version (page history).
+    ["notion.createPage", "docs-write:compensable:medium", false],
+    ["notion.appendBlock", "docs-write:compensable:medium", false],
+    ["confluence.createPage", "docs-write:compensable:medium", false],
+    ["confluence.appendToPage", "docs-write:compensable:medium", false],
+    // NO inverse — text was delivered to a customer. Debucketed only.
+    ["intercom.replyToConversation", "messaging:irreversible:medium", true],
+    ["zendesk.addComment", "messaging:irreversible:medium", true],
+    // Inverse: reopen the ticket.
+    ["intercom.closeConversation", "support:compensable:medium", true],
+    ["zendesk.updateStatus", "support:compensable:medium", true],
+  ];
+
+  it.each(REVIEWED)("classifies %s as %s", (tool, key, brandExposed) => {
+    const c = classifyActionClass(tool, {});
+    expect(c.key).toBe(key);
+    expect(c.brandExposed).toBe(brandExposed);
+  });
+
+  it("keeps DELIVERING text apart from flipping ticket state", () => {
+    // The distinction this batch turns on, and the one most likely to be
+    // flattened by a later sweep: within a SINGLE product, replying to a
+    // customer is irreversible and closing their ticket is not. If these ever
+    // collapse into one class, evidence from harmless status flips would
+    // authorise sending mail to customers.
+    const reply = classifyActionClass("intercom.replyToConversation", {});
+    const close = classifyActionClass("intercom.closeConversation", {});
+    expect(reply.reversibility).toBe("irreversible");
+    expect(close.reversibility).toBe("compensable");
+    expect(reply.key).not.toBe(close.key);
+  });
+
+  it("does not loosen the tools it debucketed", () => {
+    // Same guard batch 2 carried: these two were already irreversible via the
+    // `other` catch-all and must stay that way. Giving them a domain changes
+    // which bucket the evidence lands in, nothing about what the gate permits.
+    for (const tool of ["intercom.replyToConversation", "zendesk.addComment"]) {
+      expect(
+        classifyActionClass(tool, {}).reversibility,
+        `${tool} must stay irreversible`,
+      ).toBe("irreversible");
+    }
+  });
+
+  it("leaves every tool still on the ratchet unclassified", () => {
+    // Makes the ratchet file honest in BOTH directions. Without this the
+    // allowlist could quietly list a tool that is in fact classified — an
+    // entry that can never be "cleared" because there is nothing to fix — and
+    // the audit would still pass, reporting a gap that does not exist.
+    const allowlist = JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../scripts/audit-tool-classification-allowlist.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as { allow: string[] };
+    expect(allowlist.allow.length).toBeGreaterThan(0);
+    for (const tool of allowlist.allow) {
+      expect(
+        classifyActionClass(tool, {}).domain,
+        `${tool} is on the ratchet but IS classified — delete its line`,
+      ).toBe("other");
+    }
   });
 });
