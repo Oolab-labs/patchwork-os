@@ -8,6 +8,12 @@
  * localFn (Ollama/LM Studio) instead of Anthropic API — opt-in behaviour change.
  */
 
+import {
+  type BoundaryOutcome,
+  type Destination,
+  decideBoundary,
+  parseDataPolicy,
+} from "../privacy/dataPolicy.js";
 import { resolveLocalModel } from "./localSettings.js";
 
 /**
@@ -44,6 +50,17 @@ export interface AgentResult {
 }
 
 export interface AgentExecutorDeps {
+  /**
+   * Receipt sink for information-boundary decisions (ADR-0021 Phase 3).
+   * Optional: an unwired sink means no receipt, never a refusal — the
+   * boundary must not depend on its own audit trail being configured.
+   */
+  recordBoundaryDecisionFn?: (r: {
+    decision: string;
+    reason: string;
+    destinationId?: string;
+    redactCategories?: string[];
+  }) => void;
   anthropicFn: (prompt: string, model: string) => Promise<AgentResult>;
   /** Handles openai, grok, gemini, gemini-api, codex — passes driver name through. */
   providerDriverFn: (
@@ -92,6 +109,19 @@ export interface AgentExecutorInput {
   allowedTools?: string[];
   /** Deny rules via --disallowed-tools (any mode). */
   disallowedTools?: string[];
+  /**
+   * Information-boundary context (ADR-0021). Absent means the step declared no
+   * `data_policy` and no destination is registered, which is byte-identical to
+   * pre-boundary behaviour — the overwhelmingly common case on upgrade.
+   */
+  boundary?: {
+    /** Raw `data_policy` as declared on the step. Parsed here, not by callers. */
+    dataPolicy?: unknown;
+    /** Where this prompt is about to go. */
+    destination?: Destination;
+    /** Whether ANY registered local destination accepts the classification. */
+    localDestinationAccepts?: boolean;
+  };
   /**
    * Worker-autonomy hard requirement. When true, this agent step carries a
    * worker-mandated tool sandbox (see disallowedToolsForAgentStep) that ONLY the
@@ -172,6 +202,36 @@ const CODEX_WORKER_SANDBOX_LOCKDOWN: Record<string, unknown> = {
   webSearch: false,
 };
 
+/**
+ * Evaluate the information boundary for one agent step.
+ *
+ * Returns null when the step declares nothing AND no destination is registered
+ * — byte-identical to pre-boundary behaviour, which is the state of every
+ * existing install.
+ *
+ * A MALFORMED `data_policy` fails closed with DENY rather than defaulting. The
+ * operator wrote a label; silently reading it as `internal` because of a typo
+ * would leave them believing data was protected when it was not.
+ */
+function evaluateBoundary(
+  ctx: AgentExecutorInput["boundary"],
+): BoundaryOutcome | null {
+  if (!ctx?.destination) return null;
+  const policy = parseDataPolicy(ctx.dataPolicy);
+  if (policy === null) {
+    return {
+      decision: "DENY",
+      reason:
+        "data_policy declares an unrecognised classification — refusing rather than defaulting a typo to `internal`",
+    };
+  }
+  return decideBoundary(policy, ctx.destination, {
+    ...(ctx.localDestinationAccepts !== undefined && {
+      localDestinationAccepts: ctx.localDestinationAccepts,
+    }),
+  });
+}
+
 export async function executeAgent(
   input: AgentExecutorInput,
   deps: AgentExecutorDeps,
@@ -202,6 +262,43 @@ export async function executeAgent(
       servedBy: { driver: driver ?? "auto" },
     };
   }
+  // ── INFORMATION BOUNDARY (ADR-0021) ─────────────────────────────────────
+  // Evaluated BEFORE dispatch, and here rather than in `costRouter`, which is
+  // the tempting seam and the wrong one: costRouter short-circuits with no
+  // downshift list and no USD cap, so binding privacy there would cover only
+  // budgeted steps while presenting as total enforcement. This function is on
+  // the unconditional path for both runners.
+  //
+  // Precedence is privacy -> capability -> cost, and it is not negotiable by
+  // the later stages: a cheaper or more capable model that is not authorised
+  // for the data does not become authorised by being cheaper or more capable.
+  const boundary = evaluateBoundary(input.boundary);
+  if (boundary && boundary.decision !== "ALLOW") {
+    deps.recordBoundaryDecisionFn?.({
+      decision: boundary.decision,
+      reason: boundary.reason,
+      destinationId: input.boundary?.destination?.id,
+      ...(boundary.redactCategories && {
+        redactCategories: boundary.redactCategories,
+      }),
+    });
+    // ALLOW_REDACTED is not implemented as a transform in this phase, and is
+    // therefore REFUSED rather than silently sent unredacted. Failing closed on
+    // "we know something must be removed and cannot remove it" is the whole
+    // point; the alternative sends the data and logs that it should not have.
+    return {
+      text: `[agent step failed: information boundary — ${boundary.reason}]`,
+      servedBy: { driver: driver ?? "auto" },
+    };
+  }
+  if (boundary) {
+    deps.recordBoundaryDecisionFn?.({
+      decision: boundary.decision,
+      reason: boundary.reason,
+      destinationId: input.boundary?.destination?.id,
+    });
+  }
+
   const cliOpts =
     mcpAccess !== undefined ||
     sandbox !== undefined ||
