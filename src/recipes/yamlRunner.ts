@@ -2855,11 +2855,13 @@ export async function runYamlRecipe(
           ts: doneAt,
         });
       } else {
-        const { RecipeRunLog } = await import("../runLog.js");
+        const { createRecipeRunLog } = await import(
+          "../runStore/createRunLog.js"
+        );
         const { homedir } = await import("node:os");
         const resolvedLogDir =
           deps.logDir ?? path.join(homedir(), ".patchwork");
-        const log = new RecipeRunLog({ dir: resolvedLogDir });
+        const log = createRecipeRunLog({ dir: resolvedLogDir });
         log.appendDirect({
           taskId: `yaml:${recipe.name}:${recipeStartedAt}`,
           recipeName: recipe.name,

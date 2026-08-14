@@ -1643,8 +1643,10 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
 
       // Append to run log so CLI runs appear in ctxQueryTraces + dashboard /runs
       try {
-        const { RecipeRunLog } = await import("./runLog.js");
-        const runLog = new RecipeRunLog({
+        const { createRecipeRunLog } = await import(
+          "./runStore/createRunLog.js"
+        );
+        const runLog = createRecipeRunLog({
           dir: path.join(os.homedir(), ".patchwork"),
         });
         const startedAt = Date.now();
@@ -1773,7 +1775,7 @@ if (process.argv[2] === "suggest") {
       }
 
       const { ActivityLog } = await import("./activityLog.js");
-      const { RecipeRunLog } = await import("./runLog.js");
+      const { createRecipeRunLog } = await import("./runStore/createRunLog.js");
       const { computeAutomationSuggestions } = await import(
         "./automationSuggestions.js"
       );
@@ -1803,7 +1805,7 @@ if (process.argv[2] === "suggest") {
         // suggestions just return fewer / no items.
       }
 
-      const recipeRunLog = new RecipeRunLog({ dir: patchworkDir });
+      const recipeRunLog = createRecipeRunLog({ dir: patchworkDir });
 
       const opts: Parameters<typeof computeAutomationSuggestions>[0] = {
         activityLog,
@@ -3724,8 +3726,10 @@ if (process.argv[2] === "recipe" && process.argv[3] === "watch") {
 
           // Append to run log
           try {
-            const { RecipeRunLog } = await import("./runLog.js");
-            const runLog = new RecipeRunLog({
+            const { createRecipeRunLog } = await import(
+              "./runStore/createRunLog.js"
+            );
+            const runLog = createRecipeRunLog({
               dir: path.join(os.homedir(), ".patchwork"),
             });
             const now = Date.now();

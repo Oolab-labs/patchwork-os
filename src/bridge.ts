@@ -66,7 +66,8 @@ import {
 import { warnAboutLegacyPermissionsSidecars } from "./recipes/migrationWarnings.js";
 import { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
 import { evaluateInProcessGate } from "./riskSignals.js";
-import { RecipeRunLog } from "./runLog.js";
+import type { RecipeRunLog } from "./runLog.js";
+import { createRecipeRunLog } from "./runStore/createRunLog.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { buildSessionDetail } from "./sessionDetail.js";
@@ -1272,7 +1273,7 @@ export class Bridge {
       );
       if (driver) {
         // Recipe run-history needs the orchestrator to produce anything.
-        this.recipeRunLog = new RecipeRunLog({
+        this.recipeRunLog = createRecipeRunLog({
           dir: patchworkDir,
           logger: this.logger,
         });

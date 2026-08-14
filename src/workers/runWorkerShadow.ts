@@ -2,7 +2,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { patchworkHome } from "../patchworkHome.js";
-import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
+import { MAX_PERSIST_LINES } from "../runLog.js";
+import { createRecipeRunLog } from "../runStore/createRunLog.js";
 import { classifyActionClass } from "./actionClass.js";
 import { deriveActionKey } from "./actionRef.js";
 import { backtestWorker, formatBacktestReport } from "./backtest.js";
@@ -66,7 +67,7 @@ function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
     // after it — even with a per-recipe filter (the filter is applied AFTER ring
     // eviction). Matching the ring to the disk cap means worker evidence is
     // bounded only by what the log actually retains, not by global run volume.
-    const log = new RecipeRunLog({
+    const log = createRecipeRunLog({
       dir: patchworkDir,
       memoryCap: MAX_PERSIST_LINES,
     });

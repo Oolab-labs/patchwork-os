@@ -303,6 +303,35 @@ export interface RunLogOptions {
   memoryCap?: number;
   /** Test hook — default Date.now. */
   now?: () => number;
+  /**
+   * ADR-0022 migration mirror. Receives every row that reaches disk, AFTER
+   * the authoritative write succeeds.
+   *
+   * Hooked to `append()` rather than to the public write methods on purpose:
+   * `append` is the single chokepoint every row passes through (`record`,
+   * `appendDirect`, `startRun`, `completeRun`, and the interrupted-sweep all
+   * funnel into it), so no writer can be missed — including one added later.
+   * A missed writer would leave the mirror permanently short of rows and
+   * produce divergence reports that are true but meaningless, which is the
+   * fastest way to make people stop reading them.
+   *
+   * Never allowed to affect the authoritative write: failures are reported
+   * and swallowed. Absent by default, so the run log behaves exactly as
+   * before unless something opts in.
+   */
+  mirror?: (run: RecipeRun) => void;
+  /** Called when the mirror throws. Must not throw. */
+  onMirrorFailure?: (message: string) => void;
+  /**
+   * Release whatever the mirror holds. Invoked by `close()`.
+   *
+   * Exists because a factory that OPENS a resource must give callers a way to
+   * release it. Without this the mirror's file handle was unreachable — the
+   * caller only ever receives a `RecipeRunLog`. On POSIX that is merely untidy;
+   * on Windows an open handle cannot be unlinked, so the directory could not
+   * be removed at all.
+   */
+  onClose?: () => void;
 }
 
 export interface RunQuery {
@@ -335,6 +364,7 @@ export class RecipeRunLog {
    *  `updateRunSteps` (which receives the FULL step list each call) from
    *  re-appending every prior step on every step completion. */
   private readonly persistedStepIds = new Map<number, Set<string>>();
+  private closed = false;
   private readonly now: () => number;
 
   constructor(private readonly opts: RunLogOptions) {
@@ -766,11 +796,55 @@ export class RecipeRunLog {
           if (code !== "ENOENT") throw err;
         }
         appendFileSync(this.file, `${JSON.stringify(run)}\n`, { mode: 0o600 });
+        // Mirror only after the authoritative write has succeeded. Mirroring
+        // first would let a row exist in the copy that never reached the
+        // source of truth — divergence manufactured by the tool meant to
+        // measure it.
+        this.mirrorRow(run);
       });
     } catch (err) {
       this.opts.logger?.warn?.(
         `[runlog] append failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  /**
+   * Release resources held on behalf of this run log — today, the ADR-0022
+   * mirror's database handle. Idempotent and never throws: callers close from
+   * teardown and shutdown paths, and a cleanup that can itself fail just turns
+   * one problem into two.
+   *
+   * The run log itself needs no closing; `runs.jsonl` is opened per write.
+   */
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    try {
+      this.opts.onClose?.();
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[runlog] close failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** Hand one durable row to the migration mirror. Never throws — the mirror
+   *  is an observer and must not become a way for the run log to fail. */
+  private mirrorRow(run: RecipeRun): void {
+    const mirror = this.opts.mirror;
+    if (!mirror) return;
+    try {
+      mirror(run);
+    } catch (err) {
+      try {
+        this.opts.onMirrorFailure?.(
+          err instanceof Error ? err.message : String(err),
+        );
+      } catch {
+        // A reporting callback that throws must not become the failure the
+        // mirror was forbidden from causing.
+      }
     }
   }
 
