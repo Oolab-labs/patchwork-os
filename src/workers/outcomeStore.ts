@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
+import { patchworkHome } from "../patchworkHome.js";
 import {
   type ActionRef,
   AmbiguousActionRefError,
@@ -38,7 +38,9 @@ export type OutcomeDisposition = "confirmed" | "junk" | "unknown";
  */
 export function resolveOutcomeLogDir(override?: string): string {
   return (
-    override ?? process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork")
+    // See `patchworkHome()`: a relative override is pinned at read time, so a
+    // cwd change cannot split the confirm-write path from the dial-read path.
+    override ?? patchworkHome()
   );
 }
 

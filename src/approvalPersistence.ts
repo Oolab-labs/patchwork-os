@@ -1,9 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import type { ApprovalDecision, PendingApproval } from "./approvalQueue.js";
 import { withFileLockSync } from "./fileLockSync.js";
 import type { Logger } from "./logger.js";
+import { patchworkHome } from "./patchworkHome.js";
 
 /**
  * Durable event log backing `ApprovalQueue` (ADR-0018: "persist the request,
@@ -58,7 +58,11 @@ export type ApprovalLogEvent = ApprovalRequestEvent | ApprovalDecisionEvent;
  */
 export function resolveApprovalLogDir(override?: string): string {
   return (
-    override ?? process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork")
+    // `patchworkHome()` rather than reading the env var here: it `resolve()`s a
+    // RELATIVE override, so the path cannot re-point when the process changes
+    // directory. This process has a CwdChanged hook, so that is live, not
+    // theoretical — and an audit log that moves mid-session is the worst case.
+    override ?? patchworkHome()
   );
 }
 
