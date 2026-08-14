@@ -33,7 +33,9 @@ describe("resolveApprovalLogDir", () => {
     const customHome = path.join(os.tmpdir(), "pw-custom-home");
     process.env.PATCHWORK_HOME = customHome;
     try {
-      expect(resolveApprovalLogDir()).toBe(customHome);
+      // `path.resolve` for the same reason as outcomeStore: the override is
+      // resolved, and os.tmpdir() can differ from its resolved form.
+      expect(resolveApprovalLogDir()).toBe(path.resolve(customHome));
     } finally {
       if (prior === undefined) delete process.env.PATCHWORK_HOME;
       else process.env.PATCHWORK_HOME = prior;

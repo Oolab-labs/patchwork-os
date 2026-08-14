@@ -26,7 +26,11 @@ describe("resolveOutcomeLogDir — one file for every read + write path", () => 
 
   it("honors PATCHWORK_HOME when set (so write + trust-replay read agree)", () => {
     process.env.PATCHWORK_HOME = "/data/pw";
-    expect(resolveOutcomeLogDir()).toBe("/data/pw");
+    // Compared against `path.resolve`, not the literal: the override is
+    // resolved (#1265), and on Windows a POSIX-absolute path gains a drive
+    // letter — `/data/pw` becomes `D:\data\pw`. Asserting the literal passes
+    // on POSIX and fails on Windows for a path that is in fact correct.
+    expect(resolveOutcomeLogDir()).toBe(path.resolve("/data/pw"));
   });
 
   it("falls back to ~/.patchwork when PATCHWORK_HOME is unset", () => {
