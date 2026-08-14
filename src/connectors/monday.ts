@@ -32,7 +32,21 @@ const SCOPES = [
   "users:read",
   "tags:read",
 ];
-const REDIRECT_URI = connectorRedirectUri("monday");
+/**
+ * Resolved per CALL, never frozen at import (#1266).
+ *
+ * `connectorRedirectUri()` reads PATCHWORK_DASHBOARD_URL -> PATCHWORK_BRIDGE_URL
+ * -> a localhost default. Binding it to a module-level `const` captured
+ * whichever values existed when the module first loaded, so any later change
+ * was ignored and the connector kept building auth URLs against a stale base
+ * until the process restarted — with no error to explain the mismatch.
+ *
+ * The redirect URI must match what the OAuth app has registered, so a stale
+ * one fails at the provider, far from the cause.
+ */
+function redirectUri(): string {
+  return connectorRedirectUri("monday");
+}
 const MONDAY_AUTH_URL = "https://auth.monday.com/oauth2/authorize";
 const MONDAY_TOKEN_URL = "https://auth.monday.com/oauth2/token";
 const MONDAY_API = "https://api.monday.com/v2";
@@ -240,7 +254,7 @@ export function getStatus(): ConnectorStatus {
 function buildAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: clientId(),
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri(),
     response_type: "code",
     scope: SCOPES.join(" "),
     state,
@@ -258,7 +272,7 @@ async function exchangeCode(
       code,
       client_id: clientId(),
       client_secret: clientSecret(),
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri(),
       grant_type: "authorization_code",
     }).toString(),
   });
