@@ -38,8 +38,8 @@
  */
 
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import type { Logger } from "../logger.js";
 import type {
   RecipeRun,
@@ -139,8 +139,40 @@ const EXTRA_KEYS = [
 
 type Row = Record<string, unknown>;
 
+/**
+ * `node:sqlite` is loaded LAZILY, on first construction, not by a static
+ * import.
+ *
+ * Not a performance tweak. A static import is HOISTED — evaluated before any
+ * top-level statement in the entry file — so the entry point's
+ * `suppressSqliteExperimentalWarning()` could never run first, however early
+ * it was placed. The chain index.ts -> bridge.ts -> createRunLog.ts -> here
+ * meant the ExperimentalWarning fired during hoisting and the suppression was
+ * always too late. Verified against the live bridge log, where the count went
+ * up rather than staying flat.
+ *
+ * Making the import first in source order would also have worked, and would
+ * have been silently broken by the next formatter run that sorts imports.
+ * Laziness removes the ordering dependency instead of depending on it.
+ */
+type DatabaseSyncCtor = new (
+  path: string,
+) => import("node:sqlite").DatabaseSync;
+
+let DatabaseSyncImpl: DatabaseSyncCtor | null = null;
+
+function loadDatabaseSync(): DatabaseSyncCtor {
+  if (!DatabaseSyncImpl) {
+    const require = createRequire(import.meta.url);
+    DatabaseSyncImpl = (
+      require("node:sqlite") as { DatabaseSync: DatabaseSyncCtor }
+    ).DatabaseSync;
+  }
+  return DatabaseSyncImpl;
+}
+
 export class SqliteRunRepository implements RunRepository {
-  private readonly db: DatabaseSync;
+  private readonly db: import("node:sqlite").DatabaseSync;
   private readonly now: () => number;
   private readonly isAlive: (pid: number | undefined) => boolean;
   private seq = 0;
@@ -150,6 +182,7 @@ export class SqliteRunRepository implements RunRepository {
     this.now = opts.now ?? Date.now;
     this.isAlive = opts.isAlive ?? defaultIsAlive;
     mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
+    const DatabaseSync = loadDatabaseSync();
     this.db = new DatabaseSync(path.join(opts.dir, "runs.db"));
     // WAL: a reader must not block the writer, and vice versa. The whole
     // reason this store exists is that eight construction sites touch one
