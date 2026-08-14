@@ -30,9 +30,8 @@
  */
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import os from "node:os";
 import { join } from "node:path";
-
+import { patchworkHome } from "../patchworkHome.js";
 import { writeFileAtomicSync } from "../writeFileAtomic.js";
 
 export interface OAuthStateStore {
@@ -60,7 +59,7 @@ const DEFAULT_TTL_MS = 10 * 60_000;
 const DEFAULT_MAX_ENTRIES = 1000;
 
 function getStorageDir(): string {
-  const base = process.env.PATCHWORK_HOME ?? join(os.homedir(), ".patchwork");
+  const base = patchworkHome();
   return join(base, "tokens");
 }
 

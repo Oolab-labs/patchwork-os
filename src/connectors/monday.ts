@@ -12,8 +12,8 @@
 
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
@@ -52,9 +52,7 @@ const MONDAY_TOKEN_URL = "https://auth.monday.com/oauth2/token";
 const MONDAY_API = "https://api.monday.com/v2";
 
 function getTokenPath(): string {
-  const dir =
-    process.env.PATCHWORK_TOKEN_DIR ??
-    path.join(homedir(), ".patchwork", "tokens");
+  const dir = process.env.PATCHWORK_TOKEN_DIR ?? patchworkPath("tokens");
   return path.join(dir, "monday.json");
 }
 

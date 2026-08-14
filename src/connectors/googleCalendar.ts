@@ -13,7 +13,6 @@
 
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { readSecret } from "./secrets.js";
@@ -41,9 +40,7 @@ function redirectUri(): string {
 }
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 function getTokenPath() {
-  const dir =
-    process.env.PATCHWORK_TOKEN_DIR ??
-    path.join(homedir(), ".patchwork", "tokens");
+  const dir = process.env.PATCHWORK_TOKEN_DIR ?? patchworkPath("tokens");
   return path.join(dir, "google-calendar.json");
 }
 
@@ -295,6 +292,7 @@ async function revokeToken(token: string): Promise<void> {
 
 // ── State map (in-memory CSRF protection) ────────────────────────────────────
 
+import { patchworkPath } from "../patchworkHome.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
 const pendingStates = createOAuthStateStore({ namespace: "googleCalendar" });

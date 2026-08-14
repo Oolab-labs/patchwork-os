@@ -11,8 +11,7 @@
  */
 
 import { unlinkSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -148,7 +147,7 @@ export function clearTokens(): void {
   }
   // Best-effort cleanup of any legacy plaintext token file.
   try {
-    const p = path.join(homedir(), ".patchwork", "tokens", "notion.json");
+    const p = patchworkPath("tokens", "notion.json");
     unlinkSync(p);
   } catch {
     /* already gone */

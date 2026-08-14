@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
+import { patchworkHome } from "../patchworkHome.js";
 
 const SERVICE_NAME = "patchwork-os";
 
@@ -310,7 +311,7 @@ function getWindowsCredentialSync(key: string): string | null {
 // ============================================================================
 
 function getStorageDir(): string {
-  const base = process.env.PATCHWORK_HOME ?? join(os.homedir(), ".patchwork");
+  const base = patchworkHome();
   return join(base, "tokens");
 }
 
