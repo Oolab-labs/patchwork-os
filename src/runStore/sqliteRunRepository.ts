@@ -272,7 +272,12 @@ export class SqliteRunRepository implements RunRepository {
   }
 
   startRun(input: StartRunInput): number {
-    const seq = ++this.seq;
+    // Adopt a mirrored seq when given one, so a dual-write pair agrees on
+    // every field instead of disagreeing on this one in every row. The
+    // counter still advances past it, so a later locally-minted seq cannot
+    // collide with one already adopted.
+    const seq = input.seq ?? ++this.seq;
+    if (input.seq !== undefined && input.seq > this.seq) this.seq = input.seq;
     this.db
       .prepare(
         `INSERT INTO runs (task_id, seq, recipe_name, trigger, status, created_at,
