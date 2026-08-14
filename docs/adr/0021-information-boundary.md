@@ -26,8 +26,15 @@
 >   closed; the alternative sends the data and records that it should not have.
 > - **Not built, unchanged from below:** detection, purpose-based
 >   minimisation, least-data routing, policy packs. Destinations are supplied
->   by the caller; a configuration surface for registering them is the next
->   slice, and until one exists the boundary is inert on every install.
+>   by config (`privacy.destinations`) since 2026-08-14 — see
+>   `src/privacy/destinationRegistry.ts`. `executeAgent` resolves its own
+>   destination rather than requiring each of the four dispatch sites to
+>   pass one, because a boundary that depends on every call site
+>   remembering has one bypass per call site. With no `privacy` block the
+>   boundary stays inert; registering a destination is how an operator
+>   OPTS IN. Once opted in it fails CLOSED — an unrecognised driver
+>   resolves to the strictest registered remote, never to "no
+>   destination".
 **Bounded by:** [ADR-0019](0019-open-core-boundary.md) — the engine is MIT and
 lives here; organisation-wide policy is control-plane. See "Open-core boundary".
 **Related:** [ADR-0016](0016-approval-hook-fail-closed.md) (fail-closed gating),

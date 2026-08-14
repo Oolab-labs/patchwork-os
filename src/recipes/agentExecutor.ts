@@ -10,10 +10,16 @@
 
 import {
   type BoundaryOutcome,
+  DEFAULT_CLASSIFICATION,
   type Destination,
   decideBoundary,
   parseDataPolicy,
 } from "../privacy/dataPolicy.js";
+import {
+  type PrivacyConfig,
+  parseRegistry,
+  resolveDestination,
+} from "../privacy/destinationRegistry.js";
 import { resolveLocalModel } from "./localSettings.js";
 
 /**
@@ -55,6 +61,12 @@ export interface AgentExecutorDeps {
    * Optional: an unwired sink means no receipt, never a refusal — the
    * boundary must not depend on its own audit trail being configured.
    */
+  /**
+   * Supplies `privacy.destinations` from operator config. Absent means the
+   * boundary stays inert unless a caller passes an explicit destination —
+   * the opt-in posture ADR-0021 requires.
+   */
+  loadPrivacyConfigFn?: () => PrivacyConfig | undefined;
   recordBoundaryDecisionFn?: (r: {
     decision: string;
     reason: string;
@@ -215,9 +227,37 @@ const CODEX_WORKER_SANDBOX_LOCKDOWN: Record<string, unknown> = {
  */
 function evaluateBoundary(
   ctx: AgentExecutorInput["boundary"],
+  driver: string | undefined,
+  loadPrivacyConfig: (() => PrivacyConfig | undefined) | undefined,
 ): BoundaryOutcome | null {
-  if (!ctx?.destination) return null;
-  const policy = parseDataPolicy(ctx.dataPolicy);
+  const policy0 = parseDataPolicy(ctx?.dataPolicy);
+
+  // Resolve the destination HERE rather than requiring every call site to pass
+  // one. There are four dispatch sites in the flat runner alone; a boundary
+  // that depends on each of them remembering is a boundary with four ways to
+  // be bypassed, and the fifth call site added later inherits none of them.
+  let destination = ctx?.destination;
+  let localAccepts = ctx?.localDestinationAccepts;
+  if (!destination && loadPrivacyConfig) {
+    const registry = parseRegistry(loadPrivacyConfig());
+    const forClass = policy0?.classification ?? DEFAULT_CLASSIFICATION;
+    const resolved = resolveDestination(registry, driver, forClass);
+    if (resolved) {
+      destination = resolved.destination;
+      localAccepts = resolved.localDestinationAccepts;
+    }
+  }
+  if (!destination) return null;
+  const ctx2 = { ...ctx, destination, localDestinationAccepts: localAccepts };
+  return evaluateAgainst(policy0, ctx2);
+}
+
+function evaluateAgainst(
+  policy: ReturnType<typeof parseDataPolicy>,
+  ctx: NonNullable<AgentExecutorInput["boundary"]> & {
+    destination: Destination;
+  },
+): BoundaryOutcome {
   if (policy === null) {
     return {
       decision: "DENY",
@@ -272,7 +312,11 @@ export async function executeAgent(
   // Precedence is privacy -> capability -> cost, and it is not negotiable by
   // the later stages: a cheaper or more capable model that is not authorised
   // for the data does not become authorised by being cheaper or more capable.
-  const boundary = evaluateBoundary(input.boundary);
+  const boundary = evaluateBoundary(
+    input.boundary,
+    driver,
+    deps.loadPrivacyConfigFn,
+  );
   if (boundary && boundary.decision !== "ALLOW") {
     deps.recordBoundaryDecisionFn?.({
       decision: boundary.decision,
