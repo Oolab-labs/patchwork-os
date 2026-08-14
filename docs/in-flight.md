@@ -29,23 +29,21 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-14 `feat/runstore-compare-report` — sixth slice of
-  [ADR-0022](adr/0022-durable-evidence-store.md). Merged so far: the seam +
-  shared contract (#1366), the SQLite store (#1370), dual-write with shadow
-  reads (#1372), `appendDirect` (#1373), and the wiring — all 8 sites now
-  build their run log through `createRecipeRunLog`, with the mirror hooked
-  to `RecipeRunLog.append()`, the single chokepoint every row passes
-  through. Default OFF (`PATCHWORK_FLAG_RUNSTORE_MIRROR`).
-  **Known gap this slice closes:** the mirror currently only WRITES.
-  `DualWriteRunRepository` can compare reads but nothing in production uses
-  it, so divergence is not yet observable outside tests — a mirror nobody
-  compares proves nothing. Wants an operator-facing comparison (CLI verb
-  and/or a report) over the two stores. Also still pending: the deferred
-  `ExperimentalWarning` suppression at an entry point, and `record` /
-  `readArchive` remaining off the interface (2 call sites each).
-  Flip gate unchanged and NOT part of this slice: #1324 / #1340 / rotation
-  loss replayed against both stores, JSONL must visibly LOSE all three
-  (ADR-0022 §4). — build session
+- 2026-08-14 `feat/runstore-flip-gate` — seventh slice of
+  [ADR-0022](adr/0022-durable-evidence-store.md). Merged so far: seam +
+  contract (#1366), SQLite store (#1370), dual-write (#1372),
+  `appendDirect` (#1373), wiring at the `append()` chokepoint (#1374), and
+  backfill + compare with the `patchwork runstore` verb. The mirror can now
+  be seeded and checked; against the REAL log it reproduces all 424 runs
+  from 1,123 raw lines and agrees on every compared field.
+  This slice is the FLIP GATE itself (ADR-0022 §4): replay #1324, #1340 and
+  rotation loss against both stores and require JSONL to visibly LOSE all
+  three. Nothing flips before that passes. Branch reserved, not yet cut.
+  Still pending and NOT in this slice: the deferred `ExperimentalWarning`
+  suppression at an entry point, and enabling
+  `PATCHWORK_FLAG_RUNSTORE_MIRROR` on the live bridge (an operator
+  decision — the mirror must be backfilled first or every pre-existing run
+  reports as a difference). — build session
 
 Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
 #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
