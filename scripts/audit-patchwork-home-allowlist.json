@@ -12,7 +12,8 @@
     "",
     "Converted 2026-08-10: src/bridge.ts and src/tools/index.ts ledger roots \u2014 the",
     "four audit ledgers, where evidence silently landing elsewhere is the worst",
-    "shape of this bug."
+    "shape of this bug.",
+    "2026-08-14 batch 2 (#1265): recipes/orchestration paths converted (31 -> 25). inboxRoutes.ts and recipes/yamlRunner.ts were converted and then DELIBERATELY REVERTED: the inbox is written via `~` expansion / os.homedir() in bridge.ts and yamlRunner.ts, so converting only the reader (or only the containment check) makes reader and writer resolve to different directories whenever PATCHWORK_HOME is set \u2014 the exact split this issue is about, moved rather than fixed. Converting them needs `~` expansion to route through the same helper, which changes where recipe file writes LAND, and that belongs in its own change."
   ],
   "allow": [
     "src/bridge.ts",
@@ -39,9 +40,6 @@
     "src/identity/roster.ts",
     "src/inboxRoutes.ts",
     "src/index.ts",
-    "src/recipeOrchestration.ts",
-    "src/recipeRoutes.ts",
-    "src/recipes/yamlRunner.ts",
-    "src/recipesHttp.ts"
+    "src/recipes/yamlRunner.ts"
   ]
 }

@@ -4,7 +4,6 @@
  */
 
 import { mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +12,7 @@ import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { truncateUtf8Bytes } from "./drivers/outputCap.js";
 import { loadConfig } from "./patchworkConfig.js";
+import { patchworkPath } from "./patchworkHome.js";
 import { getConfigDisabledNames } from "./recipes/disabledMarkers.js";
 import {
   elicitMissingVars,
@@ -460,10 +460,8 @@ export async function resolveWorkerIdForRecipe(
   workersDir?: string,
 ): Promise<string | undefined> {
   try {
-    const os = await import("node:os");
-    const path = await import("node:path");
     const { loadWorkersFromDir } = await import("./workers/workerLoader.js");
-    const dir = workersDir ?? path.join(os.homedir(), ".patchwork", "workers");
+    const dir = workersDir ?? patchworkPath("workers");
     const workers = loadWorkersFromDir(dir);
     // Ambiguous → undefined, never guess. Two worker manifests declaring
     // the same `recipe:` previously resolved to whichever sorted first
@@ -562,7 +560,7 @@ export class RecipeOrchestration {
       );
       const drift = detectWorkerManifestDrift({
         templatesDir,
-        liveDir: join(homedir(), ".patchwork", "workers"),
+        liveDir: patchworkPath("workers"),
       });
       for (const line of formatWorkerManifestDrift(drift)) {
         this.deps.logger?.warn?.(line);
@@ -576,7 +574,7 @@ export class RecipeOrchestration {
     const { server } = this.deps;
 
     server.recipesFn = () => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return listInstalledRecipes(recipesDir) as unknown as Record<
         string,
         unknown
@@ -584,22 +582,22 @@ export class RecipeOrchestration {
     };
 
     server.loadRecipeContentFn = (name: string) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return loadRecipeContent(recipesDir, name);
     };
 
     server.saveRecipeContentFn = (name: string, content: string) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return saveRecipeContent(recipesDir, name, content);
     };
 
     server.deleteRecipeContentFn = (name: string) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return deleteRecipeContent(recipesDir, name);
     };
 
     server.listWorkersFn = () => {
-      const workersDir = join(homedir(), ".patchwork", "workers");
+      const workersDir = patchworkPath("workers");
       return listWorkers(workersDir);
     };
 
@@ -612,28 +610,28 @@ export class RecipeOrchestration {
     this.reportWorkerManifestDrift();
 
     server.loadWorkerContentFn = (id: string) => {
-      const workersDir = join(homedir(), ".patchwork", "workers");
+      const workersDir = patchworkPath("workers");
       return loadWorkerContent(workersDir, id);
     };
 
     server.saveWorkerContentFn = (id: string, content: string) => {
-      const workersDir = join(homedir(), ".patchwork", "workers");
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const workersDir = patchworkPath("workers");
+      const recipesDir = patchworkPath("recipes");
       return saveWorkerContent(workersDir, recipesDir, id, content);
     };
 
     server.lintWorkerContentFn = (content: string) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return lintWorkerContent(content, recipesDir);
     };
 
     server.archiveRecipeFn = (name: string) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return archiveRecipe(recipesDir, name);
     };
 
     server.duplicateRecipeFn = (name: string) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return duplicateRecipe(recipesDir, name);
     };
 
@@ -642,7 +640,7 @@ export class RecipeOrchestration {
       targetName: string,
       options?: { force?: boolean },
     ) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return promoteRecipeVariant(recipesDir, variantName, targetName, options);
     };
 
@@ -650,7 +648,7 @@ export class RecipeOrchestration {
       lintRecipeContent(content);
 
     server.setRecipeTrustFn = (name: string, level: string) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return setTrustLevel(
         recipesDir,
         name,
@@ -660,7 +658,7 @@ export class RecipeOrchestration {
 
     // biome-ignore lint/suspicious/noExplicitAny: matches Server type
     server.saveRecipeFn = (draft: any) => {
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       return saveRecipe(recipesDir, draft);
     };
 
@@ -834,7 +832,7 @@ export class RecipeOrchestration {
 
       try {
         const { findYamlRecipePath } = await import("./recipesHttp.js");
-        const recipesDir = join(homedir(), ".patchwork", "recipes");
+        const recipesDir = patchworkPath("recipes");
         const recipePath = findYamlRecipePath(recipesDir, recipeName);
         if (!recipePath) {
           return { ok: false, error: "recipe_file_missing" };
@@ -981,7 +979,7 @@ export class RecipeOrchestration {
       const orchestrator = this.deps.getOrchestrator();
       if (!orchestrator)
         return { ok: false, error: "orchestrator_unavailable" };
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
       const match = findWebhookRecipe(recipesDir, hookPath);
       if (!match) {
         return { ok: false, error: "not_found" };
@@ -1086,7 +1084,7 @@ export class RecipeOrchestration {
       const orchestrator = this.deps.getOrchestrator();
       if (!orchestrator)
         return { ok: false, error: "orchestrator_unavailable" };
-      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      const recipesDir = patchworkPath("recipes");
 
       // Try JSON recipe first (legacy path: enqueue prompt as a task).
       const loaded = loadRecipePrompt(recipesDir, name);
@@ -1643,7 +1641,7 @@ export class RecipeOrchestration {
       // delivery already made.
       ...(opts.deliveryId && {
         manualRunId: opts.deliveryId,
-        ledgerDir: join(homedir(), ".patchwork", "webhook-effect-ledger"),
+        ledgerDir: patchworkPath("webhook-effect-ledger"),
       }),
     };
     // Pass the bridge's long-lived RecipeRunLog so chainedRunner can flip the

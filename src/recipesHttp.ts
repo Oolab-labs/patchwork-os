@@ -9,7 +9,6 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import * as path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
@@ -17,6 +16,7 @@ import {
   type PatchworkConfig,
   saveConfig as savePatchworkConfig,
 } from "./patchworkConfig.js";
+import { patchworkPath } from "./patchworkHome.js";
 import {
   disabledMarkerPath,
   getConfigDisabledNames,
@@ -196,8 +196,7 @@ export function setRecipeEnabled(
     saveConfigFn?: (cfg: unknown) => void;
   } = {},
 ): { ok: boolean; error?: string } {
-  const recipesDir =
-    options.recipesDir ?? path.join(homedir(), ".patchwork", "recipes");
+  const recipesDir = options.recipesDir ?? patchworkPath("recipes");
 
   try {
     const installDir = findInstallDirByRecipeName(recipesDir, name);

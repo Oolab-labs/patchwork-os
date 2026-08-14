@@ -48,6 +48,7 @@ import {
 } from "./fp/tokenBucket.js";
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
+import { patchworkPath } from "./patchworkHome.js";
 import { cancelRun } from "./recipes/runRegistry.js";
 import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
@@ -2804,7 +2805,7 @@ export function tryHandleRecipeRoute(
           const { installRecipeFromFile } = await import(
             "./recipes/installer.js"
           );
-          const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+          const recipesDir = patchworkPath("recipes");
           mkdirSync(recipesDir, { recursive: true });
 
           for (const r of manifest.recipes as string[]) {
@@ -3313,7 +3314,7 @@ export function tryHandleRecipeRoute(
         // the try, orphaning the temp file on any write error.
         try {
           writeFileSync(tmpFile, yamlText, "utf-8");
-          const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+          const recipesDir = patchworkPath("recipes");
           mkdirSync(recipesDir, { recursive: true });
           const { installRecipeFromFile } = await import(
             "./recipes/installer.js"
