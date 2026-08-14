@@ -421,6 +421,64 @@ export class SqliteRunRepository implements RunRepository {
       );
   }
 
+  /**
+   * Upsert one complete row, PRESERVING its `seq`. Migration mirror only.
+   *
+   * Deliberately not on `RunRepository`: ordinary callers must not choose a
+   * `seq`, because the value is meaningless outside the process that minted
+   * it (#1324). This exists so a mirrored row is identical to its source in
+   * every field — a mirror that renumbered rows would report a difference on
+   * every one, and a divergence signal that always fires is indistinguishable
+   * from one that never does.
+   *
+   * Upsert, not insert: the run log appends a "running" row and later a
+   * terminal row for the same task, and JSONL readers take the last. Last
+   * write wins here reproduces that exactly.
+   */
+  mirrorRow(run: RecipeRun): void {
+    if (run.seq > this.seq) this.seq = run.seq;
+    const extra: Row = {};
+    for (const k of EXTRA_KEYS) {
+      const v = (run as unknown as Row)[k];
+      if (v !== undefined) extra[k] = v;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO runs (task_id, seq, recipe_name, trigger, status, created_at,
+                           started_at, done_at, duration_ms, model, output_tail,
+                           error_message, parent_seq, manual_run_id, owner_pid,
+                           had_step_errors, step_results, extra)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(task_id) DO UPDATE SET
+           seq=excluded.seq, status=excluded.status, done_at=excluded.done_at,
+           duration_ms=excluded.duration_ms, output_tail=excluded.output_tail,
+           error_message=excluded.error_message,
+           had_step_errors=excluded.had_step_errors,
+           step_results=excluded.step_results, extra=excluded.extra,
+           started_at=excluded.started_at, owner_pid=excluded.owner_pid`,
+      )
+      .run(
+        run.taskId,
+        run.seq,
+        run.recipeName,
+        run.trigger,
+        run.status,
+        run.createdAt,
+        run.startedAt ?? null,
+        run.doneAt ?? null,
+        run.durationMs ?? null,
+        run.model ?? null,
+        run.outputTail ?? null,
+        run.errorMessage ?? null,
+        run.parentSeq ?? null,
+        run.manualRunId ?? null,
+        run.ownerPid ?? null,
+        run.hadStepErrors ? 1 : 0,
+        run.stepResults ? JSON.stringify(run.stepResults) : null,
+        Object.keys(extra).length > 0 ? JSON.stringify(extra) : null,
+      );
+  }
+
   query(q: RunQuery = {}): RecipeRun[] {
     const where: string[] = [];
     const args: unknown[] = [];

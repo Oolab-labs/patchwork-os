@@ -1283,8 +1283,10 @@ export async function runChainedRecipe(
             errorMessage: fatalGraphError,
           });
         } else if (options.runLogDir) {
-          const { RecipeRunLog } = await import("../runLog.js");
-          const log = new RecipeRunLog({ dir: options.runLogDir });
+          const { createRecipeRunLog } = await import(
+            "../runStore/createRunLog.js"
+          );
+          const log = createRecipeRunLog({ dir: options.runLogDir });
           log.appendDirect({
             taskId: runTaskId,
             recipeName: recipe.name,
@@ -1754,8 +1756,10 @@ export async function runChainedRecipe(
           }
         }
       } else if (options.runLogDir) {
-        const { RecipeRunLog } = await import("../runLog.js");
-        const log = new RecipeRunLog({ dir: options.runLogDir });
+        const { createRecipeRunLog } = await import(
+          "../runStore/createRunLog.js"
+        );
+        const log = createRecipeRunLog({ dir: options.runLogDir });
         log.appendDirect({
           taskId: runTaskId,
           recipeName: recipe.name,
