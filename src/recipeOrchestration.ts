@@ -5,7 +5,8 @@
 
 import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
@@ -47,6 +48,10 @@ import {
 import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
 import { boundaryForRecipe } from "./workers/boundaryPreview.js";
+import {
+  detectWorkerManifestDrift,
+  formatWorkerManifestDrift,
+} from "./workers/manifestDrift.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./workers/outcomeStore.js";
 import { computePendingConfirmations } from "./workers/runWorkerShadow.js";
 import {
@@ -539,6 +544,34 @@ export class RecipeOrchestration {
   // Server fn wiring
   // -------------------------------------------------------------------------
 
+  /**
+   * Emit the worker-manifest drift report, if there is anything to say.
+   *
+   * Fail-soft by construction: a diagnostic that can take the bridge down is
+   * worse than the condition it diagnoses. Resolving the shipped templates
+   * directory relative to this module keeps it correct for both a repo
+   * checkout and an npm install.
+   */
+  private reportWorkerManifestDrift(): void {
+    try {
+      const templatesDir = join(
+        dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "templates",
+        "workers",
+      );
+      const drift = detectWorkerManifestDrift({
+        templatesDir,
+        liveDir: join(homedir(), ".patchwork", "workers"),
+      });
+      for (const line of formatWorkerManifestDrift(drift)) {
+        this.deps.logger?.warn?.(line);
+      }
+    } catch {
+      // never block startup on a report
+    }
+  }
+
   wireServerFns(): void {
     const { server } = this.deps;
 
@@ -569,6 +602,14 @@ export class RecipeOrchestration {
       const workersDir = join(homedir(), ".patchwork", "workers");
       return listWorkers(workersDir);
     };
+
+    // #1358 — say so when the live manifests differ from the shipped ones.
+    // The gate reads the LOCAL copy, so a merged template fix has no effect
+    // until someone copies it, and the symptom is silent: a worker that
+    // under-attributes its own evidence looks exactly like a worker that has
+    // not run. Reported, never reconciled — overwriting would discard local
+    // policy edits (see manifestDrift.ts).
+    this.reportWorkerManifestDrift();
 
     server.loadWorkerContentFn = (id: string) => {
       const workersDir = join(homedir(), ".patchwork", "workers");
