@@ -29,31 +29,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-14 `docs/repo-privacy-rules` — adds a Repository Privacy section to
-  CLAUDE.md: what may never enter a public artefact (the local ledgers, real
-  third-party names, operational statistics attributed to a named party), where
-  a disclosure-is-the-harm finding goes instead of a public issue, and the fact
-  that `audit-business-content` reads tracked markdown only, so a green gate is
-  not a clean scan. These rules existed only in transient session context —
-  grepping CLAUDE.md and every rules file for them returned nothing. Written
-  INLINE rather than as `.claude/rules/repo-privacy.md` because that directory
-  is gitignored (`.gitignore:62`): every rule file CLAUDE.md `@import`s today is
-  untracked and exists only on the machine that wrote it, so a fresh clone gets
-  none of them. Docs-only, no code paths touched.
-
-Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255,
-#1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice
-by union-merge. The oldest had been closed for four days while CLAUDE.md told
-every session to read this file first — so the ledger built to stop two
-sessions colliding was itself handing them stale state.
-
-This is the third sweep (#1247 was the second, on 2026-08-03, and it decayed
-within five days). `scripts/audit-in-flight.mjs` now fails CI when an entry
-here names a merged PR or a branch that no longer exists, because three
-manual sweeps is enough evidence that the convention does not hold on its
-own.
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-14 `docs/repo-privacy-rules` — adds a Repository Privacy section to CLAUDE.md: what may never enter a public artefact (the local ledgers, real third-party names, operational statistics attributed to a named party), where a disclosure-is-the-harm finding goes instead of a public issue, and the fact that `audit-business-content` reads tracked markdown only, so a green gate is not a clean scan. These rules existed only in transient session context — grepping CLAUDE.md and every rules file for them returned nothing. Written INLINE rather than as `.claude/rules/repo-privacy.md` because that directory is gitignored (`.gitignore:62`): every rule file CLAUDE.md `@import`s today is untracked and exists only on the machine that wrote it, so a fresh clone gets none of them. Docs-only, no code paths touched. Swept 2026-08-08: all 10 distinct entries here were MERGED (#1249, #1255, #1256, #1257, #1258, #1259, #1278, #1279, #1280, #1281), several listed twice by union-merge. The oldest had been closed for four days while CLAUDE.md told every session to read this file first — so the ledger built to stop two sessions colliding was itself handing them stale state. This is the third sweep (#1247 was the second, on 2026-08-03, and it decayed within five days). `scripts/audit-in-flight.mjs` now fails CI when an entry here names a merged PR or a branch that no longer exists, because three manual sweeps is enough evidence that the convention does not hold on its own — merged as #1382
 
 - 2026-08-11 `feat/trust-reads-archive` — Item (1) of the retention scope, plus the measurement that should have caught it. FINDING: `runs.jsonl` is capped by BYTES while the durability window is defined in TIME, and nothing reconciled the two — retention measured **18.2h against a 24h window**, so a non-reversible success was DELETED BEFORE IT COULD SETTLE. Compensable/irreversible trust was therefore unearnable in principle, not merely slow, which is why `worker_trust/` has never existed (`folded > 0` never holds). Cause of the squeeze: one non-worker recipe wrote 1243 of 1275 rows in 18.2h; worker rows were 3 of 1275, then 0 of 729 forty minutes later — every worker run on this machine was evicted mid-session by unrelated traffic. Fix: trust replay now reads `runs.jsonl.1` (the archive #1334 created) as well as the live file, deduped by taskId across both (a crash between archive-write and trim can leave a run in each). ~11 days of retention at current volume vs 24h needed. PLUS `evidenceRetention()` — the honest half: the read-side version of this exact bug was already fixed once (see the ring `memoryCap` note in runWorkerShadow.ts) and survived one layer down in disk retention because nothing measured whether the invariant held. `workers shadow` now says so out loud when span < window, because a starved ledger otherwise looks identical to a quiet worker. Deliberately NOT (3) a filtered worker-run ledger — that is the durable design (immune to noise; worker rows are ~0.2% of volume) but spans 8 write paths where a miss is a silent evidence gap, and it should land against a measurement rather than my estimate. Two vacuous tests caught mid-build: a dedup test asserted on the confirm queue, which dedups by actionKey itself, so it passed whether or not readRuns deduped at all (moved to the dial's observation count); and the `audit-patchwork-home` gate caught a hardcoded homedir join. — merged as #1338
 
