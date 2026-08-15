@@ -43,8 +43,18 @@ const EVENTS = [
   "SIGHUP",
 ] as const;
 
-function counts(): Record<string, number> {
-  return Object.fromEntries(EVENTS.map((e) => [e, process.listenerCount(e)]));
+type Event = (typeof EVENTS)[number];
+
+/** Typed per-event counts. A `Record<string, number>` would index as
+ *  `number | undefined` under the stricter tests:core typecheck. */
+function counts(): Record<Event, number> {
+  return {
+    uncaughtException: process.listenerCount("uncaughtException"),
+    unhandledRejection: process.listenerCount("unhandledRejection"),
+    SIGINT: process.listenerCount("SIGINT"),
+    SIGTERM: process.listenerCount("SIGTERM"),
+    SIGHUP: process.listenerCount("SIGHUP"),
+  };
 }
 
 describe("a stopped bridge detaches its process handlers", () => {
