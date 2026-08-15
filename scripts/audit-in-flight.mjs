@@ -122,7 +122,27 @@ function activeSection() {
  */
 function canQuery(env) {
   try {
-    execFileSync("gh", ["api", "user", "--jq", ".login"], {
+    // Probe the REPO, not `/user`.
+    //
+    // `gh api user` was the probe, and it made this gate skip itself in CI —
+    // the precise failure the note above says it was written to avoid, so the
+    // note was true and the code did not implement it. Actions' GITHUB_TOKEN
+    // is a repo-scoped installation token: it can read the repo and list PRs,
+    // but `GET /user` returns 403 "Resource not accessible by integration"
+    // because an installation has no user. `canQuery` therefore returned false
+    // for BOTH candidate environments and the gate printed
+    // "SKIPPED — gh is unavailable or unauthenticated" on every CI run.
+    //
+    // Verified from a real CI log (run 31873349778) before changing anything:
+    // two Active entries went unverified on a run that reported green, one of
+    // them naming a branch whose PR had already merged — exactly what this
+    // gate exists to catch.
+    //
+    // The repo endpoint is the right probe because it is what the gate
+    // actually needs: `prState` calls `gh pr list`, which is a repo read. A
+    // probe that tests a capability the tool never uses can fail while every
+    // real call would have succeeded.
+    execFileSync("gh", ["api", "repos/{owner}/{repo}", "--jq", ".full_name"], {
       stdio: "ignore",
       env,
     });
@@ -194,9 +214,33 @@ function main() {
   }
 
   if (!ghAvailable()) {
+    const n = branches.size;
+    const entries = `${n} Active entr${n === 1 ? "y" : "ies"}`;
+    // Skipping is tolerable on a laptop with no `gh` — blocking a developer
+    // who never asked for this check is worse than one unverified ledger.
+    //
+    // In CI it is NOT tolerable, and treating the two the same is how this
+    // gate spent its whole life green without checking anything. CI is the one
+    // place the credential is guaranteed present, so "cannot query" there
+    // means the probe or the token is broken, not that the check is optional.
+    // A gate that announces it did nothing, in the one environment that
+    // enforces it, is indistinguishable from a passing gate to everyone
+    // reading the check list.
+    if (process.env.CI) {
+      console.error(
+        `\n[in-flight] FAIL — gh is unavailable or unauthenticated in CI, so ` +
+          `${entries} could not be verified.\n\n` +
+          `  This gate is only meaningful when it can query PR state. Skipping ` +
+          `here would\n  report green while checking nothing, which is how the ` +
+          `"gh api user" probe\n  went unnoticed: an installation token cannot ` +
+          `read /user, so every CI run\n  skipped itself.\n\n` +
+          `  Fix the credential or the probe — do not make this branch exit 0.\n`,
+      );
+      process.exit(1);
+    }
     console.log(
       `[in-flight] SKIPPED — gh is unavailable or unauthenticated. ` +
-        `${branches.size} Active entr${branches.size === 1 ? "y" : "ies"} not verified.`,
+        `${entries} not verified. (Would FAIL in CI.)`,
     );
     process.exit(0);
   }
