@@ -15,15 +15,26 @@
 >   operator believing they had labelled something when they had not.
 > - **Phase 2 (the decision)** — built, all five values, pure and model-free.
 >   `narrowest()` enforces the never-widen rule.
-> - **Phase 3 (receipts)** — the SINK is wired (`recordBoundaryDecisionFn`) and
->   every decision including `ALLOW` emits one, but no durable store is
->   attached yet. Enforcement deliberately does NOT depend on the sink being
+> - **Phase 3 (receipts)** — built. `src/privacy/boundaryReceiptLog.ts`
+>   persists to `boundary_receipts.jsonl` alongside the gate's decision
+>   record, same shape and same directory mode. It has NO FIELD FOR THE
+>   PAYLOAD, by construction: a privacy audit log containing the prompts
+>   would be the largest unclassified copy of exactly the material the
+>   boundary protects. Only declared metadata is stored — classification,
+>   category names, destination, decision, reason. Enforcement deliberately does NOT depend on the sink being
 >   configured — a boundary that refuses only when its audit trail happens to
 >   be wired could be disabled by removing the sink.
 > - **`ALLOW_REDACTED` REFUSES.** Redaction is not implemented, so a step that
 >   must have a category removed is refused rather than sent unredacted.
 >   "We know something must be removed and cannot remove it" has to fail
 >   closed; the alternative sends the data and records that it should not have.
+> - **Wiring.** `buildAgentExecutorDeps` (`src/recipes/yamlRunner.ts`)
+>   supplies both `loadPrivacyConfigFn` and `recordBoundaryDecisionFn`.
+>   Until it did, the boundary was correct, tested and INERT in
+>   production: optional deps that no caller supplies are
+>   indistinguishable at runtime from a feature that was never built.
+>   A source-level test asserts the wiring is present, because the
+>   regression it guards is a line going missing.
 > - **Not built, unchanged from below:** detection, purpose-based
 >   minimisation, least-data routing, policy packs. Destinations are supplied
 >   by config (`privacy.destinations`) since 2026-08-14 — see

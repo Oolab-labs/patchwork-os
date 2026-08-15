@@ -10,6 +10,7 @@
 
 import {
   type BoundaryOutcome,
+  type Classification,
   DEFAULT_CLASSIFICATION,
   type Destination,
   decideBoundary,
@@ -70,7 +71,10 @@ export interface AgentExecutorDeps {
   recordBoundaryDecisionFn?: (r: {
     decision: string;
     reason: string;
-    destinationId?: string;
+    destinationId: string;
+    destinationType: "local" | "remote";
+    classification: string;
+    categories?: string[];
     redactCategories?: string[];
   }) => void;
   anthropicFn: (prompt: string, model: string) => Promise<AgentResult>;
@@ -225,11 +229,17 @@ const CODEX_WORKER_SANDBOX_LOCKDOWN: Record<string, unknown> = {
  * operator wrote a label; silently reading it as `internal` because of a typo
  * would leave them believing data was protected when it was not.
  */
+type ResolvedBoundary = BoundaryOutcome & {
+  destination: Destination;
+  classification: Classification;
+  categories?: string[];
+};
+
 function evaluateBoundary(
   ctx: AgentExecutorInput["boundary"],
   driver: string | undefined,
   loadPrivacyConfig: (() => PrivacyConfig | undefined) | undefined,
-): BoundaryOutcome | null {
+): ResolvedBoundary | null {
   const policy0 = parseDataPolicy(ctx?.dataPolicy);
 
   // Resolve the destination HERE rather than requiring every call site to pass
@@ -249,7 +259,17 @@ function evaluateBoundary(
   }
   if (!destination) return null;
   const ctx2 = { ...ctx, destination, localDestinationAccepts: localAccepts };
-  return evaluateAgainst(policy0, ctx2);
+  // The RESOLVED destination travels with the outcome. Reading it back off the
+  // caller's input loses it entirely whenever the destination was resolved from
+  // config, which is the normal path — the receipt would then record a decision
+  // with no record of where the data was going, i.e. the one field that makes
+  // it an audit trail rather than a counter.
+  return {
+    ...evaluateAgainst(policy0, ctx2),
+    destination,
+    classification: policy0?.classification ?? DEFAULT_CLASSIFICATION,
+    ...(policy0?.categories?.length ? { categories: policy0.categories } : {}),
+  };
 }
 
 function evaluateAgainst(
@@ -321,7 +341,10 @@ export async function executeAgent(
     deps.recordBoundaryDecisionFn?.({
       decision: boundary.decision,
       reason: boundary.reason,
-      destinationId: input.boundary?.destination?.id,
+      destinationId: boundary.destination.id,
+      destinationType: boundary.destination.type,
+      classification: boundary.classification,
+      ...(boundary.categories && { categories: boundary.categories }),
       ...(boundary.redactCategories && {
         redactCategories: boundary.redactCategories,
       }),
@@ -339,7 +362,10 @@ export async function executeAgent(
     deps.recordBoundaryDecisionFn?.({
       decision: boundary.decision,
       reason: boundary.reason,
-      destinationId: input.boundary?.destination?.id,
+      destinationId: boundary.destination.id,
+      destinationType: boundary.destination.type,
+      classification: boundary.classification,
+      ...(boundary.categories && { categories: boundary.categories }),
     });
   }
 
