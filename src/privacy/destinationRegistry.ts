@@ -29,6 +29,7 @@
  * this is going" must never read as "it is fine to send".
  */
 
+import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import {
   CLASSIFICATIONS,
   type Classification,
@@ -36,8 +37,39 @@ import {
   type Destination,
 } from "./dataPolicy.js";
 
-/** Drivers that keep the prompt on this machine. */
+/**
+ * Drivers whose CLIENT code runs on this machine.
+ *
+ * Membership is NOT on its own evidence that the DATA stays here — see
+ * `endpointIsOnBox` and the inference branch in `resolveDestination`.
+ */
 const LOCAL_DRIVERS = new Set(["local", "ollama", "lmstudio", "llamacpp"]);
+
+/**
+ * Whether this driver is one whose destination depends on the configured
+ * endpoint. Exported so `executeAgent` can skip resolving the endpoint (and
+ * the `config.json` read behind it) for drivers where it cannot matter.
+ */
+export function isLocalFamilyDriver(driver: string | undefined): boolean {
+  return LOCAL_DRIVERS.has((driver ?? "").toLowerCase());
+}
+
+/**
+ * Whether the endpoint a local driver will POST to actually stays on the
+ * machine (or the private network the operator controls).
+ *
+ * No endpoint configured ⇒ on-box: every driver in `LOCAL_DRIVERS` defaults to
+ * a loopback address, and this is the overwhelmingly common case, so treating
+ * it as remote would refuse ordinary local-only installs.
+ *
+ * An endpoint that does not parse ⇒ NOT on-box. "We cannot tell where this
+ * goes" must never read as "it stays here" — same fail-closed direction as the
+ * unknown-driver branch below.
+ */
+function endpointIsOnBox(endpoint: string | undefined): boolean {
+  if (endpoint === undefined || endpoint.trim() === "") return true;
+  return isLoopbackOrPrivateEndpoint(endpoint.trim());
+}
 
 export interface DestinationConfig {
   type?: string;
@@ -149,6 +181,16 @@ export interface ResolvedDestination {
   localDestinationAccepts: boolean;
 }
 
+export interface ResolveDestinationOptions {
+  /**
+   * The endpoint the local driver will actually POST to, when one is
+   * configured (`LOCAL_ENDPOINT` / `config.json` `localEndpoint`). Absent
+   * means the driver talks to its own default, which is loopback for every
+   * driver in `LOCAL_DRIVERS`.
+   */
+  endpoint?: string;
+}
+
 /**
  * Resolve the destination for a dispatch.
  *
@@ -157,10 +199,12 @@ export interface ResolvedDestination {
  * on an unrecognised driver would silently disable the boundary for exactly the
  * dispatches nobody anticipated.
  */
+
 export function resolveDestination(
   registry: ParsedRegistry,
   driver: string | undefined,
   forClass: Classification,
+  opts: ResolveDestinationOptions = {},
 ): ResolvedDestination | null {
   if (registry.destinations.length === 0) {
     // NOTHING configured is the inert case, and is fine.
@@ -193,15 +237,44 @@ export function resolveDestination(
     (dest) => dest.type === "local" && dest.classifications.includes(forClass),
   );
 
+  // #1398: a `type: "local"` destination is disqualified for THIS dispatch when
+  // the endpoint the driver will actually POST to is off-box.
+  //
+  // This is applied to the explicit driver mapping as well as to inference,
+  // and that is the load-bearing part. An operator's `drivers: ["local"]` entry
+  // on a local destination is a STATIC claim about where a driver goes; the
+  // resolved endpoint is what actually happens at dispatch. When the two
+  // disagree the endpoint wins, because the alternative lets a stale mapping
+  // launder an off-box send into a receipt that says the data never left —
+  // the precise failure this issue describes, merely reached by config rather
+  // than by driver name.
+  const localDisqualified =
+    LOCAL_DRIVERS.has(d) && !endpointIsOnBox(opts.endpoint);
+  const eligible = localDisqualified
+    ? registry.destinations.filter((x) => x.type !== "local")
+    : registry.destinations;
+
   // Explicit driver mapping wins.
-  for (const dest of registry.destinations) {
+  for (const dest of eligible) {
     if ((registry.driversFor.get(dest.id) ?? []).includes(d)) {
       return { destination: dest, localDestinationAccepts: localAccepts };
     }
   }
 
   // Otherwise infer by driver family.
-  if (LOCAL_DRIVERS.has(d)) {
+  //
+  // #1398: a driver in LOCAL_DRIVERS is only evidence of a local DESTINATION
+  // when the endpoint it will actually POST to is on-box. `LOCAL_ENDPOINT` is
+  // configurable and `LOCAL_ENDPOINT_ALLOW_REMOTE` exists precisely because
+  // pointing it off-box is a supported deployment — so the driver NAME is a
+  // statement about which client code runs, never about where the bytes land.
+  //
+  // Note what is deliberately NOT consulted here: `LOCAL_ENDPOINT_ALLOW_REMOTE`.
+  // That flag is permission to SEND to a remote box; it is not evidence that
+  // the box is local. Reading it as "the operator allowed this, so treat it as
+  // local" would re-open exactly the hole this closes, and would do so on the
+  // deployments most likely to be sending real data off-machine.
+  if (LOCAL_DRIVERS.has(d) && endpointIsOnBox(opts.endpoint)) {
     const local = registry.destinations.find((x) => x.type === "local");
     if (local) {
       return { destination: local, localDestinationAccepts: localAccepts };
@@ -210,10 +283,29 @@ export function resolveDestination(
 
   // Unknown or remote driver → strictest remote. Fail closed: "we do not
   // recognise where this is going" must never read as "it is fine to send".
-  const remote = strictestRemote(registry.destinations);
+  const remote = strictestRemote(eligible);
   if (remote) {
     return { destination: remote, localDestinationAccepts: localAccepts };
   }
+
+  // #1398: a local driver aimed off-box, with ONLY local destinations
+  // registered. There is no registered destination that describes where this
+  // data is actually going, so there is nothing to fall back TO — returning
+  // the local profile here would hand a `restricted`-cleared local destination
+  // to a dispatch leaving the machine, which is the worst version of this bug
+  // rather than a mitigation of it. Synthesise a remote destination cleared
+  // for nothing, the same shape the unparseable-config branch uses.
+  if (localDisqualified) {
+    return {
+      destination: {
+        id: "local-driver-remote-endpoint",
+        type: "remote",
+        classifications: [],
+      },
+      localDestinationAccepts: localAccepts,
+    };
+  }
+
   // Only local destinations are registered but the driver is not local. The
   // strictest available answer is the local profile, which will refuse
   // anything it is not cleared for.

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { executeAgent } from "../../recipes/agentExecutor.js";
 import type { Destination } from "../dataPolicy.js";
@@ -224,5 +224,140 @@ describe("receipts name the RESOLVED destination", () => {
       });
       expect(receipts[0]?.destinationId).toBeDefined();
     });
+  });
+});
+
+// ── #1398 part 2: the boundary judges the driver that ACTUALLY runs ─────────
+//
+// These drive `executeAgent` — the real entry point — rather than calling the
+// resolver directly. A test that hand-injected a resolved driver would pass
+// whether or not `executeAgent` was wired to use it, which is exactly how
+// ADR-0021 shipped inert twice.
+describe("boundary judges the RESOLVED driver, not the configured string", () => {
+  // `narrow` exists so the anthropic case DISCRIMINATES. Without it, an
+  // unresolved driver ("") falls through to strictest-remote and lands on the
+  // same destination the explicit `anthropic` mapping would have chosen, so
+  // the test would pass whether or not the resolved driver was wired in — a
+  // verification that cannot fail. With it, the two paths name different
+  // destinations: `cloud` via the mapping, `narrow` via the fallback.
+  const LOCAL_CFG = {
+    destinations: {
+      "on-box": {
+        type: "local",
+        classifications: ["restricted"],
+      },
+      cloud: {
+        type: "remote",
+        classifications: ["public", "internal"],
+        drivers: ["anthropic"],
+      },
+      narrow: {
+        type: "remote",
+        classifications: ["public"],
+      },
+    },
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function deps(pwCfg: Record<string, unknown>) {
+    const receipts: Array<Record<string, unknown>> = [];
+    const localFn = vi.fn(async () => ({ text: "out" }));
+    const anthropicFn = vi.fn(async () => ({ text: "out" }));
+    return {
+      receipts,
+      localFn,
+      anthropicFn,
+      deps: {
+        localFn,
+        anthropicFn,
+        probeClaudeCli: () => false,
+        loadPatchworkConfig: () => pwCfg,
+        loadPrivacyConfigFn: () => LOCAL_CFG,
+        recordBoundaryDecisionFn: (r: Record<string, unknown>) => {
+          receipts.push(r);
+        },
+      } as never,
+    };
+  }
+
+  it("an undefined driver resolving to local is judged against the LOCAL destination", async () => {
+    // Before the fix the boundary saw `undefined`, fell through to the
+    // strictest-remote fallback, and REFUSED a restricted prompt that was
+    // never going to leave the machine.
+    const { receipts, localFn, deps: d } = deps({ model: "local" });
+    const result = await executeAgent(
+      {
+        prompt: "synthetic prompt",
+        boundary: { dataPolicy: { classification: "restricted" } },
+      },
+      d,
+    );
+    expect(receipts[0]).toMatchObject({
+      decision: "ALLOW",
+      destinationId: "on-box",
+      destinationType: "local",
+    });
+    expect(localFn).toHaveBeenCalled();
+    expect(result.text).toBe("out");
+  });
+
+  it("an undefined driver resolving to anthropic is judged against the REMOTE destination", async () => {
+    // Same undefined `driver`, opposite resolution. The receipt must name
+    // `cloud` — the destination mapped to the RESOLVED driver — and not
+    // `narrow`, which is where an unresolved driver falls through to.
+    const { receipts, anthropicFn, deps: d } = deps({ driver: "anthropic" });
+    vi.stubEnv("ANTHROPIC_API_KEY", "synthetic-key");
+    {
+      const result = await executeAgent(
+        {
+          prompt: "synthetic prompt",
+          boundary: { dataPolicy: { classification: "restricted" } },
+        },
+        d,
+      );
+      // LOCAL_ONLY rather than DENY: an on-box destination in this registry
+      // DOES accept `restricted`, so the correct reading is "this may run,
+      // but not there" — still a refusal for this dispatch.
+      expect(receipts[0]).toMatchObject({
+        decision: "LOCAL_ONLY",
+        destinationId: "cloud",
+        destinationType: "remote",
+      });
+      // The side effect, not the message: a message assertion passes even if
+      // the prompt already went.
+      expect(anthropicFn).not.toHaveBeenCalled();
+      expect(result.text).toContain("information boundary");
+    }
+  });
+
+  it("a local driver aimed off-box is judged REMOTE and never dispatches", async () => {
+    // The end-to-end version of part 1: driver says local, endpoint says
+    // otherwise, and the prompt must not be sent.
+    const {
+      receipts,
+      localFn,
+      deps: d,
+    } = deps({
+      model: "local",
+      localEndpoint: "https://inference.example.test/v1",
+    });
+    // Cleared so the config-file value is what resolves, not this machine's env.
+    vi.stubEnv("LOCAL_ENDPOINT", "");
+    {
+      const result = await executeAgent(
+        {
+          prompt: "synthetic prompt",
+          boundary: { dataPolicy: { classification: "restricted" } },
+        },
+        d,
+      );
+      expect(receipts[0]).toMatchObject({ decision: "LOCAL_ONLY" });
+      expect(receipts[0]?.destinationType).toBe("remote");
+      expect(localFn).not.toHaveBeenCalled();
+      expect(result.text).toContain("information boundary");
+    }
   });
 });
