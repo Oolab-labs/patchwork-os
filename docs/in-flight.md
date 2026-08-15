@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-15 `fix/in-flight-gate-skips-itself-in-ci` — the in-flight gate has never checked anything in CI. Probe was `gh api user`; Actions' GITHUB_TOKEN is a repo-scoped INSTALLATION token that gets 403 on /user, so `canQuery` failed for both candidate envs and every run printed SKIPPED. Confirmed from a real CI log (run 31873349778) before changing a line. Two fixes: probe `repos/{owner}/{repo}` (what `prState` actually needs — a repo read), and make a skip in CI a FAILURE (skipping is right on a laptop with no gh, wrong in the one place the credential is guaranteed). THIS ENTRY IS ALSO THE TEST: the gate short-circuits on an empty Active section, so the first CI run on this branch never reached the auth path and proved nothing. With an entry present, CI either prints "1 branch(es) ... checked" (fix works) or FAILS loudly (probe still wrong) — both are informative, neither is a silent skip.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
