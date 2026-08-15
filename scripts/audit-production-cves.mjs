@@ -94,24 +94,69 @@ function loadAllowlist() {
  * read as a clean audit, which is the one way a supply-chain gate must never
  * fail.
  */
-function auditWorkspace(dir) {
-  let stdout;
+/** One `npm audit` attempt. Returns stdout, or null when there is none. */
+function auditOnce(dir) {
   try {
-    stdout = execFileSync("npm", ["audit", "--omit=dev", "--json"], {
+    return execFileSync("npm", ["audit", "--omit=dev", "--json"], {
       cwd: path.join(root, dir),
       encoding: "utf8",
       maxBuffer: 32 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (err) {
-    // Non-zero exit is expected when advisories exist; the report is still on
+    // Non-zero exit is EXPECTED when advisories exist; the report is still on
     // stdout. Only a missing/empty stdout is a real failure.
-    stdout = err.stdout;
-    if (!stdout) {
-      console.error(
-        `[prod-cves] ${dir}: npm audit produced no report — ${err.message}`,
+    return err.stdout || null;
+  }
+}
+
+/** True when stdout is a real npm audit report rather than an error envelope. */
+function isAuditReport(stdout) {
+  if (!stdout) return false;
+  let r;
+  try {
+    r = JSON.parse(stdout);
+  } catch {
+    return false;
+  }
+  return (
+    r !== null &&
+    typeof r === "object" &&
+    r.auditReportVersion !== undefined &&
+    typeof r.metadata?.vulnerabilities === "object"
+  );
+}
+
+function auditWorkspace(dir) {
+  // RETRY before failing closed.
+  //
+  // Failing closed on a registry hiccup is correct for a security gate, and it
+  // would also make this a new source of CI flakes in a repo that already has
+  // one (#1386). `npm audit` is a read-only, idempotent query, so retrying is
+  // free of side effects — the only cost is time on a genuinely broken
+  // registry, which is a case that SHOULD be slow and loud.
+  //
+  // Observed while building this: a transient failure on one attempt, clean on
+  // the next, seconds apart.
+  const DELAYS_MS = [0, 2000, 6000];
+  let stdout = null;
+  for (let attempt = 0; attempt < DELAYS_MS.length; attempt++) {
+    if (DELAYS_MS[attempt] > 0) {
+      // Synchronous sleep: this script is a sequential CLI gate, and pulling
+      // in async plumbing for a backoff would be the larger change.
+      Atomics.wait(
+        new Int32Array(new SharedArrayBuffer(4)),
+        0,
+        0,
+        DELAYS_MS[attempt],
       );
-      process.exit(2);
+    }
+    stdout = auditOnce(dir);
+    if (isAuditReport(stdout)) break;
+    if (attempt < DELAYS_MS.length - 1) {
+      console.warn(
+        `[prod-cves] ${dir}: attempt ${attempt + 1} did not return an audit report — retrying`,
+      );
     }
   }
 
@@ -120,6 +165,53 @@ function auditWorkspace(dir) {
     report = JSON.parse(stdout);
   } catch {
     console.error(`[prod-cves] ${dir}: npm audit output was not JSON`);
+    process.exit(2);
+  }
+
+  // The JSON parsing above is NOT sufficient, and assuming it was made this a
+  // security gate that failed open.
+  //
+  // On any registry failure npm emits perfectly well-formed JSON:
+  //
+  //     { "message": "request to …/security/advisories/bulk failed, reason:
+  //                   connect ECONNREFUSED …",
+  //       "error": { "summary": "", "detail": "" } }
+  //
+  // `JSON.parse` succeeds, `report.vulnerabilities ?? {}` yields `{}`, the
+  // findings loop runs zero times, and the gate prints
+  //
+  //     [prod-cves] 4 workspace(s) audited (production deps only): …
+  //     [prod-cves] OK — no high or critical production advisories.
+  //
+  // — byte-identical to a clean run, exit 0. Measured against a dead registry,
+  // not inferred. Any outage, DNS failure or rate-limit therefore reported
+  // "no advisories" for the whole repo, and the header's claim that
+  // unparseable stdout is the guard was simply false: the failure output
+  // parses fine.
+  //
+  // So assert the report IS an audit report. npm's v2 schema always carries
+  // `auditReportVersion` and `metadata.vulnerabilities`; the error envelope
+  // carries neither. Exit 2 (script/config error) rather than 1, because
+  // "we could not audit" is a different fact from "we audited and found
+  // nothing", and the two must never print the same thing.
+  const looksLikeAuditReport =
+    report !== null &&
+    typeof report === "object" &&
+    report.auditReportVersion !== undefined &&
+    typeof report.metadata?.vulnerabilities === "object";
+
+  if (!looksLikeAuditReport) {
+    const why =
+      typeof report?.message === "string"
+        ? report.message
+        : "response did not contain auditReportVersion / metadata.vulnerabilities";
+    console.error(
+      `\n[prod-cves] ${dir}: npm audit did NOT return an audit report — nothing was checked.\n\n` +
+        `  ${why}\n\n` +
+        `  This is a hard failure on purpose. npm returns well-formed JSON when the\n` +
+        `  registry is unreachable, so treating "parsed OK" as "audited OK" made this\n` +
+        `  gate report a clean supply chain on every outage.\n`,
+    );
     process.exit(2);
   }
 

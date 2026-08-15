@@ -178,6 +178,26 @@ function main() {
   }
 
   if (!real) {
+    // A SKIPPED check that exits 0 is indistinguishable from a check that
+    // passed, and this one skipped in CI for its entire life: `dist/` is
+    // gitignored and the job that runs this script did `npm ci` with no
+    // build, so `knownToolNames()` returned null on every run and the
+    // tool-existence half — the reason the gate exists — never executed once.
+    // The green tick was reporting the skip.
+    //
+    // Locally a skip is legitimate (running the gate before a build is a
+    // reasonable thing to do), so it stays a note there. Under CI it is a
+    // hard failure, which is what makes the build step in ci.yml load-bearing
+    // rather than a comment somebody can drop.
+    if (process.env.CI) {
+      console.error(
+        "\n[skill-parity] FAIL — dist/ is not built, so the tool-existence\n" +
+          "check could not run. Under CI that is a failure, not a note: this\n" +
+          "gate silently skipped its main check on every CI run for its entire life.\n\n" +
+          "  Add `npm run build` to the job before this step.\n",
+      );
+      process.exit(1);
+    }
     console.log(
       "[skill-parity] NOTE dist/ not built — tool-existence check skipped.",
     );
