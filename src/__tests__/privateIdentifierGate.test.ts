@@ -152,29 +152,40 @@ describe("cannot silently verify nothing", () => {
 });
 
 describe("refuses to run if the denylist itself is committed", () => {
-  it("is a FATAL error, not a warning", () => {
-    // The worst outcome the design can produce: a tracked denylist publishes
-    // verbatim every string it exists to keep out, in a file helpfully
-    // labelled as the list of secrets. Simulated via a fake `git` on PATH so
-    // the test never touches the real index.
-    const fakeBin = path.join(dir, "bin");
-    rmSync(fakeBin, { recursive: true, force: true });
-    writeFileSync(
-      path.join(dir, "git-stub.sh"),
-      `#!/bin/sh\nif [ "$1" = "ls-files" ]; then echo ".private-denylist"; exit 0; fi\nexit 0\n`,
-    );
-    execFileSync("mkdir", ["-p", fakeBin]);
-    execFileSync("cp", [
-      path.join(dir, "git-stub.sh"),
-      path.join(fakeBin, "git"),
-    ]);
-    execFileSync("chmod", ["+x", path.join(fakeBin, "git")]);
+  // POSIX-only: the seam is a fake `git` earlier on PATH, and a `#!/bin/sh`
+  // stub is not executable on Windows — real git runs, reports the file
+  // untracked, and the assertion fails on a script that is behaving correctly.
+  // Matches the existing `skipIf(win32)` convention for the symlink tests in
+  // src/recipes/tools/__tests__/file.test.ts.
+  //
+  // The logic under test reads `git ls-files` and compares a string; there is
+  // nothing platform-dependent in it, and it is exercised on ubuntu + macOS.
+  it.skipIf(process.platform === "win32")(
+    "is a FATAL error, not a warning",
+    () => {
+      // The worst outcome the design can produce: a tracked denylist publishes
+      // verbatim every string it exists to keep out, in a file helpfully
+      // labelled as the list of secrets. Simulated via a fake `git` on PATH so
+      // the test never touches the real index.
+      const fakeBin = path.join(dir, "bin");
+      rmSync(fakeBin, { recursive: true, force: true });
+      writeFileSync(
+        path.join(dir, "git-stub.sh"),
+        `#!/bin/sh\nif [ "$1" = "ls-files" ]; then echo ".private-denylist"; exit 0; fi\nexit 0\n`,
+      );
+      execFileSync("mkdir", ["-p", fakeBin]);
+      execFileSync("cp", [
+        path.join(dir, "git-stub.sh"),
+        path.join(fakeBin, "git"),
+      ]);
+      execFileSync("chmod", ["+x", path.join(fakeBin, "git")]);
 
-    const r = run(["--text", fileWith("clean")], {
-      PATH: `${fakeBin}:${process.env.PATH}`,
-    });
-    expect(r.status).toBe(2);
-    expect(r.out).toContain("FATAL");
-    expect(r.out).toContain("git rm --cached");
-  });
+      const r = run(["--text", fileWith("clean")], {
+        PATH: `${fakeBin}:${process.env.PATH}`,
+      });
+      expect(r.status).toBe(2);
+      expect(r.out).toContain("FATAL");
+      expect(r.out).toContain("git rm --cached");
+    },
+  );
 });
