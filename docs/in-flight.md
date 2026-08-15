@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-15 `docs/1397-narrow-boundary-invariant` — #1397. Narrows ADR-0021's invariant from "no model-bound context" to "no **recipe agent-step** context", and adds a Scope section saying plainly that orchestrator dispatch is ungoverned. Chose option 2 (narrow the claim) over option 1 (bring the orchestrator in scope): the boundary answers *may this data go to that destination*, and an orchestrator task has no declared `data_policy` and no natural place to put one, so wiring the existing decision in would give every task the default classification — a check that always says `internal` and writes an affirmative receipt about a label nobody supplied, which is the failure the recipe path had before the destination registry existed. Docs + one guard test; no runtime code touched. GUARD PROBED THREE WAYS AND THE FIRST VERSION FAILED: the control ("recipe path still has a boundary") passed against a codebase with the boundary torn out, because `String.includes("recordBoundaryDecisionFn")` matches inside `recordBoundaryDecisionFn_REMOVED` — the same shape as the earlier guard whose regex matched `_removed_<name>:`. Now a `\b`-anchored whole-identifier match, and the control fails as it should.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
