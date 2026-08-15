@@ -59,11 +59,50 @@ const root = path.resolve(__dirname, "..");
 const INVENTORY = "LICENSE-THIRD-PARTY.md";
 
 /**
- * Strong copyleft with no permissive alternative. Matched on the whole
- * expression, so `(BSD-3-Clause OR GPL-2.0)` does not trip it — that offers a
- * permissive option, and the permissive option is the one taken.
+ * One SPDX identifier — NOT an expression — that carries strong copyleft.
+ * Anchored on purpose: it is only ever handed a single term by `isCopyleft`.
  */
-const COPYLEFT = /^\s*(AGPL|GPL|LGPL|SSPL)[^)]*$/i;
+const COPYLEFT_ID = /^(AGPL|GPL|LGPL|SSPL)(-|$)/i;
+
+/**
+ * Does this SPDX expression impose copyleft that cannot be avoided?
+ *
+ * The previous test applied `/^\s*(AGPL|GPL|LGPL|SSPL)[^)]*$/i` to the WHOLE
+ * expression. It caught `GPL-3.0-only` and correctly ignored
+ * `(BSD-3-Clause OR GPL-2.0)`, but it also ignored `Apache-2.0 AND
+ * LGPL-3.0-or-later` — four shipped packages declare exactly that — because
+ * the copyleft term was not written first. Whether the gate fired depended on
+ * operand order.
+ *
+ * What fixes that is parsing the expression, not rewriting the regex: the
+ * identifier test below is still start-anchored, and reverting it to the old
+ * pattern changes no result, because it is now only ever applied to a single
+ * term. Probed, not assumed — the mutation was run and every count held. The
+ * load-bearing change is the AND/OR split.
+ *
+ * The rule it implements is the SPDX one:
+ *
+ *   - `A OR B` — a choice. Clean if ANY alternative is copyleft-free, because
+ *     the permissive option is available and is the one taken.
+ *   - `A AND B` — cumulative. Copyleft if ANY term is copyleft.
+ *
+ * `WITH` (exception clauses) is deliberately left attached to its identifier:
+ * `GPL-2.0-only WITH Classpath-exception-2.0` is still a GPL obligation with a
+ * carve-out, and deciding whether that carve-out is enough is a judgement for
+ * the allowlist, not for a regex.
+ */
+function isCopyleft(expression) {
+  const expr = String(expression).trim();
+  if (!expr || expr === "UNDECLARED") return false;
+  // Strip only fully-enclosing parentheses; nested groups fall through to the
+  // conservative per-term test below rather than being mis-parsed.
+  const bare = /^\((.*)\)$/s.exec(expr)?.[1] ?? expr;
+  const alternatives = bare.split(/\s+OR\s+/i);
+  // Clean when at least one alternative is entirely copyleft-free.
+  return !alternatives.some(
+    (alt) => !alt.split(/\s+AND\s+/i).some((term) => COPYLEFT_ID.test(term)),
+  );
+}
 
 function trackedLockfiles() {
   return execFileSync("git", ["ls-files", "*package-lock.json"], {
@@ -76,7 +115,48 @@ function trackedLockfiles() {
     .sort();
 }
 
-/** Production (non-dev, non-optional) packages from one lockfile. */
+/**
+ * Advisories accepted for now. Every entry needs a written reason.
+ *
+ * Deliberately shaped like the CVE gate's allowlist: an entry that does not
+ * say WHY is not an accepted risk, it is an unexamined one, so a missing or
+ * empty `reason` is a hard error rather than a default.
+ */
+function loadAllowlist() {
+  const file = path.join(root, "scripts/audit-third-party-licenses-allow.json");
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    console.error(`[licenses] allowlist unreadable: ${err.message}`);
+    process.exit(2);
+  }
+  if (!Array.isArray(parsed.allow)) {
+    console.error("[licenses] allowlist: `allow` must be an array");
+    process.exit(2);
+  }
+  for (const [i, e] of parsed.allow.entries()) {
+    if (!e?.name || !e?.license || !String(e.reason ?? "").trim()) {
+      console.error(
+        `[licenses] allowlist entry #${i + 1} needs name, license and a non-empty reason.`,
+      );
+      process.exit(2);
+    }
+  }
+  return parsed.allow;
+}
+
+/**
+ * True when this exact package+licence pair has a recorded, reasoned
+ * acceptance. Matched on BOTH fields: a package silently changing licence
+ * between versions must re-surface rather than inherit its own exemption.
+ */
+function isAllowed(allow, pkg) {
+  return allow.some((e) => e.name === pkg.name && e.license === pkg.license);
+}
+
+/** Production (non-dev) packages from one lockfile, optional ones included. */
 function productionPackages(lockPath) {
   let lock;
   try {
@@ -88,11 +168,18 @@ function productionPackages(lockPath) {
   const out = [];
   for (const [key, meta] of Object.entries(lock.packages ?? {})) {
     if (!key.startsWith("node_modules/")) continue;
-    if (meta.dev || meta.optional) continue;
+    // `optional` used to be skipped alongside `dev`, which put 131 packages
+    // outside the gate entirely — 14 of them LGPL-3.0-or-later. An optional
+    // dependency is INSTALLED by default; npm only omits it on
+    // `--omit=optional` or when its platform does not match. So its terms ship
+    // in the deployed artifact, and skipping it reported a copyleft-free
+    // production tree while copyleft binaries were in it.
+    if (meta.dev) continue;
     out.push({
       name: key.slice("node_modules/".length),
       version: meta.version ?? "?",
       license: meta.license ? String(meta.license) : "UNDECLARED",
+      optional: Boolean(meta.optional),
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -179,11 +266,14 @@ function main() {
 
   // Unacceptable licences first: a stale inventory is untidy, a copyleft
   // production dependency is a problem regardless of what the file says.
-  const bad = workspaces.flatMap((w) =>
+  const allow = loadAllowlist();
+  const copyleft = workspaces.flatMap((w) =>
     w.packages
-      .filter((p) => COPYLEFT.test(p.license))
+      .filter((p) => isCopyleft(p.license))
       .map((p) => ({ ...p, workspace: w.workspace })),
   );
+  const bad = copyleft.filter((p) => !isAllowed(allow, p));
+  const accepted = copyleft.filter((p) => isAllowed(allow, p));
   const undeclared = workspaces.flatMap((w) =>
     w.packages
       .filter((p) => p.license === "UNDECLARED")
@@ -198,6 +288,13 @@ function main() {
     console.log(
       `[licenses]   note: ${u.workspace}/${u.name}@${u.version} declares no licence — listed as UNDECLARED.`,
     );
+  // Printed on every clean run on purpose. An accepted obligation that stops
+  // being mentioned is one nobody re-examines, and the whole point of taking
+  // these out of the failure list was to make them VISIBLE rather than absent.
+  for (const a of accepted)
+    console.log(
+      `[licenses]   accepted: ${a.workspace}/${a.name}@${a.version} — ${a.license} (see scripts/audit-third-party-licenses-allow.json)`,
+    );
 
   if (bad.length > 0) {
     console.error(
@@ -207,7 +304,11 @@ function main() {
       console.error(`  ${b.workspace}: ${b.name}@${b.version} — ${b.license}`);
     console.error(
       "\nThese impose obligations this project has not accepted. Replace the\n" +
-        "dependency, or move it to devDependencies if it is not distributed.\n",
+        "dependency, move it to devDependencies if it is not distributed, or —\n" +
+        "if the obligation is one this project is willing to carry — record it\n" +
+        "in scripts/audit-third-party-licenses-allow.json with a written reason.\n" +
+        "An entry with no reason is rejected: an unexplained exemption is an\n" +
+        "unexamined risk, not an accepted one.\n",
     );
     process.exit(1);
   }
@@ -236,7 +337,15 @@ function main() {
     process.exit(1);
   }
 
-  console.log("[licenses] OK — inventory current, no copyleft dependencies.");
+  // NOT "no copyleft dependencies" — there are 14, and saying otherwise on a
+  // green run is the same class of lie as the skipped check that still
+  // printed OK. The count is the point: it should be read, and it should be
+  // noticed when it grows.
+  console.log(
+    accepted.length === 0
+      ? "[licenses] OK — inventory current, no copyleft dependencies."
+      : `[licenses] OK — inventory current; ${accepted.length} copyleft dependency(ies) accepted with recorded reasons, none unreviewed.`,
+  );
   process.exit(0);
 }
 

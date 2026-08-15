@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-15 `fix/license-gate-skips-optional-deps` — `audit-third-party-licenses` reported a copyleft-free production tree while 14 LGPL-3.0-or-later binaries shipped in the deployed dashboard. Two holes that compounded: `optional:true` was skipped alongside `dev` (131 packages outside the gate entirely, though an optional dep is INSTALLED by default), and the copyleft test ran against the whole SPDX expression anchored at its start, so `Apache-2.0 AND LGPL-3.0-or-later` escaped — which is what four of the fourteen declare, so fixing either hole alone still missed them. Fix parses the expression (OR = a choice, clean if any alternative is copyleft-free; AND = cumulative) and adds an allowlist requiring a written reason per entry, seeded with the sharp/libvips binaries. Accepted entries are PRINTED on every green run and the OK line names the count — an accepted obligation nobody can see is one nobody re-examines.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)

@@ -12,29 +12,33 @@ Read from the lockfiles, so this is the set actually resolved rather than the
 set requested. `UNDECLARED` means the package publishes no `license` field —
 not that it is unlicensed; check the package itself before relying on it.
 
-**327 production packages** across 4 workspaces.
+**458 production packages** across 4 workspaces.
 
 ## Licences in use
 
 | Licence | Packages |
 |---|---|
-| MIT | 269 |
-| Apache-2.0 | 31 |
-| ISC | 15 |
-| BSD-3-Clause | 5 |
+| MIT | 341 |
+| Apache-2.0 | 61 |
+| ISC | 19 |
+| BSD-3-Clause | 15 |
+| LGPL-3.0-or-later | 10 |
+| Apache-2.0 AND LGPL-3.0-or-later | 3 |
 | 0BSD | 2 |
+| Apache-2.0 AND LGPL-3.0-or-later AND MIT | 1 |
 | CC-BY-4.0 | 1 |
 | MPL-2.0 | 1 |
 | BlueOak-1.0.0 | 1 |
 | UNDECLARED | 1 |
 | (BSD-3-Clause OR GPL-2.0) | 1 |
+| BSD-2-Clause | 1 |
 
 ## By workspace
 
 <details>
 <summary>Full inventory</summary>
 
-### dashboard — 157 packages
+### dashboard — 194 packages
 
 | Package | Version | Licence |
 |---|---|---|
@@ -47,12 +51,48 @@ not that it is unlicensed; check the package itself before relying on it.
 | @codemirror/state | 6.6.0 | MIT |
 | @codemirror/theme-one-dark | 6.1.3 | MIT |
 | @codemirror/view | 6.42.0 | MIT |
+| @img/colour | 1.1.0 | MIT |
+| @img/sharp-darwin-arm64 | 0.35.3 | Apache-2.0 |
+| @img/sharp-darwin-x64 | 0.35.3 | Apache-2.0 |
+| @img/sharp-freebsd-wasm32 | 0.35.3 | Apache-2.0 |
+| @img/sharp-libvips-darwin-arm64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-darwin-x64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-arm | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-arm64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-ppc64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-riscv64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-s390x | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-x64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linuxmusl-arm64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linuxmusl-x64 | 1.3.2 | LGPL-3.0-or-later |
+| @img/sharp-linux-arm | 0.35.3 | Apache-2.0 |
+| @img/sharp-linux-arm64 | 0.35.3 | Apache-2.0 |
+| @img/sharp-linux-ppc64 | 0.35.3 | Apache-2.0 |
+| @img/sharp-linux-riscv64 | 0.35.3 | Apache-2.0 |
+| @img/sharp-linux-s390x | 0.35.3 | Apache-2.0 |
+| @img/sharp-linux-x64 | 0.35.3 | Apache-2.0 |
+| @img/sharp-linuxmusl-arm64 | 0.35.3 | Apache-2.0 |
+| @img/sharp-linuxmusl-x64 | 0.35.3 | Apache-2.0 |
+| @img/sharp-wasm32 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later AND MIT |
+| @img/sharp-wasm32/node_modules/@emnapi/runtime | 1.11.2 | MIT |
+| @img/sharp-webcontainers-wasm32 | 0.35.3 | Apache-2.0 |
+| @img/sharp-win32-arm64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later |
+| @img/sharp-win32-ia32 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later |
+| @img/sharp-win32-x64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later |
 | @lezer/common | 1.5.2 | MIT |
 | @lezer/highlight | 1.2.3 | MIT |
 | @lezer/lr | 1.4.10 | MIT |
 | @lezer/yaml | 1.0.4 | MIT |
 | @marijn/find-cluster-break | 1.0.2 | MIT |
 | @next/env | 15.5.21 | MIT |
+| @next/swc-darwin-arm64 | 15.5.21 | MIT |
+| @next/swc-darwin-x64 | 15.5.21 | MIT |
+| @next/swc-linux-arm64-gnu | 15.5.21 | MIT |
+| @next/swc-linux-arm64-musl | 15.5.21 | MIT |
+| @next/swc-linux-x64-gnu | 15.5.21 | MIT |
+| @next/swc-linux-x64-musl | 15.5.21 | MIT |
+| @next/swc-win32-arm64-msvc | 15.5.21 | MIT |
+| @next/swc-win32-x64-msvc | 15.5.21 | MIT |
 | @swc/helpers | 0.5.15 | Apache-2.0 |
 | @types/debug | 4.1.13 | MIT |
 | @types/estree | 1.0.8 | MIT |
@@ -173,6 +213,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | safer-buffer | 2.1.2 | MIT |
 | scheduler | 0.23.2 | MIT |
 | semver | 7.8.5 | ISC |
+| sharp | 0.35.3 | Apache-2.0 |
 | source-map-js | 1.2.1 | BSD-3-Clause |
 | space-separated-tokens | 2.0.2 | MIT |
 | stringify-entities | 4.0.4 | MIT |
@@ -227,7 +268,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | ws | 8.21.0 | MIT |
 | yaml | 2.8.3 | ISC |
 
-### services/push-relay — 143 packages
+### services/push-relay — 237 packages
 
 | Package | Version | Licence |
 |---|---|---|
@@ -241,27 +282,62 @@ not that it is unlicensed; check the package itself before relying on it.
 | @firebase/database-types | 1.0.5 | Apache-2.0 |
 | @firebase/logger | 0.4.2 | Apache-2.0 |
 | @firebase/util | 1.10.0 | Apache-2.0 |
+| @google-cloud/firestore | 7.11.6 | Apache-2.0 |
+| @google-cloud/paginator | 5.0.2 | Apache-2.0 |
+| @google-cloud/projectify | 4.0.0 | Apache-2.0 |
+| @google-cloud/promisify | 4.0.0 | Apache-2.0 |
+| @google-cloud/storage | 7.19.0 | Apache-2.0 |
+| @grpc/grpc-js | 1.14.4 | Apache-2.0 |
+| @grpc/grpc-js/node_modules/@grpc/proto-loader | 0.8.0 | Apache-2.0 |
+| @grpc/proto-loader | 0.7.15 | Apache-2.0 |
+| @js-sdsl/ordered-map | 4.4.2 | MIT |
+| @nodable/entities | 2.1.0 | MIT |
+| @opentelemetry/api | 1.9.1 | Apache-2.0 |
 | @parse/node-apn | 8.1.0 | MIT |
+| @protobufjs/aspromise | 1.1.2 | BSD-3-Clause |
+| @protobufjs/base64 | 1.1.2 | BSD-3-Clause |
+| @protobufjs/codegen | 2.0.5 | BSD-3-Clause |
+| @protobufjs/eventemitter | 1.1.1 | BSD-3-Clause |
+| @protobufjs/fetch | 1.1.1 | BSD-3-Clause |
+| @protobufjs/float | 1.0.2 | BSD-3-Clause |
+| @protobufjs/path | 1.1.2 | BSD-3-Clause |
+| @protobufjs/pool | 1.1.0 | BSD-3-Clause |
+| @protobufjs/utf8 | 1.1.1 | BSD-3-Clause |
 | @redis/bloom | 1.2.0 | MIT |
 | @redis/client | 1.6.1 | MIT |
 | @redis/graph | 1.1.1 | MIT |
 | @redis/json | 1.0.7 | MIT |
 | @redis/search | 1.2.0 | MIT |
 | @redis/time-series | 1.1.0 | MIT |
+| @tootallnate/once | 3.0.1 | MIT |
+| @types/caseless | 0.12.5 | MIT |
 | @types/jsonwebtoken | 9.0.10 | MIT |
+| @types/long | 4.0.2 | MIT |
 | @types/ms | 2.1.0 | MIT |
 | @types/node | 20.19.39 | MIT |
+| @types/request | 2.48.13 | MIT |
+| @types/tough-cookie | 4.0.5 | MIT |
+| abort-controller | 3.0.0 | MIT |
 | accepts | 1.3.8 | MIT |
+| agent-base | 7.1.4 | MIT |
+| ansi-regex | 5.0.1 | MIT |
 | array-flatten | 1.1.1 | MIT |
+| arrify | 2.0.1 | MIT |
 | assert-plus | 1.0.0 | MIT |
+| async-retry | 1.3.3 | MIT |
 | asynckit | 0.4.0 | MIT |
+| base64-js | 1.5.1 | MIT |
+| bignumber.js | 9.3.1 | MIT |
 | body-parser | 1.20.6 | MIT |
 | body-parser/node_modules/debug | 2.6.9 | MIT |
 | buffer-equal-constant-time | 1.0.1 | BSD-3-Clause |
 | bytes | 3.1.2 | MIT |
 | call-bind-apply-helpers | 1.0.2 | MIT |
 | call-bound | 1.0.4 | MIT |
+| cliui | 8.0.1 | ISC |
 | cluster-key-slot | 1.1.2 | Apache-2.0 |
+| color-convert | 2.0.1 | MIT |
+| color-name | 1.1.4 | MIT |
 | combined-stream | 1.0.8 | MIT |
 | content-disposition | 0.5.4 | MIT |
 | content-type | 1.0.5 | MIT |
@@ -274,49 +350,75 @@ not that it is unlicensed; check the package itself before relying on it.
 | depd | 2.0.0 | MIT |
 | destroy | 1.2.0 | MIT |
 | dunder-proto | 1.0.1 | MIT |
+| duplexify | 4.1.3 | MIT |
 | ecdsa-sig-formatter | 1.0.11 | Apache-2.0 |
 | ee-first | 1.1.1 | MIT |
+| emoji-regex | 8.0.0 | MIT |
 | encodeurl | 2.0.0 | MIT |
+| end-of-stream | 1.4.5 | MIT |
 | es-define-property | 1.0.1 | MIT |
 | es-errors | 1.3.0 | MIT |
 | es-object-atoms | 1.1.1 | MIT |
 | es-set-tostringtag | 2.1.0 | MIT |
+| escalade | 3.2.0 | MIT |
 | escape-html | 1.0.3 | MIT |
 | etag | 1.8.1 | MIT |
+| event-target-shim | 5.0.1 | MIT |
 | express | 4.22.2 | MIT |
 | express-rate-limit | 8.5.2 | MIT |
 | express/node_modules/debug | 2.6.9 | MIT |
+| extend | 3.0.2 | MIT |
 | extsprintf | 1.4.1 | MIT |
 | farmhash-modern | 1.1.0 | MIT |
+| fast-deep-equal | 3.1.3 | MIT |
+| fast-xml-builder | 1.2.0 | MIT |
+| fast-xml-parser | 5.7.1 | MIT |
 | faye-websocket | 0.11.4 | Apache-2.0 |
 | finalhandler | 1.3.2 | MIT |
 | finalhandler/node_modules/debug | 2.6.9 | MIT |
 | firebase-admin | 12.7.0 | Apache-2.0 |
 | firebase-admin/node_modules/@types/node | 22.19.19 | MIT |
+| form-data | 2.5.6 | MIT |
 | forwarded | 0.2.0 | MIT |
 | fresh | 0.5.2 | MIT |
 | function-bind | 1.1.2 | MIT |
+| functional-red-black-tree | 1.0.1 | MIT |
+| gaxios | 6.7.1 | Apache-2.0 |
+| gcp-metadata | 6.1.1 | Apache-2.0 |
 | generic-pool | 3.9.0 | MIT |
+| get-caller-file | 2.0.5 | ISC |
 | get-intrinsic | 1.3.0 | MIT |
 | get-proto | 1.0.1 | MIT |
+| google-auth-library | 9.15.1 | Apache-2.0 |
+| google-gax | 4.6.1 | Apache-2.0 |
+| google-logging-utils | 0.0.2 | Apache-2.0 |
 | gopd | 1.2.0 | MIT |
+| gtoken | 7.1.0 | MIT |
 | has-symbols | 1.1.0 | MIT |
 | has-tostringtag | 1.0.2 | MIT |
 | hasown | 2.0.4 | MIT |
 | helmet | 8.1.0 | MIT |
+| html-entities | 2.6.0 | MIT |
 | http-errors | 2.0.1 | MIT |
 | http-parser-js | 0.5.10 | MIT |
+| http-proxy-agent | 5.0.0 | MIT |
+| http-proxy-agent/node_modules/agent-base | 6.0.2 | MIT |
+| https-proxy-agent | 7.0.6 | MIT |
 | iconv-lite | 0.4.24 | MIT |
 | inherits | 2.0.4 | ISC |
 | ip-address | 10.4.0 | MIT |
 | ipaddr.js | 1.9.1 | MIT |
+| is-fullwidth-code-point | 3.0.0 | MIT |
+| is-stream | 2.0.1 | MIT |
 | jose | 4.15.9 | MIT |
+| json-bigint | 1.0.0 | MIT |
 | jsonwebtoken | 9.0.3 | MIT |
 | jsonwebtoken/node_modules/ms | 2.1.3 | MIT |
 | jwa | 2.0.1 | MIT |
 | jwks-rsa | 3.2.2 | MIT |
 | jws | 4.0.1 | MIT |
 | limiter | 1.1.5 | UNDECLARED |
+| lodash.camelcase | 4.3.0 | MIT |
 | lodash.clonedeep | 4.5.0 | MIT |
 | lodash.includes | 4.3.0 | MIT |
 | lodash.isboolean | 3.0.3 | MIT |
@@ -325,27 +427,39 @@ not that it is unlicensed; check the package itself before relying on it.
 | lodash.isplainobject | 4.0.6 | MIT |
 | lodash.isstring | 4.0.1 | MIT |
 | lodash.once | 4.1.1 | MIT |
+| long | 5.3.2 | Apache-2.0 |
 | lru-cache | 6.0.0 | ISC |
 | lru-memoizer | 2.3.0 | MIT |
 | math-intrinsics | 1.1.0 | MIT |
 | media-typer | 0.3.0 | MIT |
 | merge-descriptors | 1.0.3 | MIT |
 | methods | 1.1.2 | MIT |
+| mime | 3.0.0 | MIT |
 | mime-db | 1.52.0 | MIT |
 | mime-types | 2.1.35 | MIT |
 | ms | 2.0.0 | MIT |
 | negotiator | 0.6.3 | MIT |
+| node-fetch | 2.7.0 | MIT |
 | node-forge | 1.4.0 | (BSD-3-Clause OR GPL-2.0) |
+| object-hash | 3.0.0 | MIT |
 | object-inspect | 1.13.4 | MIT |
 | on-finished | 2.4.1 | MIT |
 | once | 1.4.0 | ISC |
+| p-limit | 3.1.0 | MIT |
 | parseurl | 1.3.3 | MIT |
+| path-expression-matcher | 1.5.0 | MIT |
 | path-to-regexp | 0.1.13 | MIT |
+| proto3-json-serializer | 2.0.2 | Apache-2.0 |
+| protobufjs | 7.6.5 | BSD-3-Clause |
 | proxy-addr | 2.0.7 | MIT |
 | qs | 6.15.2 | BSD-3-Clause |
 | range-parser | 1.2.1 | MIT |
 | raw-body | 2.5.3 | MIT |
+| readable-stream | 3.6.2 | MIT |
 | redis | 4.7.1 | MIT |
+| require-directory | 2.1.1 | MIT |
+| retry | 0.13.1 | MIT |
+| retry-request | 7.0.2 | MIT |
 | safe-buffer | 5.2.1 | MIT |
 | safer-buffer | 2.1.2 | MIT |
 | semver | 7.7.4 | ISC |
@@ -361,19 +475,40 @@ not that it is unlicensed; check the package itself before relying on it.
 | side-channel-map | 1.0.1 | MIT |
 | side-channel-weakmap | 1.0.2 | MIT |
 | statuses | 2.0.2 | MIT |
+| stream-events | 1.0.5 | MIT |
+| stream-shift | 1.0.3 | MIT |
+| string_decoder | 1.3.0 | MIT |
+| string-width | 4.2.3 | MIT |
+| strip-ansi | 6.0.1 | MIT |
+| strnum | 2.2.3 | MIT |
+| stubs | 3.0.0 | MIT |
+| teeny-request | 9.0.0 | Apache-2.0 |
+| teeny-request/node_modules/agent-base | 6.0.2 | MIT |
+| teeny-request/node_modules/https-proxy-agent | 5.0.1 | MIT |
 | toidentifier | 1.0.1 | MIT |
+| tr46 | 0.0.3 | MIT |
 | tslib | 2.8.1 | 0BSD |
 | type-is | 1.6.18 | MIT |
 | undici-types | 6.21.0 | MIT |
 | unpipe | 1.0.0 | MIT |
+| util-deprecate | 1.0.2 | MIT |
 | utils-merge | 1.0.1 | MIT |
 | uuid | 11.1.1 | MIT |
 | vary | 1.1.2 | MIT |
 | verror | 1.10.1 | MIT |
+| webidl-conversions | 3.0.1 | BSD-2-Clause |
 | websocket-driver | 0.7.5 | Apache-2.0 |
 | websocket-extensions | 0.1.4 | Apache-2.0 |
+| whatwg-url | 5.0.0 | MIT |
+| wrap-ansi | 7.0.0 | MIT |
+| wrap-ansi/node_modules/ansi-styles | 4.3.0 | MIT |
 | wrappy | 1.0.2 | ISC |
+| xml-naming | 0.1.0 | MIT |
+| y18n | 5.0.8 | ISC |
 | yallist | 4.0.0 | ISC |
+| yargs | 17.7.2 | MIT |
+| yargs-parser | 21.1.1 | ISC |
+| yocto-queue | 0.1.0 | MIT |
 
 ### vscode-extension — 1 packages
 
