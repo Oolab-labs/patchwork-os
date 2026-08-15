@@ -172,6 +172,29 @@ function findInstallDirByRecipeName(
   return null;
 }
 
+export interface SetRecipeEnabledResult {
+  ok: boolean;
+  /**
+   * Whether this call actually changed anything. Lets the CLI say "already
+   * enabled" without running its own state lookup — a second lookup is a
+   * second routing implementation, and two routing implementations
+   * disagreeing is the whole of #1360.
+   */
+  changed: boolean;
+  /**
+   * WHICH mechanism was written: the per-install `.disabled` marker, the
+   * legacy `config.json` array, or neither (on error).
+   *
+   * Reported rather than internal because the mechanism is exactly what
+   * operators were confused about — a CLI that says "disabled" without
+   * saying where is how a write to a mechanism nothing reads goes unnoticed.
+   */
+  mechanism: "marker" | "config" | "none";
+  /** Set when `mechanism === "marker"`. */
+  installDir?: string;
+  error?: string;
+}
+
 /**
  * Unified enable/disable for install-dir AND legacy top-level recipes.
  *
@@ -195,19 +218,25 @@ export function setRecipeEnabled(
     loadConfigFn?: typeof loadConfig;
     saveConfigFn?: (cfg: unknown) => void;
   } = {},
-): { ok: boolean; error?: string } {
+): SetRecipeEnabledResult {
   const recipesDir = options.recipesDir ?? patchworkPath("recipes");
 
   try {
     const installDir = findInstallDirByRecipeName(recipesDir, name);
     if (installDir) {
       const markerPath = disabledMarkerPath(installDir);
+      const wasDisabled = existsSync(markerPath);
       if (enabled) {
-        if (existsSync(markerPath)) rmSync(markerPath);
+        if (wasDisabled) rmSync(markerPath);
       } else {
         writeFileSync(markerPath, "");
       }
-      return { ok: true };
+      return {
+        ok: true,
+        changed: enabled ? wasDisabled : !wasDisabled,
+        mechanism: "marker",
+        installDir,
+      };
     }
 
     // Legacy top-level path — fall back to config-file disabled list
@@ -215,21 +244,31 @@ export function setRecipeEnabled(
     const disabled = getConfigDisabledNames(
       cfg as { recipes?: { disabled?: string[] } },
     );
+    const wasDisabled = disabled.has(name);
     if (enabled) disabled.delete(name);
     else disabled.add(name);
-    const next = {
-      ...(cfg as object),
-      recipes: {
-        ...((cfg as { recipes?: Record<string, unknown> }).recipes ?? {}),
-        disabled: [...disabled],
-      },
-    };
-    if (options.saveConfigFn) options.saveConfigFn(next);
-    else savePatchworkConfig(next as PatchworkConfig);
-    return { ok: true };
+    const changed = enabled ? wasDisabled : !wasDisabled;
+    // Only WRITE when something actually changes. `config.json` holds the
+    // operator's real settings and #1380 landed days ago to stop it being
+    // clobbered; a no-op enable rewriting the whole file is avoidable risk
+    // for no benefit.
+    if (changed) {
+      const next = {
+        ...(cfg as object),
+        recipes: {
+          ...((cfg as { recipes?: Record<string, unknown> }).recipes ?? {}),
+          disabled: [...disabled],
+        },
+      };
+      if (options.saveConfigFn) options.saveConfigFn(next);
+      else savePatchworkConfig(next as PatchworkConfig);
+    }
+    return { ok: true, changed, mechanism: "config" };
   } catch (err) {
     return {
       ok: false,
+      changed: false,
+      mechanism: "none",
       error: err instanceof Error ? err.message : String(err),
     };
   }
