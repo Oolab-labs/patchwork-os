@@ -109,6 +109,7 @@ let tmpHome: string;
 let patchworkDir: string;
 let workersDir: string;
 let realHome: string | undefined;
+let realPatchworkHome: string | undefined;
 let realUserProfile: string | undefined;
 
 beforeEach(() => {
@@ -126,8 +127,12 @@ beforeEach(() => {
   // `~/.patchwork/inbox/…` write in the temp home on every platform.
   realHome = process.env.HOME;
   realUserProfile = process.env.USERPROFILE;
+  realPatchworkHome = process.env.PATCHWORK_HOME;
   process.env.HOME = tmpHome;
   process.env.USERPROFILE = tmpHome;
+  // #1265: the `~/.patchwork/` prefix resolves through `patchworkHome()` now,
+  // so $HOME alone no longer redirects the recipe's inbox write.
+  process.env.PATCHWORK_HOME = patchworkDir;
   setFlag(FLAG_WORKER_AUTONOMY, true, false);
   resetApprovalQueueForTests();
   createIssueMock.mockClear();
@@ -142,6 +147,8 @@ afterEach(() => {
   else process.env.HOME = realHome;
   if (realUserProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = realUserProfile;
+  if (realPatchworkHome === undefined) delete process.env.PATCHWORK_HOME;
+  else process.env.PATCHWORK_HOME = realPatchworkHome;
   // Best-effort: a lingering file handle can make rmSync throw EBUSY on Windows;
   // a leaked temp dir must not fail the test.
   try {
