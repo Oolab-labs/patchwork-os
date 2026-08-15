@@ -33,7 +33,6 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
@@ -1326,9 +1325,7 @@ export async function runYamlRecipe(
   // which changes where recipe file writes LAND. That is a real blast
   // radius and belongs in its own change, so yamlRunner.ts stays on the
   // ratchet.
-  const inboxDirAbs = path.resolve(
-    path.join(os.homedir(), ".patchwork", "inbox"),
-  );
+  const inboxDirAbs = path.resolve(patchworkPath("inbox"));
   const inboxOutputs: Array<{ filename: string; deliveredAt: number }> = [];
   const isInboxPath = (abs: string): boolean =>
     isInboxPathFor(abs, inboxDirAbs, path);
@@ -4286,8 +4283,7 @@ export function buildChainedDeps(
   } | null> => {
     const lookupName = normalizeNestedRecipeLookupName(name);
 
-    const { homedir: nestedHomedir } = await import("node:os");
-    const userRecipesDir = path.join(nestedHomedir(), ".patchwork", "recipes");
+    const userRecipesDir = patchworkPath("recipes");
 
     if (parentSourcePath) {
       const parentDir = path.dirname(parentSourcePath);

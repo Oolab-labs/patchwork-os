@@ -16,9 +16,9 @@
 
 import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import os from "node:os";
 import path from "node:path";
 import { respond500 } from "./httpErrorResponse.js";
+import { patchworkPath } from "./patchworkHome.js";
 
 /**
  * Phase 0β provenance shape. Optional + additive — files without
@@ -92,7 +92,7 @@ function safeInboxPath(filename: string): string | null {
   if (filename.includes("/") || filename.includes("\\")) return null;
   if (filename === "." || filename === "..") return null;
   if (filename.startsWith(".")) return null; // no dotfiles, reserves `.archive/` namespace
-  return path.join(os.homedir(), ".patchwork", "inbox", filename);
+  return path.join(patchworkPath("inbox"), filename);
 }
 
 /**
@@ -109,7 +109,7 @@ export function tryHandleInboxRoute(
     void (async () => {
       try {
         const { readdir, readFile, stat } = await import("node:fs/promises");
-        const inboxDir = path.join(os.homedir(), ".patchwork", "inbox");
+        const inboxDir = patchworkPath("inbox");
         if (!existsSync(inboxDir)) {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ items: [] }));
@@ -246,12 +246,7 @@ export function tryHandleInboxRoute(
           res.end(JSON.stringify({ ok: false, error: "Invalid filename" }));
           return;
         }
-        const archiveDir = path.join(
-          os.homedir(),
-          ".patchwork",
-          "inbox",
-          ".archive",
-        );
+        const archiveDir = patchworkPath("inbox", ".archive");
         await mkdir(archiveDir, { recursive: true });
         let dest = path.join(archiveDir, filename);
         // Suffix with timestamp on collision so historical archives survive.
