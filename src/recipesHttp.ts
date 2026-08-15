@@ -89,6 +89,41 @@ export function isRecipeFileEnabled(
  * Used by webhook + manual-fire path resolvers to find recipes installed
  * via `runRecipeInstall`.
  */
+/**
+ * An install dir's entrypoint: `recipe.json`'s `recipes.main` if a manifest
+ * exists, otherwise the first `*.yaml` / `*.yml` in the dir. Null when neither
+ * is present — which is how a directory is recognised as NOT an install.
+ *
+ * Extracted so the nested `owner/repo` level resolves by identical rules. When
+ * this lived inline, adding the second level meant either duplicating it or
+ * having the two levels disagree, and a nested install resolving by different
+ * rules than a flat one is the kind of difference nobody notices until a
+ * manifest-bearing nested install behaves oddly.
+ */
+function resolveEntrypoint(dir: string): string | null {
+  const manifestPath = path.join(dir, "recipe.json");
+  if (existsSync(manifestPath)) {
+    try {
+      const m = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+        recipes?: { main?: string };
+      };
+      if (m.recipes?.main) {
+        const candidate = path.join(dir, m.recipes.main);
+        if (existsSync(candidate)) return candidate;
+      }
+    } catch {
+      // malformed manifest — fall through to first-yaml fallback
+    }
+  }
+  try {
+    const yaml = readdirSync(dir).find((x) => /\.ya?ml$/i.test(x));
+    if (yaml) return path.join(dir, yaml);
+  } catch {
+    // unreadable
+  }
+  return null;
+}
+
 function* iterateInstallDirs(
   recipesDir: string,
   options: { includeDisabled?: boolean } = {},
@@ -115,31 +150,56 @@ function* iterateInstallDirs(
     const enabled = !isInstallDirDisabled(fullPath);
     if (!enabled && !includeDisabled) continue;
 
-    let entrypoint: string | null = null;
-    const manifestPath = path.join(fullPath, "recipe.json");
-    if (existsSync(manifestPath)) {
-      try {
-        const m = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
-          recipes?: { main?: string };
-        };
-        if (m.recipes?.main) {
-          const candidate = path.join(fullPath, m.recipes.main);
-          if (existsSync(candidate)) entrypoint = candidate;
-        }
-      } catch {
-        // malformed manifest — fall through to first-yaml fallback
-      }
-    }
-    if (!entrypoint) {
-      try {
-        const yaml = readdirSync(fullPath).find((x) => /\.ya?ml$/i.test(x));
-        if (yaml) entrypoint = path.join(fullPath, yaml);
-      } catch {
-        // unreadable
-      }
-    }
+    const entrypoint = resolveEntrypoint(fullPath);
     if (entrypoint) {
       yield { installDir: fullPath, entrypointPath: entrypoint, enabled };
+      continue;
+    }
+
+    // #1403: descend ONE level for `owner/repo` installs.
+    //
+    // A manifest-less GitHub install lives at `recipes/<owner>/<repo>/` with
+    // its entrypoint one level deeper. Walking direct children only, this
+    // generator never saw it — `recipes/<owner>/` holds no yaml and
+    // `recipes/<owner>/<repo>/` was never visited. That made every nested
+    // install invisible to lookup, and `setRecipeEnabled` then fell through to
+    // the legacy config array and reported success for a write nothing reads.
+    //
+    // ONLY when the parent has no entrypoint of its own (the `continue`
+    // above). If `recipes/pkg/` IS an install, its subdirectories are that
+    // recipe's own files — vendored data, fixtures — and treating them as
+    // separate installs would surface recipes the operator never installed.
+    //
+    // ONE level, deliberately. `owner/repo` is the install layout, not
+    // arbitrary nesting; an unbounded walk turns a mis-shaped recipes dir into
+    // a filesystem crawl.
+    let children: string[];
+    try {
+      children = readdirSync(fullPath);
+    } catch {
+      continue;
+    }
+    for (const c of children) {
+      if (c.startsWith(".")) continue;
+      const childPath = path.join(fullPath, c);
+      try {
+        if (!statSync(childPath).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      // The marker is checked on the CHILD — that is the install dir, and it
+      // is where `setRecipeEnabled` writes. A parent-level marker would
+      // disable siblings that were never asked about.
+      const childEnabled = !isInstallDirDisabled(childPath);
+      if (!childEnabled && !includeDisabled) continue;
+      const childEntrypoint = resolveEntrypoint(childPath);
+      if (childEntrypoint) {
+        yield {
+          installDir: childPath,
+          entrypointPath: childEntrypoint,
+          enabled: childEnabled,
+        };
+      }
     }
   }
 }
