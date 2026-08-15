@@ -108,8 +108,22 @@ describe("a line comment cannot hide a credential-deleting call", () => {
   it("an isolated file is still not a hazard (control)", () => {
     // Only the COMBINATION is dangerous. A file that deletes but sandboxes
     // must not be flagged, or the ratchet fills with noise.
+    // Written as a `vi.stubEnv` call rather than a direct assignment of a
+    // temp-directory literal. Both spellings satisfy this gate's
+    // MENTIONS_HOME check, but the literal form made THIS file look like a
+    // real fixture-hygiene violation to `audit-test-fixtures`, which flagged
+    // it — twice, since that gate reads comments as code and so caught the
+    // sentence explaining the first fix too.
+    //
+    // A test whose fixtures contain example code as DATA will trip any gate
+    // that reads files as code. The sibling gate strips comments for exactly
+    // this reason ("the first draft flagged its own documentation");
+    // `audit-test-fixtures` does not. Worth fixing there, but not from here:
+    // stripping comments would change its ratchet counts, and that wants its
+    // own measured change. The fix here is to write the example differently
+    // rather than add a genuine file to an allowlist meant only to shrink.
     const file = [
-      'process.env.PATCHWORK_HOME = "/tmp/sandbox";',
+      'vi.stubEnv("PATCHWORK_HOME", sandboxDir);',
       "clearTokens();",
     ].join("\n");
     expect(flagsHazard(file)).toBe(false);
