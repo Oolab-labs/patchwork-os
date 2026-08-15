@@ -26,6 +26,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { oauthConnectorIds } from "./connectors/connectorRegistry.js";
 import { respond500 } from "./httpErrorResponse.js";
 import { readBodyWithCap, respond413 } from "./recipeRoutes.js";
 
@@ -403,7 +404,50 @@ export function tryHandlePublicConnectorRoute(
     })();
     return true;
   }
+
+  // An UNRECOGNISED connector on a callback path terminates here with 404,
+  // rather than falling through to the bearer gate and answering 401.
+  //
+  // A vendor's OAuth redirect never carries a Patchwork bearer token, so in
+  // the default bridge-fronted deployment that 401 was guaranteed — which
+  // means a typo'd `redirect_uri` registered at the vendor, a stale bookmark,
+  // or a connector wired into one list and not the other all presented as an
+  // AUTHENTICATION failure. The operator goes and checks their credentials,
+  // which are fine, and the actual cause (this slug is not a connector) is
+  // never stated. The terminal 404 at the end of the server's own chain is
+  // unreachable for these paths.
+  //
+  // Naming the slug is the point: "Unknown connector \"githbu\"" ends the
+  // investigation immediately.
+  const callbackSlug = matchCallbackSlug(parsedUrl.pathname);
+  if (callbackSlug !== null && !isKnownOAuthConnector(callbackSlug)) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        error: `Unknown connector "${callbackSlug}"`,
+        hint: "This path is not a registered OAuth callback. Check the redirect_uri registered with the provider.",
+      }),
+    );
+    return true;
+  }
   return false;
+}
+
+/** `/connections/<slug>/callback` → `<slug>`, else null. */
+function matchCallbackSlug(pathname: string): string | null {
+  const m = /^\/connections\/([^/]+)\/callback$/.exec(pathname);
+  return m?.[1] ?? null;
+}
+
+/**
+ * Derived from the registry, never hand-listed — see the dedup guard in
+ * `connectorRoutes-cache-and-callback-dedup.test.ts` for what a hand-listed
+ * copy of this set cost.
+ */
+let _oauthIds: Set<string> | null = null;
+function isKnownOAuthConnector(slug: string): boolean {
+  if (_oauthIds === null) _oauthIds = new Set(oauthConnectorIds());
+  return _oauthIds.has(slug);
 }
 
 /**

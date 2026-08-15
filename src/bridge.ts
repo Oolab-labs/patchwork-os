@@ -21,6 +21,7 @@ import { buildMemoryCard } from "./butler/memoryCard.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { CommitIssueLinkLog } from "./commitIssueLinkLog.js";
 import type { Config } from "./config.js";
+import { warnIfCallbackPortMismatch } from "./connectors/connectorRedirectUri.js";
 import { DecisionTraceLog } from "./decisionTraceLog.js";
 import { createDriver } from "./drivers/index.js";
 import { getLocalEmbedFn } from "./embeddings/index.js";
@@ -2139,6 +2140,16 @@ export class Bridge {
       throw err;
     }
     this.port = port;
+
+    // #1266: say so when the port OAuth callbacks advertise is not the port we
+    // just bound. Only fires on the fallback (no PATCHWORK_DASHBOARD_URL /
+    // PATCHWORK_BRIDGE_URL) — with either set, a differing bridge port is the
+    // documented dashboard-fronted topology, not a fault.
+    try {
+      warnIfCallbackPortMismatch(port, (m) => this.logger.warn(m));
+    } catch {
+      // A diagnostic must never be able to fail a bridge start.
+    }
 
     // 4a-deferred. Start recipe scheduler now that port is known (bridgeMcp needs a valid port).
     if (this.recipeScheduler) {
