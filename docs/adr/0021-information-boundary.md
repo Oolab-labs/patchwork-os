@@ -28,6 +28,13 @@
 >   must have a category removed is refused rather than sent unredacted.
 >   "We know something must be removed and cannot remove it" has to fail
 >   closed; the alternative sends the data and records that it should not have.
+> - **Wiring.** `buildAgentExecutorDeps` (`src/recipes/yamlRunner.ts`)
+>   supplies both `loadPrivacyConfigFn` and `recordBoundaryDecisionFn`.
+>   Until it did, the boundary was correct, tested and INERT in
+>   production: optional deps that no caller supplies are
+>   indistinguishable at runtime from a feature that was never built.
+>   A source-level test asserts the wiring is present, because the
+>   regression it guards is a line going missing.
 > - **Not built, unchanged from below:** detection, purpose-based
 >   minimisation, least-data routing, policy packs. Destinations are supplied
 >   by config (`privacy.destinations`) since 2026-08-14 — see

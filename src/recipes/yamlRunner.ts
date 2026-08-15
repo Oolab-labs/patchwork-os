@@ -118,6 +118,12 @@ import { evaluateWhen } from "./whenGuard.js";
 import { resolveWorkspaceRoot } from "./workspaceRoot.js";
 import "./tools/index.js";
 import { patchworkPath } from "../patchworkHome.js";
+import { BoundaryReceiptLog } from "../privacy/boundaryReceiptLog.js";
+import type {
+  BoundaryDecision as BoundaryDecisionValue,
+  Classification as ClassificationValue,
+} from "../privacy/dataPolicy.js";
+import type { PrivacyConfig } from "../privacy/destinationRegistry.js";
 
 /**
  * Bundled-templates directory used as a third allowed root for nested-recipe
@@ -3510,6 +3516,23 @@ function toAgentResult(v: string | AgentResult): AgentResult {
   return typeof v === "string" ? { text: v } : v;
 }
 
+/**
+ * Lazily-constructed receipt log, shared per process.
+ *
+ * Lazy because constructing it touches the filesystem (mkdir), and a runner
+ * that never dispatches an agent step should not create the directory. Shared
+ * because a per-call instance would restart `seq` at 1 on every dispatch —
+ * the same per-instance-counter-on-a-shared-file defect that made 142 of 145
+ * run-log seqs collide (#1324).
+ */
+let _boundaryReceiptLog: BoundaryReceiptLog | null = null;
+function boundaryReceiptLog(): BoundaryReceiptLog {
+  if (!_boundaryReceiptLog) {
+    _boundaryReceiptLog = new BoundaryReceiptLog({ dir: patchworkPath() });
+  }
+  return _boundaryReceiptLog;
+}
+
 function buildAgentExecutorDeps(
   stepDeps: StepDeps,
   runnerDeps: RunnerDeps,
@@ -3525,6 +3548,36 @@ function buildAgentExecutorDeps(
 ): AgentExecutorDeps {
   const claudeCliFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
   return {
+    // ── ADR-0021 information boundary ───────────────────────────────────────
+    // Wired HERE because this is the single place agent-executor deps are
+    // built for every dispatch site in this runner. Declaring the deps on
+    // `AgentExecutorDeps` and supplying them nowhere is how a boundary ends up
+    // correct, tested, and inert in production — the exact "built and
+    // unreachable" state the destination registry was added to fix, one layer
+    // further out.
+    //
+    // Both are read per call, not captured: an operator editing
+    // `privacy.destinations` must take effect without a bridge restart, and
+    // `loadConfig` is already mtime-gated so this is cheap.
+    loadPrivacyConfigFn: () =>
+      (loadPatchworkConfigSync() as { privacy?: PrivacyConfig }).privacy,
+    recordBoundaryDecisionFn: (r) => {
+      // Fail-soft: a receipt that cannot be written must never affect the
+      // decision it describes, which has already been made and enforced.
+      try {
+        boundaryReceiptLog().record({
+          decision: r.decision as BoundaryDecisionValue,
+          classification: r.classification as ClassificationValue,
+          destinationId: r.destinationId,
+          destinationType: r.destinationType,
+          reason: r.reason,
+          ...(r.categories && { categories: r.categories }),
+          ...(r.redactCategories && { redactCategories: r.redactCategories }),
+        });
+      } catch {
+        // never block on observability
+      }
+    },
     anthropicFn: async (prompt, model) =>
       toAgentResult(await stepDeps.claudeFn(prompt, model)),
     providerDriverFn: async (driver, prompt, model, providerOptions) =>
