@@ -193,6 +193,11 @@ export class Bridge {
   private probes: ProbeResults | null = null;
   private ready = false;
   private stopped = false;
+  /**
+   * The process-level handlers THIS bridge installed, so `stop()` can remove
+   * exactly its own and never another bridge's. Null before `start()`.
+   */
+  private ownSignalHandlers: RegisteredSignalHandlers | null = null;
   private listChangedTimer: ReturnType<typeof setTimeout> | null = null;
   /** True when sendListChanged fired but no session had an open WS to receive it. */
   private pendingListChanged = false;
@@ -2312,6 +2317,7 @@ export class Bridge {
     process.on("unhandledRejection", handlers.unhandledRejection);
     process.on("uncaughtException", handlers.uncaughtException);
     activeSignalHandlers = handlers;
+    this.ownSignalHandlers = handlers;
 
     // Startup banner to stderr (not stdout) to avoid capture by parent processes
     this.logger.info("claude-ide-bridge ready");
@@ -2393,10 +2399,48 @@ export class Bridge {
     this.wsHeartbeatInterval.unref(); // don't prevent Node exit when idle
   }
 
+  /**
+   * Remove the process-level handlers this bridge installed.
+   *
+   * `start()` registered five listeners on `process` and only ever removed
+   * them when ANOTHER bridge started in the same process. `stop()` removed
+   * none, so a stopped bridge's handlers stayed live — closing over its
+   * sessions, its logger and a `shutdown` that calls `process.exit`.
+   *
+   * That is what makes it more than untidy. After a test stops its bridge,
+   * any later uncaught exception ANYWHERE in that worker — an EADDRINUSE from
+   * an unrelated server, say — runs this dead bridge's `uncaughtException`
+   * handler, which shuts down and exits the process. The worker dies
+   * mid-suite with no verdict, which is #1386's exact signature.
+   *
+   * Measured before the fix, in one vitest worker, as
+   * `(uncaughtException/unhandledRejection/SIGINT)`:
+   *
+   *     before start  1/1/0
+   *     after  start  2/2/1
+   *     after  stop   2/2/1   ← unchanged
+   *
+   * Only this bridge's own handler set is removed. The module-global is
+   * cleared only when it still points at that set, so a newer bridge that has
+   * already taken ownership is never disarmed by an older one stopping.
+   */
+  private _detachProcessHandlers(): void {
+    const own = this.ownSignalHandlers;
+    if (!own) return;
+    process.removeListener("SIGINT", own.sigint);
+    process.removeListener("SIGTERM", own.sigterm);
+    process.removeListener("SIGHUP", own.sighup);
+    process.removeListener("unhandledRejection", own.unhandledRejection);
+    process.removeListener("uncaughtException", own.uncaughtException);
+    if (activeSignalHandlers === own) activeSignalHandlers = null;
+    this.ownSignalHandlers = null;
+  }
+
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
     this.logger.info("Shutting down...");
+    this._detachProcessHandlers();
     this._stopPeriodicSnapshots();
     if (this._stopFlagsWatch) {
       try {
