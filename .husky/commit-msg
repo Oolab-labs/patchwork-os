@@ -1,0 +1,5 @@
+# Repository Privacy (CLAUDE.md) — the commit MESSAGE.
+# Called out separately in CLAUDE.md as the one people forget: a message
+# cannot be quietly edited after a push, and a merged PR body is mirrored
+# into notification email the moment it lands.
+node scripts/audit-private-identifiers.mjs --message "$1" || exit 1
