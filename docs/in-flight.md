@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-15 `fix/cves-gate-fails-open` — `audit-production-cves` failed OPEN on every registry outage. npm emits well-formed JSON when it cannot reach the registry, so `JSON.parse` succeeded, `vulnerabilities ?? {}` yielded `{}`, and the gate printed `OK — no high or critical production advisories`, exit 0 — byte-identical to a clean run, for the whole repo. Now asserts the response IS an audit report (`auditReportVersion` + `metadata.vulnerabilities`, neither present in the error envelope) and exits 2 — not 1, because "we could not audit" must never print as "we audited and found nothing". Retries 3x with backoff first (read-only idempotent query, no side effects) so a one-second hiccup is not a new flake source. Touches `scripts/audit-production-cves.mjs` only.
 
 ## Recently closed (informal log, prune periodically)
 
