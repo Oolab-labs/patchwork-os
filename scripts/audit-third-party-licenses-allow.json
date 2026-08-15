@@ -1,0 +1,87 @@
+{
+  "$comment": [
+    "Copyleft production dependencies this project has examined and accepted.",
+    "Every entry needs a non-empty `reason` — the gate exits 2 without one,",
+    "because an unexplained exemption is an unexamined risk, not an accepted",
+    "one. Matched on name AND license together: a package that changes licence",
+    "between versions re-surfaces instead of inheriting its own exemption.",
+    "This is a record of a decision, not legal advice."
+  ],
+  "allow": [
+    {
+      "name": "@img/sharp-libvips-darwin-arm64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "libvips, reached through sharp, which Next.js uses for image optimisation in the dashboard. LGPL not GPL: the obligation is to permit relinking, not to release the application. Shipped as an unmodified prebuilt binary loaded at runtime and never statically linked into our code, so the relinking right is satisfied by the published upstream package. Not replaceable without dropping Next.js image optimisation."
+    },
+    {
+      "name": "@img/sharp-libvips-darwin-x64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-arm",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-arm64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-ppc64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-riscv64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-s390x",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-libvips-linux-x64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-libvips-linuxmusl-arm64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-libvips-linuxmusl-x64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "Same package as @img/sharp-libvips-darwin-arm64, different platform build. See that entry."
+    },
+    {
+      "name": "@img/sharp-wasm32",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "reason": "sharp's wasm build: Apache-2.0 wrapper over the same LGPL libvips. Conjunctive, so both sets of terms apply; the LGPL half is accepted on the grounds recorded for @img/sharp-libvips-darwin-arm64 and Apache-2.0 is permissive."
+    },
+    {
+      "name": "@img/sharp-wasm32",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
+      "reason": "Same package as the entry above; newer versions declare the MIT term explicitly. Listed separately because the gate matches name AND licence together, so a licence-string change must be re-examined rather than inherited."
+    },
+    {
+      "name": "@img/sharp-win32-arm64",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "reason": "sharp's Windows build: Apache-2.0 wrapper over the same LGPL libvips. See @img/sharp-wasm32."
+    },
+    {
+      "name": "@img/sharp-win32-ia32",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "reason": "sharp's Windows build: Apache-2.0 wrapper over the same LGPL libvips. See @img/sharp-wasm32."
+    },
+    {
+      "name": "@img/sharp-win32-x64",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "reason": "sharp's Windows build: Apache-2.0 wrapper over the same LGPL libvips. See @img/sharp-wasm32."
+    }
+  ]
+}
