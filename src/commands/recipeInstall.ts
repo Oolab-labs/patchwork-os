@@ -37,6 +37,10 @@ import {
   parseManifest,
   type RecipeManifest,
 } from "../recipes/manifest.js";
+import {
+  listInstalledRecipes as listInstalledRecipesSharedView,
+  setRecipeEnabled,
+} from "../recipesHttp.js";
 
 /**
  * The recipe install directory.
@@ -488,7 +492,7 @@ export interface InstallResult {
 }
 
 /**
- * Install a recipe package from a source into INSTALL_RECIPES_DIR.
+ * Install a recipe package from a source into the recipe install dir.
  * Returns metadata about what was installed.
  */
 export async function runRecipeInstall(
@@ -828,26 +832,203 @@ export function findInstalledRecipeEntrypoint(
 }
 
 /**
+ * Validate a CLI-supplied recipe name and canonicalise it to the DECLARED
+ * recipe name before any enable/disable write.
+ *
+ * Two guards, both RESTORED here rather than newly invented: delegating to
+ * `setRecipeEnabled` moved the routing out of this file and took these with
+ * it, and the test suite caught both.
+ *
+ * 1. NAME SHAPE (HIGH-2). `findInstalledRecipeDir` rejected traversal and
+ *    control characters. `setRecipeEnabled` resolves install dirs by reading
+ *    each entrypoint's declared `name` and never joins the input onto a path,
+ *    so it is not itself traversable — but a traversal-shaped name would fall
+ *    through to the legacy config array and be WRITTEN there. Accepting
+ *    hostile input somewhere new is not an improvement on rejecting it.
+ *
+ * 2. EXISTENCE. The install-dir-only version errored on a typo. Delegation
+ *    alone would make `patchwork recipe disable typoo` succeed silently by
+ *    adding `typoo` to `cfg.recipes.disabled` — a write that looks like it
+ *    worked and governs nothing.
+ *
+ * Existence is checked against `listInstalledRecipes`, the same two-pass view
+ * (flat files + install dirs) that `recipe list` adopted in the read half of
+ * #1360. Resolving a name against a DIFFERENT view than the one that printed
+ * it is the whole bug: the CLI listed 75 recipes and could act on 2.
+ */
+function installRecipesDirForCli(): string {
+  // Must match `setRecipeEnabled`'s own default, or the guard validates
+  // against a different directory than the write targets.
+  //
+  // Since #1265 the two are the same function by construction:
+  // `installRecipesDir()` IS `patchworkPath("recipes")`, which is exactly
+  // `setRecipeEnabled`'s default. Before that they could DIVERGE — the CLI
+  // resolved `$HOME/.patchwork/recipes` from a hardcoded `os.homedir()` while
+  // the bridge honoured `PATCHWORK_HOME`, so setting the override split the
+  // guard from the write. This wrapper stays only to keep that requirement
+  // stated where a future edit to either default would read it.
+  return installRecipesDir();
+}
+
+function resolveActionableRecipeName(name: string, recipesDir: string): string {
+  const segments = typeof name === "string" ? name.split(/[/\\]/) : [];
+  const invalidName =
+    typeof name !== "string" ||
+    name.length === 0 ||
+    segments.length === 0 ||
+    segments.some((seg) => !isSafeBasename(seg));
+  if (invalidName) {
+    throw new Error(
+      `Invalid recipe name "${name}" — no empty, ".", "..", or control-character path segments.`,
+    );
+  }
+  let known: ReadonlyArray<{ name: string }> = [];
+  try {
+    // ALIASED on import. This file exports its own `listInstalledRecipes`
+    // that enumerates install DIRECTORIES only — and those two functions
+    // sharing a name, with `recipe list` calling the wrong one, IS #1360.
+    // The shared view is the one that printed the names, so it is the one a
+    // name must be resolved against.
+    known = listInstalledRecipesSharedView(recipesDir).recipes;
+  } catch {
+    // An unreadable recipes dir is not evidence the name is wrong. Fall
+    // through and let the write attempt report the real failure.
+    return name;
+  }
+  if (known.some((r) => r.name === name)) return name;
+
+  // Not a DECLARED name. Before failing, try the INSTALL-DIRECTORY name —
+  // the identifier this CLI historically accepted.
+  //
+  // The two are genuinely different and routinely differ: a recipe in
+  // `owner/repo/` can declare `name: morning-brief`. `recipe list` (after the
+  // read half of #1360) prints only the DECLARED name, so the verb was
+  // refusing the very identifier the list had just shown. Both spellings are
+  // accepted here so neither an operator's muscle memory nor the printed
+  // output is wrong.
+  let dir: string | null = null;
+  try {
+    dir = findInstalledRecipeDir(name, recipesDir);
+  } catch {
+    dir = null;
+  }
+  if (dir) return name;
+
+  throw new Error(
+    `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
+  );
+}
+
+/**
+ * Whether `setRecipeEnabled` can actually reach this install dir.
+ *
+ * It cannot reach all of them. `iterateInstallDirs` walks DIRECT CHILDREN of
+ * the recipes dir, so a manifest-less GitHub install at `owner/repo/` — whose
+ * entrypoint sits one level deeper — is invisible to it. Handing such a name
+ * to the shared function does not error: it finds no install dir, falls
+ * through to the legacy `config.json` array, and writes a name there that
+ * nothing governing that recipe ever reads. A silent write to the wrong
+ * mechanism is exactly the class of failure #1360 reports, so the CLI keeps
+ * its own directory-resolved marker write for these.
+ *
+ * This is a real gap in the shared function rather than a CLI quirk, and it
+ * is filed separately — fixing `iterateInstallDirs` changes the bridge's and
+ * dashboard's view of the installation too, which is not this change's blast
+ * radius.
+ */
+function markerWriteForInstallDir(
+  installDir: string,
+  enabled: boolean,
+): { changed: boolean } {
+  const markerPath = disabledMarkerPath(installDir);
+  const wasDisabled = existsSync(markerPath);
+  if (enabled) {
+    if (wasDisabled) unlinkSync(markerPath);
+  } else if (!wasDisabled) {
+    writeFileSync(markerPath, "");
+  }
+  return { changed: enabled ? wasDisabled : !wasDisabled };
+}
+
+/**
+ * The one implementation behind both CLI verbs.
+ *
+ * Order matters. The directory-resolved marker write comes FIRST because it is
+ * the only path that reaches nested `owner/repo` installs; everything else
+ * delegates to the shared `setRecipeEnabled` so the CLI, the bridge route and
+ * the dashboard agree about which mechanism governs a recipe.
+ */
+function setEnabledFromCli(
+  name: string,
+  enabled: boolean,
+  options: SetEnabledCliOptions = {},
+): {
+  installDir?: string;
+  changed: boolean;
+  mechanism: "marker" | "config";
+} {
+  const recipesDir = options.recipesDir ?? installRecipesDirForCli();
+  const canonical = resolveActionableRecipeName(name, recipesDir);
+
+  let dir: string | null = null;
+  try {
+    dir = findInstalledRecipeDir(canonical, recipesDir);
+  } catch {
+    dir = null;
+  }
+  if (dir) {
+    return {
+      installDir: dir,
+      ...markerWriteForInstallDir(dir, enabled),
+      mechanism: "marker",
+    };
+  }
+
+  const r = setRecipeEnabled(canonical, enabled, options);
+  if (!r.ok) {
+    throw new Error(
+      r.error ??
+        `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
+    );
+  }
+  return {
+    ...(r.installDir !== undefined && { installDir: r.installDir }),
+    changed: r.changed,
+    mechanism: r.mechanism === "config" ? "config" : "marker",
+  };
+}
+
+/**
+ * Options forwarded verbatim to `setRecipeEnabled`.
+ *
+ * The config seams are forwarded, not just `recipesDir`, so a test can drive
+ * THESE functions — the ones the CLI actually calls — rather than reaching
+ * past them to the shared helper. A test that calls `setRecipeEnabled`
+ * directly proves the helper works and says nothing about whether the CLI is
+ * wired to it, which is the exact shape of bug #1360 reports.
+ */
+type SetEnabledCliOptions = Parameters<typeof setRecipeEnabled>[2];
+
+/**
  * Enable a recipe — removes the .disabled marker so triggers can fire.
  * Idempotent: enabling an already-enabled recipe is a no-op.
  */
 export function runRecipeEnable(
   name: string,
-  options: { recipesDir?: string } = {},
-): { name: string; installDir: string; alreadyEnabled: boolean } {
-  const recipesDir = options.recipesDir ?? installRecipesDir();
-  const installDir = findInstalledRecipeDir(name, recipesDir);
-  if (!installDir) {
-    throw new Error(
-      `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
-    );
-  }
-  const markerPath = disabledMarkerPath(installDir);
-  if (!existsSync(markerPath)) {
-    return { name, installDir, alreadyEnabled: true };
-  }
-  unlinkSync(markerPath);
-  return { name, installDir, alreadyEnabled: false };
+  options: SetEnabledCliOptions = {},
+): {
+  name: string;
+  installDir?: string;
+  alreadyEnabled: boolean;
+  mechanism: "marker" | "config";
+} {
+  const r = setEnabledFromCli(name, true, options);
+  return {
+    name,
+    ...(r.installDir !== undefined && { installDir: r.installDir }),
+    alreadyEnabled: !r.changed,
+    mechanism: r.mechanism,
+  };
 }
 
 /**
@@ -856,21 +1037,20 @@ export function runRecipeEnable(
  */
 export function runRecipeDisable(
   name: string,
-  options: { recipesDir?: string } = {},
-): { name: string; installDir: string; alreadyDisabled: boolean } {
-  const recipesDir = options.recipesDir ?? installRecipesDir();
-  const installDir = findInstalledRecipeDir(name, recipesDir);
-  if (!installDir) {
-    throw new Error(
-      `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
-    );
-  }
-  const markerPath = disabledMarkerPath(installDir);
-  if (existsSync(markerPath)) {
-    return { name, installDir, alreadyDisabled: true };
-  }
-  writeFileSync(markerPath, "");
-  return { name, installDir, alreadyDisabled: false };
+  options: SetEnabledCliOptions = {},
+): {
+  name: string;
+  installDir?: string;
+  alreadyDisabled: boolean;
+  mechanism: "marker" | "config";
+} {
+  const r = setEnabledFromCli(name, false, options);
+  return {
+    name,
+    ...(r.installDir !== undefined && { installDir: r.installDir }),
+    alreadyDisabled: !r.changed,
+    mechanism: r.mechanism,
+  };
 }
 
 /**
