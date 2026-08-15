@@ -8,33 +8,33 @@ vi.mock("@/lib/bridge", () => ({
   bridgeFetch: (...args: unknown[]) => bridgeFetchMock(...args),
 }));
 
-import { GET as gmailCallback } from "../gmail/callback/route";
-import { GET as asanaCallback } from "../asana/callback/route";
-import { GET as discordCallback } from "../discord/callback/route";
-import { GET as gitlabCallback } from "../gitlab/callback/route";
-import { GET as slackCallback } from "../slack/callback/route";
-import { GET as gcalCallback } from "../google-calendar/callback/route";
-import { GET as gdriveCallback } from "../google-drive/callback/route";
-// Audit 2026-06-08 (unsurfaced-1): these three were offered + auth-capable but
-// had no dashboard callback route/page, so OAuth 404'd at the redirect-back.
-import { GET as googleDocsCallback } from "../google-docs/callback/route";
-import { GET as mondayCallback } from "../monday/callback/route";
-import { GET as salesforceCallback } from "../salesforce/callback/route";
+import { GET as connectorCallback } from "../[connector]/callback/route";
+import { oauthConnectorIds } from "../../../../../../src/connectors/connectorRegistry";
 
 type Handler = (req: Request) => Promise<Response>;
 
-const ROUTES: { name: string; bridgePath: string; handler: Handler }[] = [
-  { name: "gmail",            bridgePath: "/connections/gmail/callback",            handler: gmailCallback },
-  { name: "asana",            bridgePath: "/connections/asana/callback",            handler: asanaCallback },
-  { name: "discord",          bridgePath: "/connections/discord/callback",          handler: discordCallback },
-  { name: "gitlab",           bridgePath: "/connections/gitlab/callback",           handler: gitlabCallback },
-  { name: "slack",            bridgePath: "/connections/slack/callback",            handler: slackCallback },
-  { name: "google-calendar",  bridgePath: "/connections/google-calendar/callback",  handler: gcalCallback },
-  { name: "google-drive",     bridgePath: "/connections/google-drive/callback",     handler: gdriveCallback },
-  { name: "google-docs",      bridgePath: "/connections/google-docs/callback",      handler: googleDocsCallback },
-  { name: "monday",           bridgePath: "/connections/monday/callback",           handler: mondayCallback },
-  { name: "salesforce",       bridgePath: "/connections/salesforce/callback",       handler: salesforceCallback },
-];
+/** Bind the one dynamic route to a slug, so each case still calls `GET(req)`. */
+const bind =
+  (connector: string): Handler =>
+  (req) =>
+    connectorCallback(req, { params: Promise.resolve({ connector }) });
+
+// DERIVED, not hand-listed. The table here named 10 routes while the registry
+// has 13 OAuth connectors — github, linear and sentry were never exercised.
+// The same drift this file was written to catch (audit 2026-06-08
+// unsurfaced-1: "offered + auth-capable but had no dashboard callback route")
+// had simply recurred in the test's own list.
+const ROUTES: { name: string; bridgePath: string; handler: Handler }[] =
+  oauthConnectorIds().map((name) => ({
+    name,
+    bridgePath: `/connections/${name}/callback`,
+    handler: bind(name),
+  }));
+
+it("covers every OAuth connector (anchor)", () => {
+  // An empty registry would make every parameterised case below vacuous.
+  expect(ROUTES.length).toBeGreaterThanOrEqual(13);
+});
 
 let origAllowUnauthenticated: string | undefined;
 

@@ -25,7 +25,14 @@ vi.mock("@/lib/csrf", () => ({
 
 const { GET: connectionsGet } = await import("../route");
 const { POST: telemetryPost } = await import("../../bridge/telemetry-prefs/route");
-const { GET: discordCallback } = await import("../discord/callback/route");
+const { GET: connectorCallbackRaw } = await import(
+  "../[connector]/callback/route"
+);
+// Bound to a slug — the per-slug callback routes are now one dynamic route.
+const discordCallback = (req: Request) =>
+  connectorCallbackRaw(req, {
+    params: Promise.resolve({ connector: "discord" }),
+  });
 const { GET: connectorAuthGet } = await import("../[connector]/auth/route");
 const { POST: connectorConnectPost } = await import("../[connector]/connect/route");
 const { POST: connectorTestPost } = await import("../[connector]/test/route");
