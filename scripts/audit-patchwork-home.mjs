@@ -85,12 +85,34 @@ for (const file of trackedSources()) {
   }
   // Strip comments first: this file's own explanation contains the very
   // pattern it looks for, and so do the notes left at converted call sites.
-  // Block comments too — a converted site documents what it replaced.
+  //
+  // ORDER IS LOAD-BEARING — line comments, THEN block comments.
+  //
+  // The reverse order (shipped in #1401, found by mutation-probing this gate)
+  // is catastrophic. A `/*` inside a LINE comment opens a pseudo-block that
+  // the block-strip runs to the next real `*/` anywhere in the file. One
+  // ordinary route comment —
+  //
+  //     // ── /schemas/* — unauthenticated registry-derived JSON Schemas
+  //
+  // at src/server.ts:926 swallowed 2098 of that file's 3593 lines, 58% of it,
+  // before a single match was attempted. Repo-wide: 38 files, 3662 lines of
+  // live code deleted. A canonical violation planted mid-file passed with
+  // "0 on the ratchet".
+  //
+  // That made the whole-file version BLINDER than the line-based one it
+  // replaced — which would at least have caught a single-line offender
+  // anywhere. The change that fixed a blind gate made it blinder, and only
+  // probing it found that.
+  //
+  // Stripping line comments first removes the `/*` before it can open
+  // anything. A real block comment containing `//` still terminates
+  // correctly, because its `/*` and `*/` both survive that pass.
   const code = text
-    .replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n")
     .map((l) => l.replace(/\/\/.*$/, ""))
-    .join("\n");
+    .join("\n")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
 
   // WHOLE-FILE, not line by line. The line-based version was blind to the
   // multi-line spelling, which is what a formatter PRODUCES once the call gets
