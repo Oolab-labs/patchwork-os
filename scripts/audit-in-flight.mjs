@@ -89,10 +89,24 @@ let GH_ENV = process.env;
 /** `feat/thing`, `fix/other-thing` — the format the Convention section asks for. */
 const BRANCH_RE = /`([a-z][a-z0-9]*\/[a-z0-9][a-z0-9._-]*)`/g;
 
+/**
+ * Ledger path. `--ledger <path>` exists so the fail-closed behaviour can be
+ * tested against a fixture instead of the live file — a test that depends on
+ * whatever happens to be in Active today is a test that stops running the day
+ * the section is empty, which is precisely the silent-skip failure this gate
+ * is about.
+ */
+function ledgerPath() {
+  const i = process.argv.indexOf("--ledger");
+  return i !== -1 && process.argv[i + 1]
+    ? path.resolve(process.argv[i + 1])
+    : path.join(root, LEDGER);
+}
+
 function activeSection() {
   let text;
   try {
-    text = readFileSync(path.join(root, LEDGER), "utf8");
+    text = readFileSync(ledgerPath(), "utf8");
   } catch (err) {
     console.error(`[in-flight] cannot read ${LEDGER}: ${err.message}`);
     process.exit(2);
@@ -164,36 +178,81 @@ function ghAvailable() {
   return false;
 }
 
-/** `MERGED` | `CLOSED` | `OPEN` | null when no PR exists for the branch. */
+/**
+ * `MERGED` | `CLOSED` | `OPEN` | null when no PR exists for the branch.
+ *
+ * THROWS when `gh` itself fails, and that distinction is the whole point.
+ * This used to `catch { return null }`, which made "gh could not reach the
+ * API" indistinguishable from "this branch has no PR yet" — and the second
+ * is explicitly treated as fine, because that is what a branch looks like
+ * before its PR exists. So a network blip turned every stale entry clean.
+ *
+ * Observed, not theorised: two runs seconds apart on the same tree, one
+ * reporting `OK — every Active entry is genuinely in flight` and the other
+ * correctly failing on a merged entry. A gate whose verdict depends on the
+ * network is not a gate.
+ *
+ * Retried before giving up, for the same reason the CVE gate is (#1413):
+ * this is a read-only query, so retrying has no side effects, and failing
+ * the build on one bad second would just be a new flake.
+ */
+function prStateOrThrow(branch) {
+  const out = execFileSync(
+    "gh",
+    [
+      "pr",
+      "list",
+      "--head",
+      branch,
+      "--state",
+      "all",
+      "--json",
+      "number,state",
+      "--jq",
+      '.[0] | "\\(.number) \\(.state)"',
+    ],
+    {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: GH_ENV,
+    },
+  ).trim();
+  if (!out || out === "null null") return null;
+  const [number, state] = out.split(" ");
+  return { number, state };
+}
+
+/** `prStateOrThrow` with backoff. Exits 2 when `gh` never answers. */
 function prState(branch) {
-  try {
-    const out = execFileSync(
-      "gh",
-      [
-        "pr",
-        "list",
-        "--head",
-        branch,
-        "--state",
-        "all",
-        "--json",
-        "number,state",
-        "--jq",
-        '.[0] | "\\(.number) \\(.state)"',
-      ],
-      {
-        cwd: root,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-        env: GH_ENV,
-      },
-    ).trim();
-    if (!out || out === "null null") return null;
-    const [number, state] = out.split(" ");
-    return { number, state };
-  } catch {
-    return null;
+  const DELAYS_MS = [0, 2000, 6000];
+  let last;
+  for (let attempt = 0; attempt < DELAYS_MS.length; attempt++) {
+    if (DELAYS_MS[attempt] > 0) {
+      Atomics.wait(
+        new Int32Array(new SharedArrayBuffer(4)),
+        0,
+        0,
+        DELAYS_MS[attempt],
+      );
+    }
+    try {
+      return prStateOrThrow(branch);
+    } catch (err) {
+      last = err;
+      if (attempt < DELAYS_MS.length - 1) {
+        console.warn(`[in-flight] ${branch}: gh query failed — retrying`);
+      }
+    }
   }
+  // Exit 2 (script/config error), never 0: "we could not check" is a
+  // different fact from "we checked and it was fine".
+  console.error(
+    `\n[in-flight] FAIL — could not query PR state for ${branch}: ${last?.message ?? "unknown error"}\n\n` +
+      "  This is a hard failure on purpose. Reporting a clean ledger because\n" +
+      "  the API was unreachable is how an entry for merged work survives.\n",
+  );
+  process.exit(2);
 }
 
 function main() {
