@@ -17,6 +17,7 @@ import {
   parseDataPolicy,
 } from "../privacy/dataPolicy.js";
 import {
+  isLocalFamilyDriver,
   type PrivacyConfig,
   parseRegistry,
   resolveDestination,
@@ -198,6 +199,59 @@ function resolveSandboxEnforcement(
 }
 
 /**
+ * Resolve the driver that will ACTUALLY serve this call, once.
+ *
+ * #1398: the information boundary used to judge `input.driver` — the CONFIGURED
+ * string, which is frequently `undefined` — while `servedBy` recorded the one
+ * that really ran. When those differ the boundary judged a destination that
+ * never received the data, and nothing in the resulting receipt exposes the
+ * mismatch. Resolving here and handing the same value to both the boundary and
+ * the dispatch removes the second, divergent copy of this logic.
+ *
+ * Mirrors the dispatch chain below exactly, including its precedence:
+ * explicit driver → `config.json` model/driver → API key → CLI probe.
+ *
+ * An UNRECOGNISED driver string is returned unchanged rather than thrown on.
+ * The dispatch chain still throws for it at the same point it always has, so
+ * the boundary continues to evaluate unknown drivers (→ strictest remote, fail
+ * closed) and still writes a receipt, exactly as before this change.
+ */
+export function resolveEffectiveDriver(
+  driver: string | undefined,
+  deps: Pick<AgentExecutorDeps, "loadPatchworkConfig" | "probeClaudeCli">,
+): string {
+  if (driver === "claude") return "anthropic";
+  if (driver === "claude-code") return "subprocess";
+  if (driver !== undefined) return driver;
+
+  const pwCfg = deps.loadPatchworkConfig();
+  if (pwCfg.model === "local") return "local";
+  if (pwCfg.driver === "subprocess" || pwCfg.driver === "claude-code") {
+    return "subprocess";
+  }
+  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+  return deps.probeClaudeCli() ? "subprocess" : "anthropic";
+}
+
+/**
+ * The endpoint a local-family driver will actually POST to, if one is
+ * configured. `config.ts` copies `config.json`'s `localEndpoint` into
+ * `LOCAL_ENDPOINT` only when the env var is unset, so env wins here too.
+ *
+ * Undefined means "the driver's own default", which is loopback for every
+ * driver the registry treats as local.
+ */
+function resolveLocalEndpoint(
+  deps: Pick<AgentExecutorDeps, "loadPatchworkConfig">,
+): string | undefined {
+  const fromEnv = process.env.LOCAL_ENDPOINT;
+  if (fromEnv && fromEnv.trim()) return fromEnv.trim();
+  const fromCfg = deps.loadPatchworkConfig().localEndpoint;
+  if (fromCfg && fromCfg.trim()) return fromCfg.trim();
+  return undefined;
+}
+
+/**
  * CodexDriver's coarsest lockdown — read-only filesystem, no network, no
  * interactive approval escalation (see src/drivers/codex/subprocess.ts's
  * SandboxMode/ApprovalMode). This is the ONLY translation available for a
@@ -239,6 +293,10 @@ function evaluateBoundary(
   ctx: AgentExecutorInput["boundary"],
   driver: string | undefined,
   loadPrivacyConfig: (() => PrivacyConfig | undefined) | undefined,
+  // A GETTER, not a value: resolving it reads `config.json`, and a caller that
+  // passes an explicit destination never needs it. Eager resolution would add
+  // a disk read to dispatches that already know where they are going.
+  getEndpoint?: () => string | undefined,
 ): ResolvedBoundary | null {
   const policy0 = parseDataPolicy(ctx?.dataPolicy);
 
@@ -251,7 +309,10 @@ function evaluateBoundary(
   if (!destination && loadPrivacyConfig) {
     const registry = parseRegistry(loadPrivacyConfig());
     const forClass = policy0?.classification ?? DEFAULT_CLASSIFICATION;
-    const resolved = resolveDestination(registry, driver, forClass);
+    const endpoint = getEndpoint?.();
+    const resolved = resolveDestination(registry, driver, forClass, {
+      ...(endpoint !== undefined && { endpoint }),
+    });
     if (resolved) {
       destination = resolved.destination;
       localAccepts = resolved.localDestinationAccepts;
@@ -332,10 +393,22 @@ export async function executeAgent(
   // Precedence is privacy -> capability -> cost, and it is not negotiable by
   // the later stages: a cheaper or more capable model that is not authorised
   // for the data does not become authorised by being cheaper or more capable.
+  // #1398: the boundary judges the driver that will ACTUALLY serve this call,
+  // and the endpoint it will actually reach — not the configured `driver`
+  // string, which is undefined on the auto-detect path and therefore described
+  // a destination no data ever went to.
+  const resolvedDriver = resolveEffectiveDriver(driver, deps);
   const boundary = evaluateBoundary(
     input.boundary,
-    driver,
+    resolvedDriver,
     deps.loadPrivacyConfigFn,
+    // Resolved ONLY for the local family, and only if the boundary actually
+    // needs it. For every other driver the endpoint cannot change the
+    // destination, so reading it would add a `config.json` read to agent steps
+    // that never needed one.
+    isLocalFamilyDriver(resolvedDriver)
+      ? () => resolveLocalEndpoint(deps)
+      : undefined,
   );
   if (boundary && boundary.decision !== "ALLOW") {
     deps.recordBoundaryDecisionFn?.({
@@ -403,7 +476,12 @@ export async function executeAgent(
     };
   };
 
-  if (driver === "anthropic" || driver === "claude") {
+  // #1398: dispatch branches on the SAME resolved value the boundary judged.
+  // The auto-detect tail that used to live at the bottom of this chain is now
+  // inside `resolveEffectiveDriver`, so there is exactly one place that decides
+  // which driver serves a call — the condition for the boundary and the receipt
+  // being able to name it truthfully.
+  if (resolvedDriver === "anthropic") {
     return stamp(
       "anthropic",
       model ?? DEFAULT_MODEL,
@@ -411,32 +489,37 @@ export async function executeAgent(
     );
   }
   if (
-    driver === "openai" ||
-    driver === "grok" ||
-    driver === "gemini" ||
-    driver === "gemini-api" ||
-    driver === "codex"
+    resolvedDriver === "openai" ||
+    resolvedDriver === "grok" ||
+    resolvedDriver === "gemini" ||
+    resolvedDriver === "gemini-api" ||
+    resolvedDriver === "codex"
   ) {
     // A worker-mandated sandbox on the codex driver overrides — never merges
     // with — the step's own providerOptions. See CODEX_WORKER_SANDBOX_LOCKDOWN.
     const effectiveProviderOptions =
-      driver === "codex" && enforceSandbox
+      resolvedDriver === "codex" && enforceSandbox
         ? CODEX_WORKER_SANDBOX_LOCKDOWN
         : providerOptions;
     return stamp(
-      driver,
+      resolvedDriver,
       model,
       // Only pass the 4th arg when set so the common (unconstrained) call keeps
       // its 3-arg shape — backward-compatible with callers/mocks.
       effectiveProviderOptions
-        ? deps.providerDriverFn(driver, prompt, model, effectiveProviderOptions)
-        : deps.providerDriverFn(driver, prompt, model),
+        ? deps.providerDriverFn(
+            resolvedDriver,
+            prompt,
+            model,
+            effectiveProviderOptions,
+          )
+        : deps.providerDriverFn(resolvedDriver, prompt, model),
     );
   }
-  if (driver === "subprocess" || driver === "claude-code") {
+  if (resolvedDriver === "subprocess") {
     return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
   }
-  if (driver === "local") {
+  if (resolvedDriver === "local") {
     // Resolve through the shared resolver, NOT `model ?? DEFAULT_MODEL`.
     // DEFAULT_MODEL is an Anthropic id; using it here sent "claude-…" to a
     // local server whenever a step omitted `model:`. Stamping the RESOLVED
@@ -446,39 +529,9 @@ export async function executeAgent(
     const localModel = resolveLocalModel(model, deps.loadPatchworkConfig());
     return stamp("local", localModel, deps.localFn(prompt, localModel));
   }
-  if (driver !== undefined) {
-    throw new Error(`Unknown driver: "${driver}"`);
-  }
-
-  // No driver — check pwCfg for local model preference (THE MISSING BRANCH).
-  const pwCfg = deps.loadPatchworkConfig();
-  if (pwCfg.model === "local") {
-    const localModel = resolveLocalModel(model, pwCfg);
-    return stamp("local", localModel, deps.localFn(prompt, localModel));
-  }
-
-  // Explicit subprocess driver config → skip API key check entirely.
-  if (pwCfg.driver === "subprocess" || pwCfg.driver === "claude-code") {
-    return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
-  }
-
-  // Auto-detect: prefer API key, otherwise probe for claude CLI.
-  if (process.env.ANTHROPIC_API_KEY) {
-    return stamp(
-      "anthropic",
-      model ?? DEFAULT_MODEL,
-      deps.anthropicFn(prompt, model ?? DEFAULT_MODEL),
-    );
-  }
-  if (deps.probeClaudeCli()) {
-    return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
-  }
-  // Probe failed and no API key — fall back to anthropicFn so the caller
-  // surfaces a clear "[agent step skipped: ANTHROPIC_API_KEY not set]" message
-  // (and so test overrides of claudeFn/anthropicFn are honored).
-  return stamp(
-    "anthropic",
-    model ?? DEFAULT_MODEL,
-    deps.anthropicFn(prompt, model ?? DEFAULT_MODEL),
-  );
+  // Unrecognised driver. Reached at the same point as before: the boundary has
+  // already run and written its receipt (fail-closed to strictest remote for an
+  // unknown driver), which is why `resolveEffectiveDriver` passes the unknown
+  // string through instead of throwing early.
+  throw new Error(`Unknown driver: "${driver}"`);
 }
