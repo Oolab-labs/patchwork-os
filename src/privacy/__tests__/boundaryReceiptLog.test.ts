@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -74,7 +80,6 @@ describe("BoundaryReceiptLog", () => {
     const log = new BoundaryReceiptLog({ dir });
     log.record(BASE);
     const file = path.join(dir, "boundary_receipts.jsonl");
-    const { appendFileSync } = require("node:fs") as typeof import("node:fs");
     appendFileSync(file, "{ not json\n");
     log.record({ ...BASE, decision: "ALLOW", classification: "public" });
 
@@ -86,9 +91,17 @@ describe("BoundaryReceiptLog", () => {
   it("never throws when the directory is unwritable", () => {
     // Observability, not enforcement: the decision has already been made and
     // enforced by the time a receipt is attempted.
-    const log = new BoundaryReceiptLog({
-      dir: "/proc/nonexistent-pw-receipts",
-    });
+    //
+    // The unwritable path is a directory UNDER A REGULAR FILE, which fails with
+    // ENOTDIR immediately on every platform. An earlier version used `/proc/…`,
+    // which is Linux-only — and on Linux CI the suite went silent and was
+    // killed at its 10-minute cap while macOS passed. A fixture that behaves
+    // differently per platform is a bad way to assert a platform-independent
+    // property.
+    const base = tempDir();
+    const asFile = path.join(base, "not-a-dir");
+    writeFileSync(asFile, "x");
+    const log = new BoundaryReceiptLog({ dir: path.join(asFile, "under") });
     expect(() => log.record(BASE)).not.toThrow();
   });
 
