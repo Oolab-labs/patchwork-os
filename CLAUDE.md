@@ -89,6 +89,36 @@ cannot recognise a real third-party name used as a neutral-looking identifier.
 **A green gate is not a clean scan.** Before every commit, push and PR, read the
 diff, the commit text and the branch name yourself.
 
+### The denylist gate — mechanical, and only as good as your list
+
+`scripts/audit-private-identifiers.mjs` closes the part that can be automated.
+It runs from `.husky/pre-commit` (staged diff + branch name) and
+`.husky/commit-msg` (the message), and blocks the commit on a match — the three
+things the section above says people forget.
+
+**The denylist never enters the repository.** Those strings are exactly what
+must not be published, so they cannot live in a tracked file. Put your list at
+`~/.patchwork/private-identifiers.txt` — outside the repo, where `git add -f`
+cannot reach it — one string per line. `PATCHWORK_DENYLIST` overrides the path;
+a gitignored `.private-denylist` in the repo root also works but is one slip
+away from being committed, and the gate hard-fails if it ever becomes tracked.
+
+Three limits, all deliberate:
+
+- **It does not run in CI.** CI has no denylist and must not have one. A CI step
+  that always reported "not configured" would be noise, and noise is how a real
+  warning gets ignored.
+- **With no denylist it announces that it verified NOTHING and exits 0**, rather
+  than blocking a contributor who never configured one. Set
+  `PATCHWORK_DENYLIST_REQUIRED=1` to make that state a hard failure. It never
+  passes *silently* — `audit-in-flight` spent its whole life doing exactly that.
+- **`--no-verify` bypasses it**, and it only protects a machine that has the
+  hooks installed. It is a seatbelt, not a wall.
+
+It never prints the matched string — only which denylist entry number matched,
+and where. Echoing it would put the secret into scrollback, CI logs and
+screenshots, which is the same disclosure one layer over.
+
 ## Documentation
 
 Comply with all docs in `/documents/`. Consult before changes:
