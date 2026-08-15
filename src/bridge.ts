@@ -1968,7 +1968,7 @@ export class Bridge {
             automationEnabled: this.config.automationEnabled,
             port: this.port,
             httpPort: this.port,
-            inboxDir: path.join(os.homedir(), ".patchwork", "inbox"),
+            inboxDir: patchworkPath("inbox"),
             configPath: defaultConfigPath(),
             apiKeysPresent: getApiKeysPresent(),
             webhookUrl: this.server.approvalWebhookUrl ?? null,

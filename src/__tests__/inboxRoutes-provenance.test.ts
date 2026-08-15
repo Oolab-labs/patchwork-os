@@ -27,14 +27,21 @@ import { tryHandleInboxRoute } from "../inboxRoutes.js";
 
 let fakeHome = "";
 let realHome: string | undefined;
+let realPatchworkHome: string | undefined;
 let realUserProfile: string | undefined;
 
 beforeEach(() => {
   fakeHome = mkdtempSync(path.join(os.tmpdir(), "inbox-prov-"));
   realHome = process.env.HOME;
   realUserProfile = process.env.USERPROFILE;
+  realPatchworkHome = process.env.PATCHWORK_HOME;
   process.env.HOME = fakeHome;
   process.env.USERPROFILE = fakeHome;
+  // #1265: `~/.patchwork/` now resolves through `patchworkHome()`, so
+  // redirecting $HOME alone no longer moves the inbox — PATCHWORK_HOME must
+  // move with it. Setting both is what this test always MEANT: "the inbox
+  // lives under this temp dir, not the developer's real one".
+  process.env.PATCHWORK_HOME = path.join(fakeHome, ".patchwork");
   mkdirSync(path.join(fakeHome, ".patchwork", "inbox"), { recursive: true });
 });
 
@@ -43,6 +50,8 @@ afterEach(() => {
   else process.env.HOME = realHome;
   if (realUserProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = realUserProfile;
+  if (realPatchworkHome === undefined) delete process.env.PATCHWORK_HOME;
+  else process.env.PATCHWORK_HOME = realPatchworkHome;
   if (fakeHome && existsSync(fakeHome)) {
     rmSync(fakeHome, { recursive: true, force: true });
   }

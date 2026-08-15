@@ -34,6 +34,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { patchworkHome } from "../patchworkHome.js";
+
 // TTL cache for jail-root realpaths. Each resolveRecipePath call resolves
 // 3-4 roots; on Windows each hits GetFinalPathNameByHandle + Defender scan.
 // Roots change only on bridge restart — 30 s TTL is safe.
@@ -80,11 +82,57 @@ export interface ResolveRecipePathOptions {
   homeDir?: string;
 }
 
-/** Expand a leading `~/` segment using `os.homedir()` (or the test override). */
-function expandHome(p: string, homeDir: string): string {
+/**
+ * Expand a leading `~/` segment, with ONE special case.
+ *
+ * `~/.patchwork/...` is rewritten to `patchworkHome()`; every other `~/` still
+ * expands to the home directory (#1265).
+ *
+ * The special case is the whole fix, and its narrowness is the point. There is
+ * exactly one `~` expansion site — this one — so the obvious framing, "route
+ * `~` expansion through patchworkHome()", is not implementable: it would turn
+ * `~/Documents` into `<override>/Documents`. `PATCHWORK_HOME` relocates the
+ * Patchwork workspace, not the user's home.
+ *
+ * What a recipe means by the literal token `~/.patchwork/` is "my Patchwork
+ * workspace", which is precisely what the override redefines. Rewriting that
+ * prefix — and nothing else — is what lets the recipe WRITER and the inbox
+ * READER (`inboxRoutes`, on `patchworkPath("inbox")`) resolve to the same
+ * directory. Converting only one of them is what made this a coupling rather
+ * than three independent conversions.
+ *
+ * With no override set `patchworkHome()` degrades to `join(homedir(),
+ * ".patchwork")`, so this is byte-identical to the previous behaviour for
+ * every install that has not opted in.
+ *
+ * `opts.homeDir` still wins when supplied — see `patchworkRootFor`.
+ */
+function expandHome(p: string, homeDir: string, patchworkRoot: string): string {
   if (p === "~") return homeDir;
+  if (p === "~/.patchwork") return patchworkRoot;
+  if (p.startsWith("~/.patchwork/")) {
+    return path.join(patchworkRoot, p.slice("~/.patchwork/".length));
+  }
   if (p.startsWith("~/")) return path.join(homeDir, p.slice(2));
   return p;
+}
+
+/**
+ * Where `~/.patchwork` points for this call.
+ *
+ * `opts.homeDir` wins when supplied. That option means "pretend the home is
+ * here", and under that pretence `~/.patchwork` must be `<homeDir>/.patchwork`
+ * — otherwise the seam is only half a seam: the caller relocates `~` and the
+ * jail keeps resolving the one prefix that matters somewhere else.
+ *
+ * My first cut had this read `patchworkHome()` unconditionally, on the theory
+ * that a test override should not suppress the rewrite. That broke 13 tests
+ * across 5 files for no production benefit whatsoever: NO production caller
+ * passes `homeDir` (verified), so honouring it costs nothing real and keeps
+ * every existing hermetic test meaningful.
+ */
+function patchworkRootFor(opts: ResolveRecipePathOptions): string {
+  return opts.homeDir ? path.join(opts.homeDir, ".patchwork") : patchworkHome();
 }
 
 /** Compute the active jail roots given the runtime opts. */
@@ -93,7 +141,18 @@ function jailRoots(opts: ResolveRecipePathOptions): string[] {
   const allowTmp =
     opts.allowTmp ?? process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL === "1";
   const workspace = opts.workspace ?? process.cwd();
-  const roots = [path.resolve(homeDir, ".patchwork"), path.resolve(workspace)];
+  // BOTH patchwork roots (#1265). The override is where `~/.patchwork/…` now
+  // resolves, so without it every recipe write under an override would throw
+  // `recipe_path_jail_escape` — an inbox nothing can write to. The LEGACY root
+  // stays allowed so an operator with hard-coded absolute paths, or files left
+  // in the old tree, does not start failing the day they set the variable.
+  // Deduped below, so with no override (where the two are equal) this is
+  // exactly the previous root set.
+  const roots = [
+    path.resolve(patchworkRootFor(opts)),
+    path.resolve(homeDir, ".patchwork"),
+    path.resolve(workspace),
+  ];
   if (allowTmp) {
     // On macOS `os.tmpdir()` returns `/var/folders/...` but the conventional
     // `/tmp` symlink points at `/private/tmp` — we expose both so a recipe
@@ -169,7 +228,7 @@ export function resolveRecipePath(
   }
 
   const homeDir = opts.homeDir ?? os.homedir();
-  const expanded = expandHome(rawPath, homeDir);
+  const expanded = expandHome(rawPath, homeDir, patchworkRootFor(opts));
   const resolved = path.isAbsolute(expanded)
     ? path.resolve(expanded)
     : path.resolve(opts.workspace ?? process.cwd(), expanded);

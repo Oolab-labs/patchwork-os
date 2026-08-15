@@ -25,6 +25,7 @@ import {
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
+import { patchworkPath } from "../patchworkHome.js";
 import {
   disabledMarkerPath,
   isInstallDirDisabled,
@@ -41,11 +42,23 @@ import {
   setRecipeEnabled,
 } from "../recipesHttp.js";
 
-export const INSTALL_RECIPES_DIR = path.join(
-  os.homedir(),
-  ".patchwork",
-  "recipes",
-);
+/**
+ * The recipe install directory.
+ *
+ * A FUNCTION, not the `const` it used to be (#1265). `patchworkHome()` is
+ * documented as read-per-call and never cached, because tests and the CLI both
+ * change `PATCHWORK_HOME` at runtime; a module-level const would freeze
+ * whichever value happened to be set when this module was first imported and
+ * make the first importer's environment win for the process lifetime.
+ *
+ * This site was invisible to `audit-patchwork-home` until now: it spelled
+ * `path.join(os.homedir(), ".patchwork", "recipes")` across FOUR LINES, and
+ * the gate matched line by line. The gate now scans whole files — see the note
+ * in that script.
+ */
+export function installRecipesDir(): string {
+  return patchworkPath("recipes");
+}
 
 /**
  * Reject path components that aren't a single safe basename — used at every
@@ -479,7 +492,7 @@ export interface InstallResult {
 }
 
 /**
- * Install a recipe package from a source into INSTALL_RECIPES_DIR.
+ * Install a recipe package from a source into the recipe install dir.
  * Returns metadata about what was installed.
  */
 export async function runRecipeInstall(
@@ -503,7 +516,7 @@ export async function runRecipeInstall(
       );
     }
   }
-  const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
+  const recipesDir = options.recipesDir ?? installRecipesDir();
 
   // Stage into temp dir first
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "patchwork-recipe-"));
@@ -785,7 +798,7 @@ export function findInstalledRecipeEntrypoint(
   name: string,
   options: { recipesDir?: string } = {},
 ): string | null {
-  const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
+  const recipesDir = options.recipesDir ?? installRecipesDir();
   const installDir = findInstalledRecipeDir(name, recipesDir);
   if (!installDir) return null;
 
@@ -846,7 +859,15 @@ export function findInstalledRecipeEntrypoint(
 function installRecipesDirForCli(): string {
   // Must match `setRecipeEnabled`'s own default, or the guard validates
   // against a different directory than the write targets.
-  return INSTALL_RECIPES_DIR;
+  //
+  // Since #1265 the two are the same function by construction:
+  // `installRecipesDir()` IS `patchworkPath("recipes")`, which is exactly
+  // `setRecipeEnabled`'s default. Before that they could DIVERGE — the CLI
+  // resolved `$HOME/.patchwork/recipes` from a hardcoded `os.homedir()` while
+  // the bridge honoured `PATCHWORK_HOME`, so setting the override split the
+  // guard from the write. This wrapper stays only to keep that requirement
+  // stated where a future edit to either default would read it.
+  return installRecipesDir();
 }
 
 function resolveActionableRecipeName(name: string, recipesDir: string): string {
@@ -1044,7 +1065,7 @@ export function runRecipeUninstall(
   name: string,
   options: { recipesDir?: string } = {},
 ): { ok: boolean; installDir?: string; error?: string } {
-  const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
+  const recipesDir = options.recipesDir ?? installRecipesDir();
   const installDir = findInstalledRecipeDir(name, recipesDir);
   if (!installDir) {
     return {
@@ -1059,7 +1080,7 @@ export function runRecipeUninstall(
 export function listInstalledRecipes(
   options: { recipesDir?: string } = {},
 ): InstalledRecipeEntry[] {
-  const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
+  const recipesDir = options.recipesDir ?? installRecipesDir();
 
   if (!existsSync(recipesDir)) {
     return [];
