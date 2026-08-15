@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-15 `fix/patchwork-home-strip-order` — MY OWN REGRESSION from #1401, found by mutation-probing the gate. #1401 replaced a line-by-line scan with a whole-file one (correct) but stripped BLOCK comments BEFORE line comments (catastrophic): a `/*` inside a LINE comment opens a pseudo-block that runs to the next real terminator anywhere in the file. One ordinary route comment at src/server.ts:926 (`// -- /schemas/* -- ...`) swallowed 2098 of that file's 3593 lines, 58%, before a single match was attempted; repo-wide 38 files and 3662 lines of live code deleted. A canonical violation planted at line 1504 passed with "0 on the ratchet" — so the change that fixed a blind gate made it BLINDER THAN THE VERSION IT REPLACED, which would at least have caught a single-line offender anywhere. I reported "ratchet 3 -> 0 under a gate that can now actually see"; that claim was false. Fix is a one-line reorder (line comments first, then block comments) plus a regression test pinning BOTH directions — the multi-line form #1401 fixed AND the pseudo-block hole it introduced. Verified three ways: clean tree still passes (no false positives), the previously-invisible violation now fails, the multi-line form still fails. Mutation-probed: restoring the bad order turns the test red.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
