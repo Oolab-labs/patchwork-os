@@ -18,6 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
+import { patchworkPath } from "../../../patchworkHome.js";
 import { runYamlRecipe, type YamlRecipe } from "../../yamlRunner.js";
 
 const FIXTURES_DIR = path.resolve(
@@ -252,12 +253,17 @@ describe("file.* jail — exploit fixtures from G-security G2", () => {
     expect(result.stepsRun).toBe(1);
     expect(Object.keys(written)).toHaveLength(1);
     const target = Object.keys(written)[0]!;
-    // resolved path must be inside the user's real home/.patchwork — we
-    // assert the suffix rather than an exact string because $HOME varies.
-    expect(
-      target
-        .replace(/\\/g, "/")
-        .endsWith(".patchwork/inbox/recipe-dogfood-A-PR1-baseline.txt"),
-    ).toBe(true);
+    // #1265: the recipe writes `~/.patchwork/inbox/…`, and that prefix now
+    // resolves through `patchworkHome()` — so under `PATCHWORK_HOME` (which
+    // `testEnvSetup` sets) it lands in the OVERRIDE, not under `$HOME`.
+    //
+    // Asserted as an exact path rather than the old
+    // `.endsWith(".patchwork/inbox/…")` suffix. The suffix form encoded the
+    // pre-override assumption and, once the override moved the target, could
+    // only ever fail — but it was also the weaker check: it passed for any
+    // directory anywhere that happened to end in `.patchwork/inbox`.
+    expect(target).toBe(
+      patchworkPath("inbox", "recipe-dogfood-A-PR1-baseline.txt"),
+    );
   });
 });

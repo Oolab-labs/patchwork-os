@@ -83,14 +83,31 @@ for (const file of trackedSources()) {
   } catch {
     continue;
   }
-  for (const line of text.split("\n")) {
-    // Strip line comments first: this file's own explanation contains the very
-    // pattern it looks for, and so do the notes left at converted call sites.
-    const code = line.replace(/\/\/.*$/, "");
-    if (HARDCODED.test(code)) {
-      offenders.add(file);
-      break;
-    }
+  // Strip comments first: this file's own explanation contains the very
+  // pattern it looks for, and so do the notes left at converted call sites.
+  // Block comments too — a converted site documents what it replaced.
+  const code = text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((l) => l.replace(/\/\/.*$/, ""))
+    .join("\n");
+
+  // WHOLE-FILE, not line by line. The line-based version was blind to the
+  // multi-line spelling, which is what a formatter PRODUCES once the call gets
+  // long enough:
+  //
+  //     path.join(
+  //       os.homedir(),
+  //       ".patchwork",
+  //       "recipes",
+  //     )
+  //
+  // `src/commands/recipeInstall.ts` sat in exactly that shape and the gate
+  // reported a clean ratchet over it — so "0 on the ratchet" was measuring the
+  // spelling, not the property. Found while converting the last three files,
+  // by reading the code the gate had cleared rather than trusting the count.
+  if (HARDCODED.test(code)) {
+    offenders.add(file);
   }
 }
 
