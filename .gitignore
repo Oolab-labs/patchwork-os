@@ -162,3 +162,11 @@ intellij-plugin/.gradle/
 # naming them here.
 /demos/
 /templates/recipes/*-demo.yaml
+
+# Private-identifier denylist for scripts/audit-private-identifiers.mjs.
+# NEVER tracked: it lists verbatim the strings that must not be published, so
+# committing it would publish all of them at once in a clearly-labelled file.
+# The gate hard-fails if git ever starts tracking it. Prefer keeping the list
+# OUTSIDE the repo entirely (~/.patchwork/private-identifiers.txt), where
+# `git add -f` cannot reach it.
+/.private-denylist
