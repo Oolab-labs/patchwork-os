@@ -27,6 +27,7 @@ import {
   tryHandleConnectorRoute,
   tryHandlePublicConnectorRoute,
 } from "../connectorRoutes.js";
+import { oauthConnectorIds } from "../connectors/connectorRegistry.js";
 
 function makeReq(method: string): IncomingMessage {
   const req = new EventEmitter() as unknown as IncomingMessage;
@@ -128,7 +129,27 @@ describe("http-routes-5 — GET /connections TTL cache", () => {
 });
 
 describe("http-routes-3 — OAuth callbacks not duplicated in the auth-gated dispatcher", () => {
-  for (const vendor of ["sentry", "discord", "gitlab"]) {
+  // DERIVED from the registry, not hand-listed.
+  //
+  // This loop read `["sentry", "discord", "gitlab"]` — precisely the three
+  // duplicates someone had ALREADY removed. It locked in what was fixed
+  // instead of enumerating what the invariant covers, so it sat green while
+  // four other callbacks (linear, asana, google-calendar, google-drive) stayed
+  // duplicated in the auth-gated dispatcher. A guard that lists its own past
+  // successes cannot fail on the next instance.
+  //
+  // `oauthConnectorIds()` existed for exactly this and had zero call sites
+  // anywhere in the repo. Deriving the list means a connector added tomorrow
+  // is covered without anyone remembering to extend this array.
+  const vendors = oauthConnectorIds();
+
+  it("derives a non-empty vendor list (anchor)", () => {
+    // Without this, an empty registry would make every assertion below vacuous
+    // and the whole describe block would pass by iterating nothing.
+    expect(vendors.length).toBeGreaterThanOrEqual(13);
+  });
+
+  for (const vendor of vendors) {
     it(`tryHandleConnectorRoute does NOT claim /connections/${vendor}/callback`, () => {
       const { res } = makeRes();
       const handled = tryHandleConnectorRoute(

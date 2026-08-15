@@ -65,7 +65,30 @@ describe("connectorRedirectUri reflects the environment at call time", () => {
 });
 
 describe("no connector freezes the redirect URI at import (#1266)", () => {
-  it("has no module-level REDIRECT_URI constant left", async () => {
+  /**
+   * Match the INITIALIZER, not the identifier.
+   *
+   * The previous guard was `/^const\s+REDIRECT_URI\s*=/m` — an exact name, in
+   * an exact shape. `REDIRECT_URI` appears nowhere in `src/connectors/` any
+   * more; every connector now uses lowercase `redirectUri()`. So the guard was
+   * watching a spelling the codebase had stopped using, and the likeliest
+   * regression — `const redirectUri = connectorRedirectUri("new-vendor")` —
+   * passed it untouched, as would `export const …`, an indented declaration,
+   * or any other name.
+   *
+   * What actually defines the defect is not what the binding is CALLED but
+   * that a module-level binding CAPTURES the result: `connectorCallbackBase()`
+   * reads `process.env` per call, so freezing its output at import is the bug
+   * regardless of the identifier.
+   *
+   * `\s` matches newlines, so this catches the wrapped form a formatter
+   * produces once the call gets long — the exact shape that hid a hardcoded
+   * path from `audit-patchwork-home` for months (#1265).
+   */
+  const FROZEN_AT_IMPORT =
+    /^(?:export\s+)?const\s+\w+\s*=\s*(?:connectorRedirectUri|connectorCallbackBase)\s*\(/m;
+
+  it("no connector captures the redirect URI in a module-level binding", async () => {
     // A source-level assertion because the defect IS the binding site: a
     // behavioural test of one connector would pass while another stayed
     // frozen, and this is exactly the drift class the issue describes.
@@ -73,11 +96,39 @@ describe("no connector freezes the redirect URI at import (#1266)", () => {
     const path = await import("node:path");
     const dir = path.join(process.cwd(), "src", "connectors");
     const offenders: string[] = [];
-    for (const f of readdirSync(dir)) {
+    let scanned = 0;
+    // RECURSIVE. The old scan was one level deep while its commit message said
+    // "anywhere in src/connectors/" — a claim the code did not implement.
+    for (const f of readdirSync(dir, { recursive: true }) as string[]) {
       if (!f.endsWith(".ts")) continue;
+      if (f.includes("__tests__")) continue;
+      scanned++;
       const src = readFileSync(path.join(dir, f), "utf-8");
-      if (/^const\s+REDIRECT_URI\s*=/m.test(src)) offenders.push(f);
+      if (FROZEN_AT_IMPORT.test(src)) offenders.push(f);
     }
+    // Anchor: a scan that silently walked zero files would report "no
+    // offenders" forever. This whole guard existed in that state.
+    expect(scanned).toBeGreaterThanOrEqual(10);
     expect(offenders).toEqual([]);
+  });
+
+  it("the guard actually matches a frozen binding (control)", () => {
+    // Proves the predicate can fail. Every spelling below is one the old
+    // identifier-exact regex let through.
+    for (const bad of [
+      'const REDIRECT_URI = connectorRedirectUri("x");',
+      'const redirectUri = connectorRedirectUri("x");',
+      "export const cb = connectorCallbackBase();",
+      'const wrapped =\n  connectorRedirectUri("x");',
+    ]) {
+      expect(FROZEN_AT_IMPORT.test(bad)).toBe(true);
+    }
+    // And does NOT match the per-call form every connector now uses.
+    for (const good of [
+      'function redirectUri(): string {\n  return connectorRedirectUri("x");\n}',
+      'const url = () => connectorRedirectUri("x");',
+    ]) {
+      expect(FROZEN_AT_IMPORT.test(good)).toBe(false);
+    }
   });
 });

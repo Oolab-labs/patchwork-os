@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-15 `fix/1266-guards-and-dead-branches` — #1266 dispatch half, the parts that need no decision. Deletes 4 dead OAuth callback branches (linear, asana, google-calendar, google-drive) that were registered in BOTH dispatchers; verified unreachable first — the public dispatcher runs at server.ts:922 vs the auth-gated one at :1765, with byte-identical conditions. Points the dedup guard at `oauthConnectorIds()` instead of the hand-written `["sentry","discord","gitlab"]`, which listed precisely the three duplicates ALREADY removed — a guard enumerating its own past successes, green while four live ones sat there. Broadens the frozen-redirect-URI guard from an identifier-exact `/^const\s+REDIRECT_URI/` (a spelling that appears nowhere in src/connectors/ any more) to the INITIALIZER, recursive, with a scanned>=10 anchor and a control proving the predicate can fail. Touches connectorRoutes.ts — collides with any connector-routing work. Probed against the pre-change file: the derived guard catches all 4, the hand-listed one caught 0.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
