@@ -1342,19 +1342,25 @@ if (
       const { runRecipeEnable, runRecipeDisable } = await import(
         "./commands/recipeInstall.js"
       );
+      // #1360: name WHICH mechanism was written. A recipe can be disabled by
+      // an install-dir marker or by the legacy `config.json` array, and an
+      // operator with no way to tell them apart cannot diagnose a write that
+      // went to the mechanism their recipe does not use.
+      const via = (m: "marker" | "config") =>
+        m === "config" ? " (via config.json — legacy top-level recipe)" : "";
       if (subcommand === "enable") {
         const r = runRecipeEnable(name);
         process.stdout.write(
           r.alreadyEnabled
-            ? `  ℹ ${r.name} is already enabled\n`
-            : `  ✓ enabled ${r.name}\n`,
+            ? `  ℹ ${r.name} is already enabled${via(r.mechanism)}\n`
+            : `  ✓ enabled ${r.name}${via(r.mechanism)}\n`,
         );
       } else {
         const r = runRecipeDisable(name);
         process.stdout.write(
           r.alreadyDisabled
-            ? `  ℹ ${r.name} is already disabled\n`
-            : `  ✓ disabled ${r.name}\n`,
+            ? `  ℹ ${r.name} is already disabled${via(r.mechanism)}\n`
+            : `  ✓ disabled ${r.name}${via(r.mechanism)}\n`,
         );
       }
       process.exit(0);
