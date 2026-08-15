@@ -674,27 +674,9 @@ export function tryHandleConnectorRoute(
     })();
     return true;
   }
-  if (
-    parsedUrl.pathname === "/connections/linear/callback" &&
-    req.method === "GET"
-  ) {
-    void (async () => {
-      try {
-        const { handleLinearCallback } = await import("./connectors/linear.js");
-        const code = parsedUrl.searchParams.get("code");
-        const state = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
-        const result = await handleLinearCallback(code, state, error);
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
-      } catch (err) {
-        respond500(res, err);
-      }
-    })();
-    return true;
-  }
+  // OAuth callback for Linear is registered in tryHandlePublicConnectorRoute
+  // (pre-auth) — the IdP redirect arrives without a bearer token. Do NOT
+  // re-register it here behind the auth gate (audit http-routes-3).
   if (
     parsedUrl.pathname === "/connections/linear/test" &&
     req.method === "POST"
@@ -884,27 +866,9 @@ export function tryHandleConnectorRoute(
     })();
     return true;
   }
-  if (
-    parsedUrl.pathname === "/connections/asana/callback" &&
-    req.method === "GET"
-  ) {
-    void (async () => {
-      try {
-        const { handleAsanaCallback } = await import("./connectors/asana.js");
-        const code = parsedUrl.searchParams.get("code");
-        const state = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
-        const result = await handleAsanaCallback(code, state, error);
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "text/html",
-        });
-        res.end(result.body);
-      } catch (err) {
-        respond500(res, err);
-      }
-    })();
-    return true;
-  }
+  // OAuth callback for Asana is registered in tryHandlePublicConnectorRoute
+  // (pre-auth) — the IdP redirect arrives without a bearer token. Do NOT
+  // re-register it here behind the auth gate (audit http-routes-3).
   if (
     parsedUrl.pathname === "/connections/asana/test" &&
     req.method === "POST"
@@ -1963,29 +1927,9 @@ export function tryHandleConnectorRoute(
     })();
     return true;
   }
-  if (
-    parsedUrl.pathname === "/connections/google-calendar/callback" &&
-    req.method === "GET"
-  ) {
-    void (async () => {
-      try {
-        const { handleCalendarCallback } = await import(
-          "./connectors/googleCalendar.js"
-        );
-        const code = parsedUrl.searchParams.get("code");
-        const state = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
-        const result = await handleCalendarCallback(code, state, error);
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
-      } catch (err) {
-        respond500(res, err);
-      }
-    })();
-    return true;
-  }
+  // OAuth callback for Google Calendar is registered in tryHandlePublicConnectorRoute
+  // (pre-auth) — the IdP redirect arrives without a bearer token. Do NOT
+  // re-register it here behind the auth gate (audit http-routes-3).
   if (
     parsedUrl.pathname === "/connections/google-calendar/test" &&
     req.method === "POST"
@@ -2053,29 +1997,9 @@ export function tryHandleConnectorRoute(
     })();
     return true;
   }
-  if (
-    parsedUrl.pathname === "/connections/google-drive/callback" &&
-    req.method === "GET"
-  ) {
-    void (async () => {
-      try {
-        const { handleDriveCallback } = await import(
-          "./connectors/googleDrive.js"
-        );
-        const code = parsedUrl.searchParams.get("code");
-        const state = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
-        const result = await handleDriveCallback(code, state, error);
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
-      } catch (err) {
-        respond500(res, err);
-      }
-    })();
-    return true;
-  }
+  // OAuth callback for Google Drive is registered in tryHandlePublicConnectorRoute
+  // (pre-auth) — the IdP redirect arrives without a bearer token. Do NOT
+  // re-register it here behind the auth gate (audit http-routes-3).
   if (
     parsedUrl.pathname === "/connections/google-drive/test" &&
     req.method === "POST"
