@@ -224,6 +224,13 @@ export interface YamlStep {
      * every revision reuses the base model (byte-identical to prior behavior).
      */
     escalate?: import("./pricing/costRouter.js").RouteCandidate[];
+    /**
+     * ADR-0021 information boundary — what this step declares it carries.
+     * Parsed by `parseDataPolicy` at the boundary, NOT here: an unrecognised
+     * classification must reach the decision point so it can fail closed,
+     * rather than being normalised away on the way in.
+     */
+    data_policy?: unknown;
   };
   into?: string;
   optional?: boolean;
@@ -1580,6 +1587,11 @@ export async function runYamlRecipe(
       tools?: string[];
       disallowedTools?: string[];
     },
+    // ADR-0021: a refine-loop re-run carries the SAME declared policy as the
+    // step it revises. Omitting it here would mean a `restricted` step is
+    // judged `restricted` on its first attempt and `internal` on every
+    // revision — the boundary loosening precisely where a step is retried.
+    dataPolicy?: unknown,
   ): Promise<{ value: unknown; ok: boolean }> => {
     // Phase 4: route revisions too, so a downshift on the reviewed step also
     // applies to its refine-loop re-runs (no-op when downshift is absent).
@@ -1614,6 +1626,7 @@ export async function runYamlRecipe(
         // Fail closed if a worker sandbox can't be enforced on the chosen driver.
         ...(deps.agentDisallowedTools?.length && { enforceSandbox: true }),
         ...(providerOptions && { providerOptions }),
+        ...(dataPolicy !== undefined && { boundary: { dataPolicy } }),
       },
       buildAgentExecutorDeps(stepDeps, deps),
     );
@@ -1846,6 +1859,10 @@ export async function runYamlRecipe(
             disallowedTools: reviewedAgent.disallowedTools,
           }),
         },
+        // The revision re-runs the REVIEWED step, so it carries the REVIEWED
+        // step's declared policy — not the judge's. Using the judge's would
+        // let a differently-labelled reviewer relabel the data being revised.
+        reviewedAgent.data_policy,
       );
       if (!revised.ok) {
         // A failed / empty revision can't be re-judged — stop and treat the
@@ -1901,6 +1918,9 @@ export async function runYamlRecipe(
             disallowedTools: agentCfg.disallowedTools,
           }),
         },
+        // The re-judge re-runs the JUDGE step, so it carries the judge's own
+        // declared policy.
+        agentCfg.data_policy,
       );
       if (!judged.ok) {
         // Audit 2026-06-03 (MEDIUM #17): a failed / silent-fail / empty
@@ -2266,6 +2286,17 @@ export async function runYamlRecipe(
               // with the pure-JSON JUDGE_PROMPT_SUFFIX + tolerant parser.
               ...(isJudge && {
                 providerOptions: { responseFormat: { type: "json_object" } },
+              }),
+              // ADR-0021 — the step's DECLARED policy. Passed raw: an
+              // unrecognised classification must reach `parseDataPolicy` at the
+              // decision point so it can fail closed, rather than being
+              // normalised away here. Without this the boundary judged every
+              // step at the default `internal`, so a step declaring
+              // `restricted` was dispatched to a remote model AND a receipt was
+              // written asserting `internal` — a false-affirmative audit
+              // record, which is worse than no record at all.
+              ...(agentCfg.data_policy !== undefined && {
+                boundary: { dataPolicy: agentCfg.data_policy },
               }),
             },
             buildAgentExecutorDeps(stepDeps, deps),
@@ -3525,12 +3556,27 @@ function toAgentResult(v: string | AgentResult): AgentResult {
  * the same per-instance-counter-on-a-shared-file defect that made 142 of 145
  * run-log seqs collide (#1324).
  */
-let _boundaryReceiptLog: BoundaryReceiptLog | null = null;
+const _boundaryReceiptLogs = new Map<string, BoundaryReceiptLog>();
 function boundaryReceiptLog(): BoundaryReceiptLog {
-  if (!_boundaryReceiptLog) {
-    _boundaryReceiptLog = new BoundaryReceiptLog({ dir: patchworkPath() });
+  // Keyed BY RESOLVED DIRECTORY, not a single instance.
+  //
+  // A plain singleton captures whichever home existed at first use and ignores
+  // PATCHWORK_HOME afterwards — the same frozen-at-first-use defect as the
+  // module-level RECIPES_DIR (#1265) and the OAuth redirect URI (#1266),
+  // reintroduced by the fix for it. Caught because an end-to-end test set a
+  // fresh home and its receipts went to the previous one.
+  //
+  // Still one instance PER DIRECTORY, which is the property that matters: a
+  // per-call instance would restart `seq` at 1 on every dispatch, the
+  // counter-on-a-shared-file bug that collided 142 of 145 run-log seqs
+  // (#1324).
+  const dir = patchworkPath();
+  let log = _boundaryReceiptLogs.get(dir);
+  if (!log) {
+    log = new BoundaryReceiptLog({ dir });
+    _boundaryReceiptLogs.set(dir, log);
   }
-  return _boundaryReceiptLog;
+  return log;
 }
 
 function buildAgentExecutorDeps(

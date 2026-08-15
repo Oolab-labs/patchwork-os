@@ -37,7 +37,7 @@ describe("the information boundary is wired into production dispatch", () => {
     // per-instance-counter-on-a-shared-file defect that collided 142 of 145
     // run-log seqs (#1324). The lazy singleton is what prevents it.
     const src = read("src/recipes/yamlRunner.ts");
-    expect(src).toMatch(/let _boundaryReceiptLog/);
+    expect(src).toMatch(/_boundaryReceiptLogs = new Map/);
     expect(src).toMatch(/function boundaryReceiptLog\(\)/);
   });
 

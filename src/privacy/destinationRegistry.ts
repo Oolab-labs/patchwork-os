@@ -32,6 +32,7 @@
 import {
   CLASSIFICATIONS,
   type Classification,
+  classificationRank,
   type Destination,
 } from "./dataPolicy.js";
 
@@ -117,13 +118,29 @@ export function parseRegistry(cfg: PrivacyConfig | undefined): ParsedRegistry {
   return { destinations, driversFor, invalid };
 }
 
-/** The strictest remote destination — fewest classifications wins. */
+/**
+ * The strictest remote destination.
+ *
+ * Ranked by the HIGHEST classification each is cleared for, not by how many it
+ * lists. Counting was wrong in the direction that matters: a destination
+ * cleared for `[restricted]` has one entry and one cleared for
+ * `[public, internal]` has two, so "fewest wins" would pick the one trusted
+ * with the most sensitive data as the safe fallback for an unrecognised
+ * driver. Ties break on the smaller list.
+ */
 function strictestRemote(destinations: Destination[]): Destination | null {
   const remotes = destinations.filter((d) => d.type === "remote");
   if (remotes.length === 0) return null;
-  return remotes.reduce((a, b) =>
-    b.classifications.length < a.classifications.length ? b : a,
-  );
+  const ceiling = (d: Destination): number =>
+    d.classifications.length === 0
+      ? -1
+      : Math.max(...d.classifications.map(classificationRank));
+  return remotes.reduce((a, b) => {
+    const ca = ceiling(a);
+    const cb = ceiling(b);
+    if (cb !== ca) return cb < ca ? b : a;
+    return b.classifications.length < a.classifications.length ? b : a;
+  });
 }
 
 export interface ResolvedDestination {
@@ -145,7 +162,31 @@ export function resolveDestination(
   driver: string | undefined,
   forClass: Classification,
 ): ResolvedDestination | null {
-  if (registry.destinations.length === 0) return null;
+  if (registry.destinations.length === 0) {
+    // NOTHING configured is the inert case, and is fine.
+    //
+    // Something configured that ALL failed to parse is not. Returning null
+    // there reverts the boundary to inert on a typo — `type: "cloud"` instead
+    // of `"remote"` — while the operator believes they have opted in. That is
+    // the fail-open this module's own header says it prevents, reachable by a
+    // single misspelled word.
+    //
+    // So: any invalid entry with no valid entry surviving yields a synthetic
+    // destination cleared for NOTHING. Every dispatch is refused, loudly and
+    // immediately, which is the correct reading of "the operator asked for
+    // enforcement and we cannot tell what they meant".
+    if (registry.invalid.length > 0) {
+      return {
+        destination: {
+          id: `unparseable-config(${registry.invalid.map((i) => i.id).join(", ")})`,
+          type: "remote",
+          classifications: [],
+        },
+        localDestinationAccepts: false,
+      };
+    }
+    return null;
+  }
 
   const d = (driver ?? "").toLowerCase();
   const localAccepts = registry.destinations.some(

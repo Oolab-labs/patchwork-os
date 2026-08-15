@@ -123,3 +123,60 @@ describe("resolveDestination", () => {
     }
   });
 });
+
+describe("audit fixes — fail-open and mis-ranked fallback", () => {
+  it("a config where EVERY entry is malformed refuses, it does not go inert", () => {
+    // The fail-open this module's header claims to prevent, reachable by one
+    // misspelled word: `type: "cloud"` instead of "remote" emptied the
+    // registry, `resolveDestination` returned null, and the boundary skipped
+    // entirely while the operator believed they had opted in.
+    const reg = parseRegistry({
+      destinations: {
+        "cloud-primary": { type: "cloud", classifications: ["public"] },
+      },
+    });
+    expect(reg.destinations).toEqual([]);
+    expect(reg.invalid).toHaveLength(1);
+
+    const r = resolveDestination(reg, "anthropic", "internal");
+    expect(r).not.toBeNull();
+    // Cleared for nothing → every dispatch refused, loudly.
+    expect(r?.destination.classifications).toEqual([]);
+    expect(r?.destination.id).toContain("cloud-primary");
+  });
+
+  it("still goes inert when NOTHING is configured", () => {
+    // The distinction that keeps the opt-in posture: absent config is inert,
+    // broken config is refused. Collapsing the two either breaks every
+    // unconfigured install or silently exempts every typo.
+    expect(
+      resolveDestination(parseRegistry(undefined), "anthropic", "internal"),
+    ).toBeNull();
+    expect(
+      resolveDestination(parseRegistry({}), "anthropic", "internal"),
+    ).toBeNull();
+  });
+
+  it("ranks the fallback by SENSITIVITY, not by list length", () => {
+    // Counting picked the wrong one: `[restricted]` has one entry and
+    // `[public, internal]` has two, so "fewest wins" chose the destination
+    // trusted with the MOST sensitive data as the safe fallback for an
+    // unrecognised driver.
+    const reg = parseRegistry({
+      destinations: {
+        "trusted-high": {
+          type: "remote",
+          classifications: ["restricted"],
+          drivers: ["known"],
+        },
+        "ordinary-low": {
+          type: "remote",
+          classifications: ["public", "internal"],
+          drivers: ["other"],
+        },
+      },
+    });
+    const r = resolveDestination(reg, "unknown-driver", "internal");
+    expect(r?.destination.id).toBe("ordinary-low");
+  });
+});
