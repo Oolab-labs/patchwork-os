@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `fix/companion-pins-cannot-fail` — `audit-companion-pins` could not fail on a stale pin, which is its only purpose. Two interacting defects: `versionDistance` kept scanning after a differing segment so a later segment reversed the verdict (`1.0.1` vs `1.7.0` printed as `pinned > latest — likely prerelease`), and `significantlyBehind` was `distance > 5` where distance counted differing segments — bounded by 3 for semver, so unreachable. With the comparison fixed, 5 of 6 companions are behind and three are a major version or more back. The weekly job will now go RED until pins are bumped; that is the gate doing its job for the first time.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)

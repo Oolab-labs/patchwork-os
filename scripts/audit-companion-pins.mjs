@@ -58,19 +58,44 @@ async function fetchLatest(pkg) {
 // Returns number of numeric segments that differ (positionally), or -1 if latest < pinned.
 // Simple: split by ".", compare segment by segment.
 
-function versionDistance(pinned, latest) {
-  if (pinned === latest) return 0;
-  const p = pinned.split(".").map(Number);
-  const l = latest.split(".").map(Number);
-  const len = Math.max(p.length, l.length);
-  let behind = 0;
-  for (let i = 0; i < len; i++) {
+/**
+ * Compare two semver strings, stopping at the FIRST differing segment.
+ *
+ * The previous version kept scanning after a difference, so a later segment
+ * could reverse the verdict. `1.0.1` vs `1.7.0`: minor says behind, then patch
+ * (1 vs 0) said "ahead" and returned -1. Two REAL pins were reported as
+ * `pinned > latest — likely prerelease` while being 7 minors and 2 MAJORS
+ * behind respectively.
+ *
+ * Returns `{ behind, level, by }`. `level` is the segment that actually
+ * decides — major/minor/patch — because "6 segments behind" was never a
+ * meaningful quantity, and it is what made the old threshold unreachable
+ * (see `significantlyBehind` below).
+ */
+function compareVersions(pinned, latest) {
+  const p = pinned.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const l = latest.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const LEVELS = ["major", "minor", "patch"];
+  for (let i = 0; i < 3; i++) {
     const pv = p[i] ?? 0;
     const lv = l[i] ?? 0;
-    if (lv > pv) behind++;
-    else if (lv < pv) return -1; // pinned is ahead of latest (prerelease/canary situation)
+    if (pv === lv) continue;
+    return lv > pv
+      ? { behind: true, level: LEVELS[i], by: lv - pv }
+      : { behind: false, level: LEVELS[i], by: pv - lv, ahead: true };
   }
-  return behind;
+  return { behind: false, level: null, by: 0 };
+}
+
+/**
+ * Legacy shape kept for the JSON output: -1 = ahead, 0 = equal, else a
+ * positive distance. Now derived from the real comparison.
+ */
+function versionDistance(pinned, latest) {
+  if (pinned === latest) return 0;
+  const c = compareVersions(pinned, latest);
+  if (!c.behind) return -1;
+  return c.by;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -90,8 +115,20 @@ await Promise.all(
 
     const upToDate = error ? null : pinned === latest;
     const distance = error ? null : versionDistance(pinned, latest);
-    // "significantly behind": distance > 5 segments differ
-    const significantlyBehind = distance !== null && distance > 5;
+    const cmp = error ? null : compareVersions(pinned, latest);
+    // A pin is "significantly behind" when it is a MAJOR version back, or
+    // more than 5 minors back.
+    //
+    // The previous rule was `distance > 5`, where `distance` counted segments
+    // that differed. Semver has three segments, so it was bounded by 3 and the
+    // condition was UNREACHABLE — in default mode this gate could only ever
+    // fail on a fetch error, never on a stale pin, which is the one thing it
+    // exists to detect. Combined with the ordering bug above, it had no way to
+    // report the two real pins sitting 7 minors and 2 majors behind.
+    const significantlyBehind =
+      cmp !== null &&
+      cmp.behind === true &&
+      (cmp.level === "major" || (cmp.level === "minor" && cmp.by > 5));
 
     results.push({ package: pkg, pinned, latest, upToDate, distance, error });
 
@@ -133,9 +170,15 @@ if (jsonMode) {
         `OK    ${pkg}@${pinned} (pinned ${pinned} > latest ${latest} — likely prerelease)`,
       );
     } else {
-      const tag = distance > 5 ? "STALE" : "WARN ";
+      // Same rule as `significantlyBehind`, not a second one. When the tag and
+      // the exit code disagreed, a pin two MAJORS back printed as `WARN` — the
+      // reader's summary and the build's verdict telling different stories.
+      const c = compareVersions(pinned, latest);
+      const stale =
+        c.behind && (c.level === "major" || (c.level === "minor" && c.by > 5));
+      const tag = stale ? "STALE" : "WARN ";
       console.warn(
-        `${tag} ${pkg}@${pinned} → latest ${latest} (${distance} version segment(s) behind)`,
+        `${tag} ${pkg}@${pinned} → latest ${latest} (${c.by} ${c.level}(s) behind)`,
       );
       hasWarning = true;
     }
