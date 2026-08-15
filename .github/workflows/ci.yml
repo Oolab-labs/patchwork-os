@@ -123,6 +123,13 @@ jobs:
         run: npm ci
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # `dist/` is gitignored, so a checkout that only runs `npm ci` has none.
+      # audit-skill-parity reads dist/tools to answer "does this tool exist?",
+      # and without it that half of the gate SKIPPED itself and still exited 0
+      # — it had never run in CI. The script now refuses to skip when CI is
+      # set, so removing this build step turns the job red rather than quiet.
+      - name: Build (audit-skill-parity reads dist/tools)
+        run: npm run build
       - name: Audit LSP tool lists
         run: node scripts/audit-lsp-tools.mjs
       - name: Audit shape safety (proxy<T> usage)
