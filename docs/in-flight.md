@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `fix/isolation-gate-strip-order` — #1401's comment-strip ordering defect surviving in a SECOND gate. #1412 fixed `audit-patchwork-home.mjs`; `audit-connector-test-isolation.mjs` had the same block-before-line ordering and nobody looked for a second instance. An unpaired `/*` in a line comment opens a pseudo-block that deletes every line to the next real terminator, so the `clearTokens()` call the gate exists to find disappears before a match is attempted. Measured across all 76 tracked connector tests: ZERO currently differ between the orderings, so nothing is hidden today — fixed anyway, because in the sibling this same ordering blinded 38 files and 3662 lines. Also found while probing and NOT a defect: the `clearTokens()` empty-parens regex is correct (every connector exports `clearTokens(): void`), and my first two probes of this gate were wrong, not the gate.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
