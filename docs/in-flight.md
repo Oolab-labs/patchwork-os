@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-15 `feat/butler-outcome-grader-shadow` — Butler errand outcome grader, SHADOW-ONLY. Pure deterministic grader (`did the operator keep it?`): completed -> confirmed, deleted -> junk, open+stale -> junk, open+recent -> WITHHELD. Writes to `butler_outcome_shadow.jsonl`, a SEPARATE file the trust fold does not read and must not be taught to — promotion means writing through `OutcomeStore.upsert` against a measured before/after on the real log, exactly as #1319 required, and is deliberately NOT built here. No LLM judge: a prior one flipped verdicts between runs on identical inputs, which makes the ledger unreplayable. The load-bearing rule is that no absence produces `confirmed` — four defects in this subsystem (#1064, #1318/#1319, #1320, #1322) were all the same mistake — so there is no default-to-good branch at all, and an exhaustive test enumerates the observable shapes rather than spot-checking. Stale -> junk is asymmetric ON PURPOSE: `unknown` is right while the operator might still act and wrong once not-acting IS the answer. Two guard tests pin the shadow property to the code (nothing outside the module names the file; the grader cannot reach `upsert`). Touches nothing existing — two new files under src/butler/ plus tests. NOT WIRED: no cron ingester, no CLI verb, no dial impact.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
