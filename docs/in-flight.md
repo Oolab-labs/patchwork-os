@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-15 `fix/skill-parity-never-ran-in-ci` — `audit-skill-parity`'s tool-existence half ("does the tool this skill tells the model to call actually exist?") has never run in CI. It reads `dist/tools`; `dist/` is gitignored and the job runs `npm ci` with no build, so `knownToolNames()` returned null every time, the check skipped itself and the script exited 0 — the green tick was reporting the skip. Reproduced locally by moving `dist/` aside. Fix is both halves: the job now builds first, AND the script refuses to skip when `CI` is set, so moving the step to another job goes red instead of quiet again. Touches `.github/workflows/ci.yml` and `scripts/audit-skill-parity.mjs`.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
