@@ -18,9 +18,14 @@ vi.mock("@/lib/bridge", () => ({
   bridgeFetch: (...args: unknown[]) => bridgeFetchMock(...args),
 }));
 
-import { GET as githubCallback } from "../github/callback/route";
+import { GET as connectorCallback } from "../[connector]/callback/route";
 
 type Handler = (req: Request) => Promise<Response>;
+
+// The 13 per-slug callback routes collapsed into one dynamic route; binding a
+// slug keeps this test calling `GET(req)` exactly as before.
+const githubCallback: Handler = (req) =>
+  connectorCallback(req, { params: Promise.resolve({ connector: "github" }) });
 
 const ROUTES: { name: string; handler: Handler }[] = [
   { name: "github", handler: githubCallback },

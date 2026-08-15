@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-15 `refactor/dashboard-callback-dynamic-route` — collapses 26 dashboard directories into 2 dynamic routes: 13 `connections/<slug>/callback/page.tsx` (four lines each, differing in two string literals) and 13 `api/connections/<slug>/callback/route.ts`. The API copies had ALREADY DRIFTED from each other (differing comments and quote style) — the concrete version of the risk duplication carries. Follows the pattern `api/connections/[connector]/{auth,connect,test}` already established, and gives `oauthConnectorIds()` its first PRODUCTION call site (it had zero anywhere). Checked before writing: Next is `output: 'standalone'`, not `export`, so no generateStaticParams is needed — under static export the missing params would have failed the build. Unknown slug now 404s with the slug named, at both layers, BEFORE the session gate — a routing fact reported as 401 is what sends an operator to debug credentials after a typo'd redirect_uri. CAUGHT: my grep for tests referencing the removed routes used a broken --include flag and returned a false negative; 3 test files did import them. Two of those hand-listed their routes — oauth-callbacks named 10 while the registry has 13, so github/linear/sentry were never exercised, the same drift that file was written to catch. Both now derive from the registry. Dashboard 1194 -> 1275 tests.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
