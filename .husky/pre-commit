@@ -1,1 +1,7 @@
+# Repository Privacy (CLAUDE.md) — mechanical half.
+# Scans the STAGED DIFF and the BRANCH NAME against a denylist that never
+# enters the repo. Runs FIRST: formatting content that must not be committed
+# is wasted work, and a privacy failure should be the message you see.
+node scripts/audit-private-identifiers.mjs || exit 1
+
 npx lint-staged
