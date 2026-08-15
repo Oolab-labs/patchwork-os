@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `fix/1403-nested-install-dirs` — #1403. `iterateInstallDirs` walked DIRECT children of the recipes dir, so a manifest-less GitHub install at `owner/repo/` was invisible to every lookup. `setRecipeEnabled` does not error on an unresolved name — it falls through to the legacy `cfg.recipes.disabled` array — so disabling a nested install from the dashboard wrote a name nothing reads, never wrote the `.disabled` marker that governs it, and returned ok:true. Descends ONE level, and only when the parent has no entrypoint of its own (otherwise a recipe's own vendored subdirs become phantom installs). Entrypoint resolution extracted so both levels resolve identically. Touches `src/recipesHttp.ts`, which feeds listing, webhooks and triggers — blast radius is real, which is why the issue asked for its own change and its own review.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
