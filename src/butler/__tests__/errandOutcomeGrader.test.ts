@@ -72,7 +72,12 @@ describe("gradeErrandOutcome — absence is never a positive", () => {
   it("open + recent → WITHHELD, not confirmed", () => {
     // The load-bearing rule. An errand nobody deleted looks like a success and
     // is not one — the operator may simply not have looked yet.
-    const r = gradeErrandOutcome({ createdAt: NOW - 60_000 }, { now: NOW });
+    // `stateObserved` because this case is "we LOOKED and it was still open".
+    // Without it the answer is `not-observed`, which is a different fact.
+    const r = gradeErrandOutcome(
+      { createdAt: NOW - 60_000, stateObserved: true },
+      { now: NOW },
+    );
     expect(r.disposition).toBe("unknown");
     expect(r.reason).toBe("open-recent");
   });
@@ -120,10 +125,62 @@ describe("gradeErrandOutcome — absence is never a positive", () => {
   });
 });
 
+describe("silence is only evidence if somebody was listening", () => {
+  // The staleness rule converts silence into a negative. That is sound only
+  // when a completion COULD have been seen. An ingester deriving artifacts
+  // from the local run log knows creation times and nothing about what the
+  // operator later did, so without this guard every errand older than the
+  // horizon grades `junk` — not because it was ignored, but because nobody
+  // asked. Trust-by-neglect with its sign flipped, and worse: a worker cannot
+  // appeal a verdict nobody looked at.
+
+  it("age alone does NOT produce junk when state was never observed", () => {
+    const r = gradeErrandOutcome(
+      { createdAt: NOW - DEFAULT_STALE_AFTER_MS * 10 },
+      { now: NOW },
+    );
+    expect(r.disposition).toBe("unknown");
+    expect(r.reason).toBe("not-observed");
+  });
+
+  it("stateObserved:false is treated exactly like absent", () => {
+    // A channel that reports "I could not check" must not be luckier than one
+    // that says nothing.
+    const r = gradeErrandOutcome(
+      { createdAt: NOW - DEFAULT_STALE_AFTER_MS * 10, stateObserved: false },
+      { now: NOW },
+    );
+    expect(r.disposition).toBe("unknown");
+    expect(r.reason).toBe("not-observed");
+  });
+
+  it("observing the state re-enables the negative (control)", () => {
+    // Without this the two assertions above hold just as well for a grader
+    // that never returns junk at all, which would assert nothing.
+    expect(
+      gradeErrandOutcome(
+        { createdAt: NOW - DEFAULT_STALE_AFTER_MS * 10, stateObserved: true },
+        { now: NOW },
+      ).disposition,
+    ).toBe("junk");
+  });
+
+  it("a positive act still counts without stateObserved", () => {
+    // `completed`/`deleted` ARE observations — requiring a separate flag
+    // alongside them would discard real evidence.
+    expect(
+      gradeErrandOutcome({ completed: true }, { now: NOW }).disposition,
+    ).toBe("confirmed");
+    expect(
+      gradeErrandOutcome({ deleted: true }, { now: NOW }).disposition,
+    ).toBe("junk");
+  });
+});
+
 describe("gradeErrandOutcome — staleness converts silence into a negative", () => {
   it("open past the horizon → junk", () => {
     const r = gradeErrandOutcome(
-      { createdAt: NOW - DEFAULT_STALE_AFTER_MS },
+      { createdAt: NOW - DEFAULT_STALE_AFTER_MS, stateObserved: true },
       { now: NOW },
     );
     expect(r.disposition).toBe("junk");
@@ -135,7 +192,7 @@ describe("gradeErrandOutcome — staleness converts silence into a negative", ()
     // "still deciding" into a negative against a worker.
     expect(
       gradeErrandOutcome(
-        { createdAt: NOW - DEFAULT_STALE_AFTER_MS + 1 },
+        { createdAt: NOW - DEFAULT_STALE_AFTER_MS + 1, stateObserved: true },
         { now: NOW },
       ).disposition,
     ).toBe("unknown");
@@ -144,7 +201,7 @@ describe("gradeErrandOutcome — staleness converts silence into a negative", ()
   it("honours an injected horizon", () => {
     expect(
       gradeErrandOutcome(
-        { createdAt: NOW - 5_000 },
+        { createdAt: NOW - 5_000, stateObserved: true },
         { now: NOW, staleAfterMs: 1_000 },
       ).disposition,
     ).toBe("junk");
@@ -261,6 +318,44 @@ describe("SHADOW means shadow — the trust fold must not read this file", () =>
       .filter(Boolean)
       .filter((f) => !f.includes("__tests__"));
     expect(hits).toEqual(["src/butler/outcomeShadowLog.ts"]);
+  });
+
+  it("only the ingester and the CLI reach the shadow ledger's module", () => {
+    // The check above greps the FILENAME, so it cannot see a module that
+    // reaches the ledger through `shadowLogPath()` / `summariseShadowLog()` —
+    // which is exactly how a reader would actually be written, and how
+    // outcomeIngester.ts does it. It caught that module only by its comment.
+    //
+    // So enumerate importers too. The allowlist is the point: adding a module
+    // here is a deliberate act, and the one module that must NEVER appear is
+    // anything in workers/ — that is the fold.
+    const repo = path.resolve(import.meta.dirname, "..", "..", "..");
+    let out = "";
+    try {
+      out = execFileSync(
+        "git",
+        ["grep", "-l", "--untracked", "outcomeShadowLog", "--", "src"],
+        { cwd: repo, encoding: "utf8" },
+      );
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      if (e.status !== 1) throw err;
+      out = e.stdout ?? "";
+    }
+    const importers = out
+      .split("\n")
+      .filter(Boolean)
+      .filter((f) => !f.includes("__tests__"))
+      .filter((f) => f !== "src/butler/outcomeShadowLog.ts")
+      .sort();
+
+    expect(importers).toEqual([
+      "src/butler/outcomeIngester.ts",
+      "src/index.ts",
+    ]);
+    // Restated as a property, not just a list: whatever the allowlist grows
+    // to, nothing under workers/ may ever read this file.
+    for (const f of importers) expect(f).not.toMatch(/^src\/workers\//);
   });
 
   it("the grader module does not import the outcome store's writer", () => {

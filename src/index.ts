@@ -275,6 +275,7 @@ const KNOWN_SUBCOMMANDS = [
   "approvals",
   "gate",
   "outcomes",
+  "butler",
   // Dispatched at `process.argv[2] === "tools"` (and `help`) but absent from
   // this array until 2026-08. The comment below calls this "the dispatch
   // source", and it was not: `patchwork tool` could never be corrected to
@@ -5116,6 +5117,103 @@ if (process.argv[2] === "gate") {
         `Error: ${err instanceof Error ? err.message : String(err)}\n`,
       );
       process.exit(1);
+    }
+  })();
+}
+
+// Handle butler subcommand — SHADOW-only errand outcome grading.
+//
+// Operator path, like `outcomes` above and for the same reason: a recipe step
+// runs AS the worker, so grading reachable from one would let a worker
+// manufacture the evidence that raises its own trust dial. Nothing here writes
+// the trust ledger — rows go to the Butler shadow ledger and move nothing.
+if (process.argv[2] === "butler") {
+  const args = process.argv.slice(3);
+  (async () => {
+    try {
+      const { formatShadowSummary, ingestErrandOutcomes } = await import(
+        "./butler/outcomeIngester.js"
+      );
+      const { summariseShadowLog } = await import(
+        "./butler/outcomeShadowLog.js"
+      );
+
+      if (args[0] === "shadow") {
+        const summary = summariseShadowLog();
+        if (args.includes("--json")) {
+          process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+        } else {
+          process.stdout.write(`${formatShadowSummary(summary)}\n`);
+        }
+        process.exit(0);
+      }
+
+      if (args[0] === "ingest") {
+        // Observations come from a file or stdin as a JSON array. They are NOT
+        // gathered here: reading the operator's trackers is a connector
+        // concern, and inventing an observation the ingester did not actually
+        // make is precisely what `stateObserved` exists to prevent.
+        const fileIdx = args.indexOf("--file");
+        const src =
+          fileIdx !== -1 && args[fileIdx + 1] ? args[fileIdx + 1] : "-";
+        const { readFileSync } = await import("node:fs");
+        const raw =
+          src === "-"
+            ? readFileSync(0, "utf-8")
+            : readFileSync(src as string, "utf-8");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch (err) {
+          process.stderr.write(
+            `[butler] observations are not valid JSON: ${(err as Error).message}\n`,
+          );
+          process.exit(2);
+        }
+        if (!Array.isArray(parsed)) {
+          process.stderr.write("[butler] expected a JSON array\n");
+          process.exit(2);
+        }
+        const daysIdx = args.indexOf("--stale-after-days");
+        const days =
+          daysIdx !== -1 && args[daysIdx + 1]
+            ? Number(args[daysIdx + 1])
+            : undefined;
+        const res = ingestErrandOutcomes(parsed, {
+          now: Date.now(),
+          ...(days !== undefined && Number.isFinite(days)
+            ? { staleAfterMs: days * 24 * 60 * 60 * 1000 }
+            : {}),
+        });
+        if (args.includes("--json")) {
+          process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);
+        } else {
+          process.stdout.write(
+            `[butler] graded ${res.graded} observation(s): ` +
+              `${res.batch.confirmed} confirmed, ${res.batch.junk} junk, ` +
+              `${res.batch.unknown} unknown.\n`,
+          );
+          for (const s of res.skipped) {
+            process.stdout.write(
+              `[butler]   skipped ${s.ref ?? "(no ref)"}: ${s.reason}\n`,
+            );
+          }
+          process.stdout.write(`\n${formatShadowSummary(res.ledger)}\n`);
+        }
+        process.exit(0);
+      }
+
+      process.stderr.write(
+        "Usage: patchwork butler <shadow|ingest> [--json]\n\n" +
+          "  shadow                       summarise the graded shadow ledger\n" +
+          "  ingest [--file <path>|-]     grade a JSON array of observations\n" +
+          "         [--stale-after-days N]\n\n" +
+          "  Shadow-only: nothing here writes the trust ledger.\n",
+      );
+      process.exit(2);
+    } catch (err) {
+      process.stderr.write(`[butler] ${(err as Error).message}\n`);
+      process.exit(2);
     }
   })();
 }

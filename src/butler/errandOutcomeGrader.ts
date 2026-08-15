@@ -69,6 +69,27 @@ export interface ObservedErrandArtifact {
   deleted?: boolean;
   /** When the errand created the artifact. */
   createdAt?: number;
+  /**
+   * Was the artifact's CURRENT state actually looked up?
+   *
+   * This exists because `stale-unactioned → junk` is only sound when a
+   * completion COULD have been seen. The rule converts silence into a
+   * negative, and silence is only evidence if somebody was listening.
+   *
+   * An ingester that derives artifacts from the local run log knows when each
+   * one was created and nothing whatever about what the operator later did
+   * with it. Feeding those to the grader without this flag would mark every
+   * errand older than the horizon `junk` — not because the operator ignored
+   * it, but because nobody ever asked. That is the trust-by-neglect defect
+   * (#1064, #1318/#1319, #1320, #1322) with its sign flipped: instead of
+   * flattering a worker for unexamined actions it slanders one, which is
+   * worse, because the worker cannot appeal a verdict nobody looked at.
+   *
+   * Absent or false ⇒ the staleness branch is skipped entirely and the result
+   * is `unknown` / `not-observed`. Only an observation channel that could
+   * have reported `completed: true` may set this.
+   */
+  stateObserved?: boolean;
 }
 
 export interface GradeOptions {
@@ -120,6 +141,13 @@ export function gradeErrandOutcome(
   if (observed.createdAt === undefined) {
     // We cannot even tell how long it has been open, so we cannot tell whether
     // silence has become meaningful. Withhold.
+    return { disposition: "unknown", reason: "not-observed" };
+  }
+
+  if (observed.stateObserved !== true) {
+    // We know when it was created but never checked what became of it. Age
+    // alone cannot distinguish "the operator ignored it" from "nobody looked",
+    // and only the first is evidence. See `stateObserved`.
     return { disposition: "unknown", reason: "not-observed" };
   }
 

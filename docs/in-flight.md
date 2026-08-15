@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `feat/butler-outcome-ingester` — Butler phase 2. The errand outcome grader was merged but UNWIRED: nothing called it, so no shadow row had ever been written and the measurement the shadow phase exists to produce did not exist. Adds `src/butler/outcomeIngester.ts` plus a `patchwork butler <ingest|shadow>` CLI. Investigation first turned up a defect that had to be fixed before wiring anything: the grader's `stale -> junk` branch fired on `createdAt` alone, so it could not distinguish "we looked and nobody acted" from "nobody ever looked" — an ingester fed run-log data (creation times, never completions) would mark every errand past the horizon junk. Trust-by-neglect with its sign flipped, and worse, because a worker cannot appeal a verdict nobody looked at. Now needs an explicit `stateObserved`. Shadow-only and structurally so: the module imports no workers/ code and is not in the recipe tool barrel, both asserted. NOT DONE: the Bearer-HTTP route and an automated observation channel — see the PR, an LLM gathering observations would poison the ledger the same way the LLM judge did.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
