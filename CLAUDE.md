@@ -183,7 +183,7 @@ Most users don't need to touch these — CLI flags cover the common cases. Liste
 | `BRIDGE_WEBHOOK_SECRET` | Equivalent to `--webhook-secret`; HMAC-SHA256 auth on `POST /hooks/*`. |
 | `PATCHWORK_HOME` | Override `~/.patchwork` workspace root. |
 | `PATCHWORK_BRIDGE_URL` / `PATCHWORK_BRIDGE_PORT` | CLI subcommands use these to find the bridge instead of the lock file (useful in remote-bridge setups). |
-| `PATCHWORK_DASHBOARD_URL` | Default dashboard URL used by CLI "open" actions. |
+| `PATCHWORK_DASHBOARD_URL` | Public base URL the OAuth callback is served from — FIRST in the `redirect_uri` precedence chain for every OAuth connector (`src/connectors/connectorRedirectUri.ts`). Must include the dashboard basePath (e.g. `https://example.com/dashboard`). Changing it changes the `redirect_uri` sent to every provider, so it must match what is registered on each OAuth app. Not read by any CLI "open" action. |
 | `PATCHWORK_CLAUDE_BINARY` | Equivalent to `--claude-binary`; path to the `claude` CLI. |
 | `PATCHWORK_RECIPE_REPO_ALLOWLIST` | Comma-separated `owner/repo` allowlist for recipe install sources. |
 | `PATCHWORK_TOKEN_DIR` / `PATCHWORK_TOKEN_STORAGE_BACKEND` | Connector-token storage location + backend (`file` vs `keychain`). |
