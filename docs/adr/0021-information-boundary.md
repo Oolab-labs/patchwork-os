@@ -95,8 +95,13 @@ before dispatch, with declared labels only. No detection in this ADR.**
 
 ### The invariant
 
-> No model-bound context leaves Patchwork without passing the information-boundary
-> decision point.
+> No **recipe agent-step** context leaves Patchwork without passing the
+> information-boundary decision point.
+
+The qualifier is load-bearing and was added after the fact — see
+[Scope: what the boundary does NOT cover](#scope-what-the-boundary-does-not-cover)
+below. As originally written this said "no model-bound context", which claimed
+coverage the code does not provide.
 
 And, mirroring the never-widen rule the autonomy gate already relies on:
 
@@ -156,6 +161,47 @@ Every boundary decision produces a record, in the same shape and store as gate
 decisions: what was declared, where it was going, what was removed, what was
 retained, why. Patchwork's existing claim is *every consequential decision leaves
 a receipt*; this extends it from **what the AI did** to **what the AI was told**.
+
+## Scope: what the boundary does NOT cover
+
+**Orchestrator task dispatch is out of scope (#1397).**
+
+`ClaudeOrchestrator` sends prompts to a model by a different route than
+`executeAgent`, and there is **no information-boundary decision on that path**.
+A `runClaudeTask` prompt — including one enqueued by an automation hook — reaches
+a driver without being judged, and no receipt is written for it.
+
+This is a deliberate narrowing, not an oversight left unstated. The invariant
+above originally claimed all model-bound context; the enforcement only ever
+covered the recipe agent-step path. **A stated invariant broader than its
+enforcement is the part that must not persist**, because it invites exactly the
+false confidence receipts exist to prevent: an operator reading the ADR would
+conclude orchestrator traffic was governed, and nothing in the system would
+contradict them.
+
+Why it is not simply wired up: the boundary answers *may this data go to that
+destination*, and an orchestrator task has no declared `data_policy` and no
+natural place to put one. It is a free-form prompt, frequently assembled from
+workspace context rather than from a recipe step. Wiring the existing decision in
+without first answering that would give every orchestrator task the default
+classification — a check that runs, always says `internal`, and writes an
+affirmative receipt about a label nobody supplied. That is the failure the recipe
+path itself had before the destination registry existed, reintroduced one layer
+over.
+
+Bringing it in scope requires, first, a declared-policy channel: a per-task label,
+or a workspace-level default that is **recorded honestly as a default rather than
+as a declaration**. The receipt shape must then distinguish `declared` from
+`assumed`, or it asserts something about operator intent that no operator
+expressed.
+
+Until that exists, the honest statement is the one above: this path is
+ungoverned, and the ADR says so.
+
+`src/__tests__/boundaryScope.test.ts` pins this to the code. It fails if
+orchestrator dispatch gains a boundary decision — at which point this section is
+wrong and must be updated with it — and it fails equally if the recipe path ever
+loses one, so it cannot pass by both sides being empty.
 
 ## Explicitly not in this ADR
 
