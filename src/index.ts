@@ -5148,6 +5148,71 @@ if (process.argv[2] === "butler") {
         process.exit(0);
       }
 
+      if (args[0] === "observe") {
+        // The cron entry point: look up live task state, grade it, append
+        // shadow rows. Operator path only — a recipe step runs AS the worker,
+        // and a worker that could observe its own filings could report them
+        // completed.
+        //
+        // Refs are supplied, not discovered. Deriving them from the run log is
+        // a separate piece of work, and inventing a task id here would be the
+        // same class of error as inventing an observation.
+        const fileIdx = args.indexOf("--file");
+        const src =
+          fileIdx !== -1 && args[fileIdx + 1] ? args[fileIdx + 1] : "-";
+        const { readFileSync } = await import("node:fs");
+        const raw =
+          src === "-"
+            ? readFileSync(0, "utf-8")
+            : readFileSync(src as string, "utf-8");
+        let refs: unknown;
+        try {
+          refs = JSON.parse(raw);
+        } catch (err) {
+          process.stderr.write(
+            `[butler] refs are not valid JSON: ${(err as Error).message}\n`,
+          );
+          process.exit(2);
+        }
+        if (!Array.isArray(refs)) {
+          process.stderr.write(
+            "[butler] expected a JSON array of {taskId, ref, recipe?}\n",
+          );
+          process.exit(2);
+        }
+        const { getTodoistConnector } = await import("./connectors/todoist.js");
+        const { observeTodoistErrands } = await import(
+          "./butler/todoistObservation.js"
+        );
+        const run = await observeTodoistErrands(getTodoistConnector(), refs);
+        const res = ingestErrandOutcomes(run.observations, {
+          now: Date.now(),
+        });
+        if (args.includes("--json")) {
+          process.stdout.write(
+            `${JSON.stringify({ ...res, unavailable: run.unavailable }, null, 2)}\n`,
+          );
+        } else {
+          process.stdout.write(
+            `[butler] observed ${run.observations.length}, ` +
+              `could not read ${run.unavailable.length}.\n`,
+          );
+          for (const u of run.unavailable) {
+            // Printed, never silent: an unread errand is not a graded one, and
+            // a run that quietly skipped half its refs must not look clean.
+            process.stdout.write(
+              `[butler]   unavailable ${u.ref}: ${u.reason}\n`,
+            );
+          }
+          process.stdout.write(
+            `[butler] graded ${res.graded}: ${res.batch.confirmed} confirmed, ` +
+              `${res.batch.junk} junk, ${res.batch.unknown} unknown.\n`,
+          );
+          process.stdout.write(`\n${formatShadowSummary(res.ledger)}\n`);
+        }
+        process.exit(0);
+      }
+
       if (args[0] === "ingest") {
         // Observations come from a file or stdin as a JSON array. They are NOT
         // gathered here: reading the operator's trackers is a connector
@@ -5204,9 +5269,10 @@ if (process.argv[2] === "butler") {
       }
 
       process.stderr.write(
-        "Usage: patchwork butler <shadow|ingest> [--json]\n\n" +
+        "Usage: patchwork butler <shadow|ingest|observe> [--json]\n\n" +
           "  shadow                       summarise the graded shadow ledger\n" +
           "  ingest [--file <path>|-]     grade a JSON array of observations\n" +
+          "  observe [--file <path>|-]    look up live Todoist state, then grade\n" +
           "         [--stale-after-days N]\n\n" +
           "  Shadow-only: nothing here writes the trust ledger.\n",
       );
