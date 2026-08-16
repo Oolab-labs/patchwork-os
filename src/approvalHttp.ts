@@ -60,6 +60,23 @@ export interface ApprovalHttpDeps {
   ccLoader?: typeof loadCcPermissions;
   /** Optional hook — called after every approval decision for audit/activity logging. */
   onDecision?: (event: string, meta: Record<string, unknown>) => void;
+  /**
+   * Resolve the human behind a forwarded dashboard session cookie — ADR-0020
+   * Phase A. Injected rather than imported so this module keeps no dependency
+   * on the roster or the cookie format, and so a test can drive attribution
+   * without a members.json on disk.
+   *
+   * Absent, or resolving to `undefined`, means the decision is recorded with
+   * NO actor. That is the honest default and the one every unconfigured
+   * deployment gets: the bridge is not normally given
+   * `DASHBOARD_SESSION_SECRET`, so it cannot verify a cookie and does not
+   * guess.
+   */
+  resolveApprover?: (
+    sessionCookie?: string,
+  ) => Promise<
+    { id: string; kind: "human" | "worker"; displayName: string } | undefined
+  >;
   /** Optional webhook URL — POST notification dispatched when approval is queued. */
   webhookUrl?: string;
   /** Gate tier — "off" bypasses all queueing; "high" only queues high-tier tools; "all" queues everything. */
@@ -136,6 +153,15 @@ export interface HttpRequest {
   query?: URLSearchParams;
   /** x-approval-token header value, if present — phone-path auth for approve/reject. */
   approvalToken?: string;
+  /**
+   * The dashboard session cookie value, forwarded by the dashboard proxy.
+   * ADR-0020 Phase A: the bridge VERIFIES this (it is signed with
+   * `DASHBOARD_SESSION_SECRET`) to name the human who approved. It is evidence,
+   * not an assertion — see `identity/approverFromSession.ts`. Absent on the
+   * phone path and on any deployment that has not shared the secret, and
+   * absent simply means the decision is recorded unattributed.
+   */
+  sessionCookie?: string;
 }
 
 export interface HttpResponse {
@@ -307,6 +333,23 @@ export async function routeApprovalRequest(
     const approveRecipeName = approveEntry?.recipeName;
     const ok = deps.queue.approve(callId);
     if (ok) {
+      // ADR-0020 Phase A. Resolved AFTER the decision lands, never before:
+      // attribution must not be able to block or alter an approval. An
+      // unresolvable actor is recorded as no actor.
+      //
+      // Caught here and not only inside the resolver. `queue.approve()` has
+      // ALREADY run — the approval has taken effect — so a throw escaping this
+      // line returns 500 for a decision that really happened, and the operator
+      // sees a failure then watches the action proceed. The shipped resolver
+      // never throws; this guards the seam, which is injectable.
+      let approver: Awaited<
+        ReturnType<NonNullable<typeof deps.resolveApprover>>
+      >;
+      try {
+        approver = await deps.resolveApprover?.(req.sessionCookie);
+      } catch {
+        approver = undefined;
+      }
       // Audit 2026-06-03 (MEDIUM #27): fire the audit hook on APPROVE too —
       // previously only the reject path called onDecision, so approvals (the
       // higher-risk decision) left no audit/activity-log trail.
@@ -329,6 +372,10 @@ export async function routeApprovalRequest(
         ...(approveRecipeName !== undefined && {
           recipeName: approveRecipeName,
         }),
+        // Present ⇒ a named person's own authenticated session was verified
+        // here. Absent ⇒ nobody was identified, which stays distinguishable
+        // from "we do not know" by never being filled in with a guess.
+        ...(approver && { actor: approver }),
       });
       return { status: 200, body: { decision: "allow", callId } };
     }
@@ -411,9 +458,24 @@ export async function routeApprovalRequest(
     const rejectRecipeName = rejectEntry?.recipeName;
     const ok = deps.queue.reject(callId);
     if (ok) {
+      // A REFUSAL is attributed on the same terms as an approval. Attributing
+      // only the yes would make the audit log a record of who permits things
+      // and never of who stopped them, which is the half that matters when a
+      // decision is later questioned.
+      //
+      // Same guard as the approve path: `queue.reject()` has already run.
+      let rejecter: Awaited<
+        ReturnType<NonNullable<typeof deps.resolveApprover>>
+      >;
+      try {
+        rejecter = await deps.resolveApprover?.(req.sessionCookie);
+      } catch {
+        rejecter = undefined;
+      }
       deps.onDecision?.("approval_decision", {
         callId,
         decision: "deny",
+        ...(rejecter && { actor: rejecter }),
         ...(reason !== undefined && { reason }),
         // Provenance: phone (single-use token) vs dashboard/Bearer caller.
         channel: req.approvalToken !== undefined ? "phone" : "dashboard",

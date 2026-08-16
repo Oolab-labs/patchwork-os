@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-16 `feat/adr0020-attribute-the-approver` — the other half of #1430: a verified dashboard session now names the human on an approve/reject, closing the ADR-0017 note that the approving human "cannot be known until the approval path carries an identity". Moves the session cookie FORMAT into `src/identity/dashboardSession.ts` (one implementation, two processes) and adds a bridge-side verifying resolver. Touches `src/approvalHttp.ts`, `src/server.ts`, `src/bridge.ts` startup and `dashboard/src/lib/session.ts` — collides with any approval-path, identity or dashboard-session work.
 
 ## Recently closed (informal log, prune periodically)
 
