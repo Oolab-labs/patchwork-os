@@ -33,6 +33,7 @@ import {
   watchFlags,
 } from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
+import { createApproverResolver } from "./identity/approverFromSession.js";
 import { describeRoster, loadRoster } from "./identity/roster.js";
 import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
@@ -1255,6 +1256,32 @@ export class Bridge {
     // here used to describe; it is simply that the roster owns its own default.
     this.server.roster = loadRoster();
     this.logger.info(`[patchwork] ${describeRoster(this.server.roster)}`);
+
+    // ADR-0020 Phase A: attribute approve/reject to the member whose dashboard
+    // session cookie the request carries.
+    //
+    // Only wired when the bridge shares `DASHBOARD_SESSION_SECRET` with the
+    // dashboard. `patchwork init` writes that secret into the dashboard's env
+    // alone, so on an unchanged install this stays undefined and decisions are
+    // recorded unattributed — exactly as before. Attribution is opt-in, and
+    // opting in means giving both processes the same secret.
+    //
+    // The roster is captured by reference to the one already loaded above
+    // rather than re-read per approval, matching the load-once contract the
+    // roster and credential store both document.
+    if ((process.env.DASHBOARD_SESSION_SECRET ?? "") !== "") {
+      const roster = this.server.roster;
+      this.server.resolveApprover = createApproverResolver({
+        rosterFor: () => roster,
+      });
+      this.logger.info(
+        roster.implicit
+          ? "[patchwork] approval attribution ON, but members.json is absent — " +
+              "an implicit-owner roster cannot honour a named session, so " +
+              "decisions stay unattributed"
+          : "[patchwork] approval attribution ON — a verified dashboard session will name the approver",
+      );
+    }
 
     // 2. Initialize Claude driver and orchestrator (if configured)
     if (this.config.driver !== "none") {

@@ -518,6 +518,24 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((event: string, meta: Record<string, unknown>) => void)
     | undefined = undefined;
   /**
+   * Patchwork: resolves the human behind a forwarded dashboard session cookie
+   * so an approve/reject can be attributed (ADR-0020 Phase A).
+   *
+   * Built lazily and ONLY when `DASHBOARD_SESSION_SECRET` is present, because
+   * without it `verifySession` rejects every cookie — a resolver that can
+   * never succeed is worth neither the roster read nor the confusion of
+   * appearing wired. Left undefined ⇒ decisions record no actor, which is the
+   * status quo and the honest answer.
+   */
+  public resolveApprover:
+    | ((
+        sessionCookie?: string,
+      ) => Promise<
+        | { id: string; kind: "human" | "worker"; displayName: string }
+        | undefined
+      >)
+    | undefined = undefined;
+  /**
    * Patchwork: activity log handle, used by approvalHttp to compute
    * passive risk personalization signals (`src/approvalSignals.ts`).
    * When unset, personalSignals are simply omitted from queue entries.
@@ -3144,12 +3162,23 @@ export class Server extends EventEmitter<ServerEvents> {
               approvalToken:
                 (req.headers["x-approval-token"] as string | undefined) ??
                 undefined,
+              // ADR-0020 Phase A. The dashboard proxy forwards the member's
+              // own session cookie; the bridge VERIFIES it against
+              // DASHBOARD_SESSION_SECRET rather than trusting an asserted id,
+              // so holding the shared bridge token is not enough to put a
+              // person's name on a decision. A dedicated header, not the
+              // `Cookie` header: the bridge is not a browser origin and must
+              // not start reading ambient cookies.
+              sessionCookie:
+                (req.headers["x-patchwork-session"] as string | undefined) ??
+                undefined,
             },
             {
               queue: getApprovalQueue(),
               workspace: this.workspace,
               managedSettingsPath: this.managedSettingsPath,
               onDecision: this.onApprovalDecision,
+              resolveApprover: this.resolveApprover,
               webhookUrl: this.approvalWebhookUrl,
               approvalGate: this.approvalGate,
               pushServiceUrl: this.pushServiceUrl,

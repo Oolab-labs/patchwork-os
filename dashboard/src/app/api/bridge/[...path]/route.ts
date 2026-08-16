@@ -6,6 +6,7 @@ import {
   bodyTooLargeResponse,
   readBodyWithCap,
 } from "@/lib/readBodyWithCap";
+import { SESSION_COOKIE_NAME } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -144,6 +145,24 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   const tracePassphrase = req.headers.get("x-trace-passphrase");
   if (tracePassphrase && tracePassphrase.length <= 512) {
     forwardHeaders["x-trace-passphrase"] = tracePassphrase;
+  }
+  // ADR-0020 Phase A: forward the member's OWN session cookie so the bridge
+  // can name whoever approved or rejected. The bridge verifies it against
+  // DASHBOARD_SESSION_SECRET; it is evidence, not an assertion, which is why
+  // an id header would not do — anyone holding the shared bridge token could
+  // write one.
+  //
+  // Read from `req.cookies`, never from a client-settable header, and scoped
+  // to the two decision paths. A session credential forwarded to every bridge
+  // endpoint is a credential in far more logs and handlers than the one place
+  // that needs it, for no benefit: nothing else attributes anything.
+  if (
+    (req.method === "POST" || req.method === "PUT") &&
+    segments.length === 2 &&
+    (segments[0] === "approve" || segments[0] === "reject")
+  ) {
+    const session = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+    if (session) forwardHeaders["x-patchwork-session"] = session;
   }
   let res: Response;
   try {
