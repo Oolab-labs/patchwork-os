@@ -1,6 +1,13 @@
 {
-  "_comment": "Ratcheting allowlist for test fixture hygiene. Each category only shrinks — remove entries once the underlying issue is fixed. Add new entries only when grandfathering pre-existing violations, with a comment explaining why fixing them is deferred.",
+  "_comment": "Ratcheting allowlist for test fixture hygiene. Each category only shrinks \u2014 remove entries once the underlying issue is fixed. Add new entries only when grandfathering pre-existing violations, with a comment explaining why fixing them is deferred.",
   "hardcodedTmpPaths": [
+    "dashboard/src/app/__tests__/page.test.tsx",
+    "dashboard/src/app/api/relay/push/__tests__/route.test.ts",
+    "dashboard/src/app/approvals/__tests__/batchApproveEvidenceGate.test.tsx",
+    "dashboard/src/app/approvals/__tests__/batchDecide.test.tsx",
+    "dashboard/src/app/approvals/__tests__/unownedApproval.test.tsx",
+    "dashboard/src/app/inbox/__tests__/page.test.tsx",
+    "dashboard/src/app/transactions/__tests__/discardAllExpired.test.tsx",
     "src/__tests__/activityLog.test.ts",
     "src/__tests__/ant-driver.test.ts",
     "src/__tests__/approvalHookScript.test.ts",
@@ -26,6 +33,7 @@
     "src/__tests__/recipeRoutes-install.test.ts",
     "src/__tests__/recipeVariants.test.ts",
     "src/__tests__/registration-coverage.test.ts",
+    "src/__tests__/security-path-traversal.test.ts",
     "src/__tests__/server-approval-detail.test.ts",
     "src/__tests__/server-kill-switch.test.ts",
     "src/__tests__/server-recipes-content.test.ts",
@@ -70,6 +78,7 @@
     "src/tools/__tests__/getCodeCoverage.test.ts",
     "src/tools/__tests__/getDependencyTree.test.ts",
     "src/tools/__tests__/getGitHotspots.test.ts",
+    "src/tools/__tests__/getImportedSignatures.test.ts",
     "src/tools/__tests__/getPRTemplate.test.ts",
     "src/tools/__tests__/getSecurityAdvisories.test.ts",
     "src/tools/__tests__/remainingTools.test.ts",
@@ -78,11 +87,11 @@
     "src/tools/__tests__/terminal-namespacing.test.ts",
     "src/tools/__tests__/terminal.test.ts",
     "src/tools/__tests__/testTraceToSource.test.ts",
-    "src/__tests__/security-path-traversal.test.ts",
-    "src/tools/__tests__/utils-security.test.ts",
-    "src/tools/__tests__/getImportedSignatures.test.ts"
+    "src/tools/__tests__/utils-security.test.ts"
   ],
   "envMutationWithoutRestore": [
+    "dashboard/src/app/api/connections/__tests__/session-guard.test.ts",
+    "dashboard/src/lib/__tests__/bridge.test.ts",
     "src/__tests__/analyticsConfig.test.ts",
     "src/__tests__/analyticsSend.test.ts",
     "src/__tests__/boot-warning.test.ts",
@@ -92,13 +101,17 @@
     "src/tools/__tests__/openInBrowser.test.ts"
   ],
   "spyOnWithoutRestore": [
-    "src/__tests__/bridge-connectivity.test.ts",
-    "src/__tests__/claudeDriver.test.ts",
+    "dashboard/src/app/__tests__/page.test.tsx",
+    "dashboard/src/app/api/bridge/[...path]/__tests__/route.test.ts",
+    "dashboard/src/app/insights/__tests__/page.keys.test.tsx",
+    "dashboard/src/components/__tests__/GlobalLiveRunsStrip.test.tsx",
     "src/__tests__/automation-on-compaction.test.ts",
     "src/__tests__/automation-on-debug-session.test.ts",
     "src/__tests__/automation-on-diagnostics-state.test.ts",
     "src/__tests__/automation-on-test-run.test.ts",
     "src/__tests__/automation.test.ts",
+    "src/__tests__/bridge-connectivity.test.ts",
+    "src/__tests__/claudeDriver.test.ts",
     "src/__tests__/httpErrorResponse.test.ts",
     "src/__tests__/transport-edge-cases.test.ts",
     "src/commands/__tests__/cli-warns-when-out-of-jail.test.ts",
@@ -118,5 +131,6 @@
     "src/recipes/__tests__/dispatchRecipe.parity.test.ts",
     "src/recipes/__tests__/recipeServers.test.ts",
     "src/recipes/__tests__/yamlRunner.test.ts"
-  ]
+  ],
+  "_dashboard_note": "Dashboard entries added 2026-08-16 when the scan was extended past src/. GRANDFATHERED, not endorsed: they pre-date the scan reaching them, and fixing 13 unrelated dashboard tests in the PR that widened the surface would have buried the change that matters. The one violation introduced the SAME DAY (sessionMemberId.test.ts, from #1430) was fixed rather than listed \u2014 a ratchet that grandfathers today's mistake is not a ratchet."
 }

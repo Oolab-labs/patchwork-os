@@ -8,7 +8,7 @@
  * claim about one, which is the failure this ADR exists to prevent.
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { sessionMemberId } from "../requireSession";
 import { SESSION_COOKIE_NAME, signSession } from "@/lib/session";
@@ -19,8 +19,19 @@ function withCookie(value?: string): Request {
   });
 }
 
+const HAD_SECRET = process.env.DASHBOARD_SESSION_SECRET;
+
 beforeEach(() => {
   process.env.DASHBOARD_SESSION_SECRET = "b".repeat(48);
+});
+
+afterEach(() => {
+  // Restore rather than delete. This file previously left the secret set for
+  // every later test in the same worker, and a test asserting that
+  // verification FAILS without a secret would then pass or fail on file order
+  // alone — the shape of an order-dependent flake, not a deterministic one.
+  if (HAD_SECRET === undefined) delete process.env.DASHBOARD_SESSION_SECRET;
+  else process.env.DASHBOARD_SESSION_SECRET = HAD_SECRET;
 });
 
 describe("sessionMemberId", () => {
