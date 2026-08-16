@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `feat/adr0020-v2-session-cookie` — ADR-0020 Phase A's remaining half. The dashboard session payload was literally `v1.${expiresAt}` — no field except expiry — so every approver was indistinguishable and no record could name one. Adds `v2.<memberId>.<expiresAt>.<HMAC>`. v1 stays VALID but subject-less, and `memberId` is ABSENT from the result (not undefined-valued) — a v1 cookie must never read as an attributed v2, or the absence of a subject becomes a CLAIM of one. No behaviour change: the login route authenticates a SECRET not a person, so it keeps minting v1; v2 appears only once a real member authenticates. Version is inside the signed payload, so a v1 cookie cannot be re-spelled as v2. Probed: defaulting a v1 subject to `local-owner` turns 2 tests red. Touches `dashboard/src/lib/session.ts`; all 10 consumers destructure `.valid` only and are unchanged.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
