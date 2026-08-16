@@ -53,11 +53,27 @@ const HARDCODED = /homedir\(\)\s*,\s*["']\.patchwork["']/;
 const SELF = "src/patchworkHome.ts";
 
 function trackedSources() {
-  const out = execFileSync("git", ["ls-files", "src/**/*.ts", "src/*.ts"], {
-    cwd: root,
-    encoding: "utf8",
-    maxBuffer: 8 * 1024 * 1024,
-  });
+  // `dashboard/src` as well as `src`. The dashboard is a separate package in
+  // the same repo and reaches the SAME directory on disk, so a hardcode there
+  // desynchronises it from the bridge exactly as one here would — and the
+  // scan stopping at the package boundary is why two such lines sat in
+  // dashboard/src/app/api/connector-requests/route.ts, matching this file's
+  // own HARDCODED regex, while the gate reported clean.
+  const out = execFileSync(
+    "git",
+    [
+      "ls-files",
+      "src/**/*.ts",
+      "src/*.ts",
+      "dashboard/src/**/*.ts",
+      "dashboard/src/**/*.tsx",
+    ],
+    {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 8 * 1024 * 1024,
+    },
+  );
   return out
     .split("\n")
     .filter(Boolean)

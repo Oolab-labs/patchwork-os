@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { requireSameOrigin } from "@/lib/csrf";
+// The SAME resolver the bridge uses. Imported rather than reimplemented:
+// resolving the workspace root by hand is exactly what produced this bug, and
+// a second copy of the rule drifts from the first the moment either changes.
+// `patchworkHome.ts` imports only `node:` builtins, so it crosses the package
+// boundary cleanly.
+import {
+  patchworkHome,
+  patchworkPath,
+} from "../../../../../src/patchworkHome";
 import {
   DASHBOARD_API_BODY_CAPS,
   bodyTooLargeResponse,
@@ -40,7 +48,7 @@ let writeChain: Promise<void> = Promise.resolve();
  */
 export async function GET(): Promise<Response> {
   try {
-    const file = path.join(os.homedir(), ".patchwork", "connector-requests.json");
+    const file = patchworkPath("connector-requests.json");
     if (!fs.existsSync(file)) {
       return NextResponse.json({ requests: [] });
     }
@@ -127,7 +135,7 @@ export async function POST(req: Request): Promise<Response> {
     writeChain = writeChain
       .then(() => {
         try {
-          const dir = path.join(os.homedir(), ".patchwork");
+          const dir = patchworkHome();
           const file = path.join(dir, "connector-requests.json");
 
           fs.mkdirSync(dir, { recursive: true });
