@@ -256,7 +256,16 @@ describe("the real CLI entry point", () => {
     () => {
       const observations = JSON.stringify([
         { ref: "todoist.create_task:1", completed: true },
-        { ref: "todoist.create_task:2", createdAt: 1, stateObserved: true },
+        // Ancient, WATCHED since long ago, still open — the case the
+        // staleness rule exists for. `watchedSince` is explicit: without it
+        // this errand is being seen for the first time in this run, and an
+        // errand nobody was ever asked about must not grade junk on day one.
+        {
+          ref: "todoist.create_task:2",
+          createdAt: 1,
+          stateObserved: true,
+          watchedSince: 1,
+        },
         // No stateObserved: ancient, but nobody looked. Must NOT be junk.
         { ref: "todoist.create_task:3", createdAt: 1 },
       ]);
