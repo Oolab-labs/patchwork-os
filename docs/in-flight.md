@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-16 `fix/dashboard-ignores-patchwork-home` — `audit-patchwork-home` scans `src/**` only, so it never saw two lines in the dashboard's connector-requests route that match its OWN regex: `path.join(os.homedir(), ".patchwork", ...)`. PATCHWORK_HOME is ignored there, so with an override set the bridge and dashboard read different directories. Fixes the route and widens the gate.
 
 ## Recently closed (informal log, prune periodically)
 

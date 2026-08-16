@@ -6,9 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "../route";
 
-// connector-requests writes to ~/.patchwork/connector-requests.json. We
-// redirect HOME via os.homedir() spy and use a fresh temp dir per test
-// so cases don't see each other's writes.
+// connector-requests writes under the Patchwork home. Redirected via the
+// PATCHWORK_HOME env var — the SAME override production uses — with a fresh
+// temp dir per test so cases don't see each other's writes.
+//
+// This used to spy on `os.homedir()`. That stopped working the moment the
+// route began resolving through `patchworkHome()`, which imports `homedir` as
+// a NAMED binding that a spy on the `os` namespace object never reaches. The
+// failure was not a red test: the route wrote to the developer's REAL
+// ~/.patchwork/connector-requests.json, appending 13 fixture rows per run
+// alongside a genuine four-month-old request. Redirecting the documented
+// override instead of monkey-patching the module makes that unreachable.
 
 let tmpHome: string;
 let storeFile: string;
@@ -25,14 +33,21 @@ function makeReq(
   return new Request("https://dashboard.local/api/connector-requests", init);
 }
 
+let priorHome: string | undefined;
+
 beforeEach(() => {
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "connreq-test-"));
-  storeFile = path.join(tmpHome, ".patchwork", "connector-requests.json");
-  vi.spyOn(os, "homedir").mockReturnValue(tmpHome);
+  // PATCHWORK_HOME IS the store root, so the file sits directly inside it —
+  // not under a nested ".patchwork" as the homedir-spy version assumed.
+  storeFile = path.join(tmpHome, "connector-requests.json");
+  priorHome = process.env.PATCHWORK_HOME;
+  process.env.PATCHWORK_HOME = tmpHome;
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  if (priorHome === undefined) delete process.env.PATCHWORK_HOME;
+  else process.env.PATCHWORK_HOME = priorHome;
   fs.rmSync(tmpHome, { recursive: true, force: true });
 });
 
