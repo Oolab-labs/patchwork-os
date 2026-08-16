@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-16 `fix/gates-that-cannot-catch-their-own-failures` — two checks that could not catch what they exist to catch. audit-in-flight's branch pattern was wrong in BOTH directions (invented branches from backticked file paths, missed real branch names past the second slash); the dashboard had no typecheck script, so nothing local ran tsc --noEmit and a broken main passed four green local checks. Touches `scripts/audit-in-flight.mjs`, `dashboard/package.json` and the CI workflow.
 
 ## Recently closed (informal log, prune periodically)
 
