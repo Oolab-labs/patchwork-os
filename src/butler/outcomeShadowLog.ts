@@ -95,6 +95,47 @@ export function appendShadowOutcome(
   }
 }
 
+/**
+ * When each ref was FIRST graded, from the ledger itself.
+ *
+ * No new file: every shadow row already carries `gradedAt`, so the earliest
+ * one for a ref IS the moment it came under observation. A separate
+ * "first seen" store would be a second source of truth that can disagree with
+ * the ledger it describes — and the ledger is the thing a reviewer reads.
+ *
+ * Refs absent from the map have never been observed; the caller supplies
+ * `now`, which is correct: this run is when watching starts.
+ */
+export function firstSeenByRef(
+  opts: { dir?: string } = {},
+): Map<string, number> {
+  const out = new Map<string, number>();
+  const p = shadowLogPath(opts.dir);
+  if (!existsSync(p)) return out;
+  let text: string;
+  try {
+    text = readFileSync(p, "utf-8");
+  } catch {
+    return out;
+  }
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let row: ShadowOutcomeRow;
+    try {
+      row = JSON.parse(line) as ShadowOutcomeRow;
+    } catch {
+      continue;
+    }
+    if (typeof row.ref !== "string" || typeof row.gradedAt !== "number") {
+      continue;
+    }
+    const prev = out.get(row.ref);
+    if (prev === undefined || row.gradedAt < prev)
+      out.set(row.ref, row.gradedAt);
+  }
+  return out;
+}
+
 export interface ShadowSummary {
   total: number;
   confirmed: number;

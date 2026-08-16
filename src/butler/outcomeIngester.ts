@@ -46,6 +46,7 @@ import {
 } from "./errandOutcomeGrader.js";
 import {
   appendShadowOutcome,
+  firstSeenByRef,
   type ShadowSummary,
   summariseShadowLog,
 } from "./outcomeShadowLog.js";
@@ -94,6 +95,11 @@ export function ingestErrandOutcomes(
   observations: readonly ErrandObservation[],
   opts: IngestOptions,
 ): IngestResult {
+  // When each ref came under observation, read from the ledger. An errand
+  // first seen in THIS run has been watched for zero time, so the staleness
+  // rule cannot yet convert its silence into a negative — the operator was
+  // never asked. See `watchedSince` in errandOutcomeGrader.
+  const firstSeen = firstSeenByRef({ dir: opts.dir });
   const skipped: IngestResult["skipped"] = [];
   const batch = { confirmed: 0, junk: 0, unknown: 0 };
   const seen = new Set<string>();
@@ -111,7 +117,13 @@ export function ingestErrandOutcomes(
     }
     seen.add(ref);
 
-    const { disposition, reason } = gradeErrandOutcome(obs, opts);
+    const { disposition, reason } = gradeErrandOutcome(
+      {
+        ...obs,
+        watchedSince: obs.watchedSince ?? firstSeen.get(ref) ?? opts.now,
+      },
+      opts,
+    );
     appendShadowOutcome(
       {
         ref,

@@ -290,7 +290,7 @@ const MOCK_LINEAR_ISSUE = {
   title: "Fix null pointer in auth flow",
   description: "Crashes on login.",
   state: { name: "In Progress", type: "started" },
-  assignee: { name: "Waweru", email: "w@test.com" },
+  assignee: { name: "Dana Example", email: "dana@example.test" },
   priority: 2,
   priorityLabel: "High",
   url: "https://linear.app/patchwork-os/issue/LIN-42",
