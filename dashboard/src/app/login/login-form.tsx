@@ -7,8 +7,16 @@ import { apiPath } from "@/lib/api";
  * `redirect` field on success. Same-origin POST so the SameSite=Strict
  * cookie that comes back is set.
  */
-export function LoginForm({ next }: { next: string }) {
+export function LoginForm({
+  next,
+  members = false,
+}: {
+  next: string;
+  /** True when at least one member has a credential on file (ADR-0020). */
+  members?: boolean;
+}) {
   const [pw, setPw] = useState("");
+  const [memberId, setMemberId] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -26,7 +34,15 @@ export function LoginForm({ next }: { next: string }) {
       const res = await fetch(apiPath("/api/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pw, next }),
+        // `memberId` is sent ONLY when the operator typed one. An empty
+        // string would make every login member-shaped, and the route answers
+        // a member-shaped request from the identity seam alone — so the
+        // shared password would stop working entirely.
+        body: JSON.stringify({
+          password: pw,
+          next,
+          ...(memberId.trim() ? { memberId: memberId.trim() } : {}),
+        }),
       });
       if (res.ok) {
         const body = (await res.json()) as { redirect?: string };
@@ -38,9 +54,14 @@ export function LoginForm({ next }: { next: string }) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setErr(body.error ?? "too many attempts — wait a minute");
       } else if (res.status === 401) {
-        setErr("Invalid password.");
+        setErr(memberId.trim() ? "Invalid credentials." : "Invalid password.");
       } else if (res.status === 503) {
-        setErr("Dashboard auth not configured server-side.");
+        // Two different 503s: auth unconfigured, or a member id that cannot
+        // be attributed. The server's message distinguishes them; a generic
+        // string here would send the operator to check env vars over a
+        // problem in members.json.
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setErr(body.error ?? "Dashboard auth not configured server-side.");
       } else {
         setErr(`Error ${res.status}`);
       }
@@ -53,8 +74,30 @@ export function LoginForm({ next }: { next: string }) {
 
   return (
     <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 320 }}>
+      {members && (
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: "var(--fs-m)", color: "var(--ink-1)" }}>
+          Member id <span style={{ color: "var(--ink-2)" }}>(optional)</span>
+          <input
+            type="text"
+            autoComplete="username"
+            placeholder="leave blank for the shared password"
+            value={memberId}
+            onChange={(e) => setMemberId(e.target.value)}
+            disabled={busy}
+            style={{
+              background: "var(--recess)",
+              border: "1px solid var(--line-2)",
+              borderRadius: "var(--r-2)",
+              color: "var(--ink-0)",
+              fontSize: "var(--fs-m)",
+              fontFamily: "var(--font-mono)",
+              padding: "8px 10px",
+            }}
+          />
+        </label>
+      )}
       <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: "var(--fs-m)", color: "var(--ink-1)" }}>
-        Dashboard password
+        {members ? "Password" : "Dashboard password"}
         <input
           type="password"
           autoFocus
