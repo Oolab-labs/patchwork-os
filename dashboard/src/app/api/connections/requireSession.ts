@@ -41,3 +41,34 @@ export async function requireCallbackSession(
   }
   return null;
 }
+
+/**
+ * Who this request is, or `undefined` — ADR-0020 Phase A, the read side.
+ *
+ * `undefined` means UNATTRIBUTED and callers must treat it as such. It is
+ * returned for an unauthenticated request, for a v1 (subject-less) cookie, and
+ * for the `DASHBOARD_ALLOW_UNAUTHENTICATED` dev bypass. All three are "nobody
+ * was identified", and none of them may become a person: an absent actor
+ * already means "nobody recorded this" and is never backfilled, while a
+ * defaulted one is indistinguishable from a recorded one.
+ *
+ * ## Why this re-verifies the cookie instead of reading a header
+ *
+ * The obvious alternative is for the middleware to stamp the member id onto a
+ * request header for handlers to read. That was built and thrown away: the
+ * middleware `config.matcher` EXEMPTS a set of paths (`api/login`, the OAuth
+ * callback routes, the push/SW machinery), so on any exempt path a header of
+ * that name is whatever the client sent. A consumer cannot tell from the read
+ * site which kind of path it is on, so the header would be trustworthy in most
+ * places and forgeable in a few — the worst available shape for an identity.
+ *
+ * Re-verifying costs one HMAC and is trustworthy everywhere, including on
+ * paths the middleware never sees.
+ */
+export async function sessionMemberId(
+  req: Request,
+): Promise<string | undefined> {
+  const sessionValue = getCookie(req, SESSION_COOKIE_NAME);
+  const { valid, memberId } = await verifySession(sessionValue);
+  return valid ? memberId : undefined;
+}

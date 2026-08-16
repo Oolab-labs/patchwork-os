@@ -1,8 +1,17 @@
+import { memberLoginConfigured } from "@/lib/memberAuth";
 import { LoginForm } from "./login-form";
 
 interface PageProps {
   searchParams?: Promise<{ next?: string | string[] }>;
 }
+
+/**
+ * Read per request, never prerendered. `memberLoginConfigured()` reads
+ * `~/.patchwork/credentials.json`, so a statically rendered login page would
+ * bake in whether member login existed at BUILD time — and the operator adding
+ * their first member would see no field until the next deploy.
+ */
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: PageProps) {
   const sp = (await searchParams) ?? {};
@@ -45,9 +54,11 @@ export default async function LoginPage({ searchParams }: PageProps) {
           patchwork
         </h1>
         <p style={{ margin: "0 0 24px", fontSize: "var(--fs-m)", color: "var(--ink-2)" }}>
-          Enter the dashboard password to continue.
+          {memberLoginConfigured()
+            ? "Sign in as yourself, or with the shared dashboard password."
+            : "Enter the dashboard password to continue."}
         </p>
-        <LoginForm next={safeNext} />
+        <LoginForm next={safeNext} members={memberLoginConfigured()} />
       </div>
     </main>
   );

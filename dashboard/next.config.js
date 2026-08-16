@@ -20,6 +20,28 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_BASE_PATH: BASE_PATH,
   },
+  // Let webpack resolve the bridge's ESM-style `./foo.js` specifiers onto the
+  // `./foo.ts` sources they actually name.
+  //
+  // The dashboard has imported from `../src/` for a long time, but only ever
+  // `connectorRegistry.ts` — a LEAF with no imports of its own, so this never
+  // came up. `src/identity/*` is the first cross-package import with an import
+  // graph, and the bridge compiles as ESM: it writes `./credentials.js` for
+  // `credentials.ts`, which is correct there and unresolvable here.
+  //
+  // Vitest resolves those specifiers on its own and reported everything green;
+  // `next build` is what caught this. Worth remembering — the in-process test
+  // could not see it.
+  //
+  // `.js` stays LAST in the list so a genuine `.js` file imported as `.js`
+  // still resolves exactly as before; this only adds candidates ahead of it.
+  webpack: (config) => {
+    config.resolve.extensionAlias = {
+      ...(config.resolve.extensionAlias ?? {}),
+      '.js': ['.ts', '.tsx', '.js'],
+    };
+    return config;
+  },
   async redirects() {
     return [
       {

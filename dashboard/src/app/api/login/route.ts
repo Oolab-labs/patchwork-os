@@ -9,6 +9,7 @@ import {
 } from "@/lib/authRateLimit";
 import { clientKey } from "@/lib/clientIp";
 import { requireSameOrigin } from "@/lib/csrf";
+import { authenticateMember } from "@/lib/memberAuth";
 import {
   DASHBOARD_API_BODY_CAPS,
   bodyTooLargeResponse,
@@ -28,6 +29,7 @@ import { sessionCookieHeader, signSession } from "@/lib/session";
 interface LoginBody {
   password?: unknown;
   next?: unknown;
+  memberId?: unknown;
 }
 
 function isSafeRedirect(next: unknown): next is string {
@@ -107,6 +109,71 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing password" }, { status: 400 });
   }
 
+  /**
+   * Record a failed attempt and answer, honouring whichever lockout bucket
+   * this client falls into. Extracted so the member path below cannot drift
+   * from the shared-password path — a second authentication surface with its
+   * own, weaker, rate limiting is how a bounded brute-force becomes an
+   * unbounded one.
+   */
+  const failAttempt = (status: number, error: string): NextResponse => {
+    const result = trackable ? recordFailure(ip) : recordGlobalFailure();
+    if (result.locked) {
+      return NextResponse.json(
+        { error: "too many attempts" },
+        {
+          status: 429,
+          headers: { "Retry-After": String(result.retryAfterSec) },
+        },
+      );
+    }
+    return NextResponse.json({ error }, { status });
+  };
+
+  /**
+   * Per-member login — ADR-0020 Phase A, and the point of this route change.
+   *
+   * A request naming a `memberId` is asking to be authenticated as a PERSON,
+   * and is answered only by the identity seam: the shared `DASHBOARD_PASSWORD`
+   * is never consulted on this path. Letting the shared secret satisfy a
+   * member-shaped request would mint an ATTRIBUTED session for whoever holds
+   * the shared password — a decision record naming a person on the evidence
+   * that somebody knew the workspace password, which is worse than no
+   * attribution at all.
+   *
+   * The converse also holds: a request with no `memberId` never reaches here,
+   * so the existing shared-password behaviour is byte-identical and still
+   * mints v1.
+   */
+  const rawMemberId = parsed.value?.memberId;
+  if (typeof rawMemberId === "string" && rawMemberId.trim() !== "") {
+    const result = await authenticateMember(rawMemberId.trim(), password);
+
+    if (!result.ok && result.reason === "unattributable") {
+      // Authenticated, but the id cannot go in the cookie. Refuse loudly
+      // rather than fall back to an unattributed v1 session: the operator
+      // named themselves and would otherwise be silently logged in as nobody.
+      // Not a failed attempt — the credentials were right — so no lockout
+      // counter moves.
+      return NextResponse.json(
+        {
+          error:
+            "member id cannot be attributed (must match /^[A-Za-z0-9_-]+$/) — rename it in members.json",
+        },
+        { status: 503 },
+      );
+    }
+    if (!result.ok) return failAttempt(401, "invalid credentials");
+
+    if (trackable) recordSuccess(ip);
+    const cookie = await signSession({ memberId: result.memberId });
+    const redirect = isSafeRedirect(next) ? next : "/dashboard";
+    return NextResponse.json(
+      { ok: true, redirect, memberId: result.memberId },
+      { headers: { "Set-Cookie": sessionCookieHeader(cookie) } },
+    );
+  }
+
   // Constant-time equality of two secrets via a fixed-length padded compare.
   //
   // Audit 2026-06-03 (HIGH #2): the previous version padded into a 256-byte
@@ -139,32 +206,7 @@ export async function POST(req: NextRequest) {
     ab.length <= CAP &&
     eb.length <= CAP;
 
-  if (!equal) {
-    if (trackable) {
-      const result = recordFailure(ip);
-      if (result.locked) {
-        return NextResponse.json(
-          { error: "too many attempts" },
-          {
-            status: 429,
-            headers: { "Retry-After": String(result.retryAfterSec) },
-          },
-        );
-      }
-    } else {
-      const result = recordGlobalFailure();
-      if (result.locked) {
-        return NextResponse.json(
-          { error: "too many attempts" },
-          {
-            status: 429,
-            headers: { "Retry-After": String(result.retryAfterSec) },
-          },
-        );
-      }
-    }
-    return NextResponse.json({ error: "invalid password" }, { status: 401 });
-  }
+  if (!equal) return failAttempt(401, "invalid password");
 
   if (trackable) recordSuccess(ip);
   const cookie = await signSession();

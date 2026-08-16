@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-16 `feat/adr0020-login-resolves-a-member` — the wiring that makes ADR-0020 Phase A do something. #1424 (seam), #1425 (v2 cookie) and #1428 (credential storage) were all merged and all inert: nothing called `resolveActor`, so the login route authenticated a SECRET, minted v1, and no record could name a person. Touches the dashboard LOGIN ROUTE and `next.config.js` module resolution — collides with any dashboard auth or build-config work.
 
 ## Recently closed (informal log, prune periodically)
 
