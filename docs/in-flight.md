@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `feat/adr0020-phase-a-auth-seam` — ADR-0020 Phase A, the half with NO blast radius: `src/identity/authSeam.ts` (resolver interface, `UNATTRIBUTED`, provider chain) and `src/identity/credentials.ts` (`crypto.scrypt`, no new dependency). Pure addition — nothing existing imports either yet, so behaviour is byte-identical. The load-bearing rule: an unauthenticated caller resolves to `UNATTRIBUTED`, NEVER the implicit owner. The roster fails SOFT and hands out an implicit owner by design, which is right for "who may act on your own machine" and catastrophic for "who did this" — a defaulted actor is indistinguishable from a recorded one. Probed: defaulting to the owner turns 2 tests red; making a malformed credential verify turns 1 red. DELIBERATELY NOT INCLUDED: the dashboard v2 session cookie, which touches 10 consumers and is its own PR.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
