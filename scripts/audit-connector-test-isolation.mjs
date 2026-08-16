@@ -103,9 +103,38 @@ const hazards = new Set();
 
 /** Strip block AND line comments — this gate's own rationale, and the notes
  *  left at fixed call sites, both contain the patterns being searched for.
- *  (The first draft of this script flagged its own documentation.) */
+ *  (The first draft of this script flagged its own documentation.)
+ *
+ *  LINE COMMENTS FIRST, then block comments. The reverse order — which this
+ *  shipped with — is the #1401 defect that #1412 fixed in the sibling gate
+ *  `audit-patchwork-home.mjs`, surviving here because that fix was applied to
+ *  one file rather than to the pattern.
+ *
+ *  Stripping blocks first lets an UNPAIRED `/*` inside a LINE comment open a
+ *  pseudo-block that runs to the next real `*\/` anywhere in the file, deleting
+ *  every line between before a single match is attempted. A line reading
+ *
+ *      // matches fixtures/*  (note the unclosed /* here)
+ *
+ *  followed later by any ordinary block comment silently removes the whole
+ *  body — including the `clearTokens()` call this gate exists to find.
+ *
+ *  Stripping line comments first removes the `/*` before it can open anything.
+ *  A real block comment containing `//` still terminates correctly, because its
+ *  `/*` and `*\/` both survive that pass.
+ *
+ *  Measured across all 76 tracked connector tests at the time of the fix: zero
+ *  files currently differ between the two orderings, so nothing was being
+ *  hidden TODAY. It is fixed anyway — in the sibling this same ordering made
+ *  38 files and 3662 lines of live code invisible, and a gate that is wrong
+ *  only until the wrong comment arrives is a gate that fails on the day it is
+ *  needed. */
 function stripComments(text) {
-  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  return text
+    .split("\n")
+    .map((l) => l.replace(/\/\/.*$/, ""))
+    .join("\n")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 for (const file of connectorTests()) {
