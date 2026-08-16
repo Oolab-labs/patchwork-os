@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `feat/butler-errand-ref-discovery` — closes the last gap between "the ingester works" and "the shadow ledger fills". `butler observe` took refs by hand, which is fine for a demonstration and useless for a cron; it now discovers them from the run log (`--file` still accepts them explicitly). Keys come from `deriveActionKey`, the SAME function the trust fold uses — re-deriving by a different rule would produce refs the fold cannot resolve, and a graded row under an unresolvable key measures nothing while still inflating the counts somebody reads. URL-shaped keys are reported as unusable rather than dropped (a valid ref, no task id inside it). Coverage is printed WITH its denominator because 3-found looks identical to broken. Touches `src/index.ts` + two new files under `src/butler/`.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)

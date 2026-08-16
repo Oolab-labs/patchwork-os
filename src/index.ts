@@ -5157,34 +5157,67 @@ if (process.argv[2] === "butler") {
         // Refs are supplied, not discovered. Deriving them from the run log is
         // a separate piece of work, and inventing a task id here would be the
         // same class of error as inventing an observation.
+        // Refs come from the run log by default — that is what makes this
+        // cron-able. `--file` still accepts them explicitly, for replaying a
+        // specific set or for a tracker the discoverer does not cover.
         const fileIdx = args.indexOf("--file");
-        const src =
-          fileIdx !== -1 && args[fileIdx + 1] ? args[fileIdx + 1] : "-";
-        const { readFileSync } = await import("node:fs");
-        const raw =
-          src === "-"
-            ? readFileSync(0, "utf-8")
-            : readFileSync(src as string, "utf-8");
         let refs: unknown;
-        try {
-          refs = JSON.parse(raw);
-        } catch (err) {
-          process.stderr.write(
-            `[butler] refs are not valid JSON: ${(err as Error).message}\n`,
+        if (fileIdx !== -1 || args.includes("--stdin")) {
+          const src =
+            fileIdx !== -1 && args[fileIdx + 1] ? args[fileIdx + 1] : "-";
+          const { readFileSync } = await import("node:fs");
+          const raw =
+            src === "-"
+              ? readFileSync(0, "utf-8")
+              : readFileSync(src as string, "utf-8");
+          try {
+            refs = JSON.parse(raw);
+          } catch (err) {
+            process.stderr.write(
+              `[butler] refs are not valid JSON: ${(err as Error).message}\n`,
+            );
+            process.exit(2);
+          }
+          if (!Array.isArray(refs)) {
+            process.stderr.write(
+              "[butler] expected a JSON array of {taskId, ref, recipe?}\n",
+            );
+            process.exit(2);
+          }
+        } else {
+          const { discoverTodoistErrandRefs, formatDiscovery } = await import(
+            "./butler/errandRefDiscovery.js"
           );
-          process.exit(2);
-        }
-        if (!Array.isArray(refs)) {
-          process.stderr.write(
-            "[butler] expected a JSON array of {taskId, ref, recipe?}\n",
-          );
-          process.exit(2);
+          const found = discoverTodoistErrandRefs();
+          if (!args.includes("--json")) {
+            process.stdout.write(`${formatDiscovery(found)}\n`);
+          }
+          refs = found.refs;
         }
         const { getTodoistConnector } = await import("./connectors/todoist.js");
         const { observeTodoistErrands } = await import(
           "./butler/todoistObservation.js"
         );
-        const run = await observeTodoistErrands(getTodoistConnector(), refs);
+        // Validate the shape rather than casting. A hand-written --file with
+        // the wrong keys would otherwise observe nothing and report a clean
+        // "0 observed" — indistinguishable from a run with nothing to do.
+        const validRefs = (refs as unknown[]).filter(
+          (r): r is { taskId: string; ref: string; recipe?: string } =>
+            typeof r === "object" &&
+            r !== null &&
+            typeof (r as { taskId?: unknown }).taskId === "string" &&
+            typeof (r as { ref?: unknown }).ref === "string",
+        );
+        if (validRefs.length !== (refs as unknown[]).length) {
+          process.stderr.write(
+            `[butler] ${(refs as unknown[]).length - validRefs.length} ref(s) ` +
+              "lacked a string taskId and ref, and were skipped.\n",
+          );
+        }
+        const run = await observeTodoistErrands(
+          getTodoistConnector(),
+          validRefs,
+        );
         const res = ingestErrandOutcomes(run.observations, {
           now: Date.now(),
         });
@@ -5272,7 +5305,8 @@ if (process.argv[2] === "butler") {
         "Usage: patchwork butler <shadow|ingest|observe> [--json]\n\n" +
           "  shadow                       summarise the graded shadow ledger\n" +
           "  ingest [--file <path>|-]     grade a JSON array of observations\n" +
-          "  observe [--file <path>|-]    look up live Todoist state, then grade\n" +
+          "  observe [--file <path>]      discover errands from the run log,\n" +
+          "                               look up live Todoist state, then grade\n" +
           "         [--stale-after-days N]\n\n" +
           "  Shadow-only: nothing here writes the trust ledger.\n",
       );
