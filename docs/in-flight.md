@@ -29,10 +29,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-16 `fix/dashboard-ignores-patchwork-home` — `audit-patchwork-home` scans `src/**` only, so it never saw two lines in the dashboard's connector-requests route that match its OWN regex: `path.join(os.homedir(), ".patchwork", ...)`. PATCHWORK_HOME is ignored there, so with an override set the bridge and dashboard read different directories. Fixes the route and widens the gate.
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-16 `fix/dashboard-ignores-patchwork-home` — `audit-patchwork-home` scans `src/**` only, so it never saw two lines in the dashboard's connector-requests route that match its OWN regex: `path.join(os.homedir(), ".patchwork", ...)`. PATCHWORK_HOME is ignored there, so with an override set the bridge and dashboard read different directories. Fixes the route and widens the gate. — merged as #1437.
 - 2026-08-16 `fix/fixture-gate-scans-the-dashboard` — `audit-test-fixtures` walked `src/` only, so the dashboard's 126 test files were never checked; it also matched `.test.ts` but never `.test.tsx`. Measured on removing the boundary: 14 violations, one of them introduced the same day by #1430. Touches `scripts/audit-test-fixtures.mjs`, its allowlist, and one dashboard test. — merged as #1436.
 - 2026-08-16 `fix/cli-gate-reads-ui-strings` — `audit-cli-commands` read tracked MARKDOWN only, so it could not have caught #1434 (a clipboard string in TSX advertising a verb that did not exist). Extends it to UI sources; the first working version found a SECOND live instance on the tasks page. Touches `scripts/audit-cli-commands.mjs` and one dashboard component. — merged as #1435.
 - 2026-08-16 `fix/patchwork-approve-command` — the dashboard copies `patchwork approve <callId>` to the clipboard and the subcommand does not exist (`Unknown command: 'approve'`). Adds approve/reject as a thin shim over the existing `/approve/:callId` + `/reject/:callId` routes, plus `--review`. Also corrects a false comment in `src/bridge.ts` about where `patchwork init` writes DASHBOARD_SESSION_SECRET. Touches `src/index.ts` dispatch and one dashboard string. — merged as #1434.
