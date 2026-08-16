@@ -90,6 +90,28 @@ export interface ObservedErrandArtifact {
    * have reported `completed: true` may set this.
    */
   stateObserved?: boolean;
+  /**
+   * When THIS artifact first came under observation.
+   *
+   * The staleness rule converts silence into a negative, and it is sound only
+   * where not-acting is a DECISION. That requires the operator to have been in
+   * a loop they knew about. For an errand filed before any observation channel
+   * existed, they were never asked and did not know it was tracked — so its
+   * age says nothing about their judgement.
+   *
+   * Without this, the first real ingest is the worst one: every historical
+   * errand older than the horizon grades `junk` on day one, and `stateObserved`
+   * does NOT catch it, because we genuinely did look. That guard separates
+   * "nobody looked" from "we looked"; this one separates "nobody was asked"
+   * from "somebody declined to act".
+   *
+   * So the clock starts at `max(createdAt, watchedSince)`. A 60-day-old errand
+   * first seen today has been watched for zero days, and is `open-recent`.
+   *
+   * Absent ⇒ falls back to `createdAt`, preserving the old behaviour for
+   * callers that genuinely have been watching since creation.
+   */
+  watchedSince?: number;
 }
 
 export interface GradeOptions {
@@ -152,7 +174,14 @@ export function gradeErrandOutcome(
   }
 
   const staleAfter = opts.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
-  const age = opts.now - observed.createdAt;
+  // The clock starts when WE started watching, not when the errand was filed.
+  // An errand that predates observation has not been "ignored for 60 days" —
+  // nobody was asked. See `watchedSince`.
+  const openSince = Math.max(
+    observed.createdAt,
+    observed.watchedSince ?? observed.createdAt,
+  );
+  const age = opts.now - openSince;
   if (age >= staleAfter) {
     return { disposition: "junk", reason: "stale-unactioned" };
   }

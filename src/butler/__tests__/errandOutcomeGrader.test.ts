@@ -369,3 +369,66 @@ describe("SHADOW means shadow — the trust fold must not read this file", () =>
     expect(src).not.toMatch(/\bupsert\b/);
   });
 });
+
+describe("silence is only a decision if somebody was asked", () => {
+  // The backfill hazard. `stateObserved` separates "nobody looked" from "we
+  // looked". It does NOT separate "nobody was asked" from "somebody declined
+  // to act" — and on the first real ingest, every errand filed before the
+  // observation channel existed is the former. We genuinely did look, so the
+  // stateObserved guard passes, and a 60-day-old open errand grades `junk`:
+  // an unearned negative against a worker, on day one, from a loop the
+  // operator never knew they were in.
+
+  const SIXTY_DAYS = 60 * 24 * 60 * 60 * 1000;
+
+  it("an old errand first seen TODAY is open-recent, not junk", () => {
+    const r = gradeErrandOutcome(
+      {
+        createdAt: NOW - SIXTY_DAYS,
+        stateObserved: true,
+        watchedSince: NOW, // first observation is this run
+      },
+      { now: NOW },
+    );
+    expect(r.disposition).toBe("unknown");
+    expect(r.reason).toBe("open-recent");
+  });
+
+  it("the same errand goes junk once WATCHED past the horizon", () => {
+    // Control: without this, "never grade old errands" would pass the test
+    // above while disabling the staleness rule entirely.
+    const r = gradeErrandOutcome(
+      {
+        createdAt: NOW - SIXTY_DAYS,
+        stateObserved: true,
+        watchedSince: NOW - DEFAULT_STALE_AFTER_MS,
+      },
+      { now: NOW },
+    );
+    expect(r.disposition).toBe("junk");
+    expect(r.reason).toBe("stale-unactioned");
+  });
+
+  it("watchedSince cannot make a NEW errand stale early", () => {
+    // max(), not replace. A watchedSince older than creation — a corrupt row,
+    // a clock skew — must not age an errand that did not exist yet.
+    const r = gradeErrandOutcome(
+      {
+        createdAt: NOW - 1000,
+        stateObserved: true,
+        watchedSince: NOW - SIXTY_DAYS,
+      },
+      { now: NOW },
+    );
+    expect(r.disposition).toBe("unknown");
+  });
+
+  it("absent watchedSince preserves the old behaviour", () => {
+    // Callers that have genuinely been watching since creation are unaffected.
+    const r = gradeErrandOutcome(
+      { createdAt: NOW - DEFAULT_STALE_AFTER_MS, stateObserved: true },
+      { now: NOW },
+    );
+    expect(r.disposition).toBe("junk");
+  });
+});
