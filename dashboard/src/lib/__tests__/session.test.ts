@@ -160,3 +160,100 @@ describe("clearSessionCookieHeader", () => {
     expect(header).toContain("SameSite=Strict");
   });
 });
+
+/**
+ * ADR-0020 Phase A — the v2 attributed cookie.
+ *
+ * The rule these exist for: **a v1 cookie must never read as an attributed
+ * v2.** A v1 cookie means nobody was identified. If verification supplied a
+ * stand-in subject — the implicit owner, the first member, a literal
+ * "unknown" — the absence of a subject would become a CLAIM of one, and every
+ * record stamped from it would name a person on no evidence.
+ */
+describe("v2 attributed sessions", () => {
+  it("carries the subject and verifies", async () => {
+    const c = await signSession({ memberId: "m-alice" });
+    expect(c.startsWith("v2.m-alice.")).toBe(true);
+    const r = await verifySession(c);
+    expect(r.valid).toBe(true);
+    expect(r.memberId).toBe("m-alice");
+  });
+
+  it("a v1 cookie is valid but has NO memberId key at all", async () => {
+    // Not `memberId: undefined` — absent. A key holding undefined is read as
+    // present by an `in` check, and "we have a subject, it is undefined" is
+    // exactly the confusion this must not create.
+    const c = await signSession();
+    expect(c.startsWith("v1.")).toBe(true);
+    const r = await verifySession(c);
+    expect(r.valid).toBe(true);
+    expect(r.memberId).toBeUndefined();
+    expect("memberId" in r).toBe(false);
+  });
+
+  it("still mints v1 when no member is known (control)", async () => {
+    // The dashboard password authenticates a SECRET, not a person. Without
+    // this, "always mint v2" would satisfy the assertions above by inventing
+    // a placeholder subject.
+    const c = await signSession();
+    expect(c.split(".")[0]).toBe("v1");
+  });
+
+  it("a v1 cookie cannot be re-spelled as a v2 one", async () => {
+    // The version is inside the SIGNED payload, so the HMAC over `v1.<exp>`
+    // does not verify against `v2.<id>.<exp>`.
+    const v1 = await signSession(Date.now() + 60_000);
+    const [, exp, sig] = v1.split(".");
+    const forged = `v2.m-attacker.${exp}.${sig}`;
+    expect((await verifySession(forged)).valid).toBe(false);
+  });
+
+  it("one member's cookie cannot be replayed as another's", async () => {
+    const a = await signSession({ memberId: "m-alice" });
+    const swapped = a.replace("m-alice", "m-mallory");
+    expect((await verifySession(swapped)).valid).toBe(false);
+  });
+
+  it("refuses to SIGN a member id containing a dot", async () => {
+    // The payload is split on "." — an id with one makes `v2.a.b.123.<sig>`
+    // ambiguous, so two members could produce cookies that parse as each
+    // other. Refused at the only point that can create one.
+    await expect(signSession({ memberId: "a.b" })).rejects.toThrow(/ambiguous/);
+  });
+
+  it("a dotted id presented in a cookie is rejected — by arity", async () => {
+    // Worth being precise about WHY, because it is not the id check doing the
+    // work: `v2.a.b.<exp>.<sig>` is five parts, and the arity check rejects
+    // it first. Removing the verify-side id regex leaves every test here
+    // green — probed. That regex is defence in depth for a future format
+    // change, not a live guard, and the comment in session.ts says so.
+    const r = await verifySession(`v2.a.b.${Date.now() + 60_000}.sig`);
+    expect(r.valid).toBe(false);
+  });
+
+  it("rejects wrong-arity cookies for both versions", async () => {
+    const exp = Date.now() + 60_000;
+    for (const bad of [
+      `v1.x.${exp}.sig`, // v1 with a subject slot
+      `v2.${exp}.sig`, // v2 without one
+      `v3.m.${exp}.sig`,
+      "",
+    ]) {
+      expect((await verifySession(bad)).valid).toBe(false);
+    }
+  });
+
+  it("an expired v2 cookie is invalid", async () => {
+    const c = await signSession({ memberId: "m-alice", expiresAt: Date.now() - 1 });
+    expect((await verifySession(c)).valid).toBe(false);
+  });
+
+  it("the numeric-argument form still works (back-compat)", async () => {
+    const exp = Date.now() + 60_000;
+    const c = await signSession(exp);
+    const r = await verifySession(c);
+    expect(r.valid).toBe(true);
+    expect(r.expiresAt).toBe(exp);
+    expect(r.memberId).toBeUndefined();
+  });
+});
