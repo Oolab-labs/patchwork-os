@@ -20,12 +20,14 @@
  * Exit code 0 = all checks pass. Exit code 1 = new violations found.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SRC = join(ROOT, "src");
+/** The dashboard is a separate package in the same repo, with its own tests. */
+const DASHBOARD_SRC = join(ROOT, "dashboard", "src");
 const ALLOWLIST_PATH = join(
   ROOT,
   "scripts",
@@ -34,13 +36,22 @@ const ALLOWLIST_PATH = join(
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/** Recursively collect all *.test.ts files under a directory. */
+/**
+ * Recursively collect test files under a directory.
+ *
+ * `.test.tsx` as well as `.test.ts`: the dashboard's component tests use the
+ * TSX extension, so a `.test.ts`-only matcher would have skipped most of them
+ * even once the dashboard root was added below.
+ */
 function walkTestFiles(dir, acc = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
       walkTestFiles(full, acc);
-    } else if (entry.isFile() && entry.name.endsWith(".test.ts")) {
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith(".test.ts") || entry.name.endsWith(".test.tsx"))
+    ) {
       acc.push(full);
     }
   }
@@ -54,7 +65,23 @@ function rel(absPath) {
 
 // ── scan ─────────────────────────────────────────────────────────────────────
 
-const testFiles = walkTestFiles(SRC);
+/**
+ * Both test trees.
+ *
+ * The dashboard's 126 test files were never scanned: this walked `src/` alone,
+ * so every fixture-hygiene rule stopped at the package boundary. Measured when
+ * the boundary was removed — 7 hardcoded /tmp/ paths, 3 env mutations with no
+ * restore and 4 `vi.spyOn` without restore, none of which any gate could see.
+ *
+ * One of them was introduced the same day by the session adding this scan
+ * (#1430's sessionMemberId.test.ts set DASHBOARD_SESSION_SECRET in a
+ * beforeEach and never cleaned up), which is the argument for the extension in
+ * one line: the rules were fine, the surface was half.
+ */
+const testFiles = [
+  ...walkTestFiles(SRC),
+  ...(existsSync(DASHBOARD_SRC) ? walkTestFiles(DASHBOARD_SRC) : []),
+];
 
 const hardcodedTmpPaths = [];
 const envMutationWithoutRestore = [];

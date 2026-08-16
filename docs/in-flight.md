@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-16 `fix/fixture-gate-scans-the-dashboard` — `audit-test-fixtures` walked `src/` only, so the dashboard's 126 test files were never checked; it also matched `.test.ts` but never `.test.tsx`. Measured on removing the boundary: 14 violations, one of them introduced the same day by #1430. Touches `scripts/audit-test-fixtures.mjs`, its allowlist, and one dashboard test.
 
 ## Recently closed (informal log, prune periodically)
 
