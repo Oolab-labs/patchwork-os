@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `fix/butler-backfill-slanders-old-errands` — the first real ingest would have been the worst one. `stateObserved` separates "nobody looked" from "we looked"; it does NOT separate "nobody was ASKED" from "somebody declined to act", and every errand filed before the observation channel existed is the former. We genuinely do look, so the guard passes, and a 60-day-old open errand grades `junk` on day one — an unearned negative from a loop the operator never knew they were in. The staleness clock now starts at `max(createdAt, watchedSince)`: an errand first seen today has been watched zero days. `watchedSince` is derived from the shadow ledger's own earliest `gradedAt` for that ref — no new file, no second source of truth that can disagree with the ledger a reviewer reads. Three mutations each turn tests red.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)

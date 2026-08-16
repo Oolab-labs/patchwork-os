@@ -99,15 +99,21 @@ describe("grading a batch", () => {
     });
   });
 
-  it("the same errand observed WITH state still goes junk (control)", () => {
+  it("the same errand, WATCHED past the horizon, still goes junk (control)", () => {
     // Without this the assertion above holds for an ingester that never
     // records a negative at all.
+    //
+    // `watchedSince` is explicit here because it is what the assertion is
+    // about. This test previously passed with only `createdAt`, which is the
+    // backfill hazard: an errand filed long ago but first seen NOW graded
+    // junk on day one, from a loop the operator never knew they were in.
     const r = ingestErrandOutcomes(
       [
         {
           ref: "t:1",
           createdAt: NOW - DEFAULT_STALE_AFTER_MS * 10,
           stateObserved: true,
+          watchedSince: NOW - DEFAULT_STALE_AFTER_MS,
         },
       ],
       { now: NOW, dir },
@@ -284,5 +290,56 @@ describe("the real CLI entry point", () => {
       env: { ...process.env, PATCHWORK_HOME: dir },
     });
     expect(out).toContain("nothing may be promoted");
+  });
+});
+
+describe("the first ingest cannot manufacture a batch of negatives", () => {
+  const SIXTY_DAYS = 60 * 24 * 60 * 60 * 1000;
+
+  it("an ancient open errand grades unknown on first sight, junk later", () => {
+    // Drives the real ingester twice against the SAME ledger, which is where
+    // `watchedSince` comes from — the first run has no prior row, so the
+    // errand has been watched for zero time.
+    const ancient = {
+      ref: "todoist.create_task:old",
+      createdAt: NOW - SIXTY_DAYS,
+      stateObserved: true,
+    };
+
+    const first = ingestErrandOutcomes([ancient], { now: NOW, dir });
+    expect(first.batch).toEqual({ confirmed: 0, junk: 0, unknown: 1 });
+    expect(rows()[0]).toMatchObject({ reason: "open-recent" });
+
+    // Watched for a full horizon now. Same errand, same age — different
+    // answer, because now the operator HAS had it in front of them.
+    const later = ingestErrandOutcomes([ancient], {
+      now: NOW + DEFAULT_STALE_AFTER_MS,
+      dir,
+    });
+    expect(later.batch.junk).toBe(1);
+  });
+
+  it("a whole backfill batch yields zero evidence on day one", () => {
+    // The shape of a real first ingest: several historical errands, all open,
+    // all older than the horizon. Before this fix every one of them was junk.
+    const batch = ["a", "b", "c"].map((id) => ({
+      ref: `todoist.create_task:${id}`,
+      createdAt: NOW - SIXTY_DAYS,
+      stateObserved: true,
+    }));
+    const r = ingestErrandOutcomes(batch, { now: NOW, dir });
+    expect(r.batch).toEqual({ confirmed: 0, junk: 0, unknown: 3 });
+    expect(r.ledger.wouldCount).toBe(0);
+  });
+
+  it("a completed errand still counts on first sight (control)", () => {
+    // `watchedSince` gates only the staleness rule. A positive ACT is
+    // evidence whenever it is seen — otherwise this fix would suppress the
+    // good news along with the bad.
+    const r = ingestErrandOutcomes(
+      [{ ref: "todoist.create_task:done", completed: true }],
+      { now: NOW, dir },
+    );
+    expect(r.batch.confirmed).toBe(1);
   });
 });
