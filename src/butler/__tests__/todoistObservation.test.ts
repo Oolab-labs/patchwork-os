@@ -19,6 +19,7 @@
 import { describe, expect, it } from "vitest";
 
 import { gradeErrandOutcome } from "../errandOutcomeGrader.js";
+import type { ErrandObservation } from "../outcomeIngester.js";
 import { observeTodoistErrands } from "../todoistObservation.js";
 
 type Result = Awaited<
@@ -41,6 +42,20 @@ function connector(byId: Record<string, Result | "throw">) {
 
 const NOW = 1_800_000_000_000;
 
+/**
+ * First observation, asserted present.
+ *
+ * `tests:core` typechecks with noUncheckedIndexedAccess, so `run.observations[0]`
+ * is `ErrandObservation | undefined` — vitest does not see this, tsc does.
+ * Asserting presence here also makes the failure legible: "there was no
+ * observation" is a different bug from "the observation was wrong".
+ */
+function first(run: { observations: ErrandObservation[] }): ErrandObservation {
+  const o = run.observations[0];
+  if (!o) throw new Error("expected an observation, got none");
+  return o;
+}
+
 describe("only a 404 means deleted", () => {
   it("maps a completed task to a positive act", async () => {
     const run = await observeTodoistErrands(
@@ -50,13 +65,13 @@ describe("only a 404 means deleted", () => {
       [{ taskId: "1", ref: "todoist.create_task:1", recipe: "errands" }],
     );
     expect(run.unavailable).toEqual([]);
-    expect(run.observations[0]).toMatchObject({
+    expect(first(run)).toMatchObject({
       ref: "todoist.create_task:1",
       completed: true,
       recipe: "errands",
       stateObserved: true,
     });
-    expect(gradeErrandOutcome(run.observations[0], { now: NOW })).toEqual({
+    expect(gradeErrandOutcome(first(run), { now: NOW })).toEqual({
       disposition: "confirmed",
       reason: "completed",
     });
@@ -67,8 +82,8 @@ describe("only a 404 means deleted", () => {
       connector({ "2": { kind: "deleted" } }),
       [{ taskId: "2", ref: "todoist.create_task:2" }],
     );
-    expect(run.observations[0]).toMatchObject({ deleted: true });
-    expect(gradeErrandOutcome(run.observations[0], { now: NOW })).toEqual({
+    expect(first(run)).toMatchObject({ deleted: true });
+    expect(gradeErrandOutcome(first(run), { now: NOW })).toEqual({
       disposition: "junk",
       reason: "deleted",
     });
@@ -85,9 +100,9 @@ describe("only a 404 means deleted", () => {
       }),
       [{ taskId: "3", ref: "todoist.create_task:3" }],
     );
-    expect(run.observations[0]?.stateObserved).toBe(true);
+    expect(first(run).stateObserved).toBe(true);
     // 60 days open, and we looked. This is the case the horizon exists for.
-    expect(gradeErrandOutcome(run.observations[0], { now: NOW })).toEqual({
+    expect(gradeErrandOutcome(first(run), { now: NOW })).toEqual({
       disposition: "junk",
       reason: "stale-unactioned",
     });
