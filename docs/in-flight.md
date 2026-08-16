@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `feat/butler-todoist-observation` — the observation channel Butler phase 2 was blocked on. #1419 shipped an ingester with nothing to feed it, so the shadow ledger stayed empty and nothing could be measured. Adds `TodoistConnector.observeTask` (additive — `getTask` throws on every failure, which collapses "deleted", "token expired" and "network down" into one fact) and `src/butler/todoistObservation.ts`, plus a `patchwork butler observe` verb. ONLY HTTP 404 means deleted; 401/403/429/5xx/network yield NO observation at all, so the grader answers `not-observed` and the fold withholds. Both wrong directions are harms and are not symmetric — reading a failure as deleted manufactures a negative now, reading it as "observed but open" manufactures the same negative 14 days later via the staleness horizon. Neither is reachable; both mutations turn 7 tests red.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
