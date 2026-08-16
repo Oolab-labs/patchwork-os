@@ -276,6 +276,7 @@ const KNOWN_SUBCOMMANDS = [
   "gate",
   "outcomes",
   "butler",
+  "members",
   // Dispatched at `process.argv[2] === "tools"` (and `help`) but absent from
   // this array until 2026-08. The comment below calls this "the dispatch
   // source", and it was not: `patchwork tool` could never be corrected to
@@ -5117,6 +5118,144 @@ if (process.argv[2] === "gate") {
         `Error: ${err instanceof Error ? err.message : String(err)}\n`,
       );
       process.exit(1);
+    }
+  })();
+}
+
+// Handle members subcommand — the roster and per-member credentials
+// (ADR-0020 Phase A).
+//
+// `set-password` prompts on a TTY and never takes the secret from argv:
+// argv lands in shell history and in `ps` output for every user on the box.
+if (process.argv[2] === "members") {
+  const args = process.argv.slice(3);
+  (async () => {
+    try {
+      const { loadRoster, describeRoster } = await import(
+        "./identity/roster.js"
+      );
+      const { loadCredentials, defaultCredentialsPath } = await import(
+        "./identity/credentialStore.js"
+      );
+
+      if (args[0] === "list" || args.length === 0) {
+        const roster = loadRoster();
+        const creds = loadCredentials();
+        process.stdout.write(`${describeRoster(roster)}\n`);
+        const withCreds = new Set(creds.ids());
+        for (const m of roster.members) {
+          process.stdout.write(
+            `  ${m.id}  ${withCreds.has(m.id) ? "has a password" : "NO password — cannot authenticate"}\n`,
+          );
+        }
+        for (const bad of creds.malformed) {
+          // "your record is corrupt" and "no such user" are different facts.
+          process.stdout.write(
+            `  ${bad}  credential present but UNREADABLE — treated as absent\n`,
+          );
+        }
+        if (creds.overlyPermissive) {
+          process.stdout.write(
+            `\n[members] ${defaultCredentialsPath()} was group/world-readable; tightened to 0600.\n`,
+          );
+        }
+        process.exit(0);
+      }
+
+      if (args[0] === "set-password") {
+        const memberId = args[1];
+        if (!memberId) {
+          process.stderr.write(
+            "Usage: patchwork members set-password <memberId>\n",
+          );
+          process.exit(2);
+        }
+        if (!process.stdin.isTTY) {
+          // Refused rather than read from a pipe. A password arriving on stdin
+          // from a script is a password in that script.
+          process.stderr.write(
+            "[members] set-password needs an interactive terminal.\n",
+          );
+          process.exit(2);
+        }
+        const { createInterface } = await import("node:readline");
+        const rl = createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        const ask = (q: string): Promise<string> =>
+          new Promise((resolve) => rl.question(q, resolve));
+        // Node's readline cannot suppress echo portably; muting the output
+        // stream is the standard trick and is why this is written by hand.
+        const mute = (on: boolean) => {
+          (
+            rl as unknown as { output: { write: (c: string) => void } }
+          ).output.write = on
+            ? () => {}
+            : process.stdout.write.bind(process.stdout);
+        };
+        process.stdout.write(`Password for ${memberId}: `);
+        mute(true);
+        const pw = (await ask("")).trim();
+        mute(false);
+        process.stdout.write("\nConfirm: ");
+        mute(true);
+        const again = (await ask("")).trim();
+        mute(false);
+        process.stdout.write("\n");
+        rl.close();
+
+        if (!pw) {
+          process.stderr.write("[members] empty password refused.\n");
+          process.exit(2);
+        }
+        if (pw !== again) {
+          process.stderr.write("[members] passwords did not match.\n");
+          process.exit(2);
+        }
+
+        const { hashPassword } = await import("./identity/credentials.js");
+        const { readFileSync, writeFileSync, existsSync, chmodSync } =
+          await import("node:fs");
+        const file = defaultCredentialsPath();
+        let existing: Record<string, string> = {};
+        if (existsSync(file)) {
+          try {
+            const parsed = JSON.parse(readFileSync(file, "utf-8"));
+            if (
+              parsed &&
+              typeof parsed === "object" &&
+              !Array.isArray(parsed)
+            ) {
+              existing = parsed as Record<string, string>;
+            }
+          } catch {
+            // A corrupt file must not be silently replaced — that would
+            // delete every other member's credential to store one.
+            process.stderr.write(
+              `[members] ${file} exists but is not readable JSON. Refusing to overwrite it.\n`,
+            );
+            process.exit(2);
+          }
+        }
+        existing[memberId] = await hashPassword(pw);
+        writeFileSync(file, `${JSON.stringify(existing, null, 2)}\n`, {
+          mode: 0o600,
+        });
+        // `mode` on writeFileSync only applies at CREATION, so an existing
+        // file keeps its old permissions unless chmod'd explicitly.
+        chmodSync(file, 0o600);
+        process.stdout.write(`[members] password set for ${memberId}.\n`);
+        process.exit(0);
+      }
+
+      process.stderr.write(
+        "Usage: patchwork members <list|set-password <memberId>>\n",
+      );
+      process.exit(2);
+    } catch (err) {
+      process.stderr.write(`[members] ${(err as Error).message}\n`);
+      process.exit(2);
     }
   })();
 }

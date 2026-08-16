@@ -29,6 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-16 `feat/adr0020-credential-storage` — the storage ADR-0020 Phase A was blocked on. `~/.patchwork/credentials.json`, 0600, keyed by member id, supplying the `credentialFor` that `LocalPasswordProvider` already takes injected. NOT on `Member` (what `actorSnapshot` copies into decision records — one careless spread from an audit log), NOT in `members.json` (a reviewable document people paste into issues), and NOT in the connector token store (its `deleteSecretJsonSync` unlink is why `audit-connector-test-isolation` exists after #1345 — a stray `clearTokens()` would delete member logins). Fails CLOSED, the opposite of the roster: absent/corrupt/unreadable ⇒ nobody authenticates. Adds `patchwork members list|set-password`, which prompts on a TTY and REFUSES a pipe. Three mutations each turn tests red.
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
