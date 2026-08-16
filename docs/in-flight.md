@@ -29,10 +29,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-16 `fix/cli-gate-reads-ui-strings` — `audit-cli-commands` read tracked MARKDOWN only, so it could not have caught #1434 (a clipboard string in TSX advertising a verb that did not exist). Extends it to UI sources; the first working version found a SECOND live instance on the tasks page. Touches `scripts/audit-cli-commands.mjs` and one dashboard component.
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-16 `fix/cli-gate-reads-ui-strings` — `audit-cli-commands` read tracked MARKDOWN only, so it could not have caught #1434 (a clipboard string in TSX advertising a verb that did not exist). Extends it to UI sources; the first working version found a SECOND live instance on the tasks page. Touches `scripts/audit-cli-commands.mjs` and one dashboard component. — merged as #1435.
 - 2026-08-16 `fix/patchwork-approve-command` — the dashboard copies `patchwork approve <callId>` to the clipboard and the subcommand does not exist (`Unknown command: 'approve'`). Adds approve/reject as a thin shim over the existing `/approve/:callId` + `/reject/:callId` routes, plus `--review`. Also corrects a false comment in `src/bridge.ts` about where `patchwork init` writes DASHBOARD_SESSION_SECRET. Touches `src/index.ts` dispatch and one dashboard string. — merged as #1434.
 - 2026-08-16 `docs/correct-stale-trust-evidence-claims` — three measured claims in CLAUDE.md had gone stale and all three overstate a problem, which is the direction that wastes a session: retention (18.2h -> re-measured 88h), `worker_trust/` checkpoints ("never written" -> a checkpoint exists) and join-key coverage ("1 of 63" -> 11 of 17 non-reversible). Docs only. — merged as #1433.
 - 2026-08-16 `fix/gates-that-cannot-catch-their-own-failures` — two checks that could not catch what they exist to catch. audit-in-flight's branch pattern was wrong in BOTH directions (invented branches from backticked file paths, missed real branch names past the second slash); the dashboard had no typecheck script, so nothing local ran tsc --noEmit and a broken main passed four green local checks. Touches `scripts/audit-in-flight.mjs`, `dashboard/package.json` and the CI workflow. — merged as #1432.
