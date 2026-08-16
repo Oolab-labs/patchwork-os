@@ -321,6 +321,61 @@ export class TodoistConnector extends BaseConnector {
     return result.data;
   }
 
+  /**
+   * Observe a task for outcome grading — the ONE call the Butler ingester
+   * makes, and deliberately not `getTask`.
+   *
+   * `getTask` throws on every failure, which collapses three different facts
+   * into one: the task is gone, the token expired, the network is down. The
+   * grader's contract is explicit that a lookup failure must be reported as
+   * `undefined` and never as `deleted: true` — "a transient API error that
+   * reads as deletion would manufacture a negative against a worker that did
+   * nothing wrong."
+   *
+   * So this returns a discriminated result instead of throwing:
+   *
+   *   `observed`     — HTTP 200. `completed` is the task's own flag.
+   *   `deleted`      — HTTP 404 ONLY. Todoist returns 404 for a deleted task,
+   *                    and `not_found` is already a distinct error code here,
+   *                    so this does not have to infer deletion from a message.
+   *   `unavailable`  — everything else: 401, 403, 429, 5xx, network. NOT an
+   *                    observation, and the caller must not treat it as one.
+   *
+   * Additive on purpose. Changing `getTask` would alter behaviour for every
+   * existing caller to serve one new one.
+   */
+  async observeTask(
+    id: string,
+  ): Promise<
+    | { kind: "observed"; completed: boolean; createdAt: number }
+    | { kind: "deleted" }
+    | { kind: "unavailable"; reason: string }
+  > {
+    const result = await this.apiCall(async (token) => {
+      const res = await fetch(`${TODOIST_BASE}/tasks/${id}`, {
+        headers: this.buildHeaders(token),
+      });
+      if (!res.ok) {
+        throw Object.assign(new Error(`HTTP ${res.status}`), {
+          status: res.status,
+        });
+      }
+      return res.json() as Promise<TodoistTask>;
+    });
+    if ("error" in result) {
+      if (result.error.code === "not_found") return { kind: "deleted" };
+      return { kind: "unavailable", reason: result.error.code };
+    }
+    const createdAt = Date.parse(result.data.created_at);
+    return {
+      kind: "observed",
+      completed: result.data.is_completed === true,
+      // An unparseable timestamp must not become 0 — that is 1970, which the
+      // staleness horizon would read as infinitely old and grade `junk`.
+      createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    };
+  }
+
   async createTask(
     content: string,
     projectId?: string,
