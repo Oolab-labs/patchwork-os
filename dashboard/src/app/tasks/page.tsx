@@ -223,17 +223,14 @@ function TaskDetail({ task, onCancel, cancelling }: {
           flexWrap: "wrap",
         }}
       >
-        <button
-          type="button"
-          className="btn sm ghost"
-          style={{ fontSize: "var(--fs-s)" }}
-          onClick={async () => {
-            await navigator.clipboard.writeText(`patchwork task resume ${task.taskId}`);
-            flash("term");
-          }}
-        >
-          {copied === "term" ? "✓ Copied" : "> Open in terminal"}
-        </button>
+        {/* "Open in terminal" removed 2026-08-16: it copied
+            `patchwork task resume <id>` and there is no `task` verb — pasting
+            it printed "Unknown command: 'task'. Did you mean: start?". Nothing
+            behind it either: no bridge route and no dashboard API for resume;
+            the `resumeClaudeTask` MCP tool is reachable only from an MCP
+            client, never the CLI. Same call as the Replay button above, and
+            the degraded form (copy the id) is the button immediately below, so
+            nothing is lost. Restore once a real resume verb exists. */}
         {/* Replay button removed 2026-05-17 (#600 BLOCKER #2): targeted
             POST /api/bridge/tasks/:id/replay which the bridge never
             implemented (only POST /runs/:seq/replay exists, for recipe

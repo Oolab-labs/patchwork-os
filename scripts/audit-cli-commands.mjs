@@ -150,6 +150,64 @@ function trackedMarkdown() {
 }
 
 /** Lines inside ``` fences, with their 1-based line numbers. */
+/**
+ * Tracked UI sources that may hand a command to the user.
+ *
+ * ## Why markdown was never enough
+ *
+ * `patchwork approve <callId>` shipped as a clipboard string in the approvals
+ * screen while the subcommand did not exist — pasting it printed
+ * `Unknown command: 'approve'. Did you mean: approvals?` (fixed in #1434).
+ * This gate could not have caught it: it read tracked MARKDOWN, and the
+ * advertisement was a template literal in TSX.
+ *
+ * A command a button copies to the clipboard is a stronger promise than one in
+ * a doc — the user did not choose to type it, the product handed it over — so
+ * the surface that most needs checking was the one surface not checked.
+ */
+/**
+ * The same invocation shape, with the delimiters a SOURCE FILE uses.
+ *
+ * Deliberately NOT the markdown `INVOCATION`, and not a widening of it. That
+ * one is tuned to avoid prose noise in documentation, where a leading `$` or
+ * `|` is what separates a real command from a sentence containing the word.
+ * In TSX the command lives inside a string, so the character before it is a
+ * quote or a paren.
+ *
+ * This distinction is the entire bug. My first version of this check reused
+ * `INVOCATION`, reported "5 invocations in 430 UI sources" and passed — while
+ * being structurally unable to see a single clipboard string, because
+ * `` `patchwork approve ${id}` `` presents a BACKTICK where the regex demands
+ * a shell delimiter. All three probes passed against it, including one that
+ * reproduced #1434 exactly. A check that cannot fail is worse than no check:
+ * it reports the surface as covered.
+ */
+const UI_INVOCATION =
+  /(?:^|[`'"($;|]|&&|\|\|)\s*(?:npx\s+)?patchwork(?:-os)?(?:@[\w.-]+)?\s+([a-z][a-z0-9-]*)/g;
+
+function trackedUiSources() {
+  return execFileSync(
+    "git",
+    ["ls-files", "dashboard/src/*.ts", "dashboard/src/*.tsx"],
+    { cwd: root, encoding: "utf8" },
+  )
+    .split("\n")
+    .filter(Boolean);
+}
+
+/**
+ * Remove comments so a note ABOUT a verb is not read as advertising one.
+ *
+ * LINE comments first, then block comments — the ordering is load-bearing and
+ * this repository has now had it backwards twice (#1412, #1421). A `/*` inside
+ * a line comment opens a pseudo-block that swallows every line to the next
+ * real terminator, deleting live code before any match is attempted, and a
+ * gate that deletes what it is meant to read reports a clean pass.
+ */
+function stripComments(text) {
+  return text.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 function fencedLines(text) {
   const out = [];
   let inFence = false;
@@ -220,6 +278,33 @@ function main() {
     }
   }
 
+  // UI strings. A command the product COPIES TO THE CLIPBOARD is a stronger
+  // promise than one in a doc, and until #1434 it was the one surface this
+  // gate never read.
+  const uiFiles = trackedUiSources();
+  const uiBad = [];
+  let uiChecked = 0;
+  for (const file of uiFiles) {
+    let text;
+    try {
+      text = stripComments(readFileSync(path.join(root, file), "utf8"));
+    } catch {
+      continue;
+    }
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? "";
+      for (const m of line.matchAll(UI_INVOCATION)) {
+        const verb = m[1];
+        if (!verb || verb.startsWith("-") || NOT_A_VERB.has(verb)) continue;
+        uiChecked++;
+        if (!known.has(verb)) {
+          uiBad.push({ file, n: i + 1, verb, line: line.trim() });
+        }
+      }
+    }
+  }
+
   // The binary's own help. A reader who doubts the README checks `--help`,
   // so an unknown verb there is the more expensive of the two.
   const helpBad = [];
@@ -228,8 +313,23 @@ function main() {
   }
 
   console.log(
-    `[cli-commands] ${checked} invocation(s) in ${files.length} tracked markdown files · ${known.size} known verbs`,
+    `[cli-commands] ${checked} invocation(s) in ${files.length} tracked markdown files · ` +
+      `${uiChecked} in ${uiFiles.length} UI source(s) · ${known.size} known verbs`,
   );
+
+  if (uiBad.length > 0) {
+    console.error(
+      `\n[cli-commands] FAIL — ${uiBad.length} unknown verb(s) advertised in the UI:\n`,
+    );
+    for (const b of uiBad) {
+      console.error(`  ${b.file}:${b.n}  patchwork ${b.verb}\n    ${b.line}`);
+    }
+    console.error(
+      "\nThe product hands this command to the user — a clipboard button, a\n" +
+        "rendered hint — and running it fails. Fix the string, or add the verb.\n",
+    );
+    process.exit(1);
+  }
 
   if (helpBad.length > 0) {
     console.error(

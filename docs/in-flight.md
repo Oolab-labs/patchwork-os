@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-16 `fix/cli-gate-reads-ui-strings` — `audit-cli-commands` read tracked MARKDOWN only, so it could not have caught #1434 (a clipboard string in TSX advertising a verb that did not exist). Extends it to UI sources; the first working version found a SECOND live instance on the tasks page. Touches `scripts/audit-cli-commands.mjs` and one dashboard component.
 
 ## Recently closed (informal log, prune periodically)
 
