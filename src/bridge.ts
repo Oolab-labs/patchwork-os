@@ -1260,11 +1260,26 @@ export class Bridge {
     // ADR-0020 Phase A: attribute approve/reject to the member whose dashboard
     // session cookie the request carries.
     //
-    // Only wired when the bridge shares `DASHBOARD_SESSION_SECRET` with the
-    // dashboard. `patchwork init` writes that secret into the dashboard's env
-    // alone, so on an unchanged install this stays undefined and decisions are
-    // recorded unattributed — exactly as before. Attribution is opt-in, and
-    // opting in means giving both processes the same secret.
+    // Only wired when `DASHBOARD_SESSION_SECRET` is in the BRIDGE's own
+    // environment. Whether it is there depends on how the bridge was launched,
+    // and the original note here was wrong about it:
+    //
+    //   - `patchwork init` writes the secret to `~/.patchwork/.env` FIRST
+    //     (commands/patchworkInit.ts) and then also to `dashboard/.env.local`.
+    //     It does NOT write it "into the dashboard's env alone".
+    //   - The bridge's own dotenv loader reads `<install-dir>/.env`, never
+    //     `~/.patchwork/.env`, so `init` alone does not put it here.
+    //   - BUT `scripts/start-all.sh` (--no-tmux) does `set -a; source
+    //     ~/.patchwork/.env` and then launches the bridge from that shell, so
+    //     on that path the bridge DOES inherit it and attribution is wired.
+    //     The tmux path sources it after the bridge pane is already running,
+    //     so there it does not.
+    //
+    // Either way this is safe and additive: with no `members.json` the
+    // resolver refuses an implicit roster and stamps nobody, so a decision is
+    // recorded unattributed exactly as before. What is NOT true is that
+    // attribution is off on every unchanged install — say what the code does,
+    // not what would be tidier.
     //
     // The roster is captured by reference to the one already loaded above
     // rather than re-read per approval, matching the load-once contract the

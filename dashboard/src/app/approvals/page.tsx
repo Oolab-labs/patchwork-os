@@ -609,14 +609,14 @@ const ApprovalCard = memo(function ApprovalCard({
           type="button"
           className="btn sm ghost"
           onClick={() => {
-            navigator.clipboard.writeText(`patchwork approve --edit ${p.callId}`).then(() => {
+            navigator.clipboard.writeText(`patchwork approve --review ${p.callId}`).then(() => {
               setEditCopied(true);
               clearTimeout(editCopyTimerRef.current);
               editCopyTimerRef.current = setTimeout(() => setEditCopied(false), 1500);
             });
           }}
         >
-          {editCopied ? "Copied!" : "Edit & approve"}
+          {editCopied ? "Copied!" : "Review in terminal"}
         </button>
         <button
           type="button"

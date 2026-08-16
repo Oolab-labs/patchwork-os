@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-16 `fix/patchwork-approve-command` — the dashboard copies `patchwork approve <callId>` to the clipboard and the subcommand does not exist (`Unknown command: 'approve'`). Adds approve/reject as a thin shim over the existing `/approve/:callId` + `/reject/:callId` routes, plus `--review`. Also corrects a false comment in `src/bridge.ts` about where `patchwork init` writes DASHBOARD_SESSION_SECRET. Touches `src/index.ts` dispatch and one dashboard string.
 
 ## Recently closed (informal log, prune periodically)
 

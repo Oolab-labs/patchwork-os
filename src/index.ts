@@ -273,6 +273,12 @@ const KNOWN_SUBCOMMANDS = [
   "shadow-scan",
   "workers",
   "approvals",
+  // `approve`/`reject` decide ONE queued action; `approvals` is the read-only
+  // KPI report. The near-identical spelling is why the unknown-command
+  // suggester used to answer "Did you mean: approvals?" to someone running the
+  // exact string the dashboard told them to copy.
+  "approve",
+  "reject",
   "gate",
   "outcomes",
   "butler",
@@ -2596,6 +2602,41 @@ if (process.argv[2] === "connect") {
     const { findBridgeLockForTask } = await import("./commands/task.js");
     await runConnect(process.argv.slice(3), {
       findBridgeLock: (port?: number) => findBridgeLockForTask(port),
+    });
+  })();
+}
+
+// `patchwork approve <callId>` / `patchwork reject <callId>` — decide a queued
+// approval from the terminal. The dashboard has copied these strings to the
+// clipboard for a long time while the subcommands did not exist; they are also
+// the fallback path for when the dashboard or the phone relay is unavailable.
+if (process.argv[2] === "approve" || process.argv[2] === "reject") {
+  const action = process.argv[2] as "approve" | "reject";
+  (async () => {
+    const { runApproveCommand } = await import("./commands/approve.js");
+    const { findBridgeLockForTask } = await import("./commands/task.js");
+    await runApproveCommand(action, process.argv.slice(3), {
+      findBridgeLock: (port?: number) => findBridgeLockForTask(port),
+      fetchFn: fetch,
+      write: (s) => process.stdout.write(s),
+      writeErr: (s) => process.stderr.write(s),
+      exit: (code) => process.exit(code),
+      isTTY: Boolean(process.stdin.isTTY),
+      confirm: async (question) => {
+        const { createInterface } = await import("node:readline");
+        const rl = createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        try {
+          const answer = await new Promise<string>((resolve) => {
+            rl.question(question, resolve);
+          });
+          return /^y(es)?$/i.test(answer.trim());
+        } finally {
+          rl.close();
+        }
+      },
     });
   })();
 }
