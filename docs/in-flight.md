@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-16 `docs/correct-stale-trust-evidence-claims` — three measured claims in CLAUDE.md had gone stale and all three overstate a problem, which is the direction that wastes a session: retention (18.2h -> re-measured 88h), `worker_trust/` checkpoints ("never written" -> a checkpoint exists) and join-key coverage ("1 of 63" -> 11 of 17 non-reversible). Docs only.
 
 ## Recently closed (informal log, prune periodically)
 
