@@ -57,7 +57,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -86,8 +86,42 @@ const withoutToken = (() => {
 
 let GH_ENV = process.env;
 
-/** `feat/thing`, `fix/other-thing` — the format the Convention section asks for. */
-const BRANCH_RE = /`([a-z][a-z0-9]*\/[a-z0-9][a-z0-9._-]*)`/g;
+/**
+ * `feat/thing`, `fix/other-thing` — the format the Convention section asks for.
+ *
+ * The previous pattern was `[a-z][a-z0-9]*\/[a-z0-9][a-z0-9._-]*`, which was
+ * wrong in BOTH directions at once:
+ *
+ *   - Too narrow for branches. It stopped at the second slash and rejected
+ *     uppercase and underscores, so `feat/foo/bar` and `fix/ADR-20_thing` were
+ *     invisible — and an entry the gate cannot see is an entry it silently does
+ *     not verify, which is this gate's whole failure history.
+ *   - Too wide for prose. Entries name the files they touch in backticks, and
+ *     `src/server.ts` matches the branch shape exactly. Observed live on
+ *     2026-08-16: an Active section with ONE entry reported "3 branch(es)
+ *     checked" — the entry's branch plus `src/server.ts` and `src/bridge.ts`.
+ *     They passed only because a nonexistent branch has no PR, and "no PR yet"
+ *     is deliberately treated as fine. The count a human reads was inflated by
+ *     things that are not branches.
+ *
+ * So the pattern widens, and a second test disambiguates: a token that EXISTS
+ * ON DISK is a file path, not a branch. Deliberately not an extension
+ * blocklist — `.ts`/`.mjs` is a guess about spelling, whereas existence is the
+ * actual question, and branches legitimately contain dots (`release/1.2.x`).
+ * What is excluded is printed, because a token silently dropped by a gate is
+ * indistinguishable from one it checked and passed.
+ */
+const BRANCH_RE = /`([A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9._-]+)+)`/g;
+
+/**
+ * True when the token names something that exists in the repo — i.e. a path.
+ *
+ * Resolved against `root` (this script's own location), never `cwd`, so the
+ * test means the same thing however the gate is invoked.
+ */
+function looksLikeRepoPath(token) {
+  return existsSync(path.join(root, token));
+}
 
 /**
  * Ledger path. `--ledger <path>` exists so the fail-closed behaviour can be
@@ -258,11 +292,28 @@ function prState(branch) {
 function main() {
   const section = activeSection();
   const branches = new Map();
+  const excludedPaths = new Set();
   for (const { line, n } of section) {
     if (!line.trim().startsWith("- ")) continue;
     for (const m of line.matchAll(BRANCH_RE)) {
-      if (!branches.has(m[1])) branches.set(m[1], n);
+      const token = m[1];
+      // Entries name the files they touch in backticks, and a file path is
+      // shaped exactly like a branch. Existence is what separates them.
+      if (looksLikeRepoPath(token)) {
+        excludedPaths.add(token);
+        continue;
+      }
+      if (!branches.has(token)) branches.set(token, n);
     }
+  }
+  // Printed, not silent. A gate that drops tokens without saying so reports a
+  // count nobody can reconcile with the ledger they are reading.
+  if (excludedPaths.size > 0) {
+    console.log(
+      `[in-flight] ignored ${excludedPaths.size} backticked path(s) that exist in the repo: ${[
+        ...excludedPaths,
+      ].join(", ")}`,
+    );
   }
 
   if (branches.size === 0) {
