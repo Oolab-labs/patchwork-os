@@ -29,9 +29,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-17 `chore/prune-stale-fixture-allowlist` — the 20 stale entries `audit-test-fixtures` already reports as safe to remove (1 hardcodedTmpPaths, 7 envMutationWithoutRestore, 12 spyOnWithoutRestore). Investigated before pruning, because "stale" has two causes and only one is benign: the test was fixed, or the DETECTOR went blind and can no longer see a violation it once saw — the partial-surface defect this repo keeps hitting. All 20 files still exist and each carries the remediation its entry covered. Allowlist JSON only; no source change. — this session
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-17 `chore/prune-stale-fixture-allowlist` — the 20 stale entries `audit-test-fixtures` already reports as safe to remove (1 hardcodedTmpPaths, 7 envMutationWithoutRestore, 12 spyOnWithoutRestore). Investigated before pruning, because "stale" has two causes and only one is benign: the test was fixed, or the DETECTOR went blind and can no longer see a violation it once saw — the partial-surface defect this repo keeps hitting. All 20 files still exist and each carries the remediation its entry covered. Allowlist JSON only; no source change. — merged as #1438
 
 - 2026-08-16 `fix/dashboard-ignores-patchwork-home` — `audit-patchwork-home` scans `src/**` only, so it never saw two lines in the dashboard's connector-requests route that match its OWN regex: `path.join(os.homedir(), ".patchwork", ...)`. PATCHWORK_HOME is ignored there, so with an override set the bridge and dashboard read different directories. Fixes the route and widens the gate. — merged as #1437.
 - 2026-08-16 `fix/fixture-gate-scans-the-dashboard` — `audit-test-fixtures` walked `src/` only, so the dashboard's 126 test files were never checked; it also matched `.test.ts` but never `.test.tsx`. Measured on removing the boundary: 14 violations, one of them introduced the same day by #1430. Touches `scripts/audit-test-fixtures.mjs`, its allowlist, and one dashboard test. — merged as #1436.
