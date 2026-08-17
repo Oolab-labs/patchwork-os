@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-17 `chore/prune-stale-fixture-allowlist` — the 20 stale entries `audit-test-fixtures` already reports as safe to remove (1 hardcodedTmpPaths, 7 envMutationWithoutRestore, 12 spyOnWithoutRestore). Investigated before pruning, because "stale" has two causes and only one is benign: the test was fixed, or the DETECTOR went blind and can no longer see a violation it once saw — the partial-surface defect this repo keeps hitting. All 20 files still exist and each carries the remediation its entry covered. Allowlist JSON only; no source change. — this session
 
 ## Recently closed (informal log, prune periodically)
 

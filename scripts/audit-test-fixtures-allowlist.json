@@ -78,7 +78,6 @@
     "src/tools/__tests__/getCodeCoverage.test.ts",
     "src/tools/__tests__/getDependencyTree.test.ts",
     "src/tools/__tests__/getGitHotspots.test.ts",
-    "src/tools/__tests__/getImportedSignatures.test.ts",
     "src/tools/__tests__/getPRTemplate.test.ts",
     "src/tools/__tests__/getSecurityAdvisories.test.ts",
     "src/tools/__tests__/remainingTools.test.ts",
@@ -91,14 +90,7 @@
   ],
   "envMutationWithoutRestore": [
     "dashboard/src/app/api/connections/__tests__/session-guard.test.ts",
-    "dashboard/src/lib/__tests__/bridge.test.ts",
-    "src/__tests__/analyticsConfig.test.ts",
-    "src/__tests__/analyticsSend.test.ts",
-    "src/__tests__/boot-warning.test.ts",
-    "src/__tests__/featureFlags.test.ts",
-    "src/__tests__/patchworkCli.test.ts",
-    "src/adapters/__tests__/adapters.test.ts",
-    "src/tools/__tests__/openInBrowser.test.ts"
+    "dashboard/src/lib/__tests__/bridge.test.ts"
   ],
   "spyOnWithoutRestore": [
     "dashboard/src/app/__tests__/page.test.tsx",
@@ -110,27 +102,15 @@
     "src/__tests__/automation-on-diagnostics-state.test.ts",
     "src/__tests__/automation-on-test-run.test.ts",
     "src/__tests__/automation.test.ts",
-    "src/__tests__/bridge-connectivity.test.ts",
-    "src/__tests__/claudeDriver.test.ts",
     "src/__tests__/httpErrorResponse.test.ts",
     "src/__tests__/transport-edge-cases.test.ts",
     "src/commands/__tests__/cli-warns-when-out-of-jail.test.ts",
     "src/commands/__tests__/launchdInstall.test.ts",
-    "src/connectors/__tests__/asana.test.ts",
-    "src/connectors/__tests__/confluence.test.ts",
-    "src/connectors/__tests__/datadog.test.ts",
-    "src/connectors/__tests__/discord.test.ts",
-    "src/connectors/__tests__/gitlab.test.ts",
-    "src/connectors/__tests__/hubspot.test.ts",
-    "src/connectors/__tests__/intercom.test.ts",
-    "src/connectors/__tests__/notion.test.ts",
     "src/connectors/__tests__/shopify.test.ts",
-    "src/connectors/__tests__/stripe.test.ts",
-    "src/connectors/__tests__/zendesk.test.ts",
     "src/recipes/__tests__/chainedRunner.test.ts",
     "src/recipes/__tests__/dispatchRecipe.parity.test.ts",
     "src/recipes/__tests__/recipeServers.test.ts",
     "src/recipes/__tests__/yamlRunner.test.ts"
   ],
-  "_dashboard_note": "Dashboard entries added 2026-08-16 when the scan was extended past src/. GRANDFATHERED, not endorsed: they pre-date the scan reaching them, and fixing 13 unrelated dashboard tests in the PR that widened the surface would have buried the change that matters. The one violation introduced the SAME DAY (sessionMemberId.test.ts, from #1430) was fixed rather than listed \u2014 a ratchet that grandfathers today's mistake is not a ratchet."
+  "_dashboard_note": "Dashboard entries added 2026-08-16 when the scan was extended past src/. GRANDFATHERED, not endorsed: they pre-date the scan reaching them, and fixing 13 unrelated dashboard tests in the PR that widened the surface would have buried the change that matters. The one violation introduced the SAME DAY (sessionMemberId.test.ts, from #1430) was fixed rather than listed — a ratchet that grandfathers today's mistake is not a ratchet."
 }
