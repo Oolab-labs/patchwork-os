@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-17 `fix/business-content-gate-reads-code` — `audit-business-content` read tracked MARKDOWN only, so the ADR-0019 licensing boundary was unenforced everywhere a string actually ships: UI components, CLI output, YAML, JSON. Its own header already conceded it cannot see code. Widens to tracked source/config text and excludes the gate + its allowlist BY EXACT PATH (they must contain the vocabulary; 20 of 20 pre-existing non-markdown hits were those two files). Measured: no new findings, allowlist unchanged at 8 entries. Touches `scripts/audit-business-content.mjs` only. — this session
 
 ## Recently closed (informal log, prune periodically)
 

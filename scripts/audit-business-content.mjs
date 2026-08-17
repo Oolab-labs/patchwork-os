@@ -98,14 +98,59 @@ const TERMS = [
   },
 ];
 
-/** Files scanned. Markdown only — code comments about cost routing are noise. */
-function trackedMarkdown() {
-  const out = execFileSync("git", ["ls-files", "*.md"], {
+/**
+ * Text extensions scanned alongside markdown.
+ *
+ * Not an arbitrary list: it is the set a shipped string can reach a user
+ * from — UI components, CLI output, YAML, JSON config, templates.
+ */
+const TEXT_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|json|ya?ml|txt|html|css|sh|toml)$/i;
+
+/**
+ * This file and its allowlist are the two places that MUST contain the
+ * vocabulary — one defines the patterns, the other records the accepted
+ * exceptions by term. Scanning them means every term matches itself, which
+ * is not a finding; it is the gate reading its own source. Measured before
+ * this exclusion existed: 20 of 20 hits across the whole non-markdown tree
+ * were these two files.
+ *
+ * Excluded by exact path, never by a "does it look like a gate" heuristic:
+ * a future script that genuinely leaks a price must not be able to exempt
+ * itself by being named like an audit.
+ */
+const SELF = new Set([
+  "scripts/audit-business-content.mjs",
+  "scripts/audit-business-content-allowlist.json",
+]);
+
+/**
+ * Files scanned: tracked markdown AND tracked source/config text.
+ *
+ * It was markdown only, on the reasoning that "code comments about cost
+ * routing are noise". That reasoning covered the false positives and missed
+ * the true ones — the leak this gate exists to stop is an OFFER, and an
+ * offer reaches a user through a UI string or a CLI line at least as
+ * readily as through a document. #1434/#1435 established the general form
+ * in a sibling gate: a clipboard string in TSX promised a command that did
+ * not exist, and the markdown-only checker could not see it. A `Pro plan`
+ * upsell in a component is the same defect with worse consequences, since
+ * ADR-0019 makes this a licensing boundary rather than a docs nit.
+ *
+ * Measured when the boundary was removed: 2,038 non-markdown files, 20
+ * hits, all 20 of them this gate matching itself (see SELF). So this widens
+ * the surface without importing a backlog — the allowlist stays as it is.
+ */
+function trackedFiles() {
+  const out = execFileSync("git", ["ls-files"], {
     cwd: root,
     encoding: "utf8",
-    maxBuffer: 8 * 1024 * 1024,
+    maxBuffer: 32 * 1024 * 1024,
   });
-  return out.split("\n").filter(Boolean);
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .filter((f) => f.endsWith(".md") || TEXT_EXT.test(f))
+    .filter((f) => !SELF.has(f));
 }
 
 function loadAllowlist() {
@@ -134,7 +179,9 @@ function main() {
   const findings = [];
   const used = new Set();
 
-  for (const file of trackedMarkdown()) {
+  const files = trackedFiles();
+
+  for (const file of files) {
     let content;
     try {
       content = readFileSync(path.join(root, file), "utf8");
@@ -161,7 +208,8 @@ function main() {
   const stale = allow.filter((a) => !used.has(`${a.file}::${a.term}`));
 
   console.log(
-    `[business-content] scanned ${trackedMarkdown().length} tracked markdown files · ` +
+    `[business-content] scanned ${files.length} tracked text files ` +
+      `(markdown + source/config) · ` +
       `${allow.length} allowlist entries (${stale.length} unused)`,
   );
   for (const s of stale) {
