@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-17 `fix/fixture-gate-ratchets-stale-entries` — `audit-test-fixtures` printed its stale allowlist entries as `[non-blocking]` and exited 0, so nothing ever forced the prune and 20 accumulated (swept in #1438). Its two sibling ratchets, `audit-lsp-tools` and `audit-shape-safety`, already FAIL on their own stale entries, which is why neither has any. Makes stale entries blocking, counted and worded separately from new violations because the remedy is the opposite one (delete the line vs add it). Touches `scripts/audit-test-fixtures.mjs` only. — this session
 
 ## Recently closed (informal log, prune periodically)
 
