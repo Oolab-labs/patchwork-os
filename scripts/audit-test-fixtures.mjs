@@ -12,12 +12,14 @@
  * Each category is compared against a ratcheting allowlist in
  * scripts/audit-test-fixtures-allowlist.json. New violations beyond the
  * allowlist fail CI. The allowlist only shrinks — remove entries once the
- * underlying issue is fixed.
+ * underlying issue is fixed, and a STALE entry fails CI too: fixing a test
+ * and leaving its exemption behind is an unfinished change, not a clean run.
  *
  * Usage:
  *   node scripts/audit-test-fixtures.mjs
  *
- * Exit code 0 = all checks pass. Exit code 1 = new violations found.
+ * Exit code 0 = all checks pass. Exit code 1 = new violations, or stale
+ * allowlist entries, or both.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -146,7 +148,7 @@ function newOffenders(violations, allowedList) {
 
 /**
  * Stale allowlist entries: present in allowlist but no longer violating.
- * We warn but do NOT fail CI — stale entries are just cleanup debt.
+ * These FAIL CI — see failStale() below for why they stopped being a note.
  */
 function staleEntries(violations, allowedList) {
   const current = new Set(violations);
@@ -156,6 +158,7 @@ function staleEntries(violations, allowedList) {
 // ── report ────────────────────────────────────────────────────────────────────
 
 let issues = 0;
+let staleIssues = 0;
 
 function fail(label, items) {
   if (!items.length) return;
@@ -164,10 +167,27 @@ function fail(label, items) {
   for (const item of items) console.error(`    - ${item}`);
 }
 
-function warn(label, items) {
+/**
+ * A stale entry is a blocking failure, not a note.
+ *
+ * It was a note until 2026-08-17, and it printed on every run while the
+ * script exited 0 — so nothing ever forced the prune and 20 accumulated.
+ * A check that reports a real finding and still reports success is the
+ * failure mode this repo keeps finding; the two sibling ratchets
+ * (audit-lsp-tools, audit-shape-safety) already fail on their own stale
+ * entries, which is why neither of them has any.
+ *
+ * Counted separately from `issues` because the remedy is the opposite one:
+ * a new violation is fixed in the test or grandfathered into the allowlist,
+ * a stale entry is DELETED from the allowlist. Reporting both under "new
+ * violation(s) — fix or add to allowlist" would send the reader to add the
+ * line they need to remove.
+ */
+function failStale(label, items) {
   if (!items.length) return;
-  console.warn(`\n⚠ ${label} (${items.length}) [non-blocking]:`);
-  for (const item of items) console.warn(`    - ${item}`);
+  staleIssues += items.length;
+  console.error(`\n✗ ${label} (${items.length}) — delete these lines:`);
+  for (const item of items) console.error(`    - ${item}`);
 }
 
 function ok(label) {
@@ -190,7 +210,7 @@ if (newTmp.length === 0) {
     newTmp,
   );
 }
-warn("Stale hardcodedTmpPaths allowlist entries (safe to remove)", staleTmp);
+failStale("Stale hardcodedTmpPaths allowlist entries", staleTmp);
 
 // Check 2: env mutation without restore
 const newEnv = newOffenders(
@@ -211,10 +231,7 @@ if (newEnv.length === 0) {
     newEnv,
   );
 }
-warn(
-  "Stale envMutationWithoutRestore allowlist entries (safe to remove)",
-  staleEnv,
-);
+failStale("Stale envMutationWithoutRestore allowlist entries", staleEnv);
 
 // Check 3: spyOn without restore
 const newSpy = newOffenders(spyOnWithoutRestore, allowlist.spyOnWithoutRestore);
@@ -232,14 +249,24 @@ if (newSpy.length === 0) {
     newSpy,
   );
 }
-warn("Stale spyOnWithoutRestore allowlist entries (safe to remove)", staleSpy);
+failStale("Stale spyOnWithoutRestore allowlist entries", staleSpy);
+
+const summary = [];
+if (issues > 0)
+  summary.push(
+    `${issues} new violation(s) — fix the test, or add it to the allowlist`,
+  );
+if (staleIssues > 0)
+  summary.push(
+    `${staleIssues} stale allowlist entr${staleIssues === 1 ? "y" : "ies"} — delete from the allowlist`,
+  );
 
 console.log(
-  `\n${issues === 0 ? "All checks passed." : `${issues} new violation(s) found — fix or add to allowlist before merging.`}`,
+  `\n${summary.length === 0 ? "All checks passed." : `${summary.join("\n")}\n\nResolve before merging.`}`,
 );
 
 console.log(
   `\nStats: ${hardcodedTmpPaths.length} hardcodedTmpPaths · ${envMutationWithoutRestore.length} envMutationWithoutRestore · ${spyOnWithoutRestore.length} spyOnWithoutRestore`,
 );
 
-process.exit(issues > 0 ? 1 : 0);
+process.exit(issues + staleIssues > 0 ? 1 : 0);

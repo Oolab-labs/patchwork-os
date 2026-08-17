@@ -33,6 +33,8 @@ _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-17 `fix/fixture-gate-ratchets-stale-entries` — `audit-test-fixtures` printed its stale allowlist entries as `[non-blocking]` and exited 0, so nothing ever forced the prune and 20 accumulated (swept in #1438). Its two sibling ratchets, `audit-lsp-tools` and `audit-shape-safety`, already FAIL on their own stale entries, which is why neither has any. Makes stale entries blocking, counted and worded separately from new violations because the remedy is the opposite one (delete the line vs add it). Touches `scripts/audit-test-fixtures.mjs` only. — merged as #1439
+
 - 2026-08-17 `chore/prune-stale-fixture-allowlist` — the 20 stale entries `audit-test-fixtures` already reports as safe to remove (1 hardcodedTmpPaths, 7 envMutationWithoutRestore, 12 spyOnWithoutRestore). Investigated before pruning, because "stale" has two causes and only one is benign: the test was fixed, or the DETECTOR went blind and can no longer see a violation it once saw — the partial-surface defect this repo keeps hitting. All 20 files still exist and each carries the remediation its entry covered. Allowlist JSON only; no source change. — merged as #1438
 
 - 2026-08-16 `fix/dashboard-ignores-patchwork-home` — `audit-patchwork-home` scans `src/**` only, so it never saw two lines in the dashboard's connector-requests route that match its OWN regex: `path.join(os.homedir(), ".patchwork", ...)`. PATCHWORK_HOME is ignored there, so with an override set the bridge and dashboard read different directories. Fixes the route and widens the gate. — merged as #1437.
