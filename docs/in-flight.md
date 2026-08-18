@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-18 `fix/1365-shim-libuv-abort` — #1365 ROOT CAUSE: libuv aborts the shim on a non-canonical watch path; realpath fix + windows/24 reinstated
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
