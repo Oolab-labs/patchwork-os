@@ -170,3 +170,7 @@ intellij-plugin/.gradle/
 # OUTSIDE the repo entirely (~/.patchwork/private-identifiers.txt), where
 # `git add -f` cannot reach it.
 /.private-denylist
+
+# vitest incremental progress logs (#1365) — CI artifact, never committed
+vitest-progress/
+vitest-progress.jsonl
