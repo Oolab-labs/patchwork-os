@@ -5373,7 +5373,21 @@ if (process.argv[2] === "privacy") {
       const drivers = [...counts.entries()]
         .map(([driver, count]) => ({ driver, count }))
         .sort((a, b) => b.count - a.count);
-      const result = suggestShadowConfig({ drivers, unspecified });
+      // The bridge default is where every driver-less agent step goes, so the
+      // suggestion is incomplete without it.
+      let defaultDriver: string | undefined;
+      try {
+        const { loadConfig } = await import("./patchworkConfig.js");
+        const d = (loadConfig() as { driver?: unknown }).driver;
+        if (typeof d === "string" && d.trim()) defaultDriver = d.trim();
+      } catch {
+        // Unreadable config — the note says so rather than assuming.
+      }
+      const result = suggestShadowConfig({
+        drivers,
+        unspecified,
+        ...(defaultDriver && { defaultDriver }),
+      });
       if (args.includes("--json")) {
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       } else {

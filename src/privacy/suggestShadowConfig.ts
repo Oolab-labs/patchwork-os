@@ -45,6 +45,17 @@ export interface SuggestInput {
    * exact surface it claims to enumerate.
    */
   unspecified?: number;
+  /**
+   * The bridge default driver (`driver` in config.json), which is where every
+   * `unspecified` step actually goes.
+   *
+   * Without it the note about those steps is wrong in BOTH directions: it warns
+   * they are uncovered when the default is already in the block (needless
+   * alarm), and it under-states the gap when the default appears in no recipe
+   * at all — the case where the suggestion genuinely misses a live destination.
+   * Neither is acceptable in output whose entire job is enumerating a surface.
+   */
+  defaultDriver?: string;
 }
 
 export interface SuggestResult {
@@ -72,8 +83,18 @@ const LOCAL_DEFAULT = [
 export function suggestShadowConfig(input: SuggestInput): SuggestResult {
   const local: string[] = [];
   const remote: string[] = [];
+  const seen = new Set<string>();
   for (const { driver } of input.drivers) {
+    seen.add(driver);
     (isLocalFamilyDriver(driver) ? local : remote).push(driver);
+  }
+
+  // The default driver is a real destination whether or not any recipe names
+  // it — every step that omits `driver:` dispatches there.
+  const dflt = input.defaultDriver?.trim().toLowerCase();
+  const defaultAlreadyCovered = dflt ? seen.has(dflt) : false;
+  if (dflt && !defaultAlreadyCovered) {
+    (isLocalFamilyDriver(dflt) ? local : remote).push(dflt);
   }
 
   const destinations: SuggestResult["config"]["destinations"] = {};
@@ -100,10 +121,19 @@ export function suggestShadowConfig(input: SuggestInput): SuggestResult {
     "The CLASSIFICATIONS are a conservative placeholder, NOT advice about your obligations. Review them.",
   );
   if (input.unspecified && input.unspecified > 0) {
-    notes.push(
-      `${input.unspecified} agent step(s) declare no driver and use the bridge default — ` +
-        "they dispatch somewhere too, and this block does not cover them until you name that driver.",
-    );
+    if (dflt) {
+      notes.push(
+        `${input.unspecified} agent step(s) declare no driver; they use the bridge default "${dflt}", ` +
+          (defaultAlreadyCovered
+            ? "which a recipe already names, so this block covers them."
+            : "which no recipe names — it has been ADDED below so they are covered."),
+      );
+    } else {
+      notes.push(
+        `${input.unspecified} agent step(s) declare no driver and use the bridge default, which could ` +
+          "not be read from config.json — this block does not cover them until you name that driver.",
+      );
+    }
   }
   if (remote.length === 0) {
     notes.push(
