@@ -118,6 +118,15 @@ describe("SQLite run store — what JSONL could not do", () => {
   }, () => {
     const repo = open();
     const ROWS = 2_000;
+    // TEMPORARY MEASUREMENT (#1386 cause 2) — remove before merge.
+    // This test timed out at 60 s three times in the Coverage step while the
+    // Test step on the same Windows runner passed. v8 coverage was measured to
+    // add ~nothing to execution (297 ms vs 302 ms, macOS), so the cause is not
+    // instrumentation and "raise the timeout" would be tuning the wrong
+    // variable. We have no Windows number because --reporter=dot destroys
+    // per-test timings, so print one from inside the test: it survives any
+    // reporter and fires whether or not the flake reproduces.
+    const t0 = performance.now();
     for (let i = 0; i < ROWS; i++) {
       const seq = repo.startRun({
         taskId: `bulk-${i}`,
@@ -132,6 +141,13 @@ describe("SQLite run store — what JSONL could not do", () => {
         stepResults: [],
       });
     }
+    const elapsed = performance.now() - t0;
+    console.error(
+      `[WAL-COST] platform=${process.platform} rows=${ROWS} ` +
+        `commits=${ROWS * 2} elapsed_ms=${elapsed.toFixed(0)} ` +
+        `commits_per_sec=${((ROWS * 2) / (elapsed / 1000)).toFixed(1)} ` +
+        `step=${process.env.npm_lifecycle_event ?? "unknown"}`,
+    );
     expect(repo.size()).toBe(ROWS);
     // And the oldest is still there — the property that actually matters, since
     // rotation dropped precisely the oldest rows.

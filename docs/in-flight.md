@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-18 `measure/1386-sqlite-wal-cost` — #1386 cause 2: MEASUREMENT ONLY, do not merge — prints WAL commit cost from inside the sqlite retention test to get a Windows number
 
 ## Recently closed (informal log, prune periodically)
 
