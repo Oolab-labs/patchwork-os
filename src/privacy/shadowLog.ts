@@ -46,12 +46,29 @@ export const SHADOW_LOG_BASENAME = "privacy_shadow.jsonl";
 /** Clip so a runaway reason cannot bloat the ledger. */
 const MAX_REASON = 500;
 
+/** Dispatch paths that can reach a model. Recorded per row, never inferred. */
+export type ShadowPath = "recipe-agent-step" | "orchestrator-task";
+
+export const PATH_LABELS: Record<ShadowPath, string> = {
+  "recipe-agent-step": "recipe agent steps",
+  "orchestrator-task": "orchestrator tasks (runClaudeTask, automation hooks)",
+};
+
 /**
- * The path the boundary DOES observe. Recorded on every row rather than
- * assumed by the reader, so a future second observed path is a data change
- * and not a silent redefinition of what the denominator counted.
+ * Whether the classification on a row was DECLARED by an operator or ASSUMED
+ * by the runtime.
+ *
+ * This is the difference between a measurement and a claim about intent.
+ * `orchestrator-task` has no declared-policy channel at all (ADR-0021), so
+ * every one of its rows is assumed — and a recipe step with no `data_policy`
+ * is assumed too, since `internal` there is a default and not a declaration.
+ * Merging the two would let a report say an operator classified something they
+ * never labelled.
  */
-export const OBSERVED_PATH = "recipe agent steps";
+export type LabelSource = "declared" | "assumed";
+
+/** @deprecated kept so older rows still render; use PATH_LABELS. */
+export const OBSERVED_PATH = PATH_LABELS["recipe-agent-step"];
 
 /**
  * Paths that reach a model WITHOUT passing the decision point.
@@ -64,12 +81,26 @@ export const OBSERVED_PATH = "recipe agent steps";
  * Kept in step with `src/__tests__/boundaryScope.test.ts`, which pins the
  * orchestrator gap to the code.
  */
-export const UNOBSERVED_PATHS = [
-  "orchestrator task dispatch (runClaudeTask, automation hooks) — ADR-0021 scope, #1397",
-] as const;
+export const UNOBSERVED_PATHS: readonly string[] = [];
+
+/**
+ * Coverage here is ENUMERATED, not proven.
+ *
+ * The list of paths is one someone wrote down. Nothing checks that it is
+ * exhaustive, so "both known paths observed" must never be rendered as "all
+ * model-bound context observed" — that is the overbroad-invariant failure
+ * ADR-0021 already had to correct once, and a coverage report is the worst
+ * place to repeat it.
+ */
+export const COVERAGE_IS_ENUMERATED =
+  "coverage is enumerated from known dispatch paths; it is not proof that no other path exists";
 
 export interface PrivacyShadowRow {
   at: number;
+  /** Which dispatch path produced this. Absent on rows written before paths. */
+  path?: ShadowPath;
+  /** Whether the classification was declared or defaulted. */
+  labelSource?: LabelSource;
   decision: BoundaryDecision;
   classification: Classification;
   /** Category NAMES only — never their contents. */
@@ -141,6 +172,10 @@ export interface PrivacyShadowSummary {
   latest?: number;
   /** How many observations happened while a live policy was also enforcing. */
   enforcingObservations: number;
+  /** Per dispatch path: observed / crossings. The coverage breakdown. */
+  byPath: Record<string, { observed: number; crossings: number }>;
+  /** How many rows carried an ASSUMED classification rather than a declared one. */
+  assumed: number;
   observedPath: string;
   unobservedPaths: readonly string[];
 }
@@ -159,6 +194,8 @@ export function summarisePrivacyShadow(
     byDecision: {},
     byDestination: {},
     enforcingObservations: 0,
+    byPath: {},
+    assumed: 0,
     observedPath: OBSERVED_PATH,
     unobservedPaths: UNOBSERVED_PATHS,
   };
@@ -183,7 +220,14 @@ export function summarisePrivacyShadow(
       continue;
     if (opts.since !== undefined && row.at < opts.since) continue;
     summary.observed += 1;
-    if (row.decision !== "ALLOW") summary.crossings += 1;
+    const isCrossing = row.decision !== "ALLOW";
+    if (isCrossing) summary.crossings += 1;
+    // Rows predating the `path` field came from the only path that existed.
+    const pathKey = row.path ?? "recipe-agent-step";
+    const bucket = (summary.byPath[pathKey] ??= { observed: 0, crossings: 0 });
+    bucket.observed += 1;
+    if (isCrossing) bucket.crossings += 1;
+    if (row.labelSource === "assumed") summary.assumed += 1;
     if (row.enforcing) summary.enforcingObservations += 1;
     summary.byDecision[row.decision] =
       (summary.byDecision[row.decision] ?? 0) + 1;
@@ -213,8 +257,14 @@ export function summarisePrivacyShadow(
 export function formatPrivacyShadow(s: PrivacyShadowSummary): string {
   const L: string[] = [];
   L.push("[privacy-shadow] coverage");
-  L.push(`  observed:   ${s.observed} dispatch(es) on ${s.observedPath}`);
+  for (const key of Object.keys(PATH_LABELS) as ShadowPath[]) {
+    const b = s.byPath[key];
+    L.push(
+      `  ${(b ? "observed" : "no rows").padEnd(10)} ${String(b?.observed ?? 0).padStart(5)}  ${PATH_LABELS[key]}`,
+    );
+  }
   for (const p of s.unobservedPaths) L.push(`  NOT observed: ${p}`);
+  L.push(`  (${COVERAGE_IS_ENUMERATED})`);
 
   if (s.observed === 0) {
     // Deliberately NOT "0 crossings" — that asserts a clean result from an
@@ -233,6 +283,15 @@ export function formatPrivacyShadow(s: PrivacyShadowSummary): string {
       ? `${new Date(s.earliest).toISOString()} → ${new Date(s.latest).toISOString()}`
       : "(unknown)";
   L.push(`  window:     ${span}`);
+  if (s.assumed > 0) {
+    // Never presented as a footnote. An assumed classification is the runtime's
+    // default, not an operator's statement, and a report that blurs the two
+    // asserts intent nobody expressed — the specific failure ADR-0021 names as
+    // the reason orchestrator dispatch was left out of scope in the first place.
+    L.push(
+      `  assumed:    ${s.assumed} of ${s.observed} row(s) carry a DEFAULTED classification, not a declared one`,
+    );
+  }
   if (s.enforcingObservations > 0) {
     L.push(
       `  note:       ${s.enforcingObservations} observed while a live policy was ALSO enforcing`,
@@ -264,6 +323,6 @@ export function formatPrivacyShadow(s: PrivacyShadowSummary): string {
   L.push(
     "  hypotheticals about the candidate policy in `privacy.shadow`, over the",
   );
-  L.push("  observed path only.");
+  L.push("  dispatch paths listed above and no others.");
   return L.join("\n");
 }

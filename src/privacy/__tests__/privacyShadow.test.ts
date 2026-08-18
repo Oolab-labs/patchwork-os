@@ -194,10 +194,21 @@ describe("reporting leads with coverage and never a bare count", () => {
 
     const out = formatPrivacyShadow(s);
     // Coverage precedes the finding, in the output itself and not merely in
-    // documentation: the orchestrator path is ungoverned (#1397), so a count
-    // presented without it invites "my policy is fine" from a partial surface.
-    expect(out.indexOf("NOT observed")).toBeLessThan(out.indexOf("would have"));
-    expect(out).toContain("orchestrator task dispatch");
+    // documentation: a count presented without its denominator invites "my
+    // policy is fine" from a partial surface.
+    //
+    // Both known paths are named even when one has no rows. A path that
+    // vanishes from the report when it is quiet is indistinguishable from one
+    // that is fully covered, and silence is exactly what an unobserved path
+    // produces.
+    expect(out).toContain("recipe agent steps");
+    expect(out).toContain("orchestrator tasks");
+    expect(out.indexOf("orchestrator tasks")).toBeLessThan(
+      out.indexOf("would have"),
+    );
+    // Enumerated, never asserted as total (#1397 / ADR-0021's overbroad
+    // invariant, which had to be corrected once already).
+    expect(out).toContain("not proof that no other path exists");
     expect(out).toContain("2 of 3 observed dispatch(es)");
   });
 
