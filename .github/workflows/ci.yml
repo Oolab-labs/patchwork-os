@@ -26,7 +26,7 @@ jobs:
         # risk that decision knowingly took on.
         os: [ubuntu-latest, windows-latest]
         node-version: [22, 24]
-        exclude:
+        # exclude:  # TEMPORARILY DISABLED for the #1365 capture — DO NOT MERGE
           # windows + 24 is EXCLUDED, not advisory. It fails reproducibly and
           # unexplainedly: the process TREE dies ~75-83s after test output
           # stops, with no failing assertion, no vitest summary, not even the
