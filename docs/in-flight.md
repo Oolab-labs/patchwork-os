@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-18 `fix/1386-sqlite-wal-commit-count` — #1386 cause 2: halve the sqlite retention test WAL commits so the Windows contention spike stops timing it out
 
 ## Recently closed (informal log, prune periodically)
 

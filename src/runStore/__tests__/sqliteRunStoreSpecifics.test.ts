@@ -107,17 +107,38 @@ describe("SQLite run store — what JSONL could not do", () => {
    * ~1,380 rows. 2,000 clears it decisively while staying honest about what is
    * being demonstrated.
    *
-   * The generous timeout is for Windows, not for slack: every startRun +
-   * completeRun is its own WAL transaction, and Windows fsync (plus Defender)
-   * makes that ~30x slower than POSIX — 528 ms locally versus a 15 s timeout
-   * on windows-latest. The store is not slow; per-row transactions are, and
-   * production writes one run at a time.
+   * The generous timeout is for Windows, not for slack: each commit is its own
+   * WAL transaction, and Windows fsync (plus Defender) is far slower. MEASURED
+   * (#1386, PR #1442) for 4,000 commits: macOS 271 ms (14,755 commits/s),
+   * ubuntu 673-1,276 ms, windows-latest 18.6-19.8 s (~202 commits/s) — Windows
+   * is ~73x slower than macOS. The store is not slow; per-row transactions are,
+   * and production writes one run at a time.
+   *
+   * Why only a SAMPLE is completed. At 4,000 commits this sat ~19 s against the
+   * 60 s timeout — 3.2x headroom — and a contention spike on windows-latest ate
+   * it, timing out all three CI retries while the Test step on the same runner
+   * passed (#1386 cause 2). Raising the timeout is the wrong lever: `retry: 2`
+   * means three attempts and the Coverage step's budget is `timeout-minutes: 8`
+   * against a ~6.4 min run, so 120 s would blow the STEP timeout instead and
+   * trade a diagnosable failure for an undiagnosable kill.
+   *
+   * Halving the commits is the right lever, because the second commit per row
+   * was never load-bearing HERE: this test asserts row RETENTION, and `query`
+   * only adds a status clause when one is passed. Completing a sample at both
+   * ends keeps the realistic start+complete path exercised — including on
+   * `bulk-0`, the oldest row, which is what the rotation assertion turns on —
+   * and the `status: "done"` assertion below makes the sample load-bearing, so
+   * dropping completeRun entirely fails rather than silently passing.
+   *
+   * ~2,100 commits ≈ 10 s on windows-latest: ~5.7x headroom, worst case
+   * unchanged at 3 x 60 s.
    */
   it("retains far more rows than the JSONL cap would have held", {
     timeout: 60_000,
   }, () => {
     const repo = open();
     const ROWS = 2_000;
+    const COMPLETED_SAMPLE = 50;
     for (let i = 0; i < ROWS; i++) {
       const seq = repo.startRun({
         taskId: `bulk-${i}`,
@@ -125,14 +146,19 @@ describe("SQLite run store — what JSONL could not do", () => {
         trigger: "cron",
         createdAt: 1_000 + i,
       });
-      repo.completeRun(seq, {
-        status: "done",
-        doneAt: 2_000 + i,
-        durationMs: 1,
-        stepResults: [],
-      });
+      if (i < COMPLETED_SAMPLE || i >= ROWS - COMPLETED_SAMPLE) {
+        repo.completeRun(seq, {
+          status: "done",
+          doneAt: 2_000 + i,
+          durationMs: 1,
+          stepResults: [],
+        });
+      }
     }
     expect(repo.size()).toBe(ROWS);
+    // Keeps the completion path load-bearing: without this, deleting the
+    // completeRun call above would still pass every other assertion.
+    expect(repo.query({ status: "done" }).length).toBe(COMPLETED_SAMPLE * 2);
     // And the oldest is still there — the property that actually matters, since
     // rotation dropped precisely the oldest rows.
     expect(repo.query({ limit: 1, recipe: "noisy", since: 1_000 }).length).toBe(
