@@ -575,10 +575,36 @@ if (pingMode) {
 // on a different port, reconnects automatically. This means Claude Desktop never
 // needs to be restarted when the bridge restarts on a new port.
 if (!pingMode && explicitPort === null) {
-  const lockDir = path.join(
+  let lockDir = path.join(
     process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"),
     "ide",
   );
+
+  // Canonicalise before watching, or libuv ABORTS the process on Windows.
+  //
+  // libuv's fs-event.c asserts that the filename it reports starts with the
+  // directory it was handed:
+  //
+  //   Assertion failed: !_wcsnicmp(filename, dir, dirlen), src\win\fs-event.c:72
+  //
+  // It reports the CANONICAL path, so handing it a non-canonical one — an 8.3
+  // short name (`RUNNER~1`, `PROGRA~1`), a symlink, or a substituted drive —
+  // fails that comparison and aborts. An abort is not a throwable: the
+  // try/catch below cannot catch it, and the whole shim dies, taking Claude
+  // Desktop's MCP connection with it. That is also why the polling fallback
+  // did not rescue it — there was no process left to poll.
+  //
+  // Node 22 does not assert here and Node 24 does, which is the entire content
+  // of #1365: three shim-reconnect tests failing on windows x Node 24 only,
+  // because `fs.mkdtempSync(os.tmpdir())` hands back a short path on CI.
+  //
+  // `.native` is the one that resolves 8.3 -> long form on Windows. Failure is
+  // non-fatal: an unresolvable path is no worse off than before.
+  try {
+    lockDir = fs.realpathSync.native(lockDir);
+  } catch {
+    // Directory may not exist yet — the watch below is already guarded.
+  }
 
   const scheduleReconnect = () => {
     if (reconnectTimer) clearTimeout(reconnectTimer);
