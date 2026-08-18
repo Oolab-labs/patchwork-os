@@ -282,6 +282,7 @@ const KNOWN_SUBCOMMANDS = [
   "gate",
   "outcomes",
   "butler",
+  "privacy",
   "members",
   // Dispatched at `process.argv[2] === "tools"` (and `help`) but absent from
   // this array until 2026-08. The comment below calls this "the dispatch
@@ -370,6 +371,7 @@ if (
       `Diagnose\n` +
       `  halts [--window 1h|24h|overnight|7d]      Morning summary of recent recipe halts\n` +
       `  judgments [--window ...] [--recipe N]     Recent judge-step verdicts across runs\n` +
+      `  privacy shadow [--since-days N]          What a candidate privacy policy would have stopped\n` +
       `  suggest [--since-days N]                  Recipe + unused-tool suggestions\n` +
       `  token-efficiency benchmark                Measure token cost across tool sets\n` +
       `  traces export                             Bundle approval / recipe / decision traces\n` +
@@ -5307,6 +5309,44 @@ if (process.argv[2] === "members") {
 // runs AS the worker, so grading reachable from one would let a worker
 // manufacture the evidence that raises its own trust dial. Nothing here writes
 // the trust ledger — rows go to the Butler shadow ledger and move nothing.
+// --- privacy shadow (ADR-0021) ---
+// Reports what a CANDIDATE policy would have done, without enforcing it. The
+// headline is the DENOMINATOR, not the crossing count: `agent` steps are a
+// small minority of step volume and orchestrator dispatch is not observed at
+// all (#1397), so a bare count invites "my policy is fine" from a partial
+// surface. formatPrivacyShadow refuses to print one without its coverage.
+if (process.argv[2] === "privacy") {
+  const args = process.argv.slice(3);
+  (async () => {
+    if (args[0] !== "shadow") {
+      process.stderr.write(
+        "Usage: patchwork privacy shadow [--since-days N] [--json]\n" +
+          "\n" +
+          "  Observes boundary decisions WITHOUT enforcing them. Configure a\n" +
+          "  candidate policy under `privacy.shadow.destinations` in config.json;\n" +
+          "  `privacy.destinations` stays untouched, so shadow never enforces.\n",
+      );
+      process.exit(2);
+    }
+    const { summarisePrivacyShadow, formatPrivacyShadow } = await import(
+      "./privacy/shadowLog.js"
+    );
+    const idx = args.indexOf("--since-days");
+    const days = idx !== -1 ? Number(args[idx + 1]) : undefined;
+    const summary = summarisePrivacyShadow(
+      days !== undefined && Number.isFinite(days) && days > 0
+        ? { since: Date.now() - days * 86_400_000 }
+        : {},
+    );
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${formatPrivacyShadow(summary)}\n`);
+    }
+    process.exit(0);
+  })();
+}
+
 if (process.argv[2] === "butler") {
   const args = process.argv.slice(3);
   (async () => {

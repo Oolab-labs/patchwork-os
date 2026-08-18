@@ -35,6 +35,32 @@
 >   indistinguishable at runtime from a feature that was never built.
 >   A source-level test asserts the wiring is present, because the
 >   regression it guards is a line going missing.
+> - **Shadow mode (`patchwork privacy shadow`)** — built 2026-08-18.
+>   Observes what a CANDIDATE policy would have done without enforcing it.
+>   Three things about it are load-bearing:
+>
+>   - It reads `privacy.shadow`, a SEPARATE key from `privacy.destinations`.
+>     One key would mean switching shadow on switches enforcement on, so an
+>     operator asking "what would this policy do?" would find out by having it
+>     applied to live traffic.
+>   - It observes LIVE at the decision point; it does not replay. `workers
+>     shadow` and the Butler grader both replay `runs.jsonl`, and copying them
+>     was the obvious move and does not work: a run-log `agent` step records
+>     no `data_policy`, no driver and no destination, so a replay tool would
+>     have to invent its inputs. A privacy report built on invented inputs is
+>     worse than none, because it reads as measurement.
+>   - It reports the DENOMINATOR first and refuses to print a bare crossing
+>     count. `agent` steps were ~3% of logged step volume when this was built
+>     (54 of 1,795), and orchestrator dispatch is not observed at all — so "N
+>     crossings" alone invites "my policy is fine" from a partial surface. An
+>     empty ledger reports "nothing observed", never "0 crossings".
+>
+>   It lives INSIDE the enforcement chokepoint, so the guarantee that matters
+>   is that it cannot perturb enforcement: the observer returns void and
+>   swallows everything, and a test asserts dispatch is identical with and
+>   without a shadow policy that would DENY. That test is paired with an
+>   assertion that the shadow actually disagreed, or it would pass for the
+>   wrong reason.
 > - **Not built, unchanged from below:** detection, purpose-based
 >   minimisation, least-data routing, policy packs. Destinations are supplied
 >   by config (`privacy.destinations`) since 2026-08-14 — see
@@ -264,10 +290,13 @@ to have silently mis-recorded its own evidence three separate ways (#1340, #1341
 and is the worst possible place to discover a fourth silent-loss path. Do not
 start Phase 3 until trust accrual has been observed end to end on real evidence.
 
-**Shadow mode early, not late.** `workers shadow` and `workers backtest` already
-implement replay-without-enforcing. A privacy shadow mode reusing that pattern is
-cheap, and it is the only part of this design that produces evidence a customer
-can act on before they have adopted anything.
+**Shadow mode early, not late.** — BUILT 2026-08-18, and the "reusing that
+pattern" part of this paragraph was wrong. `workers shadow` and `workers
+backtest` replay `runs.jsonl` because their inputs are in it; the boundary's
+inputs (classification, resolved driver, destination) are never persisted, so
+there is nothing to replay. Shadow observes live at the decision point instead.
+The conclusion survives: it is the only part of this design that produces
+evidence a customer can act on before they have adopted anything.
 
 ## Alternatives rejected
 

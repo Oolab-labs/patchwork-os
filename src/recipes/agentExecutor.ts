@@ -9,6 +9,7 @@
  */
 
 import {
+  type BoundaryDecision,
   type BoundaryOutcome,
   type Classification,
   DEFAULT_CLASSIFICATION,
@@ -77,6 +78,26 @@ export interface AgentExecutorDeps {
     classification: string;
     categories?: string[];
     redactCategories?: string[];
+  }) => void;
+  /**
+   * CANDIDATE policy for shadow mode (ADR-0021), deliberately a SEPARATE
+   * loader from `loadPrivacyConfigFn`.
+   *
+   * Two keys, not one, because the absence of `privacy` is what keeps the
+   * boundary inert: if shadow reused the enforcing config, switching shadow on
+   * would switch enforcement on with it, and an operator asking "what would
+   * this policy do?" would find out by having it applied.
+   */
+  loadPrivacyShadowConfigFn?: () => PrivacyConfig | undefined;
+  recordPrivacyShadowFn?: (r: {
+    decision: BoundaryDecision;
+    reason: string;
+    destinationId: string;
+    destinationType: "local" | "remote";
+    classification: Classification;
+    categories?: string[];
+    redactCategories?: string[];
+    enforcing: boolean;
   }) => void;
   anthropicFn: (prompt: string, model: string) => Promise<AgentResult>;
   /** Handles openai, grok, gemini, gemini-api, codex — passes driver name through. */
@@ -289,6 +310,58 @@ type ResolvedBoundary = BoundaryOutcome & {
   categories?: string[];
 };
 
+/**
+ * Evaluate the CANDIDATE policy and record what it would have done.
+ *
+ * Reuses `evaluateBoundary` with a different config loader rather than
+ * reimplementing the decision: a shadow that computed its own answer would
+ * drift from the enforcer, and a report that disagrees with the thing it
+ * predicts is worse than no report.
+ *
+ * `destination` is stripped from the context on purpose. When a caller passes
+ * one explicitly, `evaluateBoundary` skips the registry — correct for
+ * enforcement, wrong here, because the whole question is what the CANDIDATE
+ * registry would have chosen.
+ */
+function observeShadowBoundary(
+  input: AgentExecutorInput,
+  resolvedDriver: string | undefined,
+  enforced: ResolvedBoundary | null,
+  deps: AgentExecutorDeps,
+): void {
+  try {
+    if (!deps.loadPrivacyShadowConfigFn || !deps.recordPrivacyShadowFn) return;
+    const ctx = input.boundary
+      ? { ...input.boundary, destination: undefined }
+      : undefined;
+    const shadow = evaluateBoundary(
+      ctx,
+      resolvedDriver,
+      deps.loadPrivacyShadowConfigFn,
+      isLocalFamilyDriver(resolvedDriver)
+        ? () => resolveLocalEndpoint(deps)
+        : undefined,
+    );
+    if (!shadow) return;
+    deps.recordPrivacyShadowFn({
+      decision: shadow.decision,
+      reason: shadow.reason,
+      destinationId: shadow.destination.id,
+      destinationType: shadow.destination.type,
+      classification: shadow.classification,
+      ...(shadow.categories && { categories: shadow.categories }),
+      ...(shadow.redactCategories && {
+        redactCategories: shadow.redactCategories,
+      }),
+      // Distinguishes "my candidate policy disagrees with my live one" from
+      // "here is what a policy would have done on an ungoverned machine".
+      enforcing: enforced !== null,
+    });
+  } catch {
+    // Observation must never disturb the dispatch it observes.
+  }
+}
+
 function evaluateBoundary(
   ctx: AgentExecutorInput["boundary"],
   driver: string | undefined,
@@ -410,6 +483,19 @@ export async function executeAgent(
       ? () => resolveLocalEndpoint(deps)
       : undefined,
   );
+  // ── PRIVACY SHADOW (ADR-0021) ───────────────────────────────────────────
+  // Observation only. Placed HERE — after the enforced decision is computed but
+  // before it is acted on — so every agent dispatch is recorded, including the
+  // allowed ones. Recording only refusals would make the denominator the
+  // refusals themselves, and a coverage report whose denominator is its own
+  // numerator always reads 100%.
+  //
+  // It returns void and swallows everything. That is the load-bearing property:
+  // this runs inside the enforcement chokepoint, so it must be structurally
+  // incapable of changing whether or where a step dispatches. A test asserts
+  // the enforced outcome is identical with and without a shadow policy that
+  // would DENY.
+  observeShadowBoundary(input, resolvedDriver, boundary, deps);
   if (boundary && boundary.decision !== "ALLOW") {
     deps.recordBoundaryDecisionFn?.({
       decision: boundary.decision,
