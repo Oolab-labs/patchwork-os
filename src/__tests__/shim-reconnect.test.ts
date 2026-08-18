@@ -88,6 +88,40 @@ async function waitFor(
   return false;
 }
 
+/**
+ * TEMPORARY DIAGNOSTIC (#1365) — remove once the Windows/Node 24 cause is known.
+ *
+ * These three assertions fail on windows-latest x Node 24 as bare
+ * `expected false to be true`, which says nothing: it cannot distinguish a
+ * budget that is too tight on a slow runner from a shim that never detects the
+ * lock at all. Those need opposite fixes, so guessing between them is how the
+ * wrong one gets shipped.
+ *
+ * Called with the mock bridges STILL RUNNING (before closeServer), otherwise
+ * the grace period tests a shim that has nothing left to connect to — a probe
+ * that could only ever report FUNCTIONAL.
+ */
+async function diagnose(
+  conditionFn: () => boolean,
+  budgetMs: number,
+  stderrLines: string[],
+  graceMs = 12_000,
+): Promise<string> {
+  const t0 = Date.now();
+  const arrivedLate = await waitFor(conditionFn, graceMs);
+  const extra = Date.now() - t0;
+  const stderr =
+    stderrLines.join("").trim() || "(shim wrote nothing to stderr)";
+  return arrivedLate
+    ? `\n[#1365 VERDICT: TIMING] condition became true ${extra} ms AFTER the ` +
+        `${budgetMs} ms budget expired (~${budgetMs + extra} ms total). The ` +
+        `behaviour works; the budget is too tight on this runner.\n` +
+        `--- shim stderr ---\n${stderr}\n`
+    : `\n[#1365 VERDICT: FUNCTIONAL] still false after a further ${graceMs} ms ` +
+        `grace (~${budgetMs + graceMs} ms total). Not a timing problem — the ` +
+        `shim never detected the lock.\n--- shim stderr ---\n${stderr}\n`;
+}
+
 async function closeServer(wss: WebSocketServer): Promise<void> {
   // Idempotent: safe to call from both the per-test manual close and the
   // afterEach safety net. Close errors (e.g. "not running") are ignored — this
@@ -147,7 +181,9 @@ describe("startup with no lock file", () => {
     expect(exitCode).toBeNull();
   });
 
-  it("should connect once a lock file appears during the wait", async () => {
+  it("should connect once a lock file appears during the wait", {
+    timeout: 45_000,
+  }, async () => {
     const port = 19800;
     const token = "test-token-startup";
 
@@ -167,10 +203,17 @@ describe("startup with no lock file", () => {
       3000,
     );
 
+    const why = connected
+      ? ""
+      : await diagnose(
+          () => stderrLines.some((l) => l.includes("Connected")),
+          3000,
+          stderrLines,
+        );
     await closeServer(wss);
 
     // Shim must detect the lock appearing mid-wait and connect.
-    expect(connected).toBe(true);
+    expect(connected, why).toBe(true);
   });
 });
 
@@ -179,7 +222,9 @@ describe("startup with no lock file", () => {
 // (macOS fs.watch can silently miss changes — polling fallback covers this)
 // ---------------------------------------------------------------------------
 describe("reconnection after bridge restart", () => {
-  it("reconnects via watcher when lock file changes to a new port", async () => {
+  it("reconnects via watcher when lock file changes to a new port", {
+    timeout: 45_000,
+  }, async () => {
     const port1 = 19801;
     const port2 = 19802;
     const token1 = "token-bridge-1";
@@ -216,13 +261,25 @@ describe("reconnection after bridge restart", () => {
       4000,
     );
 
+    const why2 = reconnected
+      ? ""
+      : await diagnose(
+          () =>
+            stderrLines.some(
+              (l) => l.includes("reconnecting") || l.includes(`port ${port2}`),
+            ),
+          4000,
+          stderrLines,
+        );
     await closeServer(wss2);
 
     // This may already pass — it tests the watcher path
-    expect(reconnected).toBe(true);
+    expect(reconnected, why2).toBe(true);
   });
 
-  it("reconnects via polling even when no fs.watch event fires (polling fallback)", async () => {
+  it("reconnects via polling even when no fs.watch event fires (polling fallback)", {
+    timeout: 45_000,
+  }, async () => {
     // This test simulates fs.watch missing an event by writing the new lock file
     // BEFORE the shim is connected (so watcher is already set up) and then verifying
     // the shim polls for reconnection after the WebSocket drops.
@@ -271,9 +328,18 @@ describe("reconnection after bridge restart", () => {
       10000,
     );
 
+    const why3 = reconnected
+      ? ""
+      : await diagnose(
+          () =>
+            stderrLines.filter((l) => l.includes("Connected")).length >
+            reconnectedCount,
+          10_000,
+          stderrLines,
+        );
     await closeServer(wss2);
 
-    expect(reconnected).toBe(true);
+    expect(reconnected, why3).toBe(true);
   });
 });
 

@@ -26,7 +26,7 @@ jobs:
         # risk that decision knowingly took on.
         os: [ubuntu-latest, windows-latest]
         node-version: [22, 24]
-        exclude:
+        # exclude:  # TEMPORARILY DISABLED for the #1365 capture — DO NOT MERGE
           # windows + 24 is EXCLUDED, not advisory. It fails reproducibly and
           # unexplainedly: the process TREE dies ~75-83s after test output
           # stops, with no failing assertion, no vitest summary, not even the
@@ -47,8 +47,8 @@ jobs:
           # behaviour of a Node-24-only API is the uncovered case — narrow, but
           # real, and it is exactly where a filesystem API is most likely to
           # differ. Reinstate this cell when #1365 is understood.
-          - os: windows-latest
-            node-version: 24
+          # - os: windows-latest
+          #   node-version: 24
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
