@@ -175,6 +175,8 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `tools search <query> [--json]` — Filter the registered tools by name / description substring.
 - `install <companion>` — Install one of the bundled MCP-companion server registrations into Claude Desktop or Claude Code config. Use `--target cli|desktop` to choose, `--env KEY=VAL` to pass per-companion env vars. Companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `playwright`, `codebase-memory`. Each is a documented server config; the command writes it into `~/.claude.json` (CLI) or the Claude Desktop config (desktop) atomically.
 - `codex doctor [--config <path>] [--json]` — Diagnoses whether `~/.codex/config.toml` is correctly (and *currently*) wired up to this bridge: config file exists, has a `[mcp_servers.claude-ide-bridge]` entry, the entry's `url` is well-formed, and — when a bridge is running — the config's port and Bearer token still match the live bridge's lock file. A bridge restart (without `--fixed-token`) rotates its port/token, silently staling out a previously-generated config with no error until Codex's next tool call 401s; this catches that before it surprises the user. Fail-soft like `recipe doctor`: no live bridge → warns, doesn't fail (config alone can be valid while the bridge just isn't started yet). Exits 1 when unhealthy. Codex CLI itself connects over Streamable HTTP, not the stdio shim — generate the config with `scripts/gen-mcp-config.sh codex`.
+- `privacy suggest [--json]` — Derive a STARTER `privacy.shadow` block from the drivers your installed recipes actually declare. The destinations are MEASURED; the classifications are a conservative placeholder you are told to review. Reports agent steps that declare no driver separately rather than folding them in — they dispatch somewhere too. Emits `privacy.shadow` only, never the enforcing `privacy.destinations` key.
+- `privacy shadow [--since-days N] [--json]` — What a candidate policy WOULD have stopped, without enforcing it (ADR-0021). Leads with the DENOMINATOR and refuses to print a bare crossing count; an empty ledger reports "nothing observed", never "0 crossings". Reads `privacy_shadow.jsonl`.
 - `kill-switch engage|release|status [--reason <text>]` — Toggle the global write-disable gate (see ADR-0013).
 - `analytics show|configure|clear|test` — Manage the opt-in telemetry collector config (endpoint + shared secret) at `~/.claude/ide/analytics-config.json` (mode 0600). Replaces the brittle pattern of putting the secret in a launchd plist. `configure --endpoint URL --key KEY` writes both atomically; `test` sends a tiny synthetic payload and reports the HTTP status; `show` prints active values and resolution source (env / config / default). Env vars still win for headless/CI.
 - `panic` — Shortcut for `kill-switch engage --reason "manual panic"`.
@@ -375,6 +377,47 @@ The `src/workers/` subsystem implements a trust-ramp-aware autonomy gate for rec
 - **Monitoring**: `patchwork workers shadow` replays logs and shows per-worker × action-class trust dial + ramp-vs-gate divergences. `patchwork workers backtest` calibrates cold-start without touching live gate behavior.
 - **Full reference**: [docs/worker-autonomy-policy-gate.md](docs/worker-autonomy-policy-gate.md), [docs/runbooks/worker-autonomy-dogfood.md](docs/runbooks/worker-autonomy-dogfood.md).
 
+## Information Boundary (ADR-0021)
+
+`src/privacy/` — *what may this model be told?* The autonomy gate answers what a
+worker may DO; this answers what a destination may RECEIVE.
+
+- **Decision point is `executeAgent`** (`src/recipes/agentExecutor.ts`), evaluated
+  before dispatch. **Do NOT bind this to `costRouter`** — that was tried and is
+  recorded in the ADR as wrong: costRouter short-circuits with no downshift list
+  and no USD cap, so the boundary would cover only budgeted steps while
+  presenting as total enforcement.
+- **Precedence `privacy → capability → cost`**, not negotiable by later stages.
+  A cheaper or more capable model does not become authorised by being cheaper.
+- **Five decisions**: `ALLOW` · `ALLOW_REDACTED` · `LOCAL_ONLY` ·
+  `REQUIRE_APPROVAL` · `DENY`. Pure function of (declared classification,
+  destination policy) — no model in the loop. `narrowest()` enforces never-widen.
+- **Inert until opted in.** No `privacy` block ⇒ no destinations ⇒ no decisions.
+  Registering a destination is the opt-in; once opted in it fails CLOSED.
+- **`ALLOW_REDACTED` REFUSES, and that is CORRECT — not a stopgap.**
+  `executeAgent` receives an already-rendered prompt, so removing a category
+  there could only mean finding it in prose, i.e. DETECTION, which the ADR
+  rejects as a boundary. Redaction and purpose both sit behind the same
+  prerequisite: labels on the FIELDS a prompt is assembled from, applied at
+  render time. That is a recipe-SCHEMA change, and it is NOT decided.
+- **Receipts carry no payload field**, by construction: a privacy audit log
+  containing the prompts would be the largest unclassified copy of exactly the
+  material the boundary protects. Same rule for the shadow ledger.
+- **Shadow mode** (`privacy.shadow`, a SEPARATE key from `privacy.destinations`
+  so enabling shadow cannot enable enforcement). Observes LIVE — it does NOT
+  replay, because a run-log `agent` step records no `data_policy`, no driver and
+  no destination, so there is nothing to replay against.
+- **Coverage is enumerated, never asserted as total.** `agent` steps were 54 of
+  1,795 logged steps (~3%) when this was built. A crossing count over a partial
+  surface reads as "your policy is fine" when it partly means "we did not look".
+- **Orchestrator dispatch is OBSERVED but NOT ENFORCED** (#1397). Rows carry
+  `labelSource: "assumed"` — there is no declared-policy channel on that path,
+  and asserting one would claim intent nobody expressed.
+- **Open-core**: engine here (MIT); organisation policy inheritance, retention,
+  signed evidence and curated industry policy packs are control-plane
+  (ADR-0019). **Never add a policy pack or a real-world policy example here** —
+  it ships MIT and cannot be withdrawn. Every privacy fixture stays synthetic.
+
 ## Workspace Identity
 
 `src/identity/` — who may act in a workspace. Added because the bridge authenticated a single bearer token, so no persisted record could name a person and segregation of duties was *unenforceable*, not merely unimplemented.
@@ -408,6 +451,9 @@ The `src/workers/` subsystem implements a trust-ramp-aware autonomy gate for rec
 - Use vitest for both bridge and extension tests
 - Coverage gates: 71% lines, 62% branches, 70% functions (see `vitest.config.ts`'s inline comment — re-baselined down from 75/70/75 for vitest 4's stricter AST-aware coverage counting; actual test coverage did not regress, only the measurement got stricter. Ratchet plan: nudge back up as margin allows — Windows/ubuntu CI currently clear ~72/63/71, so there's roughly 1pt of headroom already banked)
 - Test circuit breaker and reconnect behavior for connection-related changes
+- **CI matrix is all four cells again.** `windows-latest x Node 24` was excluded from #1369 and REINSTATED 2026-08-18 (#1447). Its cause was never vitest: libuv's `fs-event.c` asserts the filename it reports starts with the directory it was handed, and it reports the CANONICAL path — so an 8.3 short path (`RUNNER~1`, from `fs.mkdtempSync(os.tmpdir())`) ABORTED the shim process. An abort is not throwable, so the `try/catch` around `fs.watch` could not catch it. Fixed with `fs.realpathSync.native` before watching.
+- **A killed CI step names what it was doing.** `scripts/vitest-progress-reporter.mjs` appends module start/end synchronously and is uploaded with `if: always()`. A missing `run-end` = the run was KILLED; `module-start` with no `module-end` = what was in flight. Every other reporter writes at the END, which is the moment a killed run never reaches.
+- **`Coverage` is the TIGHT step, not `Test`** — measured across six windows/22 jobs: Test 4.7-5.0 min against a 10 min cap, Coverage 5.4-6.4 min against 8 min. Both historical `timeout-minutes` bumps were applied to the wrong one. Before raising either, read #1386: `sqliteRunStoreSpecifics.test.ts` is heavy-tailed on Windows (median ~16-18 s, max 304 s), so a ceiling that accommodates the tail lets three retries eat the whole step budget.
 - **outputSchema is mandatory** for all tools. `scripts/audit-lsp-tools.mjs` enforces per-schema-block (not per-file) — multi-tool files can't mask gaps. Exceptions go in `scripts/audit-output-schema-allowlist.json` with a reason; ratchet gate rejects new entries and stale ones.
 
 ## Plugin System
