@@ -100,6 +100,18 @@ async function closeServer(wss: WebSocketServer): Promise<void> {
   });
 }
 
+/**
+ * The shim's stderr, as the assertion message.
+ *
+ * #1365 took three CI captures partly because these assertions failed as a bare
+ * `expected false to be true`, which says nothing about whether the shim was
+ * slow, wedged, or — as it turned out — aborted by a libuv assertion. The
+ * transcript names the cause on the first failure instead of the third.
+ */
+function shimSaid(stderrLines: string[]): string {
+  return `\n--- shim stderr ---\n${stderrLines.join("").trim() || "(shim wrote nothing to stderr)"}\n`;
+}
+
 let tmpDir: string;
 let shimProcess: ChildProcess | null = null;
 
@@ -170,7 +182,7 @@ describe("startup with no lock file", () => {
     await closeServer(wss);
 
     // Shim must detect the lock appearing mid-wait and connect.
-    expect(connected).toBe(true);
+    expect(connected, shimSaid(stderrLines)).toBe(true);
   });
 });
 
@@ -219,7 +231,7 @@ describe("reconnection after bridge restart", () => {
     await closeServer(wss2);
 
     // This may already pass — it tests the watcher path
-    expect(reconnected).toBe(true);
+    expect(reconnected, shimSaid(stderrLines)).toBe(true);
   });
 
   it("reconnects via polling even when no fs.watch event fires (polling fallback)", async () => {
@@ -273,7 +285,7 @@ describe("reconnection after bridge restart", () => {
 
     await closeServer(wss2);
 
-    expect(reconnected).toBe(true);
+    expect(reconnected, shimSaid(stderrLines)).toBe(true);
   });
 });
 
