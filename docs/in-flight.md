@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-18 `feat/1397-orchestrator-shadow-observation` — #1397: observe (not enforce) orchestrator dispatch in the privacy shadow ledger, with declared-vs-assumed labelling
 
 ## Recently closed (informal log, prune periodically)
 

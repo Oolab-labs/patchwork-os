@@ -3626,6 +3626,8 @@ function buildAgentExecutorDeps(
         destinationType: r.destinationType,
         classification: r.classification,
         enforcing: r.enforcing,
+        ...(r.path && { path: r.path }),
+        ...(r.labelSource && { labelSource: r.labelSource }),
         ...(r.categories && { categories: r.categories }),
         ...(r.redactCategories && { redactCategories: r.redactCategories }),
       });

@@ -95,6 +95,8 @@ export interface AgentExecutorDeps {
     destinationId: string;
     destinationType: "local" | "remote";
     classification: Classification;
+    path?: "recipe-agent-step" | "orchestrator-task";
+    labelSource?: "declared" | "assumed";
     categories?: string[];
     redactCategories?: string[];
     enforcing: boolean;
@@ -349,6 +351,11 @@ function observeShadowBoundary(
       destinationId: shadow.destination.id,
       destinationType: shadow.destination.type,
       classification: shadow.classification,
+      path: "recipe-agent-step",
+      // `internal` from an absent `data_policy` is a DEFAULT, not a
+      // declaration. Recording it as declared would let the report claim an
+      // operator classified something they never labelled.
+      labelSource: input.boundary?.dataPolicy ? "declared" : "assumed",
       ...(shadow.categories && { categories: shadow.categories }),
       ...(shadow.redactCategories && {
         redactCategories: shadow.redactCategories,

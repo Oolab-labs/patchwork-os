@@ -224,6 +224,26 @@ expressed.
 Until that exists, the honest statement is the one above: this path is
 ungoverned, and the ADR says so.
 
+**Observed in shadow since 2026-08-18 (#1397), still not enforced.** The
+objection above is to asserting a DECLARATION nobody made — it is not an
+objection to looking. `claudeOrchestrator` now records each dispatch to the
+privacy shadow ledger, stamped `path: "orchestrator-task"` and
+`labelSource: "assumed"`, with `enforcing: false`. Nothing refuses, alters or
+delays a task; the scope statement above is unchanged.
+
+This is deliberately the cheap half. The design question — per-task label vs
+workspace default — was being answered from ZERO measurements of how much
+traffic this path actually carries, and the volume should choose it. The
+receipt-shape requirement stands: when enforcement does arrive, `declared` and
+`assumed` must stay distinguishable, which is why the distinction is being
+recorded now rather than retrofitted onto a ledger that already conflated them.
+
+`src/__tests__/boundaryScope.test.ts` pins BOTH sides: no enforcement markers in
+`claudeOrchestrator.ts`, AND the observation call present at the dispatch site.
+A one-sided check would keep passing if the observation were deleted, and the
+report would then show zero orchestrator rows — indistinguishable from a quiet
+path, which is exactly what an unobserved one looks like.
+
 `src/__tests__/boundaryScope.test.ts` pins this to the code. It fails if
 orchestrator dispatch gains a boundary decision — at which point this section is
 wrong and must be updated with it — and it fails equally if the recipe path ever

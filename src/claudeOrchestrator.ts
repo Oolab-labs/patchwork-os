@@ -14,6 +14,17 @@ function getConfigDir(): string {
 }
 
 import type { IClaudeDriver } from "./drivers/types.js";
+import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
+import {
+  DEFAULT_CLASSIFICATION,
+  decideBoundary,
+} from "./privacy/dataPolicy.js";
+import {
+  type PrivacyConfig,
+  parseRegistry,
+  resolveDestination,
+} from "./privacy/destinationRegistry.js";
+import { recordPrivacyShadow } from "./privacy/shadowLog.js";
 import { resolveWorkspaceRoot } from "./recipes/workspaceRoot.js";
 import { writeFileAtomic, writeFileAtomicSync } from "./writeFileAtomic.js";
 
@@ -167,6 +178,63 @@ interface PersistedTask {
   allowedTools?: string[];
   disallowedTools?: string[];
   isAutomationTask?: boolean;
+}
+
+/**
+ * Privacy SHADOW observation for orchestrator dispatch (#1397, ADR-0021).
+ *
+ * This path is UNGOVERNED and stays ungoverned: nothing here enforces, refuses,
+ * or alters a dispatch. It records what a candidate policy WOULD have said, so
+ * the question "should this path be governed, and how?" stops being answered
+ * from zero measurements.
+ *
+ * Why observation is allowed where enforcement is not. ADR-0021 leaves this
+ * path out of scope because an orchestrator task has no declared `data_policy`
+ * and no natural place to put one — so enforcing would mean giving every task
+ * the `internal` default and writing an affirmative receipt about a label
+ * nobody supplied. That objection is about ASSERTING A DECLARATION, not about
+ * looking: every row written here is stamped `labelSource: "assumed"`, and the
+ * report renders assumed rows separately rather than as operator intent.
+ *
+ * Deliberately NOT injected as a constructor dep. Optional deps that no caller
+ * supplies are indistinguishable at runtime from a feature that was never
+ * built — the exact state ADR-0021 records for the boundary before
+ * `buildAgentExecutorDeps` wired it. Reading its own config means there is no
+ * wiring to forget. It stays inert unless `privacy.shadow` is configured.
+ */
+function observeOrchestratorShadow(driverName: string | undefined): void {
+  try {
+    const cfg = (
+      loadPatchworkConfig() as { privacy?: { shadow?: PrivacyConfig } }
+    ).privacy?.shadow;
+    if (!cfg) return;
+    const registry = parseRegistry(cfg);
+    const resolved = resolveDestination(
+      registry,
+      driverName,
+      DEFAULT_CLASSIFICATION,
+      {},
+    );
+    if (!resolved) return;
+    const outcome = decideBoundary(
+      { classification: DEFAULT_CLASSIFICATION },
+      resolved.destination,
+    );
+    recordPrivacyShadow({
+      decision: outcome.decision,
+      reason: outcome.reason,
+      destinationId: resolved.destination.id,
+      destinationType: resolved.destination.type,
+      classification: DEFAULT_CLASSIFICATION,
+      path: "orchestrator-task",
+      // Always assumed. There is no declared-policy channel on this path, and
+      // saying otherwise would be the claim ADR-0021 refuses to make.
+      labelSource: "assumed",
+      enforcing: false,
+    });
+  } catch {
+    // Observation must never disturb the dispatch it observes.
+  }
 }
 
 export class ClaudeOrchestrator {
@@ -458,6 +526,9 @@ export class ClaudeOrchestrator {
       this.workspace;
 
     try {
+      // Shadow observation only — see observeOrchestratorShadow. Nothing here
+      // can refuse or alter this dispatch; #1397 remains open.
+      observeOrchestratorShadow(this.driver.name);
       const result = await this.driver.run({
         prompt: task.prompt,
         contextFiles: task.contextFiles,
