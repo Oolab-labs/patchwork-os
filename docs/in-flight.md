@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-18 `feat/1365-incremental-progress-reporter` — #1365: incremental vitest reporter + always-upload artifact so a KILLED CI step names what was in flight
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
