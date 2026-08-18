@@ -47,8 +47,11 @@ jobs:
           # behaviour of a Node-24-only API is the uncovered case — narrow, but
           # real, and it is exactly where a filesystem API is most likely to
           # differ. Reinstate this cell when #1365 is understood.
-          - os: windows-latest
-            node-version: 24
+          # TEMPORARILY UN-EXCLUDED (#1365 capture) — DO NOT MERGE.
+          # Re-enabled for ONE run so the #1444 progress reporter can record
+          # what is in flight when this cell dies. Restore before merging.
+          # - os: windows-latest
+          #   node-version: 24
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
