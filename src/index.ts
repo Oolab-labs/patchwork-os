@@ -5318,9 +5318,73 @@ if (process.argv[2] === "members") {
 if (process.argv[2] === "privacy") {
   const args = process.argv.slice(3);
   (async () => {
+    if (args[0] === "suggest") {
+      // Enumerates the destinations this workspace ACTUALLY dispatches to.
+      // Mechanical, not regulatory: per ADR-0019 curated policy content is
+      // control-plane, so the destinations are measured and the
+      // classifications are a placeholder the output tells you to review.
+      const { readdirSync, readFileSync, statSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const { patchworkPath } = await import("./patchworkHome.js");
+      const { suggestShadowConfig, formatSuggestion } = await import(
+        "./privacy/suggestShadowConfig.js"
+      );
+      const counts = new Map<string, number>();
+      let unspecified = 0;
+      const walk = (dir: string): void => {
+        let entries: string[] = [];
+        try {
+          entries = readdirSync(dir);
+        } catch {
+          return;
+        }
+        for (const e of entries) {
+          const full = join(dir, e);
+          let isDir = false;
+          try {
+            isDir = statSync(full).isDirectory();
+          } catch {
+            continue;
+          }
+          if (isDir) {
+            walk(full);
+            continue;
+          }
+          if (!/\.ya?ml$/.test(e)) continue;
+          let text = "";
+          try {
+            text = readFileSync(full, "utf-8");
+          } catch {
+            continue;
+          }
+          // Count agent steps and the drivers they name. A step with no
+          // `driver:` uses the bridge default and is reported separately —
+          // folding it in would under-enumerate the surface.
+          const agents = text.match(/^\s*-?\s*agent:/gm)?.length ?? 0;
+          const named = [...text.matchAll(/^\s*driver:\s*([A-Za-z0-9_-]+)/gm)];
+          for (const m of named) {
+            const d = (m[1] ?? "").toLowerCase();
+            if (d) counts.set(d, (counts.get(d) ?? 0) + 1);
+          }
+          if (agents > named.length) unspecified += agents - named.length;
+        }
+      };
+      walk(patchworkPath("recipes"));
+      const drivers = [...counts.entries()]
+        .map(([driver, count]) => ({ driver, count }))
+        .sort((a, b) => b.count - a.count);
+      const result = suggestShadowConfig({ drivers, unspecified });
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${formatSuggestion(result)}\n`);
+      }
+      process.exit(0);
+    }
     if (args[0] !== "shadow") {
       process.stderr.write(
         "Usage: patchwork privacy shadow [--since-days N] [--json]\n" +
+          "       patchwork privacy suggest [--json]\n" +
           "\n" +
           "  Observes boundary decisions WITHOUT enforcing them. Configure a\n" +
           "  candidate policy under `privacy.shadow.destinations` in config.json;\n" +

@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-18 `feat/privacy-shadow-suggest` — `patchwork privacy suggest`: derive a starter privacy.shadow block from the drivers installed recipes actually declare
 
 ## Recently closed (informal log, prune periodically)
 
