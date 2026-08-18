@@ -79,17 +79,40 @@ jobs:
       - name: Build
         run: npm run build
       - name: Test
-        run: npm test -- --reporter=dot --reporter=github-actions
+        run: npm test -- --reporter=dot --reporter=github-actions --reporter=./scripts/vitest-progress-reporter.mjs
+        env:
+          VITEST_PROGRESS_FILE: vitest-progress/test.jsonl
         # Bumped 5→10: the suite has grown past the old 5-minute ceiling (local
         # run: 335s of test time alone, no coverage overhead) and windows-latest
         # runners are consistently slower — CI was killing the step at ~5m0s-5m2s
         # with no failing assertion anywhere in the log, just a hard SIGTERM
         # mid-run. Not a hang; confirmed via a full local `vitest run`
         # completing clean (8759 passed).
+        #
+        # Measured 2026-08-18 across six windows/22 jobs: this step runs
+        # 4.7-5.0 min against the 10 min cap (~50% headroom), while Coverage
+        # below runs 5.4-6.4 min against 8 min (20-32%). Coverage is now the
+        # tight one — raise THAT before this, and see #1365 before raising
+        # either, since a cap bump has already been tried twice and the symptom
+        # recurred at each new ceiling.
         timeout-minutes: 10
       - name: Coverage (enforce 71% lines / 62% branches / 70% functions)
-        run: npm run test:coverage -- --reporter=dot --reporter=github-actions
+        run: npm run test:coverage -- --reporter=dot --reporter=github-actions --reporter=./scripts/vitest-progress-reporter.mjs
+        env:
+          VITEST_PROGRESS_FILE: vitest-progress/coverage.jsonl
         timeout-minutes: 8
+      # `if: always()` is the whole point (#1365). The failure this diagnoses is
+      # a step KILLED at its cap, which uploads nothing on the default
+      # success-only condition — so the one run whose progress anyone wants is
+      # exactly the run that would discard it.
+      - name: Upload vitest progress (#1365)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-progress-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: vitest-progress/
+          if-no-files-found: warn
+          retention-days: 14
 
   schema-audit:
     name: Tool schema breaking-change gate
