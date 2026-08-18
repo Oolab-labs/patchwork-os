@@ -45,6 +45,59 @@ describe("destinations are derived from evidence", () => {
   });
 });
 
+describe("the bridge default driver is a real destination", () => {
+  it("says the default is covered when a recipe already names it", () => {
+    const r = suggestShadowConfig({
+      drivers: [{ driver: "local", count: 7 }],
+      unspecified: 28,
+      defaultDriver: "local",
+    });
+    // The first version warned these were UNCOVERED whenever any existed —
+    // needless alarm when the default is already in the block, which is the
+    // common case and was the live one on the workspace this shipped against.
+    expect(r.notes.join(" ")).toContain("this block covers them");
+    expect(r.config.destinations["candidate-local"]?.drivers).toEqual([
+      "local",
+    ]);
+  });
+
+  it("ADDS the default when no recipe names it", () => {
+    const r = suggestShadowConfig({
+      drivers: [{ driver: "local", count: 2 }],
+      unspecified: 5,
+      defaultDriver: "claude-code",
+    });
+    // The genuinely dangerous direction: a live remote destination that appears
+    // in no recipe file, so a scan of recipes alone misses it entirely.
+    expect(r.config.destinations["candidate-remote"]?.drivers).toEqual([
+      "claude-code",
+    ]);
+    expect(r.notes.join(" ")).toContain("ADDED below");
+  });
+
+  it("does not duplicate a default that is already present", () => {
+    const r = suggestShadowConfig({
+      drivers: [{ driver: "local", count: 3 }],
+      unspecified: 1,
+      defaultDriver: "LOCAL",
+    });
+    // Case-insensitive: `driver: LOCAL` in config.json is the same destination.
+    expect(r.config.destinations["candidate-local"]?.drivers).toEqual([
+      "local",
+    ]);
+  });
+
+  it("admits it when the default could not be read", () => {
+    const r = suggestShadowConfig({
+      drivers: [{ driver: "local", count: 1 }],
+      unspecified: 4,
+    });
+    // "could not be read" is a different claim from "there is none", and the
+    // operator needs to know which they are looking at.
+    expect(r.notes.join(" ")).toContain("could not be read from config.json");
+  });
+});
+
 describe("the output refuses to look authoritative", () => {
   it("always says the classifications are not advice", () => {
     const r = suggestShadowConfig({

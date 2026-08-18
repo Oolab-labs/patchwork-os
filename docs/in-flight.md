@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-19 `fix/privacy-suggest-default-driver` — privacy suggest ignored the configured default driver, so its unspecified-steps note was wrong in both directions
 
 ## Recently closed (informal log, prune periodically)
 
