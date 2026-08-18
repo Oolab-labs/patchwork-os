@@ -32,6 +32,25 @@ describe("the information boundary is wired into production dispatch", () => {
     expect(src).toMatch(/(?<![\w$])recordBoundaryDecisionFn\s*:/);
   });
 
+  it("buildAgentExecutorDeps supplies the shadow deps too (ADR-0021)", () => {
+    // Shadow mode inherits the same failure mode as the enforcing pair above:
+    // optional deps nobody supplies look exactly like a feature that was never
+    // built. Worse here, because its whole output is a coverage number — an
+    // unwired shadow reports "0 observed" and reads as "nothing crossed".
+    const src = read("src/recipes/yamlRunner.ts");
+    expect(src).toMatch(/(?<![\w$])loadPrivacyShadowConfigFn\s*:/);
+    expect(src).toMatch(/(?<![\w$])recordPrivacyShadowFn\s*:/);
+  });
+
+  it("shadow reads privacy.shadow, NOT privacy.destinations", () => {
+    // Two keys is the safety property, not a naming preference: if shadow read
+    // the enforcing config, switching shadow on would switch ENFORCEMENT on,
+    // and an operator asking "what would this policy do?" would find out by
+    // having it applied to live traffic.
+    const src = read("src/recipes/yamlRunner.ts");
+    expect(src).toMatch(/privacy\?\.shadow/);
+  });
+
   it("the receipt log is a shared instance, not per call", () => {
     // A per-call instance restarts `seq` at 1 on every dispatch — the same
     // per-instance-counter-on-a-shared-file defect that collided 142 of 145

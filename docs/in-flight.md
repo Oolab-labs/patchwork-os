@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-18 `feat/1021-privacy-shadow-mode` — ADR-0021 shadow mode: observe boundary decisions without enforcing, coverage-first reporting; touches executeAgent (the enforcement chokepoint)
 
 ## Recently closed (informal log, prune periodically)
 

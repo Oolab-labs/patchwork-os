@@ -123,6 +123,7 @@ import type {
   Classification as ClassificationValue,
 } from "../privacy/dataPolicy.js";
 import type { PrivacyConfig } from "../privacy/destinationRegistry.js";
+import { recordPrivacyShadow } from "../privacy/shadowLog.js";
 
 /**
  * Bundled-templates directory used as a third allowed root for nested-recipe
@@ -3604,6 +3605,31 @@ function buildAgentExecutorDeps(
     // `loadConfig` is already mtime-gated so this is cheap.
     loadPrivacyConfigFn: () =>
       (loadPatchworkConfigSync() as { privacy?: PrivacyConfig }).privacy,
+    // Shadow mode (ADR-0021). Wired here for the same reason as the pair above:
+    // deps declared and supplied nowhere are indistinguishable at runtime from
+    // a feature that was never built.
+    //
+    // Reads `privacy.shadow`, NOT `privacy` — a separate key so that turning
+    // shadow on cannot turn enforcement on. An operator asking "what would this
+    // policy do?" must not find out by having it applied.
+    loadPrivacyShadowConfigFn: () =>
+      (
+        loadPatchworkConfigSync() as {
+          privacy?: { shadow?: PrivacyConfig };
+        }
+      ).privacy?.shadow,
+    recordPrivacyShadowFn: (r) => {
+      recordPrivacyShadow({
+        decision: r.decision,
+        reason: r.reason,
+        destinationId: r.destinationId,
+        destinationType: r.destinationType,
+        classification: r.classification,
+        enforcing: r.enforcing,
+        ...(r.categories && { categories: r.categories }),
+        ...(r.redactCategories && { redactCategories: r.redactCategories }),
+      });
+    },
     recordBoundaryDecisionFn: (r) => {
       // Fail-soft: a receipt that cannot be written must never affect the
       // decision it describes, which has already been made and enforced.
