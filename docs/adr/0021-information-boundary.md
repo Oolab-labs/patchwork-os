@@ -28,6 +28,11 @@
 >   must have a category removed is refused rather than sent unredacted.
 >   "We know something must be removed and cannot remove it" has to fail
 >   closed; the alternative sends the data and records that it should not have.
+>   **This is not merely unbuilt — see the 2026-08-18 amendment.** The decision
+>   point receives an already-rendered prompt, so redaction there could only be
+>   detection, which this ADR rejects as a boundary. Refusing is the correct
+>   behaviour for a boundary positioned after rendering, and the fix is field
+>   labels, not effort.
 > - **Wiring.** `buildAgentExecutorDeps` (`src/recipes/yamlRunner.ts`)
 >   supplies both `loadPrivacyConfigFn` and `recordBoundaryDecisionFn`.
 >   Until it did, the boundary was correct, tested and INERT in
@@ -248,6 +253,76 @@ path, which is exactly what an unobserved one looks like.
 orchestrator dispatch gains a boundary decision — at which point this section is
 wrong and must be updated with it — and it fails equally if the recipe path ever
 loses one, so it cannot pass by both sides being empty.
+
+## Amendment 2026-08-18 — redaction and purpose share one prerequisite
+
+Recorded after investigating what it would take to make `ALLOW_REDACTED` stop
+meaning refuse. The answer changed the sequencing, so it belongs here rather
+than in a commit message.
+
+### `ALLOW_REDACTED` cannot be implemented where the decision is made
+
+`redactCategories` names declared CATEGORIES — `financial`, say. Removing one
+means removing the financial content from the prompt. But `executeAgent`
+receives `renderedPrompt` (`yamlRunner.ts`): the template has already been
+flattened into a single string, and every variable boundary with it.
+
+So at the decision point, "remove the financial parts" can only mean "find the
+financial parts in prose" — **detection**. This ADR rejects detection as the
+boundary, in its own words: *a detector that is itself the security boundary
+fails silently on everything it does not recognise, and its recall is
+unknowable.* Implementing redaction here would reintroduce precisely what was
+refused, wearing the name of the thing that refused it.
+
+That is why `ALLOW_REDACTED` refusing is not a stopgap awaiting effort. It is
+the correct behaviour for a boundary positioned after rendering.
+
+### The prerequisite is the same one purpose needs
+
+"Explicitly not in this ADR" already says purpose-based minimisation should be
+revisited *"only with declared per-task field allow-lists"*. Redaction lands on
+that identical requirement by a different route. Both need:
+
+> Labels attached to the FIELDS a prompt is assembled from, applied while those
+> fields are still separate — i.e. at template-render time, upstream of the
+> decision point.
+
+With per-field labels, both become deterministic and model-free:
+
+- **Redaction** = omit the fields whose category the destination forbids. A
+  declarative set difference, not a search through prose.
+- **Purpose** = (data x destination x purpose), where a purpose declares the
+  fields it requires. A phone number is necessary for "send an appointment
+  reminder" and unnecessary for "summarise sales performance" — expressible as
+  an allow-list, and therefore testable without a model.
+
+### Consequences for sequencing
+
+**Redaction is not the next buildable item, and the earlier ordering was
+wrong.** It sits behind field labels. Anything shipped before them is either a
+detector — rejected — or a rename of the current refusal.
+
+**Field labels are a recipe-schema change, not a privacy-engine change.** The
+work is in how a step declares its inputs, which is a larger and more visible
+surface than anything ADR-0021 has touched so far, and it changes what recipe
+authors write.
+
+**The boundary may need a second decision point.** A field-level decision has to
+run where the fields exist. That does not move the existing chokepoint — it
+stays as the unconditional backstop on the assembled prompt — but it means the
+invariant would then be enforced at two places, and the never-widen rule has to
+hold BETWEEN them.
+
+**A model must never choose the minimum.** If a model decides which fields a
+purpose needs, the boundary is enforced by the thing it constrains. Purposes
+declare their fields; policy decides. This is the same line the Butler work drew
+when it removed an LLM judge from a scoring path.
+
+### Not decided here
+
+Whether field labels are worth their cost. This amendment records that two
+roadmap items collapse into one prerequisite, and that the prerequisite is
+bigger than either appeared alone — not that it should be built.
 
 ## Explicitly not in this ADR
 
