@@ -26,29 +26,25 @@ jobs:
         # risk that decision knowingly took on.
         os: [ubuntu-latest, windows-latest]
         node-version: [22, 24]
-        exclude:
-          # windows + 24 is EXCLUDED, not advisory. It fails reproducibly and
-          # unexplainedly: the process TREE dies ~75-83s after test output
-          # stops, with no failing assertion, no vitest summary, not even the
-          # wrapper's own exit line (#1368), and — per the #1365 probe — no
-          # Windows resource-kill record and 13.4 GiB free. Failing test,
-          # vitest non-zero exit, signalled-child, step timeout and OOM are all
-          # eliminated. See #1365.
-          #
-          # Excluded rather than left `continue-on-error`, deliberately. A
-          # permanently-red advisory job is WORSE than an absent one: it cannot
-          # be told apart from a real regression, so it would silently destroy
-          # the very node:sqlite signal ADR-0022 added 24 for — and it trains
-          # everyone to scroll past a failing job.
-          #
-          # What this costs, stated so nobody assumes otherwise: only the
-          # INTERSECTION is dark. ubuntu/24 covers the Node 24 runtime
-          # (including node:sqlite); windows/22 covers Windows. Windows-specific
-          # behaviour of a Node-24-only API is the uncovered case — narrow, but
-          # real, and it is exactly where a filesystem API is most likely to
-          # differ. Reinstate this cell when #1365 is understood.
-          - os: windows-latest
-            node-version: 24
+        # windows + 24 was EXCLUDED from #1369 until 2026-08-18, because it
+        # failed reproducibly and unexplainedly: the process TREE died with no
+        # failing assertion and no vitest summary. REINSTATED — the cause is
+        # now known and fixed.
+        #
+        # It was never a process death in vitest. libuv's fs-event.c asserts
+        # that the filename it reports starts with the directory it was handed,
+        # and it reports the CANONICAL path — so the shim handing it an 8.3
+        # short path (`RUNNER~1`, from `fs.mkdtempSync(os.tmpdir())` on CI)
+        # failed that comparison and ABORTED the shim process. An abort is not
+        # throwable, so the guard around fs.watch could not catch it and the
+        # polling fallback had no process left to poll. Node 22 does not assert
+        # there; Node 24 does. See #1365 and the realpathSync.native call in
+        # scripts/mcp-stdio-shim.cjs.
+        #
+        # This cell is what ADR-0022 added Node 24 for: node:sqlite is an
+        # experimental API in the trust-evidence path, and Windows-specific
+        # behaviour of a Node-24-only API is exactly where a filesystem API is
+        # most likely to differ.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
