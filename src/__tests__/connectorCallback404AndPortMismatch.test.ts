@@ -28,9 +28,14 @@ function makeRes(): {
   res: ServerResponse;
   status: () => number;
   body: () => string;
+  done: Promise<void>;
 } {
   let status = 0;
   const chunks: string[] = [];
+  let resolveDone!: () => void;
+  const done = new Promise<void>((r) => {
+    resolveDone = r;
+  });
   const res = {
     writeHead(s: number) {
       status = s;
@@ -38,10 +43,11 @@ function makeRes(): {
     },
     end(c?: string) {
       if (c) chunks.push(c);
+      resolveDone();
       return this;
     },
   } as unknown as ServerResponse;
-  return { res, status: () => status, body: () => chunks.join("") };
+  return { res, status: () => status, body: () => chunks.join(""), done };
 }
 
 describe("unknown connector on a callback path 404s, it does not 401", () => {
@@ -62,7 +68,7 @@ describe("unknown connector on a callback path 404s, it does not 401", () => {
     expect(body()).toContain("githbu");
   });
 
-  it("does NOT claim a real connector's callback (control)", () => {
+  it("does NOT claim a real connector's callback (control)", async () => {
     // What this actually guards is POSITION, established by probing rather
     // than assumed. Widening the new branch's condition to `slug !== null`
     // changes nothing — it sits after every real handler, so a known slug has
@@ -74,7 +80,7 @@ describe("unknown connector on a callback path 404s, it does not 401", () => {
     // Then every real callback 404s and OAuth breaks completely. Probed: with
     // the check moved to the top of the dispatcher, this test fails.
     const slug = oauthConnectorIds()[0] as string;
-    const { res } = makeRes();
+    const { res, done: res_done } = makeRes();
     const handled = tryHandlePublicConnectorRoute(
       makeReq("GET"),
       res,
@@ -88,6 +94,21 @@ describe("unknown connector on a callback path 404s, it does not 401", () => {
       probe.res,
       new URL(`http://x/connections/${slug}/callback?code=abc&state=x`),
     );
+    // `await` before reading the status, for two independent reasons (#1386).
+    //
+    // 1. Correctness of THIS assertion. The real handler is a fire-and-forget
+    //    `void (async () => { await import(...) })()`, so nothing has been
+    //    written when it returns. `status` starts at 0, and `0 !== 404` — the
+    //    check passed even if the handler never ran at all. It asserted the
+    //    absence of a synchronous write, which no code path could produce.
+    // 2. The dynamic import outlived the test. Whichever import had not
+    //    resolved at environment teardown threw `EnvironmentTeardownError`
+    //    and failed the CI step after every test reported passing.
+    //
+    // Asserting a real status is what makes the leak impossible to reopen:
+    // drop the await and `0` is not a status any handler returns.
+    await Promise.all([probe.done, res_done]);
+    expect(probe.status()).toBeGreaterThan(0);
     expect(probe.status()).not.toBe(404);
   });
 

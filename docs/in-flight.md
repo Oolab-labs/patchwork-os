@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-18 `fix/1386-connector-callback-teardown-race` — #1386: connector-callback tests fired fire-and-forget dynamic imports and never awaited them, so they outlived vitest teardown — test-only fix in 2 files
 
 ## Recently closed (informal log, prune periodically)
 

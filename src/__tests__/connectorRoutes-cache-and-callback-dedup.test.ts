@@ -35,6 +35,14 @@ function makeReq(method: string): IncomingMessage {
   return req;
 }
 
+// Records which responses actually got written, so a test can assert the
+// route finished rather than merely that it claimed the path (#1386).
+const endedResponses = new WeakSet<ServerResponse>();
+
+function endedFor(res: ServerResponse): boolean {
+  return endedResponses.has(res);
+}
+
 function makeRes(): { res: ServerResponse; done: Promise<void> } {
   let resolveDone!: () => void;
   const done = new Promise<void>((r) => {
@@ -45,6 +53,7 @@ function makeRes(): { res: ServerResponse; done: Promise<void> } {
       return this;
     },
     end() {
+      endedResponses.add(res);
       resolveDone();
       return this;
     },
@@ -160,14 +169,29 @@ describe("http-routes-3 — OAuth callbacks not duplicated in the auth-gated dis
       expect(handled).toBe(false);
     });
 
-    it(`tryHandlePublicConnectorRoute DOES claim /connections/${vendor}/callback`, () => {
-      const { res } = makeRes();
+    it(`tryHandlePublicConnectorRoute DOES claim /connections/${vendor}/callback`, async () => {
+      const { res, done } = makeRes();
       const handled = tryHandlePublicConnectorRoute(
         makeReq("GET"),
         res,
         new URL(`http://x/connections/${vendor}/callback?code=abc&state=xyz`),
       );
       expect(handled).toBe(true);
+      // `await done` is load-bearing, not tidiness (#1386). The route body is
+      // a fire-and-forget `void (async () => { await import(...) })()` — it
+      // returns `true` while the connector module graph is STILL LOADING
+      // (measured: 2.7-14.6 ms after return, for all 13 vendors). Asserting
+      // `handled` and returning here left up to 13 in-flight dynamic imports
+      // per file; whichever had not resolved when vitest tore the environment
+      // down threw `EnvironmentTeardownError: Cannot load .../mcpOAuth.ts
+      // imported from src/connectors/github.ts after the environment was torn
+      // down`, failing the CI step AFTER every test had reported passing.
+      // Timing-dependent, hence the flakiness and the Windows bias.
+      //
+      // The `ended` assertion is what keeps this honest: delete the await and
+      // it fails deterministically rather than going quietly back to leaking.
+      await done;
+      expect(endedFor(res)).toBe(true);
     });
   }
 });
