@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-18 `docs/0021-field-labels-amendment` — ADR-0021 amendment: redaction and purpose share one prerequisite (declared per-field labels at render time); docs only
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
