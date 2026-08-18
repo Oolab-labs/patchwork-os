@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-18 `docs/claude-md-privacy-subsystem` — CLAUDE.md had ZERO refs to ADR-0021/src/privacy; add the section + new CLI verbs; docs only
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
