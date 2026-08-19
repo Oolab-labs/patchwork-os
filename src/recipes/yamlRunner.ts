@@ -3656,6 +3656,16 @@ function buildAgentExecutorDeps(
       const shadowWsId = evidenceWorkspaceId();
       recordPrivacyShadow({
         ...(shadowWsId && { workspaceId: shadowWsId }),
+        // Which recipe produced this (#1469). Taken from StepDeps rather than
+        // added to the executor's callback shape: the decision point has no
+        // recipe in scope and giving it one would widen a privacy seam to carry
+        // identity it does not need. `recipeName` is already here for the
+        // circuit breaker's key.
+        //
+        // Attribution only — the summariser groups by it and never filters on
+        // it, and it is absent for callers that build StepDeps without a scope,
+        // which the report counts and names rather than dropping.
+        ...(stepDeps.recipeName && { recipeName: stepDeps.recipeName }),
         decision: r.decision,
         reason: r.reason,
         destinationId: r.destinationId,

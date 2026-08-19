@@ -109,8 +109,22 @@ export interface PrivacyShadowRow {
   destinationType: "local" | "remote";
   redactCategories?: string[];
   reason: string;
+  /**
+   * Which recipe produced this dispatch (#1469).
+   *
+   * Attribution only — the summariser groups by it, never filters on it. NOT a
+   * payload concern: a recipe name is not the prompt, it is already in
+   * `runs.jsonl`, and it is the same class of metadata #1455 established for
+   * evidence records.
+   *
+   * `stepId` was declared alongside this and supplied by nothing, so it has been
+   * REMOVED rather than left as a second instance of the defect this field
+   * exists to fix. The seam has no step identity to give: the shadow row is
+   * written from `buildAgentExecutorDeps`, which receives `StepDeps` — and that
+   * carries `recipeName` (for the circuit breaker's key) and no step id. Adding
+   * it back means plumbing one, not un-commenting a line.
+   */
   recipeName?: string;
-  stepId?: string;
   /** Short workspace id — attribution only; the summariser never filters on it. */
   workspaceId?: string;
   /**
@@ -178,6 +192,29 @@ export interface PrivacyShadowSummary {
   byPath: Record<string, { observed: number; crossings: number }>;
   /** How many rows carried an ASSUMED classification rather than a declared one. */
   assumed: number;
+  /**
+   * Recipe name -> how many of ITS rows were assumed (#1469).
+   *
+   * The report's job here is not another number but a to-do list: the remedy
+   * for an assumed row is to declare a `data_policy` on the step that produced
+   * it, and without this an operator was told "23 of 29" with 80 installed
+   * recipes to guess between.
+   *
+   * Counts only ASSUMED rows, not the recipe's total traffic — a half-labelled
+   * recipe still has work outstanding and the figure must be of the work.
+   */
+  assumedByRecipe: Record<string, number>;
+  /**
+   * Assumed rows carrying no recipe at all — orchestrator dispatches (which
+   * have no declared-policy channel, #1397) and rows written before attribution
+   * existed.
+   *
+   * Reported rather than dropped so `sum(assumedByRecipe) + assumedUnattributed
+   * === assumed` holds. Omitting them would leave a reader who fixed every
+   * recipe listed staring at a headline that never reached zero, with nothing
+   * to explain the remainder.
+   */
+  assumedUnattributed: number;
   observedPath: string;
   unobservedPaths: readonly string[];
 }
@@ -198,6 +235,8 @@ export function summarisePrivacyShadow(
     enforcingObservations: 0,
     byPath: {},
     assumed: 0,
+    assumedByRecipe: {},
+    assumedUnattributed: 0,
     observedPath: OBSERVED_PATH,
     unobservedPaths: UNOBSERVED_PATHS,
   };
@@ -229,7 +268,19 @@ export function summarisePrivacyShadow(
     const bucket = (summary.byPath[pathKey] ??= { observed: 0, crossings: 0 });
     bucket.observed += 1;
     if (isCrossing) bucket.crossings += 1;
-    if (row.labelSource === "assumed") summary.assumed += 1;
+    if (row.labelSource === "assumed") {
+      summary.assumed += 1;
+      // Attribute where we can, COUNT where we cannot. Dropping the
+      // unattributable rows would break `sum(byRecipe) + unattributed ===
+      // assumed`, and a reader who fixed every recipe listed would be left with
+      // a headline that never reached zero and nothing to explain it.
+      const rn = typeof row.recipeName === "string" ? row.recipeName : "";
+      if (rn) {
+        summary.assumedByRecipe[rn] = (summary.assumedByRecipe[rn] ?? 0) + 1;
+      } else {
+        summary.assumedUnattributed += 1;
+      }
+    }
     if (row.enforcing) summary.enforcingObservations += 1;
     summary.byDecision[row.decision] =
       (summary.byDecision[row.decision] ?? 0) + 1;
@@ -293,6 +344,30 @@ export function formatPrivacyShadow(s: PrivacyShadowSummary): string {
     L.push(
       `  assumed:    ${s.assumed} of ${s.observed} row(s) carry a DEFAULTED classification, not a declared one`,
     );
+    // The to-do list (#1469). Without it this section states a number and the
+    // remedy — declare a `data_policy` on the step that produced the row — has
+    // no address: an operator was left guessing between every installed recipe.
+    const ranked = Object.entries(s.assumedByRecipe).sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    );
+    if (ranked.length > 0) {
+      L.push(
+        "  unlabelled dispatches by recipe (declare `data_policy` on the step):",
+      );
+      // Worst first, so the one line an operator actually reads is the one
+      // worth acting on.
+      for (const [name, n] of ranked) {
+        L.push(`    ${String(n).padStart(5)}  ${name}`);
+      }
+    }
+    if (s.assumedUnattributed > 0) {
+      // Named, not omitted. Orchestrator dispatches have no declared-policy
+      // channel (#1397) and pre-attribution rows carry no recipe, so this
+      // remainder is not fixable by labelling and must not read as if it were.
+      L.push(
+        `    ${String(s.assumedUnattributed).padStart(5)}  (not attributed to a recipe — orchestrator dispatches and rows written before attribution)`,
+      );
+    }
   }
   if (s.enforcingObservations > 0) {
     L.push(
