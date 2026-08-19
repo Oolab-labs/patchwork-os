@@ -1035,23 +1035,44 @@ export function tryHandleRecipeRoute(
   // default; this is the one-decision/one-history lookup, not a dashboard
   // feed like /workers/shadow).
   if (parsedUrl.pathname === "/gate/decisions" && req.method === "GET") {
-    try {
-      const sp = parsedUrl.searchParams;
-      const workerId = sp.get("workerId") ?? undefined;
-      const classKey = sp.get("classKey") ?? undefined;
-      const limitRaw = sp.get("limit");
-      const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
-      const decisions =
-        deps.gateDecisionsFn?.({
-          ...(workerId && { workerId }),
-          ...(classKey && { classKey }),
-          ...(Number.isFinite(limit) && { limit }),
-        }) ?? [];
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ decisions }));
-    } catch (err) {
-      respond500(res, err);
-    }
+    void (async () => {
+      try {
+        const sp = parsedUrl.searchParams;
+        const workerId = sp.get("workerId") ?? undefined;
+        const classKey = sp.get("classKey") ?? undefined;
+        const limitRaw = sp.get("limit");
+        const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+        const decisions =
+          deps.gateDecisionsFn?.({
+            ...(workerId && { workerId }),
+            ...(classKey && { classKey }),
+            ...(Number.isFinite(limit) && { limit }),
+          }) ?? [];
+        // `?explain=1` adds the SAME prose `patchwork gate explain` prints.
+        // Served rather than re-implemented on the client: the dashboard shares
+        // no code with the bridge, so a second formatter would drift, and the
+        // two would then disagree about what a decision meant — in an artefact
+        // whose whole selling point is that an auditor can read it.
+        const explain = parsedUrl.searchParams.get("explain");
+        let explanation: string | undefined;
+        if (explain === "1" || explain === "true") {
+          const { formatGateDecisionHistory } = await import(
+            "./workerGateDecisionLog.js"
+          );
+          explanation = formatGateDecisionHistory(decisions);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify(
+            explanation === undefined
+              ? { decisions }
+              : { decisions, explanation },
+          ),
+        );
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
     return true;
   }
 

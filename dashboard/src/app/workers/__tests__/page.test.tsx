@@ -293,6 +293,7 @@ describe("what a worker may actually do (control boundary)", () => {
   function boundaryRouteMock(opts: {
     manifests: unknown;
     boundary?: unknown;
+    explanation?: string;
   }): (url: string | URL) => Promise<Response> {
     return (url) => {
       const u = String(url);
@@ -300,6 +301,14 @@ describe("what a worker may actually do (control boundary)", () => {
       if (u.includes("/workers/shadow")) return Promise.resolve(jsonResponse(SHADOW));
       if (u.includes("/workers/boundary"))
         return Promise.resolve(jsonResponse({ boundary: opts.boundary ?? null }));
+      if (u.includes("/gate/decisions"))
+        return Promise.resolve(
+          jsonResponse(
+            opts.explanation
+              ? { decisions: [{}], explanation: opts.explanation }
+              : { decisions: [] },
+          ),
+        );
       if (u.includes("/api/bridge/workers")) return Promise.resolve(jsonResponse(opts.manifests));
       return Promise.resolve(jsonResponse({}));
     };
@@ -350,5 +359,46 @@ describe("what a worker may actually do (control boundary)", () => {
     // The fallback must NOT be showing — otherwise this test would pass on a
     // page that silently failed to render the boundary at all.
     expect(container.textContent).not.toContain("no boundary");
+  });
+});
+
+describe("the last decision, in the gate's own words", () => {
+  function receiptMock(explanation?: string) {
+    return (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/approvals/kpi")) return Promise.resolve(jsonResponse({ total: 0 }));
+      if (u.includes("/workers/shadow")) return Promise.resolve(jsonResponse(SHADOW));
+      if (u.includes("/workers/boundary")) return Promise.resolve(jsonResponse({ boundary: null }));
+      if (u.includes("/gate/decisions"))
+        return Promise.resolve(
+          jsonResponse(explanation ? { decisions: [{}], explanation } : { decisions: [] }),
+        );
+      return Promise.resolve(jsonResponse({ workers: [] }));
+    };
+  }
+
+  it("renders the bridge's prose verbatim", async () => {
+    // Verbatim is the requirement, not a nicety: the dashboard and
+    // `patchwork gate explain` must never give two accounts of one decision.
+    const prose =
+      "2026-07-09T19:33:30.453Z — tech-debt-scout → agent\n  Result: ALLOWED\n  Why: agent reasoning step — not a gated action-class";
+    fetchMock.mockImplementation(receiptMock(prose));
+    render(<WorkersPage />);
+    expect(await screen.findByText("Release Worker")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Release Worker/ }));
+    expect(
+      await screen.findByText(/agent reasoning step/),
+    ).toBeTruthy();
+  });
+
+  it("says nothing has been decided rather than showing an empty box", async () => {
+    // "Nothing to see" and "nothing has happened" are different claims.
+    fetchMock.mockImplementation(receiptMock(undefined));
+    render(<WorkersPage />);
+    expect(await screen.findByText("Release Worker")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Release Worker/ }));
+    expect(
+      await screen.findByText(/No gate decision has been recorded/i),
+    ).toBeTruthy();
   });
 });

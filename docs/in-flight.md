@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-19 `feat/gate-decision-receipt-prose` — the auditor-readable receipt exists only in the CLI; serve the SAME formatter over HTTP and render it in the worker drawer
 
 ## Recently closed (informal log, prune periodically)
 

@@ -204,6 +204,66 @@ describe("GET /gate/decisions — Decision Record query route", () => {
     });
   });
 
+  it("?explain=1 returns the SAME prose the CLI prints", async () => {
+    // Served rather than re-implemented client-side. The dashboard shares no
+    // code with the bridge, so a second formatter would drift — and the two
+    // would then disagree about what a decision meant, in the one artefact
+    // whose selling point is that an auditor can read it.
+    const rec = {
+      seq: 1,
+      decidedAt: 1_700_000_000_000,
+      workerId: "w1",
+      toolName: "agent",
+      classKey: "other:irreversible:medium",
+      domain: "other",
+      reversibility: "irreversible",
+      blastTier: "medium",
+      owned: false,
+      earnedLevel: 0,
+      autonomyCeiling: 0,
+      effectiveLevel: 0,
+      action: "allow",
+      reason: "agent reasoning step — not a gated action-class",
+      recipeName: "r1",
+      gatePolicyVersion: "worker-ramp-v0",
+    };
+    const deps = makeDeps({ gateDecisionsFn: () => [rec] as never });
+    const url =
+      "/gate/decisions?workerId=w1&classKey=other:irreversible:medium&explain=1";
+    const { res, done } = makeRes();
+    tryHandleRecipeRoute(
+      makeReq("GET", url),
+      res,
+      new URL(`http://x${url}`),
+      deps,
+    );
+    const { status, body } = await done;
+    expect(status).toBe(200);
+    const parsed = JSON.parse(body) as {
+      decisions: unknown[];
+      explanation?: string;
+    };
+    expect(parsed.decisions).toHaveLength(1);
+    // Prose, not a restatement of the JSON — the fields a reader needs.
+    expect(parsed.explanation).toContain("ALLOWED");
+    expect(parsed.explanation).toContain("agent reasoning step");
+  });
+
+  it("omits the explanation unless it is asked for", async () => {
+    // Additive: every existing caller keeps the exact shape it had, and the
+    // prose is not computed for feeds that never render it.
+    const deps = makeDeps({ gateDecisionsFn: () => [] });
+    const { res, done } = makeRes();
+    tryHandleRecipeRoute(
+      makeReq("GET", "/gate/decisions?workerId=w1"),
+      res,
+      new URL("http://x/gate/decisions?workerId=w1"),
+      deps,
+    );
+    const { body } = await done;
+    expect(Object.keys(JSON.parse(body))).toEqual(["decisions"]);
+  });
+
   it("falls back to an empty list when gateDecisionsFn is null", async () => {
     const deps = makeDeps({ gateDecisionsFn: null });
     const req = makeReq("GET", "/gate/decisions?workerId=w1&classKey=x");
