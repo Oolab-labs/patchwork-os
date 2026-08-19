@@ -29,7 +29,16 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-19 `fix/evidence-workspace-seed` — the evidence workspace tag (#1455) records WHICH PROCESS
+  wrote the row, not which workspace. `evidenceWorkspaceId()` in `yamlRunner` calls
+  `resolveWorkspaceRoot()` with no seed, so it walks up from `process.cwd()`. Measured: two bridges
+  serving the SAME workspace, one with cwd `~` (no `.git` ancestor → every row untagged) and one with
+  cwd in the repo (tagged) — 22 of 40 shadow rows tagged, 0 of 4 boundary receipts. Two sibling call
+  sites already seed correctly (`recipeOrchestration.ts:1607`, `claudeOrchestrator.ts:532`); this is
+  the third and it is the one writing privacy evidence. Seeds from `stepDeps.workdir`, which
+  `bridge.ts` already fills from `config.workspace`. Existing untagged rows are NOT backfilled.
+  Touches `src/recipes/yamlRunner.ts` — collides with any privacy, evidence or recipe-runner work.
+  — this session
 
 ## Recently closed (informal log, prune periodically)
 
