@@ -24,7 +24,7 @@ import {
   riskColor,
   type SimulationReport,
 } from "@/lib/simulation";
-import { BoundaryPanel } from "./_components/BoundaryPanel";
+import { BoundaryPanel } from "@/components/BoundaryPanel";
 import { DoctorPanel } from "./_components/DoctorPanel";
 import { SimulatePanel } from "./_components/SimulatePanel";
 import { RailProvider, type RailData } from "./_components/RailContext";

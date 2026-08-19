@@ -283,3 +283,72 @@ describe("WorkersPage", () => {
     );
   });
 });
+
+describe("what a worker may actually do (control boundary)", () => {
+  // The trust dial says how far a worker has been TRUSTED. It does not say what
+  // that permits. Both are asked about the same worker and only one was
+  // answered on this page before.
+
+  /** Routes the three calls the page now makes, in most-specific-first order. */
+  function boundaryRouteMock(opts: {
+    manifests: unknown;
+    boundary?: unknown;
+  }): (url: string | URL) => Promise<Response> {
+    return (url) => {
+      const u = String(url);
+      if (u.includes("/approvals/kpi")) return Promise.resolve(jsonResponse({ total: 0 }));
+      if (u.includes("/workers/shadow")) return Promise.resolve(jsonResponse(SHADOW));
+      if (u.includes("/workers/boundary"))
+        return Promise.resolve(jsonResponse({ boundary: opts.boundary ?? null }));
+      if (u.includes("/api/bridge/workers")) return Promise.resolve(jsonResponse(opts.manifests));
+      return Promise.resolve(jsonResponse({}));
+    };
+  }
+
+  it("says so plainly when no manifest names a recipe", async () => {
+    // An empty panel would read as "this worker may do nothing", which is a
+    // different and much more reassuring claim than "we cannot tell".
+    fetchMock.mockImplementation(boundaryRouteMock({ manifests: { workers: [] } }));
+    render(<WorkersPage />);
+    expect(await screen.findByText("Release Worker")).toBeTruthy();
+    // The boundary lives in the worker's drawer — expand the roster row.
+    fireEvent.click(screen.getByRole("button", { name: /Release Worker/ }));
+    expect(await screen.findByText(/no boundary\s+to preview/i)).toBeTruthy();
+  });
+
+  it("renders the boundary when a manifest names the worker's recipe", async () => {
+    fetchMock.mockImplementation(
+      boundaryRouteMock({
+        manifests: {
+          workers: [{ id: "release-notes-worker", recipe: "release-notes" }],
+        },
+        boundary: {
+          workerId: "release-notes-worker",
+          workerName: "Release Worker",
+          recipeName: "release-notes",
+          autonomyFlagEnabled: true,
+          boundary: {
+            mayDoNow: [
+              {
+                label: "Draft the release notes",
+                toolName: "file_write",
+                classKey: "fs-write:reversible:low",
+                reason: "reversible (low blast) — undoable, flows un-gated",
+              },
+            ],
+            needsApproval: [],
+            notPermitted: [],
+          },
+        },
+      }),
+    );
+    const { container } = render(<WorkersPage />);
+    expect(await screen.findByText("Release Worker")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Release Worker/ }));
+    // Wait for the panel's own fetch to resolve.
+    expect(await screen.findByText(/Draft the release notes/i)).toBeTruthy();
+    // The fallback must NOT be showing — otherwise this test would pass on a
+    // page that silently failed to render the boundary at all.
+    expect(container.textContent).not.toContain("no boundary");
+  });
+});
