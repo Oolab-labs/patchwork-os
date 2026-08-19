@@ -33,13 +33,23 @@
  *
  * Not a secret, and not an authentication token — it is derived from a path
  * anyone with the machine already knows, so it resists disclosure, not
- * guessing. Not stable across a workspace being MOVED: the path is the
+ * guessing.
+ *
+ * **Deliberately NOT a cryptographic hash, and please do not "fix" that.** The
+ * fingerprint below is FNV-1a: fast, stable, and obviously an identifier rather
+ * than a security primitive. An earlier revision used `createHash("sha256")`,
+ * which bought nothing — the value is not a secret and brute-forcing it means
+ * guessing a path, which a cryptographic digest does not prevent either — and
+ * cost something real: CodeQL correctly identifies a filesystem string reaching
+ * a password-hashing sink as `js/insufficient-password-hash`, because the sink
+ * is the sink regardless of intent. Restructuring beats suppressing; a
+ * suppression comment would rot and the next reader would not know why it was
+ * there. Not stable across a workspace being MOVED: the path is the
  * identity, so relocating a workspace starts a new id. That is the honest
  * behaviour — a moved directory genuinely may not be the same operating
  * context — and the alternative (a stored id file) invents an identity that can
  * be copied, which is worse for an audit record.
  */
-import { createHash } from "node:crypto";
 import path from "node:path";
 
 /** Hex characters kept. 48 bits — ample against accidental collision between
@@ -61,10 +71,17 @@ const ID_LENGTH = 12;
 export function workspaceIdFor(workspacePath: string | undefined): string {
   if (!workspacePath || !workspacePath.trim()) return "";
   const normalised = path.resolve(workspacePath.trim());
-  return createHash("sha256")
-    .update(normalised)
-    .digest("hex")
-    .slice(0, ID_LENGTH);
+  // FNV-1a, 64-bit, over UTF-8 bytes. BigInt rather than `>>>` arithmetic
+  // because 32 bits collides at a few tens of thousands of inputs by the
+  // birthday bound, and an id that can silently merge two workspaces' evidence
+  // is worse than no id at all.
+  let hash = 0xcbf29ce484222325n;
+  const bytes = Buffer.from(normalised, "utf8");
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, "0").slice(0, ID_LENGTH);
 }
 
 /**
