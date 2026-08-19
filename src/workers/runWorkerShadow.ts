@@ -491,6 +491,32 @@ export interface PendingConfirmation {
  * confirmation — they earn trust on their own). In practice today only issue
  * filings (`github.create_issue`) carry a captured URL.
  */
+/**
+ * The human-readable label of a filed action, in the order services spell it.
+ *
+ * `title` alone is GitHub's spelling. Todoist has never sent it — its field is
+ * `content` — so every Butler errand arrived here with `title: undefined` and
+ * the dashboard rendered its own fallback verbatim: the operator was asked to
+ * rule on "a new issue", a placeholder carrying no information about the errand
+ * and the wrong noun for it. That is the one screen whose entire job is letting
+ * a human judge an action.
+ *
+ * The list grows only when a connector is SHOWN to use a different name. Adding
+ * plausible-looking candidates (`summary`, `name`, `subject`) on the theory that
+ * some service might use them is how a field that does not exist gets read in
+ * the first place — see this connector's own `is_completed`.
+ */
+function deriveFilingTitle(
+  out: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!out) return undefined;
+  for (const field of ["title", "content"] as const) {
+    const v = out[field];
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return undefined;
+}
+
 export function computePendingConfirmations(
   opts: RunWorkerShadowOpts = {},
 ): PendingConfirmation[] {
@@ -532,10 +558,7 @@ export function computePendingConfirmations(
       const ref = url
         ? undefined
         : { tool: step.tool, id: actionKey.slice(step.tool.length + 1) };
-      const title =
-        out && typeof out.title === "string" && out.title.trim()
-          ? (out.title as string)
-          : undefined;
+      const title = deriveFilingTitle(out);
       const disp = store.getDisposition(actionKey);
       if (disp === "confirmed" || disp === "junk") continue; // already actioned
       // unknown / no record → pending. Dedup by key, keep the newest filing.

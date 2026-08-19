@@ -1,5 +1,8 @@
 /**
- * Todoist connector — manage tasks and projects via the Todoist REST API v2.
+ * Todoist connector — manage tasks and projects via the Todoist unified API v1.
+ *
+ * REST v2 answers 410 Gone. The base URL moved to v1; the response interfaces
+ * below moved with it on 2026-08-19, nine days later — see `TodoistTask`.
  *
  * Auth: API token (personal or app token).
  *   - Env var: TODOIST_API_KEY overrides stored token for CI/headless use.
@@ -63,6 +66,31 @@ export interface TodoistDue {
   timezone?: string;
 }
 
+/**
+ * A task as the v1 API sends it.
+ *
+ * These names are v1's, not REST v2's, and the difference is not cosmetic. The
+ * base URL moved to v1 when v2 started answering 410 Gone; this interface did
+ * not move with it, so for nine days it declared EIGHT fields the wire never
+ * sent. Two of them were read to make a decision:
+ *
+ *   `is_completed` → v1 sends `checked` (plus `completed_at`)
+ *   `created_at`   → v1 sends `added_at`
+ *
+ * `observeTask` read both, so a Butler errand the operator had genuinely
+ * completed graded `unknown` / `open-recent` and no filing could ever earn
+ * trust. A blind `res.json() as Promise<TodoistTask>` cast reports nothing when
+ * it is wrong: the fields simply arrive `undefined`.
+ *
+ * The other six — `url`, `order`, `comment_count`, `creator_id`, `assignee_id`,
+ * `assigner_id` — are removed rather than renamed where v1 has no counterpart.
+ * `url` in particular never existed on v1: Todoist exposes no task permalink,
+ * which is why the outcome join key had to be generalised to `<tool>:<id>`.
+ *
+ * Key set captured from the live API on 2026-08-19; the shared test fixture
+ * (`__tests__/todoistV1Fixture.ts`) carries the same set and is asserted
+ * against it.
+ */
 export interface TodoistTask {
   id: string;
   content: string;
@@ -70,32 +98,75 @@ export interface TodoistTask {
   project_id: string;
   section_id: string | null;
   parent_id: string | null;
-  order: number;
+  /** v1's ordering field. Was declared `order`, which v1 does not send. */
+  child_order: number;
+  day_order: number;
   priority: number;
   due: TodoistDue | null;
+  deadline: unknown | null;
+  duration: unknown | null;
   labels: string[];
-  is_completed: boolean;
-  created_at: string;
-  url: string;
-  assignee_id?: string | null;
-  assigner_id?: string | null;
-  comment_count: number;
-  creator_id: string;
+  /** Completion flag. Was declared `is_completed`, which v1 does not send. */
+  checked: boolean;
+  completed_at: string | null;
+  completed_by_uid: string | null;
+  completed_count: number;
+  /** Creation stamp. Was declared `created_at`, which v1 does not send. */
+  added_at: string;
+  added_by_uid: string | null;
+  updated_at: string;
+  assigned_by_uid?: string | null;
+  responsible_uid?: string | null;
+  user_id: string;
+  note_count: number;
+  postponed_count: number;
+  is_collapsed: boolean;
+  is_deleted: boolean;
 }
 
+/**
+ * A project as the v1 API sends it.
+ *
+ * Same migration, same miss: `order` is `child_order`, `is_inbox_project` is
+ * `inbox_project`, `is_team_inbox` does not exist, and there is no `url`.
+ *
+ * Note the asymmetry with `TodoistTask`, which is real rather than a
+ * transcription slip: projects DO carry `created_at`; tasks carry `added_at`.
+ * That is a large part of why the task interface's `created_at` looked right.
+ */
 export interface TodoistProject {
   id: string;
   name: string;
   color: string;
+  description: string;
   parent_id: string | null;
-  order: number;
+  child_order: number;
+  default_order: number;
+  order_key: string;
   is_favorite: boolean;
-  is_inbox_project: boolean;
-  is_team_inbox: boolean;
+  inbox_project: boolean;
   is_shared: boolean;
-  url: string;
+  is_archived: boolean;
+  is_collapsed: boolean;
+  is_deleted: boolean;
+  is_frozen: boolean;
+  can_assign_tasks: boolean;
+  can_comment: boolean;
+  view_style: string;
+  created_at: string;
+  updated_at: string;
+  creator_uid: string;
 }
 
+/**
+ * A label as the v1 API sends it.
+ *
+ * DELIBERATELY LEFT AS DECLARED. The account used to capture the task and
+ * project shapes has no labels, so `GET /labels` returned an empty list and
+ * there is no observed item shape to correct this against. Rewriting it from
+ * the pattern of its siblings would be a guess wearing the same clothes as the
+ * measurements above, and this file is a demonstration of what that costs.
+ */
 export interface TodoistLabel {
   id: string;
   name: string;
@@ -344,10 +415,26 @@ export class TodoistConnector extends BaseConnector {
    * Additive on purpose. Changing `getTask` would alter behaviour for every
    * existing caller to serve one new one.
    */
+  /**
+   * Read one task's current state for the Butler observation channel.
+   *
+   * `createdAt` is OPTIONAL, and that is the fix for the subtler half of the
+   * v1 field mismatch. It previously read `created_at` — absent on v1 — so
+   * `Date.parse` returned NaN and the guard below substituted `Date.now()`.
+   * The guard is right that 0 would be read as 1970 and graded `junk`; it was
+   * wrong to answer with a fabricated timestamp instead, because "created just
+   * now" is what the staleness horizon measures, and refreshing it on every
+   * run put `stale-unactioned` permanently out of reach. Silently: the channel
+   * reported a clean observation throughout.
+   *
+   * Omitting it is the honest third answer. The grader checks `completed`
+   * FIRST, so a real completion still confirms; only the age-based branch
+   * withholds, which is exactly what "we could not read its age" means.
+   */
   async observeTask(
     id: string,
   ): Promise<
-    | { kind: "observed"; completed: boolean; createdAt: number }
+    | { kind: "observed"; completed: boolean; createdAt?: number }
     | { kind: "deleted" }
     | { kind: "unavailable"; reason: string }
   > {
@@ -366,13 +453,15 @@ export class TodoistConnector extends BaseConnector {
       if (result.error.code === "not_found") return { kind: "deleted" };
       return { kind: "unavailable", reason: result.error.code };
     }
-    const createdAt = Date.parse(result.data.created_at);
+    const createdAt = Date.parse(result.data.added_at);
     return {
       kind: "observed",
-      completed: result.data.is_completed === true,
-      // An unparseable timestamp must not become 0 — that is 1970, which the
-      // staleness horizon would read as infinitely old and grade `junk`.
-      createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+      completed: result.data.checked === true,
+      // An unparseable stamp yields NO age rather than a made-up one. Zero
+      // reads as 1970 and grades `junk` — a negative manufactured from a parse
+      // failure. `Date.now()` reads as brand new, which is what hid the v1
+      // field rename for nine days. Neither is an observation of age.
+      ...(Number.isFinite(createdAt) ? { createdAt } : {}),
     };
   }
 
@@ -546,7 +635,11 @@ export class TodoistConnector extends BaseConnector {
           status: res.status,
         });
       }
-      return res.json() as Promise<TodoistLabel[]>;
+      // `unwrapList`, like its siblings. This was the one list endpoint the v1
+      // migration missed, so it returned the raw `{ results, next_cursor }`
+      // envelope typed as an array: `.length` undefined, `.map` a TypeError.
+      // Latent rather than live only because nothing calls it yet.
+      return unwrapList<TodoistLabel>(await res.json());
     });
     if ("error" in result) throw new Error(result.error.message);
     return result.data;

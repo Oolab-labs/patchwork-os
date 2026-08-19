@@ -33,6 +33,16 @@ _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-19 `fix/todoist-v1-field-shape` — the Todoist connector talks to `api/v1` and its
+  `TodoistTask` / `TodoistProject` interfaces still carry REST v2 field names, so eight declared
+  fields are `undefined` on the wire. Measured live: an errand the operator really did complete
+  graded `unknown`/`open-recent` instead of `confirmed`, because `observeTask` reads
+  `is_completed` where v1 sends `checked`; and `Date.parse(created_at)` is NaN (v1 sends
+  `added_at`), so the `Date.now()` fallback resets every errand's age on every run and the
+  14-day `stale-unactioned` horizon is unreachable. Touches `src/connectors/todoist.ts`,
+  `src/recipes/tools/todoist.ts` outputSchemas, and the connector/butler test fixtures —
+  collides with any Todoist, Butler-observation or connector-shape work. — this session — merged as #1459
+
 - 2026-08-17 `fix/business-content-gate-reads-code` — `audit-business-content` read tracked MARKDOWN only, so the ADR-0019 licensing boundary was unenforced everywhere a string actually ships: UI components, CLI output, YAML, JSON. Its own header already conceded it cannot see code. Widens to tracked source/config text and excludes the gate + its allowlist BY EXACT PATH (they must contain the vocabulary; 20 of 20 pre-existing non-markdown hits were those two files). Measured: no new findings, allowlist unchanged at 8 entries. Touches `scripts/audit-business-content.mjs` only. — merged as #1440
 
 - 2026-08-17 `fix/fixture-gate-ratchets-stale-entries` — `audit-test-fixtures` printed its stale allowlist entries as `[non-blocking]` and exited 0, so nothing ever forced the prune and 20 accumulated (swept in #1438). Its two sibling ratchets, `audit-lsp-tools` and `audit-shape-safety`, already FAIL on their own stale entries, which is why neither has any. Makes stale entries blocking, counted and worded separately from new violations because the remedy is the opposite one (delete the line vs add it). Touches `scripts/audit-test-fixtures.mjs` only. — merged as #1439

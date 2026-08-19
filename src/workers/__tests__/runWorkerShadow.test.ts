@@ -612,6 +612,53 @@ describe("computePendingConfirmations (the confirm queue)", () => {
     expect(pending[0]?.title).toBeUndefined();
   });
 
+  it("headlines a Todoist filing with its content, not the 'a new issue' placeholder", () => {
+    // `title` is GitHub's field name. Todoist sends `content` and has never
+    // sent `title` — so every Butler errand reached this queue with
+    // `title: undefined`, and the dashboard rendered its fallback string
+    // literally: `{p.title ?? "a new issue"}`. The operator was asked to rule
+    // on "a new issue" — a placeholder, with the wrong noun, about a task.
+    //
+    // This is the one screen whose entire job is letting a human judge an
+    // action, and it showed them nothing about the action. Same defect family
+    // as the `is_completed`/`created_at` reads: a field name from a different
+    // API, arriving `undefined`, with no error anywhere.
+    writeFileSync(
+      path.join(workersDir, "errands.worker.yaml"),
+      "id: errands\nname: Errands\nrecipe: run-errands\nowns:\n  - tasks\nautonomyCeiling: 4\n",
+    );
+    new RecipeRunLog({ dir }).appendDirect({
+      taskId: "run-todoist",
+      recipeName: "run-errands",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      doneAt: 0,
+      durationMs: 1,
+      stepResults: [
+        {
+          id: "s1",
+          tool: "todoist.create_task",
+          status: "ok",
+          durationMs: 1,
+          // The v1 wire shape: `content`, no `title`, and no `url` at all.
+          output: { id: "task-1", content: "Renew the parking permit" },
+        },
+      ],
+    });
+
+    const pending = computePendingConfirmations({
+      workersDir,
+      patchworkDir: dir,
+    });
+    const errand = pending.find((p) => p.recipeName === "run-errands");
+    expect(errand).toBeDefined();
+    expect(errand?.title).toBe("Renew the parking permit");
+    expect(formatPendingConfirmations(pending)).toContain(
+      '"Renew the parking permit"',
+    );
+  });
+
   it("formats the queue with the exact confirm command (and an empty-state)", () => {
     expect(formatPendingConfirmations([])).toMatch(/No filings awaiting/);
     seedFiling(URL, 0, "Login test failing on main");
