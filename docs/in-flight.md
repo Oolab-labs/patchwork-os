@@ -29,6 +29,10 @@ verified (which is how this line came to be written).
 
 ## Active
 
+_Nothing in flight._
+
+## Recently closed (informal log, prune periodically)
+
 - 2026-08-19 `fix/boundary-receipt-attribution` — #1469 attributed the SHADOW ledger to its recipe
   and left the ENFORCING one anonymous: `recordBoundaryDecisionFn` sits 26 lines below
   `recordPrivacyShadowFn` in the same object literal and never passed `recipeName`, though
@@ -39,9 +43,7 @@ verified (which is how this line came to be written).
   LOCAL_ONLY refusal name its remedy; the remedy goes BEFORE the reason because
   `stepObservation`'s 120-char silent-fail cap was amputating it mid-word. Touches
   `src/recipes/yamlRunner.ts` and `src/recipes/agentExecutor.ts` — collides with any privacy,
-  agent-executor or recipe-runner work. — this session
-
-## Recently closed (informal log, prune periodically)
+  agent-executor or recipe-runner work. — this session — merged as #1474
 
 - 2026-08-19 `fix/1469-shadow-attribution` — #1469. The shadow report said "23 of 29 rows carry a
   DEFAULTED classification" and gave no way to find WHICH of 80 recipes to go and label. `ShadowRow`
