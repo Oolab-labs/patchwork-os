@@ -33,6 +33,18 @@ _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-19 `fix/boundary-receipt-attribution` — #1469 attributed the SHADOW ledger to its recipe
+  and left the ENFORCING one anonymous: `recordBoundaryDecisionFn` sits 26 lines below
+  `recordPrivacyShadowFn` in the same object literal and never passed `recipeName`, though
+  `BoundaryReceipt` has declared the field throughout. So the ledger ADR-0021 calls the audit
+  record — the only one that can say why a step actually failed — could report that a `personal`
+  dispatch was refused without naming which of 80 recipes to fix. Measured first: nine receipts
+  from four live probe runs, three of them LOCAL_ONLY refusals, none attributed. Also makes the
+  LOCAL_ONLY refusal name its remedy; the remedy goes BEFORE the reason because
+  `stepObservation`'s 120-char silent-fail cap was amputating it mid-word. Touches
+  `src/recipes/yamlRunner.ts` and `src/recipes/agentExecutor.ts` — collides with any privacy,
+  agent-executor or recipe-runner work. — this session — merged as #1474
+
 - 2026-08-19 `fix/1469-shadow-attribution` — #1469. The shadow report said "23 of 29 rows carry a
   DEFAULTED classification" and gave no way to find WHICH of 80 recipes to go and label. `ShadowRow`
   already declared `recipeName` and nothing supplied it — declared-but-supplied-nowhere, on a
@@ -41,13 +53,7 @@ _Nothing in flight._
   worst-first per-recipe breakdown, and counts the unattributable remainder rather than dropping
   it. REMOVES the sibling `stepId`, which nothing can supply at that seam. Touches
   `src/privacy/shadowLog.ts` and `src/recipes/yamlRunner.ts` — collides with any privacy or
-  agent-executor work. — this session
-
-_Nothing in flight._
-
-
-## Recently closed (informal log, prune periodically)
-_Nothing in flight._ — merged as #1472
+  agent-executor work. — this session — merged as #1472
 
 - 2026-08-19 `fix/1467-misplaced-data-policy` — #1467. A `data_policy` declared as a SIBLING of
   `agent:` instead of inside it is read by nothing, and `recipe lint` passed it: the run succeeded

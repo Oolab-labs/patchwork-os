@@ -3685,6 +3685,16 @@ function buildAgentExecutorDeps(
         const wsId = evidenceWorkspaceId();
         boundaryReceiptLog().record({
           ...(wsId && { workspaceId: wsId }),
+          // Which recipe produced this. Same source and same reasoning as
+          // `recordPrivacyShadowFn` 26 lines above — from StepDeps, not from
+          // the executor's callback shape, so the decision point is not widened
+          // to carry identity it does not need.
+          //
+          // #1469 added it to the SHADOW ledger and stopped there, leaving the
+          // ENFORCING ledger anonymous: an auditor could see that a `personal`
+          // dispatch was refused and not which of 80 recipes to go and fix.
+          // `BoundaryReceipt` has declared the field the whole time.
+          ...(stepDeps.recipeName && { recipeName: stepDeps.recipeName }),
           decision: r.decision as BoundaryDecisionValue,
           classification: r.classification as ClassificationValue,
           destinationId: r.destinationId,

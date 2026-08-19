@@ -519,8 +519,38 @@ export async function executeAgent(
     // therefore REFUSED rather than silently sent unredacted. Failing closed on
     // "we know something must be removed and cannot remove it" is the whole
     // point; the alternative sends the data and logs that it should not have.
+    //
+    // Every non-ALLOW decision lands here, not just ALLOW_REDACTED — the
+    // comment above explains one branch of a condition that covers five, which
+    // has been misread as "LOCAL_ONLY reroutes" more than once.
+    //
+    // LOCAL_ONLY is the one whose reason names something the author can act on:
+    // "a local destination accepts it" is true, and the runtime does not route
+    // there (rerouting would silently downshift the model, a separate decision
+    // that is not this one to make). So the message must at least say how they
+    // reach that destination themselves, or it states a fact with no available
+    // action. The suggestion is appended to the STEP TEXT only — the receipt's
+    // `reason` stays exactly the policy fact it has always been, so the
+    // evidence-log format does not move.
+    //
+    // No other decision gets a suggestion. DENY is already honest that no
+    // approval unlocks it, and pointing its author at `driver: local` would
+    // send them to configure a destination that by construction does not
+    // accept the classification.
+    //
+    // The remedy goes BEFORE the reason, which reads oddly and is deliberate:
+    // `stepObservation`'s silent-fail detector caps the matched fragment at 120
+    // characters, and the LOCAL_ONLY reason alone is ~113. Appending the remedy
+    // put it past the cap, so the runner amputated it mid-word — a message
+    // written to be actionable, cut at exactly the actionable part. Anyone
+    // lengthening this string should re-check that cap rather than assume the
+    // whole of it reaches an operator.
+    const remedy =
+      boundary.decision === "LOCAL_ONLY"
+        ? "set `driver: local` on this step; "
+        : "";
     return {
-      text: `[agent step failed: information boundary — ${boundary.reason}]`,
+      text: `[agent step failed: information boundary — ${remedy}${boundary.reason}]`,
       servedBy: { driver: driver ?? "auto" },
     };
   }
