@@ -11,6 +11,11 @@ import type { Logger } from "../logger.js";
 import { loadConfig } from "../patchworkConfig.js";
 import { findYamlRecipePath, loadRecipePrompt } from "../recipesHttp.js";
 import {
+  type ClaimOptions,
+  claimCronSlot,
+  sweepCronClaims,
+} from "./cronClaim.js";
+import {
   getConfigDisabledNames,
   isInstallDirDisabled,
 } from "./disabledMarkers.js";
@@ -66,6 +71,38 @@ export interface SchedulerOptions {
    * this to avoid depending on the dev machine's config.
    */
   timezone?: string;
+  /**
+   * Cron-claim store override (#1458). Tests point it at a temp root; the two
+   * real bridges share the default under PATCHWORK_HOME, which is exactly the
+   * scope of the shared recipe store that causes the double-fire.
+   */
+  claim?: ClaimOptions;
+}
+
+/**
+ * The instant the cron matcher matched, as a second-aligned epoch value.
+ *
+ * node-cron hands the task callback a context whose `date` is the matched
+ * instant with milliseconds already zeroed, derived from the matcher rather
+ * than from the moment the callback happens to run. Two processes evaluating
+ * the same expression in the same timezone therefore produce the byte-identical
+ * value — which is the only reason a filesystem claim can dedupe them.
+ *
+ * `triggeredAt` on the same context is `new Date()` and must NEVER be used: it
+ * differs per process by exactly the amount that breaks the key.
+ *
+ * Returns `undefined` when there is no usable context, so an older or newer
+ * node-cron that does not pass one degrades to today's behaviour — no slot, no
+ * claim, both bridges fire — rather than throwing inside a timer callback.
+ *
+ * Exported for tests. The alternative is asserting it through a live cron tick,
+ * which means a real timer and a real second boundary in CI — and this repo has
+ * spent enough of its life on timing flakes.
+ */
+export function matchedSlotMs(ctx?: { date?: Date }): number | undefined {
+  const t = ctx?.date?.getTime?.();
+  if (typeof t !== "number" || !Number.isFinite(t)) return undefined;
+  return Math.floor(t / 1000) * 1000;
 }
 
 export class RecipeScheduler {
@@ -85,8 +122,16 @@ export class RecipeScheduler {
    * replay; this guard stops cross-attempt double-fire.
    *
    * Manual CLI runs do NOT go through this Set — they take their own
-   * path. The guard is scheduler-scoped (one process), which is enough
-   * because that's the only place a cron tick can originate.
+   * path. The guard is scheduler-scoped (ONE PROCESS), and that is NOT
+   * enough: it used to say "which is enough because that's the only
+   * place a cron tick can originate", and #1458 disproved it live. The
+   * recipe store is global, so every running bridge schedules every
+   * enabled cron recipe and an in-process Set cannot see a sibling.
+   * N bridges fired N times.
+   *
+   * This Set still does its original job — a slow run overlapping the
+   * next tick WITHIN this process. The cross-process half is
+   * `claimCronSlot` (./cronClaim.ts), taken immediately before dispatch.
    */
   private readonly inflight = new Set<string>();
 
@@ -97,6 +142,21 @@ export class RecipeScheduler {
 
   start(): ScheduledRecipe[] {
     this.stop();
+
+    // Bound the claim store's growth (#1458). Best-effort and never throws — a
+    // scheduler that refused to start because it could not tidy up would be a
+    // far worse bug than the disk it saves. Logged only when it did something,
+    // so the line means "work happened" rather than becoming noise every start.
+    try {
+      const swept = sweepCronClaims(Date.now(), this.opts.claim ?? {});
+      if (swept > 0) {
+        this.opts.logger?.info?.(
+          `[scheduler] swept ${swept} expired cron-claim day-director${swept === 1 ? "y" : "ies"}`,
+        );
+      }
+    } catch {
+      /* housekeeping only */
+    }
 
     // Load disabled list — tests can inject `opts.disabledRecipes` to bypass
     // reading the operator's real ~/.patchwork/config.json (which would
@@ -250,6 +310,18 @@ export class RecipeScheduler {
 
         if (parsed2.kind === "interval") {
           const intervalMs = parsed2.intervalMs;
+          // NO cross-process claim on this path (#1458). `setInterval` is
+          // phase-anchored to each process's own start(), so two bridges have no
+          // slot to agree on. Quantising to an epoch-aligned bucket would work
+          // and is deliberately not done here: zero installed recipes use
+          // `@every`, and the quantised form permanently favours whichever
+          // process started earlier in the bucket — a bias that deserves its own
+          // evidence. Announced rather than assumed, because a scheduling gap
+          // nobody is told about is indistinguishable from one nobody has.
+          this.opts.logger?.info?.(
+            `[scheduler] "${name}" uses @every — not deduped across processes; ` +
+              "use a cron expression if more than one bridge runs (#1458)",
+          );
           const timer = this.setIntervalFn(() => {
             this.fire(name);
           }, intervalMs);
@@ -269,8 +341,8 @@ export class RecipeScheduler {
             this.opts.timezone ?? loadConfig().recipes?.timezone ?? "UTC";
           const cronJob = cron.schedule(
             parsed2.expression,
-            () => {
-              this.fire(name);
+            (ctx?: { date?: Date }) => {
+              this.fire(name, matchedSlotMs(ctx));
             },
             { timezone },
           );
@@ -320,12 +392,31 @@ export class RecipeScheduler {
     return this.scheduled.map(({ timer: _t, cronJob: _c, ...rest }) => rest);
   }
 
-  /** Test hook: dispatch a recipe immediately without waiting for the interval. */
-  fireForTest(name: string): void {
-    this.fire(name);
+  /**
+   * Test hook: dispatch a recipe immediately without waiting for the interval.
+   *
+   * Passes no slot BY DEFAULT, so it takes no cross-process claim. Deliberate:
+   * this hook has no cron match behind it, so there is no instant two processes
+   * could agree on, and inventing one from `Date.now()` would make repeated
+   * calls within the same second collide — which is precisely what the existing
+   * overlap tests do, and they must keep passing unchanged.
+   *
+   * A slot may be passed explicitly to drive the claim path without a live cron
+   * tick, i.e. without a real timer and a real second boundary in CI.
+   */
+  fireForTest(name: string, slotEpochMs?: number): void {
+    this.fire(name, slotEpochMs);
   }
 
-  private fire(name: string): void {
+  /**
+   * @param slotEpochMs The instant the cron matcher matched, threaded from the
+   *   cron callback. Its whole purpose is that two processes observing the same
+   *   tick derive the SAME value — so it must never be re-read from the clock
+   *   here, one event-loop hop later, where a second boundary would split it.
+   *   Absent for `@every` intervals and the test hook: no slot, no claim, and
+   *   behaviour identical to before #1458.
+   */
+  private fire(name: string, slotEpochMs?: number): void {
     // TOCTOU defence: re-check the disabled list at fire time. `start()`
     // snapshots it once; if the user runs `recipe disable <name>` after
     // start (and the recipe is a top-level legacy file, where the marker
@@ -384,6 +475,36 @@ export class RecipeScheduler {
           `[scheduler] skipped "${name}" — previous run still in flight`,
         );
         return;
+      }
+      // Cross-process claim (#1458) — LAST, and the ordering is load-bearing.
+      // Every local "should I even run this" decision has already been made. If
+      // the claim came first, a bridge with this recipe disabled locally would
+      // burn the slot and then skip, blocking a differently-configured peer that
+      // would have run it — and the recipe would run nowhere.
+      if (slotEpochMs !== undefined) {
+        const claim = claimCronSlot(name, slotEpochMs, this.opts.claim ?? {});
+        if (claim.kind === "taken") {
+          this.opts.logger?.info?.(
+            `[scheduler] skipped "${name}" — another process claimed this tick`,
+          );
+          return;
+        }
+        if (claim.kind === "refused") {
+          // Fail-closed, because the operator asked for it. Loud: a silent skip
+          // of every scheduled recipe is the failure mode fail-open exists to
+          // avoid, so it must never be merely absent from the log.
+          this.opts.logger?.warn?.(
+            `[scheduler] NOT firing "${name}" — cron claim store unusable (${claim.reason}) ` +
+              "and PATCHWORK_CRON_CLAIM_REQUIRED is set",
+          );
+          return;
+        }
+        if (claim.kind === "unavailable") {
+          this.opts.logger?.warn?.(
+            `[scheduler] cron claim store unusable (${claim.reason}) — firing "${name}" ` +
+              "ANYWAY; a second bridge may fire it too. Set PATCHWORK_CRON_CLAIM_REQUIRED=1 to skip instead.",
+          );
+        }
       }
       this.inflight.add(name);
       this.opts

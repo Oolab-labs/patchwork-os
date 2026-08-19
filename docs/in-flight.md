@@ -33,6 +33,17 @@ _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-19 `fix/1458-cron-claim` — #1458. Every running bridge fires every cron recipe: the
+  double-fire guard is an in-memory `Set` and the recipe store is global, so N bridges = N fires
+  (observed live twice today, same instant, two pids). Adds `src/recipes/cronClaim.ts` — an
+  `O_EXCL` claim keyed `(recipeName, slotEpochMs)` where the slot is the instant node-cron's
+  matcher matched, threaded into `fire()` rather than re-read from the clock. Claim is a
+  TOMBSTONE, taken LAST (after the disabled re-check, so a locally-disabled bridge cannot burn a
+  peer's tick), and fails OPEN with `PATCHWORK_CRON_CLAIM_REQUIRED=1` to invert. CRON YAML ONLY —
+  `@every`, legacy-JSON cron and the event-trigger paths are excluded and get their own issues.
+  Touches `src/recipes/scheduler.ts` — collides with any scheduler, recipe-trigger or
+  cron work. — this session — merged as #1461
+
 - 2026-08-19 `chore/pin-node-cron-exactly` — `package.json` declared `^4.2.1`, the lockfile
   resolved 4.2.1, and the globally installed bridges were running **4.6.0**: `npm install -g`
   does not honour a lockfile, so a caret let the deployment take a minor CI never ran. 4.6.0
