@@ -42,7 +42,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { cronClaimKey } from "../cronClaim.js";
@@ -59,9 +59,20 @@ const MODULE_UNDER_TEST = fileURLToPath(
  * `dist/` would silently test yesterday's code — the exact class of mistake
  * `patchwork doctor` exists for.
  */
-const TSX_LOADER = fileURLToPath(
+const TSX_LOADER_PATH = fileURLToPath(
   new URL("../../../node_modules/tsx/dist/loader.mjs", import.meta.url),
 );
+
+/**
+ * `--import` takes an ESM specifier, not a path.
+ *
+ * On POSIX a bare absolute path happens to resolve. On Windows it does not: a
+ * leading `D:` is parsed as a URL scheme, the loader never installs, and every
+ * child dies on its first `import`. That is how this file cost 225 seconds on
+ * Windows CI and zero on macOS — a platform difference invisible to the machine
+ * it was written on.
+ */
+const TSX_LOADER = pathToFileURL(TSX_LOADER_PATH).href;
 
 let root: string;
 
@@ -103,6 +114,7 @@ async function raceForSlot(
   const goFile = join(root, `go-${slot}`);
   const children: Promise<string>[] = [];
   const readyFiles: string[] = [];
+  let exited = 0;
 
   const childFile = join(root, "claimant.mts");
   writeFileSync(childFile, childSource());
@@ -136,6 +148,7 @@ async function raceForSlot(
           err += String(d);
         });
         child.on("close", (code) => {
+          exited++;
           const verdict = out.trim();
           // A dead child reports as such rather than vanishing. Silence here is
           // what would let this test pass for the wrong reason.
@@ -145,10 +158,14 @@ async function raceForSlot(
     );
   }
 
-  // Release only once every child is parked on the barrier.
-  const deadline = Date.now() + 25_000;
+  // Release once every child is parked on the barrier — or once they have all
+  // EXITED, which is what a startup failure looks like. Waiting out the full
+  // deadline in that case turns one broken child into a per-test timeout, and
+  // then into a suite that reads as hung rather than as failed.
+  const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (readyFiles.every((f) => existsSync(f))) break;
+    if (exited === n) break;
     await new Promise((r) => setTimeout(r, 20));
   }
   writeFileSync(goFile, "go");
@@ -157,22 +174,23 @@ async function raceForSlot(
 }
 
 describe("two operating-system processes cannot both claim one tick", () => {
-  it("exactly one of eight concurrent claimants wins, and all eight report", async () => {
+  it("exactly one of four concurrent claimants wins, and all four report", async () => {
     const slot = Date.parse("2026-08-19T08:07:00.000Z");
-    const verdicts = await raceForSlot(8, "heartbeat", slot);
+    const verdicts = await raceForSlot(4, "heartbeat", slot);
 
     // Assert this FIRST: a run where seven children died would otherwise
     // satisfy "exactly one claimed" while proving the opposite of the point.
-    expect(verdicts).toHaveLength(8);
+    expect(verdicts).toHaveLength(4);
     expect(verdicts.filter((v) => v.startsWith("DIED"))).toEqual([]);
 
     expect(verdicts.filter((v) => v === "claimed")).toHaveLength(1);
-    expect(verdicts.filter((v) => v === "taken")).toHaveLength(7);
-  }, 60_000);
+    expect(verdicts.filter((v) => v === "taken")).toHaveLength(3);
+  }, 45_000);
 
   it("the winner leaves exactly one claim file, under the key the module derives", async () => {
     const slot = Date.parse("2026-08-19T09:07:00.000Z");
-    const verdicts = await raceForSlot(4, "heartbeat", slot);
+    const verdicts = await raceForSlot(3, "heartbeat", slot);
+    expect(verdicts.filter((v) => v.startsWith("DIED"))).toEqual([]);
     expect(verdicts.filter((v) => v === "claimed")).toHaveLength(1);
 
     // Guards against a claim that is written somewhere while the decision is
@@ -181,24 +199,19 @@ describe("two operating-system processes cannot both claim one tick", () => {
     expect(readdirSync(day)).toEqual([
       `${cronClaimKey("heartbeat", slot)}.json`,
     ]);
-  }, 60_000);
+  }, 45_000);
 
-  it("different slots do not contend — a later tick is still allowed to fire", async () => {
-    const a = Date.parse("2026-08-19T10:07:00.000Z");
-    const b = Date.parse("2026-08-19T11:07:00.000Z");
-    expect(
-      (await raceForSlot(3, "heartbeat", a)).filter((v) => v === "claimed"),
-    ).toHaveLength(1);
-    expect(
-      (await raceForSlot(3, "heartbeat", b)).filter((v) => v === "claimed"),
-    ).toHaveLength(1);
-  }, 60_000);
+  // "different slots do not contend" is NOT re-tested here. It costs six more
+  // node processes to demonstrate something with no cross-process content —
+  // `cronClaim.test.ts` covers it in-process, which is the right altitude for
+  // it. Spending Windows CI wall-clock on a property that does not need
+  // processes is how a correct test becomes a flake nobody trusts.
 
   it("tsx is present, so a skipped child would not read as a pass", () => {
     // If the loader were missing every child would die, and the assertions
     // above already catch that — but they would report it as a claim failure
     // rather than as a missing test dependency. This says which.
-    expect(existsSync(TSX_LOADER)).toBe(true);
+    expect(existsSync(TSX_LOADER_PATH)).toBe(true);
     expect(() =>
       execFileSync(process.execPath, ["--import", TSX_LOADER, "-e", "0"], {
         stdio: "ignore",

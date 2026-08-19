@@ -220,6 +220,7 @@ Most users don't need to touch these — CLI flags cover the common cases. Liste
 | `PATCHWORK_CLAUDE_BINARY` | Equivalent to `--claude-binary`; path to the `claude` CLI. |
 | `PATCHWORK_RECIPE_REPO_ALLOWLIST` | Comma-separated `owner/repo` allowlist for recipe install sources. |
 | `PATCHWORK_TOKEN_DIR` / `PATCHWORK_TOKEN_STORAGE_BACKEND` | Connector-token storage location + backend (`file` vs `keychain`). |
+| `PATCHWORK_CRON_CLAIM_REQUIRED` | Truthy → a scheduled recipe SKIPS its tick when the cross-process claim store is unwritable, instead of firing anyway (#1458). Default off, i.e. fail-OPEN: the conditions that break the store are machine-level, so failing closed would stop every scheduled recipe on every bridge at once rather than allowing one duplicate. Set this where a duplicate is worse than a miss — recipes that send email or post publicly. `EEXIST` is not a failure and is unaffected: that is a peer holding the tick. |
 | `PATCHWORK_FLAG_KILL_SWITCH_WRITES` | Feature flag — gate write tools on kill-switch state. |
 | `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Feature flag — strict UI-schema linting in the recipe editor. |
 | `PATCHWORK_FLAG_WORKER_AUTONOMY` | Feature flag — enable trust-ramp-aware autonomy gate for worker recipes. Gates compensable/irreversible automated recipe actions until the owning worker earns L4 trust on that action-class; reversible actions always flow freely. Default off. Requires `--driver subprocess`. |
