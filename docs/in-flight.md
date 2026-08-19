@@ -31,8 +31,23 @@ verified (which is how this line came to be written).
 
 _Nothing in flight._
 
+## Recently closed (informal log, prune periodically)
+
+- 2026-08-19 `fix/1469-shadow-attribution` — #1469. The shadow report said "23 of 29 rows carry a
+  DEFAULTED classification" and gave no way to find WHICH of 80 recipes to go and label. `ShadowRow`
+  already declared `recipeName` and nothing supplied it — declared-but-supplied-nowhere, on a
+  surface the wiring guard does not cover, while the boundary RECEIPT log declares and populates
+  the same field. Populates it from `StepDeps` (already there for the circuit breaker), adds a
+  worst-first per-recipe breakdown, and counts the unattributable remainder rather than dropping
+  it. REMOVES the sibling `stepId`, which nothing can supply at that seam. Touches
+  `src/privacy/shadowLog.ts` and `src/recipes/yamlRunner.ts` — collides with any privacy or
+  agent-executor work. — this session
+
+_Nothing in flight._
+
 
 ## Recently closed (informal log, prune periodically)
+_Nothing in flight._ — merged as #1472
 
 - 2026-08-19 `fix/1467-misplaced-data-policy` — #1467. A `data_policy` declared as a SIBLING of
   `agent:` instead of inside it is read by nothing, and `recipe lint` passed it: the run succeeded
