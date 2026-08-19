@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-19 `feat/workers-control-boundary` — /workers shows trust dials but not what a worker MAY DO; surface the existing ControlBoundary there (dashboard-only)
 
 ## Recently closed (informal log, prune periodically)
 

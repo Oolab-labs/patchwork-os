@@ -1,4 +1,5 @@
 "use client";
+import { BoundaryPanel } from "@/components/BoundaryPanel";
 import Link from "next/link";
 import { type CSSProperties, useState } from "react";
 import { EmptyState, ErrorState, HBarList } from "@/components/patchwork";
@@ -856,10 +857,13 @@ function WorkerCard({
   w,
   expert,
   now,
+  recipeName,
 }: {
   w: WorkerReport;
   expert: boolean;
   now: number;
+  /** Recipe this worker owns, when a manifest names one. */
+  recipeName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const owned = w.board.filter((b) => b.owned);
@@ -1116,6 +1120,25 @@ function WorkerCard({
         </div>
       ) : null}
 
+      {/* What it may actually do. The dial above says how far this worker has
+          been trusted; it does not say what that permits. Both questions get
+          asked about the same worker, and until now only one was answered here.
+
+          Rendered by the shared BoundaryPanel, which fetches
+          `GET /workers/boundary` — the bridge computes it with the SAME
+          `previewActions`/`decideWorkerAction` the gate enforces with. This
+          page must never re-derive or re-bucket it: a preview that disagreed
+          with the gate would tell an operator they are protected when they are
+          not, and it would fail silently and permissively. */}
+      {recipeName ? (
+        <BoundaryPanel recipeName={recipeName} autoRun />
+      ) : (
+        <div className="editorial-sub" style={{ marginTop: "var(--s-3)" }}>
+          No recipe is named in this worker&rsquo;s manifest, so there is no boundary
+          to preview. That is a gap in the manifest, not an empty result.
+        </div>
+      )}
+
       {/* How it got here — the journey's history. */}
       <JourneyTimeline events={w.events ?? []} now={now} />
 
@@ -1187,6 +1210,11 @@ function WorkerCard({
   );
 }
 
+/** Just enough of `GET /workers` to join a worker to the recipe it owns. */
+interface WorkerManifestList {
+  workers?: Array<{ id?: string; name?: string; recipe?: string }>;
+}
+
 export default function WorkersPage() {
   // Primary user-visible feed for /workers: the shadow-report roster
   // (per-worker trust dial + divergences) — the headline data on this
@@ -1199,6 +1227,18 @@ export default function WorkersPage() {
   // Page-level expert mode (persisted, shared with every DetailsFold). Replaces
   // the old local `expert` useState.
   const { expert } = useExpertMode();
+  // Worker MANIFESTS, purely to learn which recipe each worker owns. The
+  // shadow report carries the trust dial but no recipe name, and the boundary
+  // is addressed by recipe — so without this join the page can show how far a
+  // worker has been trusted and not what it may actually do.
+  const { data: manifestData } = useBridgeFetch<WorkerManifestList>(
+    "/api/bridge/workers",
+    { intervalMs: 60000 },
+  );
+  const recipeByWorkerId = new Map<string, string>();
+  for (const m of manifestData?.workers ?? []) {
+    if (m.id && m.recipe) recipeByWorkerId.set(m.id, m.recipe);
+  }
   const now = data?.generatedAt ? Date.parse(data.generatedAt) : Date.now();
 
   // The confirm queue — lifted here so the Band-1 triage sentence and the
@@ -1399,7 +1439,13 @@ export default function WorkersPage() {
 
       <div className="wa-grid" id="wa-grid">
         {workers.map((w) => (
-          <WorkerCard key={w.workerId} w={w} expert={expert} now={now} />
+          <WorkerCard
+            key={w.workerId}
+            w={w}
+            expert={expert}
+            now={now}
+            recipeName={recipeByWorkerId.get(w.workerId)}
+          />
         ))}
       </div>
     </section>
