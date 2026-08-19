@@ -29,6 +29,15 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-19 `feat/butler-promotion` — the last unbuilt step of Butler phase 2. `outcomeShadowLog.ts`
+  says `OutcomeStore.upsert` is "deliberately NOT implemented here"; this implements it, in a
+  SEPARATE module, so the grader's and ingester's "cannot reach OutcomeStore" guards stay intact
+  rather than being deleted to make room. Flag-gated OFF (`PATCHWORK_FLAG_BUTLER_PROMOTE`) because
+  promotion is one-way and the ledger currently holds ONE confirmed row. Operator-only, never a
+  recipe tool (asserted). Adds `patchwork butler promote [--dry-run]`. Touches
+  `src/butler/outcomeShadowLog.ts` (one shared parse rule), `src/index.ts` dispatch and the
+  grader's importer allowlist — collides with any Butler or outcome-store work. — this session
+
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
