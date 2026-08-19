@@ -176,6 +176,35 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `install <companion>` — Install one of the bundled MCP-companion server registrations into Claude Desktop or Claude Code config. Use `--target cli|desktop` to choose, `--env KEY=VAL` to pass per-companion env vars. Companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `playwright`, `codebase-memory`. Each is a documented server config; the command writes it into `~/.claude.json` (CLI) or the Claude Desktop config (desktop) atomically.
 - `codex doctor [--config <path>] [--json]` — Diagnoses whether `~/.codex/config.toml` is correctly (and *currently*) wired up to this bridge: config file exists, has a `[mcp_servers.claude-ide-bridge]` entry, the entry's `url` is well-formed, and — when a bridge is running — the config's port and Bearer token still match the live bridge's lock file. A bridge restart (without `--fixed-token`) rotates its port/token, silently staling out a previously-generated config with no error until Codex's next tool call 401s; this catches that before it surprises the user. Fail-soft like `recipe doctor`: no live bridge → warns, doesn't fail (config alone can be valid while the bridge just isn't started yet). Exits 1 when unhealthy. Codex CLI itself connects over Streamable HTTP, not the stdio shim — generate the config with `scripts/gen-mcp-config.sh codex`.
 - `doctor [--json]` — **Is the running code the installed code?** Every other gate in this repo verifies the REPOSITORY; none looks at a running process. On 2026-08-19 both live bridges were found containing neither the ADR-0021 privacy code nor `butler` — merged, wired, tested, gated, and absent from every process serving requests, with three workstreams silently blocked for five days. Compares each bridge lock's `startedAt` against the installed build's mtime. **Deliberately NOT a version comparison**: in the live case both stale and fresh reported `1.2.0-beta.2`, because a version marks a release and not a build. Also reports dead locks (the shim discovers by lock file, so an orphan can win discovery) and refuses to judge a lock with no usable `startedAt`. Exits 1 when unhealthy.
+
+  **What it does NOT answer: is the installed code the MERGED code.** There are
+  three states, not two — `merged → installed → running` — and `doctor` guards
+  only the second arrow. Measured 2026-08-19, an hour after #1461 merged and
+  closed #1458: `doctor` printed `ok` for both bridges and exited 0, `grep
+  cronClaim` against the installed `dist/` returned nothing, and the bug was
+  still firing hourly in production. A green `doctor` on a stale install is not
+  a contradiction; it is `doctor` answering the question it was built for.
+
+  So a merge is not the end of a fix. The completion sequence, in order, and
+  none of the steps is optional:
+
+  ```
+  git checkout main && git pull          # NEVER install from a feature branch
+  npm run build
+  npm run install:global                 # not `npm install -g .` — see the TCC note
+  launchctl kickstart -k gui/$UID/co.patchwork-os.bridge   # :3101
+  launchctl kickstart -k gui/$UID/com.patchwork.bridge     # :63906
+  patchwork doctor                       # must exit 0
+  ```
+
+  Both bridges rebind in ~5 s. **Then verify the BEHAVIOUR**, because a
+  timestamp comparison is not proof a code path changed: after deploying #1461
+  the next cron slot produced 1 run row from 1 pid where the previous hour
+  produced 2 from 2, a claim file appeared under `cron-claims/`, and the losing
+  bridge logged `scheduled with cron expression` followed by `skipped … another
+  process claimed this tick`. That last line is what distinguishes "the fix
+  worked" from "the second bridge quietly stopped scheduling" — which produces
+  an identical run-row count.
 - `privacy suggest [--json]` — Derive a STARTER `privacy.shadow` block from the drivers your installed recipes actually declare. The destinations are MEASURED; the classifications are a conservative placeholder you are told to review. Reports agent steps that declare no driver separately rather than folding them in — they dispatch somewhere too. Emits `privacy.shadow` only, never the enforcing `privacy.destinations` key.
 - `privacy shadow [--since-days N] [--json]` — What a candidate policy WOULD have stopped, without enforcing it (ADR-0021). Leads with the DENOMINATOR and refuses to print a bare crossing count; an empty ledger reports "nothing observed", never "0 crossings". Reads `privacy_shadow.jsonl`.
 - `kill-switch engage|release|status [--reason <text>]` — Toggle the global write-disable gate (see ADR-0013).
