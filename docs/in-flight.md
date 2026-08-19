@@ -29,6 +29,10 @@ verified (which is how this line came to be written).
 
 ## Active
 
+_Nothing in flight._
+
+## Recently closed (informal log, prune periodically)
+
 - 2026-08-19 `chore/pin-node-cron-exactly` — `package.json` declared `^4.2.1`, the lockfile
   resolved 4.2.1, and the globally installed bridges were running **4.6.0**: `npm install -g`
   does not honour a lockfile, so a caret let the deployment take a minor CI never ran. 4.6.0
@@ -36,10 +40,7 @@ verified (which is how this line came to be written).
   its slot where 4.2.1 skipped it). Pins exactly, regenerates `LICENSE-THIRD-PARTY.md`, and adds
   a guard. Prerequisite for #1458, whose slot key depends on tick semantics — tests written
   against 4.2.1 would describe code production does not load. Touches `package.json`,
-  `package-lock.json`, `LICENSE-THIRD-PARTY.md` — collides with any dependency work. — this session
-
-
-## Recently closed (informal log, prune periodically)
+  `package-lock.json`, `LICENSE-THIRD-PARTY.md` — collides with any dependency work. — this session — merged as #1460
 
 - 2026-08-19 `fix/todoist-v1-field-shape` — the Todoist connector talks to `api/v1` and its
   `TodoistTask` / `TodoistProject` interfaces still carry REST v2 field names, so eight declared
