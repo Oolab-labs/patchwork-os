@@ -1,6 +1,11 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import cron from "node-cron";
+// `ScheduledTask` is a NAMED type export in node-cron 4.x. It was reachable
+// as `cron.ScheduledTask` only because 4.2.1 also emitted a namespace; 4.6.0
+// — the version production has been running — does not, so the repo would
+// not compile against the library it deploys. See
+// `__tests__/schedulerDependencyPin.test.ts` for why the caret allowed that.
+import cron, { type ScheduledTask } from "node-cron";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "../logger.js";
 import { loadConfig } from "../patchworkConfig.js";
@@ -35,7 +40,7 @@ export interface ScheduledRecipe {
   intervalMs: number;
   timer: ReturnType<typeof setInterval>;
   /** Present only for cron5-kind recipes. */
-  cronJob?: cron.ScheduledTask;
+  cronJob?: ScheduledTask;
 }
 
 export interface SchedulerOptions {
