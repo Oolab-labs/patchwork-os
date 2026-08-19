@@ -102,6 +102,15 @@ registerTool({
           "What to do when a single iteration fails. `continue` (default) records the error in the aggregate and proceeds; `halt` stops fan_out and the step is marked error. Does NOT apply to a budget refusal, which always halts.",
         default: "continue",
       },
+      data_policy: {
+        type: "object",
+        description:
+          "ADR-0021 classification for the data this batch carries, applied to EVERY iteration's agent dispatch. Declared on the step rather than inside `do.agent` because it describes what the data IS — uniform across the iteration by construction — while the iteration's allowlist governs how each call RUNS. Without it a batch of confidential documents dispatches at the default `internal`, which is the wrong default on the highest-volume path a recipe has.",
+        properties: {
+          classification: { type: "string" },
+          categories: { type: "array", items: { type: "string" } },
+        },
+      },
     },
     required: ["items", "do"],
   },
@@ -193,7 +202,12 @@ registerTool({
           `fan_out: \`do.agent.${unsupported.join("`, `do.agent.")}\` is not supported inside an iteration ` +
             "— only `prompt`, `driver` and `model` are honoured. Judge verdicts, refine loops, " +
             "per-step routing and tool sandboxes are step-level features: move the agent to its " +
-            "own step, or drop the option.",
+            "own step, or drop the option." +
+            (unsupported.includes("data_policy")
+              ? " `data_policy` belongs on the fan_out STEP, not inside `do.agent`: the " +
+                "classification describes the batch and is uniform across the iteration, so it " +
+                "is declared once and applied to every dispatch."
+              : ""),
         );
       }
       toolId = "";
@@ -260,6 +274,15 @@ registerTool({
             driver: agentCfg.driver,
           }),
           ...(typeof agentCfg.model === "string" && { model: agentCfg.model }),
+          // ADR-0021 — the BATCH's declared classification, applied to every
+          // iteration. Passed RAW: an unrecognised classification must reach
+          // `parseDataPolicy` at the decision point so it can fail closed, not
+          // be normalised away here. Absent stays ABSENT rather than becoming
+          // an empty object, because the boundary tells `declared` from
+          // `assumed` by whether this field is present at all.
+          ...(params.data_policy !== undefined && {
+            dataPolicy: params.data_policy,
+          }),
         });
         aggregate.push(
           res.ok

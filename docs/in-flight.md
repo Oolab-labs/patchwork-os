@@ -29,7 +29,17 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-19 `fix/1466-fanout-data-policy` — #1466. `fan_out` is how a recipe processes a BATCH,
+  and it was the one step that could not declare a classification: the iteration allowlist refuses
+  `do.agent.data_policy`, and there was nowhere else to put it. So in `private-document-digest` the
+  step handling RAW documents N times dispatched at the default `internal` while the step seeing
+  only redacted extracts could be labelled — the wrong way round. Accepts `data_policy` on the
+  fan_out STEP and applies it to every iteration; the iteration allowlist stays an allowlist
+  (refusing it there is correct — same reasoning as `sandbox: true`), and the error now says where
+  the label belongs. Touches `src/recipes/tools/fanOut.ts` and `runNestedAgent` in
+  `src/recipes/yamlRunner.ts` — collides with any fan_out, agent-executor or privacy work.
+  — this session
+
 
 ## Recently closed (informal log, prune periodically)
 
