@@ -283,6 +283,7 @@ const KNOWN_SUBCOMMANDS = [
   "outcomes",
   "butler",
   "privacy",
+  "doctor",
   "members",
   // Dispatched at `process.argv[2] === "tools"` (and `help`) but absent from
   // this array until 2026-08. The comment below calls this "the dispatch
@@ -5315,6 +5316,90 @@ if (process.argv[2] === "members") {
 // small minority of step volume and orchestrator dispatch is not observed at
 // all (#1397), so a bare count invites "my policy is fine" from a partial
 // surface. formatPrivacyShadow refuses to print one without its coverage.
+// --- deployment freshness ---
+// Answers a question no other gate asks: is the code RUNNING the code we
+// installed? Every check in this repo verifies the repository. On 2026-08-19
+// both live bridges were found running neither the privacy code nor `butler`,
+// merged and wired and green throughout.
+if (process.argv[2] === "doctor") {
+  const args = process.argv.slice(3);
+  (async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const os = await import("node:os");
+    const { assessDeploymentFreshness, formatFreshness } = await import(
+      "./deploymentFreshness.js"
+    );
+
+    // The installed build we are comparing against. Falls back to this
+    // process's own dist when the global package is absent (running from a
+    // checkout), which is the honest reference in that case.
+    let buildTimeMs: number | undefined;
+    for (const candidate of [
+      join(
+        process.env.npm_config_prefix ?? "/opt/homebrew",
+        "lib/node_modules/patchwork-os/dist/index.js",
+      ),
+      new URL("./index.js", import.meta.url).pathname,
+    ]) {
+      try {
+        buildTimeMs = statSync(candidate).mtimeMs;
+        break;
+      } catch {
+        // try the next candidate
+      }
+    }
+    if (buildTimeMs === undefined) {
+      process.stderr.write(
+        "[deployment] could not locate an installed build to compare against\n",
+      );
+      process.exit(2);
+    }
+
+    const dir = join(
+      process.env.CLAUDE_CONFIG_DIR || join(os.homedir(), ".claude"),
+      "ide",
+    );
+    const locks: Array<
+      Record<string, unknown> & { file: string; pid: number }
+    > = [];
+    try {
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith(".lock")) continue;
+        try {
+          const d = JSON.parse(readFileSync(join(dir, f), "utf-8"));
+          if (typeof d?.pid === "number") locks.push({ ...d, file: f });
+        } catch {
+          // An unparseable lock is not this command's problem to solve.
+        }
+      }
+    } catch {
+      // No lock dir ⇒ no bridges ⇒ reported as "nothing running".
+    }
+
+    const report = assessDeploymentFreshness({
+      locks,
+      buildTimeMs,
+      isAlive: (pid) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
+    if (args.includes("--json")) {
+      process.stdout.write(
+        `${JSON.stringify({ buildTimeMs, ...report }, null, 2)}\n`,
+      );
+    } else {
+      process.stdout.write(`${formatFreshness(report, buildTimeMs)}\n`);
+    }
+    process.exit(report.unhealthy ? 1 : 0);
+  })();
+}
+
 if (process.argv[2] === "privacy") {
   const args = process.argv.slice(3);
   (async () => {
