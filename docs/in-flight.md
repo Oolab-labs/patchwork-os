@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-19 `feat/deployment-freshness-doctor` — every gate verifies the repo, none verifies the DEPLOYMENT; add a check for bridges running code older than the install
+_Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
