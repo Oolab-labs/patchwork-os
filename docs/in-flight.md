@@ -29,7 +29,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-19 `feat/evidence-workspace-tag` — evidence records carry no workspace, so a decision cannot be attributed to one; add a short stable id to the low-volume ledgers (NOT runs.jsonl)
 
 ## Recently closed (informal log, prune periodically)
 

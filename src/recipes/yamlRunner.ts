@@ -60,6 +60,7 @@ import type { RecipeRunLog } from "../runLog.js";
 import { sanitizeParsedJson as sanitizeParsed } from "../sanitizeParsedJson.js";
 import { ensureCmdShim } from "../winShim.js";
 import { mergeAgentDisallowedTools } from "../workers/workerGate.js";
+import { currentWorkspaceId } from "../workspaceId.js";
 import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
@@ -3555,6 +3556,24 @@ function toAgentResult(v: string | AgentResult): AgentResult {
  * run-log seqs collide (#1324).
  */
 const _boundaryReceiptLogs = new Map<string, BoundaryReceiptLog>();
+/**
+ * Short id of the workspace this process is operating in, for evidence
+ * attribution (`src/workspaceId.ts`). Resolved per call rather than captured:
+ * a bridge can be pointed at a different workspace without a restart, and a
+ * cached id would attribute later records to the previous one.
+ *
+ * Fail-soft to `undefined` — an unattributed record is the honest outcome when
+ * the workspace cannot be resolved, and it is strictly better than a record
+ * that asserts the wrong one.
+ */
+function evidenceWorkspaceId(): string | undefined {
+  try {
+    return currentWorkspaceId(resolveWorkspaceRoot()?.path);
+  } catch {
+    return undefined;
+  }
+}
+
 function boundaryReceiptLog(): BoundaryReceiptLog {
   // Keyed BY RESOLVED DIRECTORY, not a single instance.
   //
@@ -3619,7 +3638,9 @@ function buildAgentExecutorDeps(
         }
       ).privacy?.shadow,
     recordPrivacyShadowFn: (r) => {
+      const shadowWsId = evidenceWorkspaceId();
       recordPrivacyShadow({
+        ...(shadowWsId && { workspaceId: shadowWsId }),
         decision: r.decision,
         reason: r.reason,
         destinationId: r.destinationId,
@@ -3636,7 +3657,9 @@ function buildAgentExecutorDeps(
       // Fail-soft: a receipt that cannot be written must never affect the
       // decision it describes, which has already been made and enforced.
       try {
+        const wsId = evidenceWorkspaceId();
         boundaryReceiptLog().record({
+          ...(wsId && { workspaceId: wsId }),
           decision: r.decision as BoundaryDecisionValue,
           classification: r.classification as ClassificationValue,
           destinationId: r.destinationId,

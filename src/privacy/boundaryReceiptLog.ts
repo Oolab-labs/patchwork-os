@@ -53,6 +53,8 @@ export interface BoundaryReceipt {
   /** Recipe/step context when the caller knows it. */
   recipeName?: string;
   stepId?: string;
+  /** Short workspace id — a tag for attribution, never a filter. */
+  workspaceId?: string;
 }
 
 export interface RecordBoundaryReceiptInput {
@@ -65,6 +67,7 @@ export interface RecordBoundaryReceiptInput {
   reason: string;
   recipeName?: string;
   stepId?: string;
+  workspaceId?: string;
 }
 
 export interface BoundaryReceiptLogOptions {

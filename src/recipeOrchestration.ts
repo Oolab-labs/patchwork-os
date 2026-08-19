@@ -6,7 +6,6 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
@@ -60,6 +59,7 @@ import {
   loadWorkerContent,
   saveWorkerContent,
 } from "./workersHttp.js";
+import { currentWorkspaceId } from "./workspaceId.js";
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -1599,7 +1599,15 @@ export class RecipeOrchestration {
         ...(gateDecisionLog && {
           recordGateDecision: (rec) => {
             try {
-              gateDecisionLog.record(rec);
+              // Attribute the decision to the workspace it was made in. A TAG,
+              // never a filter — evidence must outlive the workspace it
+              // describes. Stamped here because this is the single seam every
+              // gate decision passes through; doing it at each call site is how
+              // one path ends up unattributed.
+              const wsId = currentWorkspaceId(this.deps.workdir);
+              gateDecisionLog.record(
+                wsId ? { ...rec, workspaceId: wsId } : rec,
+              );
             } catch {
               /* never block the gate on a logging failure */
             }
