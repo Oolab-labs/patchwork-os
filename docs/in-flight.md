@@ -29,6 +29,10 @@ verified (which is how this line came to be written).
 
 ## Active
 
+_Nothing in flight._
+
+## Recently closed (informal log, prune periodically)
+
 - 2026-08-19 `fix/evidence-workspace-seed` — the evidence workspace tag (#1455) records WHICH PROCESS
   wrote the row, not which workspace. `evidenceWorkspaceId()` in `yamlRunner` calls
   `resolveWorkspaceRoot()` with no seed, so it walks up from `process.cwd()`. Measured: two bridges
@@ -38,9 +42,7 @@ verified (which is how this line came to be written).
   the third and it is the one writing privacy evidence. Seeds from `stepDeps.workdir`, which
   `bridge.ts` already fills from `config.workspace`. Existing untagged rows are NOT backfilled.
   Touches `src/recipes/yamlRunner.ts` — collides with any privacy, evidence or recipe-runner work.
-  — this session
-
-## Recently closed (informal log, prune periodically)
+  — this session — merged as #1475
 
 - 2026-08-19 `fix/boundary-receipt-attribution` — #1469 attributed the SHADOW ledger to its recipe
   and left the ENFORCING one anonymous: `recordBoundaryDecisionFn` sits 26 lines below
