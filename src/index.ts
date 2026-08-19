@@ -5629,6 +5629,31 @@ if (process.argv[2] === "butler") {
         process.exit(0);
       }
 
+      if (args[0] === "promote") {
+        // The ONE path that turns a graded Butler row into trust evidence, and
+        // it is off unless PATCHWORK_FLAG_BUTLER_PROMOTE is set. Operator path
+        // only, for the same reason `outcomes confirm` is: a recipe step runs
+        // AS the worker, so a worker able to reach this would manufacture the
+        // evidence that raises its own dial.
+        const { formatPromoteResult, promoteShadowOutcomes } = await import(
+          "./butler/promoteShadowOutcomes.js"
+        );
+        const { patchworkHome } = await import("./patchworkHome.js");
+        const res = promoteShadowOutcomes({
+          patchworkDir: patchworkHome(),
+          dryRun: args.includes("--dry-run"),
+        });
+        if (args.includes("--json")) {
+          process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);
+        } else {
+          process.stdout.write(formatPromoteResult(res));
+        }
+        // Exit 0 either way: "the flag is off" is the CONFIGURED state, not a
+        // failure, and a non-zero exit would make a cron wrapper report a
+        // problem every time it ran as designed.
+        process.exit(0);
+      }
+
       if (args[0] === "ingest") {
         // Observations come from a file or stdin as a JSON array. They are NOT
         // gathered here: reading the operator's trackers is a connector
@@ -5685,13 +5710,19 @@ if (process.argv[2] === "butler") {
       }
 
       process.stderr.write(
-        "Usage: patchwork butler <shadow|ingest|observe> [--json]\n\n" +
+        "Usage: patchwork butler <shadow|ingest|observe|promote> [--json]\n\n" +
           "  shadow                       summarise the graded shadow ledger\n" +
           "  ingest [--file <path>|-]     grade a JSON array of observations\n" +
           "  observe [--file <path>]      discover errands from the run log,\n" +
           "                               look up live Todoist state, then grade\n" +
           "         [--stale-after-days N]\n\n" +
-          "  Shadow-only: nothing here writes the trust ledger.\n",
+          "  promote [--dry-run]          fold confirmed/junk grades into the\n" +
+          "                               trust ledger. Requires\n" +
+          "                               PATCHWORK_FLAG_BUTLER_PROMOTE=1;\n" +
+          "                               reports without writing otherwise.\n\n" +
+          "  shadow/ingest/observe are shadow-only and write no trust evidence.\n" +
+          "  `promote` is the single path that does, and it never promotes an\n" +
+          "  `unknown` grade under any flag.\n",
       );
       process.exit(2);
     } catch (err) {

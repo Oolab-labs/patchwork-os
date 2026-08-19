@@ -169,6 +169,28 @@ export function summariseShadowLog(opts: { dir?: string } = {}): ShadowSummary {
     return empty;
   }
   const out = { ...empty };
+  for (const row of parseShadowRows(text)) {
+    out.total++;
+    out[row.disposition]++;
+    if (row.wouldCountAsEvidence) out.wouldCount++;
+  }
+  return out;
+}
+
+/**
+ * Parse well-formed rows out of raw ledger text.
+ *
+ * The single parse rule, shared by the summary and by promotion. Two readers of
+ * one append-only file with two copies of "what counts as a row" is how a
+ * report and the thing it reports on come to disagree — and here the report is
+ * what a person reads before deciding to promote.
+ *
+ * Malformed lines are SKIPPED and counted in nothing: a half-written row from
+ * an interrupted append is not evidence, and must not inflate a number someone
+ * is about to make a trust decision on.
+ */
+export function parseShadowRows(text: string): ShadowOutcomeRow[] {
+  const rows: ShadowOutcomeRow[] = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     let row: ShadowOutcomeRow;
@@ -184,9 +206,19 @@ export function summariseShadowLog(opts: { dir?: string } = {}): ShadowSummary {
     ) {
       continue;
     }
-    out.total++;
-    out[row.disposition]++;
-    if (row.wouldCountAsEvidence) out.wouldCount++;
+    if (typeof row.ref !== "string" || !row.ref) continue;
+    rows.push(row);
   }
-  return out;
+  return rows;
+}
+
+/** Every well-formed row in the ledger, oldest first. */
+export function readShadowRows(dir?: string): ShadowOutcomeRow[] {
+  const p = shadowLogPath(dir);
+  if (!existsSync(p)) return [];
+  try {
+    return parseShadowRows(readFileSync(p, "utf-8"));
+  } catch {
+    return [];
+  }
 }

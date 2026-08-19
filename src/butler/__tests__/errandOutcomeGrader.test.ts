@@ -351,6 +351,13 @@ describe("SHADOW means shadow — the trust fold must not read this file", () =>
 
     expect(importers).toEqual([
       "src/butler/outcomeIngester.ts",
+      // Added deliberately, which is what this allowlist is for. It is the ONE
+      // module that may turn a graded row into trust evidence, it is flag-gated
+      // off, it is operator-only (not a recipe tool — asserted in its own
+      // suite), and it exists precisely so the grader and the ingester keep
+      // their "cannot reach OutcomeStore" guards intact rather than having them
+      // deleted to make room for a promotion branch.
+      "src/butler/promoteShadowOutcomes.ts",
       "src/index.ts",
     ]);
     // Restated as a property, not just a list: whatever the allowlist grows
