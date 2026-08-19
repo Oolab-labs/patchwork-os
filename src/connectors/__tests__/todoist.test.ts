@@ -12,6 +12,8 @@ import {
   vi,
 } from "vitest";
 
+import { todoistV1Task } from "./todoistV1Fixture.js";
+
 // ── real-store sandbox ────────────────────────────────────────────────────────
 
 /**
@@ -48,25 +50,18 @@ afterAll(() => {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Delegates to the ONE recorded v1 shape.
+ *
+ * It used to hand-write a REST v2 body — `is_completed`, `created_at`, `url`,
+ * `order`, `comment_count`, `creator_id` — none of which the v1 API sends. Every
+ * test in this file passed against it, including the `describe("Todoist API v1
+ * …")` block the migration itself added, because the fixture agreed with the
+ * code's wrong assumption rather than with the API. See
+ * `todoistV1Fixture.ts` for what that cost.
+ */
 function makeFakeTask(overrides: Partial<Record<string, unknown>> = {}) {
-  return {
-    id: "task1",
-    content: "Buy milk",
-    description: "",
-    project_id: "proj1",
-    section_id: null,
-    parent_id: null,
-    order: 1,
-    priority: 1,
-    due: null,
-    labels: [],
-    is_completed: false,
-    created_at: "2026-01-01T00:00:00Z",
-    url: "https://todoist.com/task/task1",
-    comment_count: 0,
-    creator_id: "user1",
-    ...overrides,
-  };
+  return todoistV1Task(overrides);
 }
 
 function mockFetch(
@@ -172,7 +167,10 @@ describe("TodoistConnector.getTasks", () => {
 
     const result = await conn.getTasks();
     expect(result).toHaveLength(2);
-    expect(result[0]!.content).toBe("Buy milk");
+    // Compared against the fixture rather than a restated literal: this test is
+    // about pass-through, and a hardcoded string here only asserts that two
+    // copies of the fixture agree.
+    expect(result[0]?.content).toBe(tasks[0]?.content);
   });
 
   it("passes projectId as query param", async () => {

@@ -12,6 +12,11 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  todoistV1Project,
+  todoistV1Task,
+} from "../../../connectors/__tests__/todoistV1Fixture.js";
+
 // ── Connector mock ────────────────────────────────────────────────────────────
 // The tool module `await import("../../connectors/todoist.js")` lazily, so the
 // mock must be hoisted (vi.mock is hoisted automatically) and expose
@@ -67,25 +72,10 @@ describe("todoist recipe-step tools", () => {
     });
 
     it("calls getTasks(projectId, filter, limit) and returns its JSON", async () => {
-      const tasks = [
-        {
-          id: "1",
-          content: "Write tests",
-          description: "",
-          project_id: "p1",
-          section_id: null,
-          parent_id: null,
-          order: 1,
-          priority: 1,
-          due: null,
-          labels: [],
-          is_completed: false,
-          created_at: "t",
-          url: "https://todoist.com/showTask?id=1",
-          comment_count: 0,
-          creator_id: "c1",
-        },
-      ];
+      // The shared v1 shape, not a hand-written one. The body this file used to
+      // declare carried REST v2 names the API does not send — the same invented
+      // shape that let the connector's own bug survive nine days of green tests.
+      const tasks = [todoistV1Task({ id: "1", content: "Write tests" })];
       getTasks.mockResolvedValue(tasks);
 
       const tool = getTool("todoist.list_tasks");
@@ -116,23 +106,13 @@ describe("todoist recipe-step tools", () => {
     });
 
     it("calls createTask(content, projectId, description, dueString, priority, labels) and returns its JSON", async () => {
-      const created = {
+      const created = todoistV1Task({
         id: "9",
         content: "Ship it",
         description: "now",
-        project_id: "p1",
-        section_id: null,
-        parent_id: null,
-        order: 1,
         priority: 4,
-        due: null,
         labels: ["Work"],
-        is_completed: false,
-        created_at: "t",
-        url: "https://todoist.com/showTask?id=9",
-        comment_count: 0,
-        creator_id: "c1",
-      };
+      });
       createTask.mockResolvedValue(created);
 
       const tool = getTool("todoist.create_task");
@@ -204,20 +184,7 @@ describe("todoist recipe-step tools", () => {
     });
 
     it("calls getProjects() with no args and returns its JSON", async () => {
-      const projects = [
-        {
-          id: "p1",
-          name: "Inbox",
-          color: "grey",
-          parent_id: null,
-          order: 0,
-          is_favorite: false,
-          is_inbox_project: true,
-          is_team_inbox: false,
-          is_shared: false,
-          url: "https://todoist.com/showProject?id=p1",
-        },
-      ];
+      const projects = [todoistV1Project({ id: "p1", name: "Inbox" })];
       getProjects.mockResolvedValue(projects);
 
       const tool = getTool("todoist.list_projects");

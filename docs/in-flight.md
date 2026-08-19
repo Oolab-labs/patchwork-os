@@ -29,7 +29,15 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-19 `fix/todoist-v1-field-shape` — the Todoist connector talks to `api/v1` and its
+  `TodoistTask` / `TodoistProject` interfaces still carry REST v2 field names, so six declared
+  fields are `undefined` on the wire. Measured live: an errand the operator really did complete
+  graded `unknown`/`open-recent` instead of `confirmed`, because `observeTask` reads
+  `is_completed` where v1 sends `checked`; and `Date.parse(created_at)` is NaN (v1 sends
+  `added_at`), so the `Date.now()` fallback resets every errand's age on every run and the
+  14-day `stale-unactioned` horizon is unreachable. Touches `src/connectors/todoist.ts`,
+  `src/recipes/tools/todoist.ts` outputSchemas, and the connector/butler test fixtures —
+  collides with any Todoist, Butler-observation or connector-shape work. — this session
 
 ## Recently closed (informal log, prune periodically)
 

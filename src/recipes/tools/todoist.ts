@@ -1,6 +1,12 @@
 /**
  * Todoist tools — list/create/close tasks and list projects via the Todoist
- * REST API v2 connector.
+ * unified API v1 connector.
+ *
+ * The `outputSchema` blocks below describe the v1 wire shape. They previously
+ * described REST v2's, which meant every one of them advertised fields the API
+ * does not send (`is_completed`, `created_at`, `url`, …) to recipe authors
+ * writing `{{steps.x.…}}` references. Nothing type-checks a tool's declared
+ * output against what it returns — these are assertions on trust.
  *
  * Self-registering tool module for the recipe tool registry. Mirrors the
  * positional signatures of `TodoistConnector` (src/connectors/todoist.ts):
@@ -56,17 +62,19 @@ registerTool({
         project_id: { type: "string" },
         section_id: { type: ["string", "null"] },
         parent_id: { type: ["string", "null"] },
-        order: { type: "number" },
+        child_order: { type: "number" },
         priority: { type: "number" },
         due: { type: ["object", "null"] },
+        deadline: { type: ["object", "null"] },
         labels: { type: "array", items: { type: "string" } },
-        is_completed: { type: "boolean" },
-        created_at: { type: "string" },
-        url: { type: "string" },
-        assignee_id: { type: ["string", "null"] },
-        assigner_id: { type: ["string", "null"] },
-        comment_count: { type: "number" },
-        creator_id: { type: "string" },
+        checked: { type: "boolean" },
+        completed_at: { type: ["string", "null"] },
+        added_at: { type: "string" },
+        updated_at: { type: "string" },
+        added_by_uid: { type: ["string", "null"] },
+        responsible_uid: { type: ["string", "null"] },
+        assigned_by_uid: { type: ["string", "null"] },
+        note_count: { type: "number" },
       },
     },
   },
@@ -136,15 +144,17 @@ registerTool({
       project_id: { type: "string" },
       section_id: { type: ["string", "null"] },
       parent_id: { type: ["string", "null"] },
-      order: { type: "number" },
+      child_order: { type: "number" },
       priority: { type: "number" },
       due: { type: ["object", "null"] },
+      deadline: { type: ["object", "null"] },
       labels: { type: "array", items: { type: "string" } },
-      is_completed: { type: "boolean" },
-      created_at: { type: "string" },
-      url: { type: "string" },
-      comment_count: { type: "number" },
-      creator_id: { type: "string" },
+      checked: { type: "boolean" },
+      completed_at: { type: ["string", "null"] },
+      added_at: { type: "string" },
+      updated_at: { type: "string" },
+      added_by_uid: { type: ["string", "null"] },
+      note_count: { type: "number" },
     },
   },
   riskDefault: "medium",
@@ -308,13 +318,16 @@ registerTool({
         id: { type: "string" },
         name: { type: "string" },
         color: { type: "string" },
+        description: { type: "string" },
         parent_id: { type: ["string", "null"] },
-        order: { type: "number" },
+        child_order: { type: "number" },
         is_favorite: { type: "boolean" },
-        is_inbox_project: { type: "boolean" },
-        is_team_inbox: { type: "boolean" },
+        inbox_project: { type: "boolean" },
         is_shared: { type: "boolean" },
-        url: { type: "string" },
+        is_archived: { type: "boolean" },
+        view_style: { type: "string" },
+        created_at: { type: "string" },
+        updated_at: { type: "string" },
       },
     },
   },
