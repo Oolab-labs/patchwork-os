@@ -38,8 +38,6 @@ verified (which is how this line came to be written).
   `src/butler/outcomeShadowLog.ts` (one shared parse rule), `src/index.ts` dispatch and the
   grader's importer allowlist — collides with any Butler or outcome-store work. — this session
 
-_Nothing in flight._
-
 ## Recently closed (informal log, prune periodically)
 
 - 2026-08-19 `fix/1458-cron-claim` — #1458. Every running bridge fires every cron recipe: the
