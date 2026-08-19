@@ -26,6 +26,7 @@ import {
 } from "./privacy/destinationRegistry.js";
 import { recordPrivacyShadow } from "./privacy/shadowLog.js";
 import { resolveWorkspaceRoot } from "./recipes/workspaceRoot.js";
+import { currentWorkspaceId } from "./workspaceId.js";
 import { writeFileAtomic, writeFileAtomicSync } from "./writeFileAtomic.js";
 
 export type TaskStatus =
@@ -202,7 +203,10 @@ interface PersistedTask {
  * `buildAgentExecutorDeps` wired it. Reading its own config means there is no
  * wiring to forget. It stays inert unless `privacy.shadow` is configured.
  */
-function observeOrchestratorShadow(driverName: string | undefined): void {
+function observeOrchestratorShadow(
+  driverName: string | undefined,
+  workspace: string | undefined,
+): void {
   try {
     const cfg = (
       loadPatchworkConfig() as { privacy?: { shadow?: PrivacyConfig } }
@@ -221,6 +225,9 @@ function observeOrchestratorShadow(driverName: string | undefined): void {
       resolved.destination,
     );
     recordPrivacyShadow({
+      ...(currentWorkspaceId(workspace) && {
+        workspaceId: currentWorkspaceId(workspace),
+      }),
       decision: outcome.decision,
       reason: outcome.reason,
       destinationId: resolved.destination.id,
@@ -528,7 +535,7 @@ export class ClaudeOrchestrator {
     try {
       // Shadow observation only — see observeOrchestratorShadow. Nothing here
       // can refuse or alter this dispatch; #1397 remains open.
-      observeOrchestratorShadow(this.driver.name);
+      observeOrchestratorShadow(this.driver.name, resolvedWorkspace);
       const result = await this.driver.run({
         prompt: task.prompt,
         contextFiles: task.contextFiles,

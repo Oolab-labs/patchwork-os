@@ -69,6 +69,16 @@ export interface GateDecisionActor {
 }
 
 export interface GateDecisionRecord {
+  /**
+   * Short id of the workspace this decision was made in (`src/workspaceId.ts`).
+   *
+   * TAG, not a scope: evidence must outlive the workspace it describes, so it
+   * is never filtered by this — only attributed. ABSENT on records written
+   * before the field existed, and never backfilled: "nobody recorded this" must
+   * stay distinguishable from "we do not know", the same rule `actor` follows.
+   */
+  workspaceId?: string;
+
   /** Monotonic sequence id within the process — stable for pagination. */
   seq: number;
   /** ms epoch when the decision was made. */

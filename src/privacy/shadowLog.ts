@@ -111,6 +111,8 @@ export interface PrivacyShadowRow {
   reason: string;
   recipeName?: string;
   stepId?: string;
+  /** Short workspace id — attribution only; the summariser never filters on it. */
+  workspaceId?: string;
   /**
    * Whether an ENFORCING policy was also in force for this dispatch.
    *
