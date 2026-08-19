@@ -906,6 +906,13 @@ export type StepDeps = Required<
     prompt: string;
     driver?: string;
     model?: string;
+    /**
+     * ADR-0021 — the fan_out STEP's declared classification, raw as the author
+     * wrote it. Forwarded to the boundary decision point unparsed so an
+     * unrecognised value fails closed there rather than being normalised into
+     * a default here.
+     */
+    dataPolicy?: unknown;
   }) => Promise<{
     text: string;
     ok: boolean;
@@ -1692,6 +1699,7 @@ export async function runYamlRecipe(
     prompt: string;
     driver?: string;
     model?: string;
+    dataPolicy?: unknown;
   }): Promise<{
     text: string;
     ok: boolean;
@@ -1722,6 +1730,13 @@ export async function runYamlRecipe(
           );
           return merged ? { disallowedTools: merged } : {};
         })(),
+        // Same shape a first-class agent step builds (#1466). Without it the
+        // boundary judged every iteration at the default `internal`, so the
+        // one step in a batch pipeline that handles RAW documents was the one
+        // step whose label it could not be told.
+        ...(input.dataPolicy !== undefined && {
+          boundary: { dataPolicy: input.dataPolicy },
+        }),
       },
       buildAgentExecutorDeps(stepDeps, deps),
     );
