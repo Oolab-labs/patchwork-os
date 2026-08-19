@@ -262,7 +262,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | ipaddr.js | 2.3.0 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
 | minimatch | 10.2.4 | BlueOak-1.0.0 |
-| node-cron | 4.2.1 | ISC |
+| node-cron | 4.6.0 | ISC |
 | require-from-string | 2.0.2 | MIT |
 | undici | 6.28.0 | MIT |
 | ws | 8.21.0 | MIT |
