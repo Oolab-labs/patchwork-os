@@ -29,7 +29,17 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-19 `fix/1458-cron-claim` — #1458. Every running bridge fires every cron recipe: the
+  double-fire guard is an in-memory `Set` and the recipe store is global, so N bridges = N fires
+  (observed live twice today, same instant, two pids). Adds `src/recipes/cronClaim.ts` — an
+  `O_EXCL` claim keyed `(recipeName, slotEpochMs)` where the slot is the instant node-cron's
+  matcher matched, threaded into `fire()` rather than re-read from the clock. Claim is a
+  TOMBSTONE, taken LAST (after the disabled re-check, so a locally-disabled bridge cannot burn a
+  peer's tick), and fails OPEN with `PATCHWORK_CRON_CLAIM_REQUIRED=1` to invert. CRON YAML ONLY —
+  `@every`, legacy-JSON cron and the event-trigger paths are excluded and get their own issues.
+  Touches `src/recipes/scheduler.ts` — collides with any scheduler, recipe-trigger or
+  cron work. — this session
+
 
 ## Recently closed (informal log, prune periodically)
 
