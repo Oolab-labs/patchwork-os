@@ -30,7 +30,7 @@ verified (which is how this line came to be written).
 ## Active
 
 - 2026-08-19 `fix/todoist-v1-field-shape` — the Todoist connector talks to `api/v1` and its
-  `TodoistTask` / `TodoistProject` interfaces still carry REST v2 field names, so six declared
+  `TodoistTask` / `TodoistProject` interfaces still carry REST v2 field names, so eight declared
   fields are `undefined` on the wire. Measured live: an errand the operator really did complete
   graded `unknown`/`open-recent` instead of `confirmed`, because `observeTask` reads
   `is_completed` where v1 sends `checked`; and `Date.parse(created_at)` is NaN (v1 sends

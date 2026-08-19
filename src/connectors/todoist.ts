@@ -71,7 +71,7 @@ export interface TodoistDue {
  *
  * These names are v1's, not REST v2's, and the difference is not cosmetic. The
  * base URL moved to v1 when v2 started answering 410 Gone; this interface did
- * not move with it, so for nine days it declared six fields the wire never
+ * not move with it, so for nine days it declared EIGHT fields the wire never
  * sent. Two of them were read to make a decision:
  *
  *   `is_completed` → v1 sends `checked` (plus `completed_at`)
@@ -82,7 +82,7 @@ export interface TodoistDue {
  * trust. A blind `res.json() as Promise<TodoistTask>` cast reports nothing when
  * it is wrong: the fields simply arrive `undefined`.
  *
- * The others — `url`, `order`, `comment_count`, `creator_id`, `assignee_id`,
+ * The other six — `url`, `order`, `comment_count`, `creator_id`, `assignee_id`,
  * `assigner_id` — are removed rather than renamed where v1 has no counterpart.
  * `url` in particular never existed on v1: Todoist exposes no task permalink,
  * which is why the outcome join key had to be generalised to `<tool>:<id>`.
