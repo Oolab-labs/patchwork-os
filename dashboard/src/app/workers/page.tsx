@@ -1,5 +1,6 @@
 "use client";
 import { BoundaryPanel } from "@/components/BoundaryPanel";
+import { DecisionReceipt } from "@/components/DecisionReceipt";
 import Link from "next/link";
 import { type CSSProperties, useState } from "react";
 import { EmptyState, ErrorState, HBarList } from "@/components/patchwork";
@@ -1138,6 +1139,13 @@ function WorkerCard({
           to preview. That is a gap in the manifest, not an empty result.
         </div>
       )}
+
+      {/* Why the last one went the way it did. The boundary above is
+          prospective — what this worker MAY do; this is retrospective, and it
+          is the artefact an auditor actually reads. Rendered verbatim from the
+          bridge so the dashboard and `patchwork gate explain` can never give
+          two accounts of the same decision. */}
+      <DecisionReceipt workerId={w.workerId} />
 
       {/* How it got here — the journey's history. */}
       <JourneyTimeline events={w.events ?? []} now={now} />
