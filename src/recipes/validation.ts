@@ -3,6 +3,7 @@ import cron from "node-cron";
 import { createAjv2020, type ErrorObject } from "../ajv2020.js";
 import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
 import { unsupportedKeysOf, unsupportedStepMessage } from "./compoundSteps.js";
+import { misplacedDataPolicy } from "./dataPolicyPlacement.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
@@ -252,6 +253,25 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
               code: "flat-compound-step-unsupported",
             });
           }
+        }
+      }
+    }
+
+    // ADR-0021 — a `data_policy` declared where nothing reads it (#1467).
+    // Checked on the RAW step, before normalisation, and on BOTH runners: the
+    // misplacement is an authoring mistake and neither runner is more likely to
+    // make the author notice, because both silently ignore it.
+    if (Array.isArray(rawRecipe?.steps)) {
+      const rawSteps = rawRecipe!.steps as unknown[];
+      for (let i = 0; i < rawSteps.length; i++) {
+        const bad = misplacedDataPolicy(rawSteps[i]);
+        if (bad) {
+          issues.push({
+            level: "error",
+            message: `Step ${i + 1}: ${bad.message}`,
+            path: `steps.${i}.${bad.key}`,
+            code: "data-policy-misplaced",
+          });
         }
       }
     }

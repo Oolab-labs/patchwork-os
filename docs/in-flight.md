@@ -32,6 +32,17 @@ verified (which is how this line came to be written).
 _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
+- 2026-08-19 `fix/1467-misplaced-data-policy` — #1467. A `data_policy` declared as a SIBLING of
+  `agent:` instead of inside it is read by nothing, and `recipe lint` passed it: the run succeeded
+  and the boundary row came out `assumed`, indistinguishable from a step that declared nothing.
+  Reproduced end to end before fixing. Now a lint ERROR naming the remedy, following the
+  `compoundSteps.ts` precedent (lint and runtime verdicts must not drift). Exempts the two correct
+  placements — inside `agent:`, and on a `fan_out` step (#1466). Touches
+  `src/recipes/validation.ts` plus a new `src/recipes/dataPolicyPlacement.ts` — collides with any
+  recipe-validation or privacy work. Was stacked on #1468 and has been rebased onto main now that
+  it merged; the ORDER mattered — landing this lint rule first would have made a `fan_out` step
+  with `data_policy` pass lint while the runtime still ignored it, which is the exact silent
+  failure the rule exists to prevent. — this session
 
 - 2026-08-19 `fix/1466-fanout-data-policy` — #1466. `fan_out` is how a recipe processes a BATCH,
   and it was the one step that could not declare a classification: the iteration allowlist refuses
