@@ -3580,10 +3580,30 @@ const _boundaryReceiptLogs = new Map<string, BoundaryReceiptLog>();
  * Fail-soft to `undefined` — an unattributed record is the honest outcome when
  * the workspace cannot be resolved, and it is strictly better than a record
  * that asserts the wrong one.
+ *
+ * `startDir` is the run's `workdir`, and passing it is the whole point. With no
+ * seed `resolveWorkspaceRoot` walks up from `process.cwd()`, so the tag recorded
+ * the WRITING PROCESS's directory rather than the workspace the bridge was
+ * pointed at. Measured live: two bridges serving the same workspace, one with
+ * cwd `~` (no `.git` ancestor, every row untagged) and one with cwd inside the
+ * repo (tagged) — so the ledger recorded which of them took the call. That is
+ * worse than an empty field, because the rows that DID carry a tag made the
+ * mechanism look like it worked.
+ *
+ * Two sibling sites already seed correctly and neither was copied here:
+ * `recipeOrchestration.ts` (`currentWorkspaceId(this.deps.workdir)`) and
+ * `claudeOrchestrator.ts` (`resolveWorkspaceRoot({ startDir: this.workspace })`).
+ *
+ * The `.git` walk is KEPT rather than hashing `startDir` directly, which is the
+ * smaller change: it fixes the seed without changing the derivation. The two
+ * differ only when a workspace is a SUBDIRECTORY of a repo, where this yields
+ * the repo root and `recipeOrchestration` yields the subdirectory. That
+ * divergence predates this change and unifying it is a separate decision — it
+ * would move existing ids, splitting a ledger rather than tagging it.
  */
-function evidenceWorkspaceId(): string | undefined {
+function evidenceWorkspaceId(startDir?: string): string | undefined {
   try {
-    return currentWorkspaceId(resolveWorkspaceRoot()?.path);
+    return currentWorkspaceId(resolveWorkspaceRoot({ startDir })?.path);
   } catch {
     return undefined;
   }
@@ -3653,7 +3673,7 @@ function buildAgentExecutorDeps(
         }
       ).privacy?.shadow,
     recordPrivacyShadowFn: (r) => {
-      const shadowWsId = evidenceWorkspaceId();
+      const shadowWsId = evidenceWorkspaceId(stepDeps.workdir);
       recordPrivacyShadow({
         ...(shadowWsId && { workspaceId: shadowWsId }),
         // Which recipe produced this (#1469). Taken from StepDeps rather than
@@ -3682,7 +3702,7 @@ function buildAgentExecutorDeps(
       // Fail-soft: a receipt that cannot be written must never affect the
       // decision it describes, which has already been made and enforced.
       try {
-        const wsId = evidenceWorkspaceId();
+        const wsId = evidenceWorkspaceId(stepDeps.workdir);
         boundaryReceiptLog().record({
           ...(wsId && { workspaceId: wsId }),
           // Which recipe produced this. Same source and same reasoning as

@@ -50,9 +50,16 @@ export interface BoundaryReceipt {
   /** Which categories the decision required be removed. */
   redactCategories?: string[];
   reason: string;
-  /** Recipe/step context when the caller knows it. */
+  /**
+   * Which recipe produced this (#1474).
+   *
+   * A sibling `stepId` was declared here and supplied by nothing — the exact
+   * field, for the exact reason, that #1469 removed from `ShadowRow`. Removed
+   * rather than wired: the decision point has no step id in scope, so a
+   * declared-but-empty field only tells a reader that step-level attribution
+   * exists when it does not.
+   */
   recipeName?: string;
-  stepId?: string;
   /** Short workspace id — a tag for attribution, never a filter. */
   workspaceId?: string;
 }
@@ -66,7 +73,6 @@ export interface RecordBoundaryReceiptInput {
   redactCategories?: string[];
   reason: string;
   recipeName?: string;
-  stepId?: string;
   workspaceId?: string;
 }
 
@@ -149,7 +155,14 @@ export class BoundaryReceiptLog {
         ? { redactCategories: input.redactCategories }
         : {}),
       ...(input.recipeName ? { recipeName: input.recipeName } : {}),
-      ...(input.stepId ? { stepId: input.stepId } : {}),
+      // Both types have declared `workspaceId` since #1455 and the caller has
+      // been passing it since; this constructor never copied it, so the field
+      // could not appear on a receipt from any bridge, in any working
+      // directory. That is why 22 of 40 shadow rows carried a workspace tag
+      // while 0 of 4 receipts did — two independent bugs stacked on one field,
+      // and the shadow ledger's partial success hid the receipt ledger's total
+      // failure.
+      ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     };
     this.receipts.push(receipt);
     this.trim();
