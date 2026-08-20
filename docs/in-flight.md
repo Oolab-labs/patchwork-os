@@ -29,7 +29,9 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-20 `fix/doctor-expect-running` — #1481: `doctor`'s denominator is locks that
+  EXIST, not bridges that SHOULD exist, so it exits 0 when a bridge is missing — including
+  when nothing is running at all. Adds `--expect-running [N]`. — main session
 
 ## Recently closed (informal log, prune periodically)
 
@@ -37,6 +39,12 @@ _Nothing in flight._
   prompt shows, but a tool-enabled step's prompt is instructions to FETCH, so it
   under-classifies. ADR-0021 paragraph + worked example, plus a `recipe lint` WARNING (never
   an error) on the population most likely affected. — main session
+
+- 2026-08-20 `fix/doctor-expect-running` — #1481: `doctor`'s denominator is locks that
+  EXIST, not bridges that SHOULD exist, so it exits 0 when a bridge is missing — including
+  when nothing is running at all. Adds `--expect-running [N]`. — main session
+
+## Recently closed (informal log, prune periodically)
 
 - 2026-08-20 `fix/butler-promote-denominator` — #1477: the promote report counted ledger
   ROWS in its headline and distinct ACTIONS in the breakdown, with nothing saying the unit

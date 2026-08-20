@@ -5377,6 +5377,25 @@ if (process.argv[2] === "doctor") {
       // No lock dir ⇒ no bridges ⇒ reported as "nothing running".
     }
 
+    // `--expect-running [N]` (#1481). Only the caller knows how many bridges
+    // ought to be up — this command cannot discover it — so the expectation is
+    // stated rather than inferred. Bare `--expect-running` means "at least one",
+    // which is the assertion worth making right after a kickstart.
+    const expectIdx = args.indexOf("--expect-running");
+    let expectRunning: number | undefined;
+    if (expectIdx !== -1) {
+      const raw = args[expectIdx + 1];
+      const parsed =
+        raw !== undefined && !raw.startsWith("--") ? Number(raw) : 1;
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        process.stderr.write(
+          "[deployment] --expect-running takes a non-negative integer\n",
+        );
+        process.exit(2);
+      }
+      expectRunning = parsed;
+    }
+
     const report = assessDeploymentFreshness({
       locks,
       buildTimeMs,
@@ -5388,6 +5407,7 @@ if (process.argv[2] === "doctor") {
           return false;
         }
       },
+      ...(expectRunning !== undefined ? { expectRunning } : {}),
     });
     if (args.includes("--json")) {
       process.stdout.write(

@@ -68,12 +68,29 @@ export interface FreshnessInput {
   buildTimeMs: number;
   /** Liveness probe, injected so this stays a pure function under test. */
   isAlive: (pid: number) => boolean;
+  /**
+   * How many live bridges the caller expects (#1481).
+   *
+   * Absent ⇒ no expectation, and zero bridges stays HEALTHY. That default is
+   * deliberate: "nothing is running" is a legitimate state for anyone who has
+   * not started a bridge, and hard-failing on it would make the command useless
+   * to them. The expectation has to be stated, because only the caller knows
+   * it — this module cannot discover how many bridges *ought* to exist.
+   */
+  expectRunning?: number;
 }
 
 export interface FreshnessReport {
   findings: FreshnessFinding[];
   /** True when any bridge needs attention. Drives the exit code. */
   unhealthy: boolean;
+  /**
+   * Live bridges found. Counted separately from `findings.length`, which also
+   * includes dead locks — a corpse must never satisfy an expectation.
+   */
+  running: number;
+  /** Present only when fewer bridges are running than were expected. */
+  shortfall?: { expected: number; running: number };
 }
 
 export function assessDeploymentFreshness(
@@ -143,9 +160,26 @@ export function assessDeploymentFreshness(
     });
   }
 
+  // A live bridge is one whose process answered the liveness probe. A STALE
+  // bridge counts — it is running, it is merely running the wrong code, and
+  // that is already reported on its own. Conflating the two would make a stale
+  // bridge read as a missing one and send the operator to the wrong remedy.
+  const running = findings.filter((f) => f.state !== "dead-lock").length;
+
+  const shortfall =
+    input.expectRunning !== undefined && running < input.expectRunning
+      ? { expected: input.expectRunning, running }
+      : undefined;
+
   return {
     findings,
-    unhealthy: findings.some((f) => f.state !== "fresh"),
+    // `some` on an empty array is `false`, which is how zero bridges resolved
+    // to healthy: the denominator was "locks that exist" rather than "bridges
+    // that should exist". A shortfall now carries its own weight.
+    unhealthy:
+      findings.some((f) => f.state !== "fresh") || shortfall !== undefined,
+    running,
+    ...(shortfall ? { shortfall } : {}),
   };
 }
 
@@ -161,9 +195,24 @@ export function formatFreshness(
   const L: string[] = [];
   L.push("[deployment] is the running code the installed code?");
   L.push(`  installed build: ${new Date(buildTimeMs).toISOString()}`);
+  if (report.shortfall) {
+    L.push("");
+    L.push(
+      `  MISSING  expected ${report.shortfall.expected} live bridge(s), found ` +
+        `${report.shortfall.running}`,
+    );
+    L.push(
+      "           a bridge that failed to start leaves no lock, and a check whose",
+    );
+    L.push(
+      "           denominator is the locks it found cannot see one that is absent.",
+    );
+  }
   if (report.findings.length === 0) {
     L.push("");
-    L.push("  No bridge locks found. Nothing is running to be stale.");
+    if (!report.shortfall) {
+      L.push("  No bridge locks found. Nothing is running to be stale.");
+    }
     return L.join("\n");
   }
   L.push("");
