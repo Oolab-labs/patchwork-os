@@ -46,6 +46,13 @@ description: |
         path: /hooks/incident-to-pr
     and reference {{payload.title}} / {{payload.body}} in place of the vars.
 
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - slack.post_message
+
 trigger:
   type: manual
   vars:

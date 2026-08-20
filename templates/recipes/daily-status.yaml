@@ -1,5 +1,12 @@
 name: daily-status
 description: Every morning at 08:00, summarize yesterday's commits + today's calendar hints from local files.
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - file.write
+
 trigger:
   type: cron
   at: "0 8 * * *"

@@ -13,6 +13,13 @@ description: |
       -H 'Content-Type: application/json' \
       -d '{"text":"the auth refresh path needs a circuit breaker"}'
 
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - file.append
+
 trigger:
   type: webhook
   path: /capture-thought
