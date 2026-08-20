@@ -155,10 +155,47 @@ function compileFromFile(
   recipeNames: string[],
   logger?: CollectLogger,
 ): AutomationProgram | null {
-  let recipe: ReturnType<typeof parseRecipe>;
+  let obj: unknown;
   try {
     const raw = readFileSync(filePath, "utf-8");
-    const obj = /\.ya?ml$/i.test(filePath) ? parseYaml(raw) : JSON.parse(raw);
+    obj = /\.ya?ml$/i.test(filePath) ? parseYaml(raw) : JSON.parse(raw);
+  } catch (err) {
+    // The file itself will not parse, so nothing can tell whether it wanted to
+    // be an event trigger. Warn: staying silent here would be the same mistake
+    // as the noise below, pointed the other way.
+    logger?.warn?.(
+      `[recipe-triggers] skipped ${path.basename(filePath)} — ${errMsg(err)}`,
+    );
+    return null;
+  }
+
+  // Cheap pre-check on the RAW shape, BEFORE the strict parse.
+  //
+  // `parseRecipe` is strict about things this collector does not care about —
+  // a cron recipe missing a step `id` fails it — and the trigger-type check
+  // used to happen only AFTER that parse. So every strict-parse failure
+  // produced a startup WARN, including for recipes this collector ignores by
+  // design and whose validity is not its business.
+  //
+  // Measured on a live bridge: 24 recipes warned at every startup, of which 5
+  // actually declared an event trigger. Eighteen were noise. That is not
+  // cosmetic — five shipped templates sat dead behind exactly this wall, and
+  // every one was found by accident rather than by anyone reading the log. A
+  // signal buried in noise of its own making does not get read.
+  //
+  // A missing or malformed trigger still falls through to the parse and warns:
+  // we can only stay silent when we positively know this is not ours.
+  const rawTriggerType = (obj as { trigger?: { type?: unknown } } | null)
+    ?.trigger?.type;
+  if (
+    typeof rawTriggerType === "string" &&
+    !COMPILABLE_EVENT_TRIGGERS.has(rawTriggerType)
+  ) {
+    return null;
+  }
+
+  let recipe: ReturnType<typeof parseRecipe>;
+  try {
     recipe = parseRecipe(obj);
   } catch (err) {
     // Fail-soft: one malformed recipe must never break startup registration.
