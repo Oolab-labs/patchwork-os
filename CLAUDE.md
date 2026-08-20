@@ -175,7 +175,21 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `tools search <query> [--json]` — Filter the registered tools by name / description substring.
 - `install <companion>` — Install one of the bundled MCP-companion server registrations into Claude Desktop or Claude Code config. Use `--target cli|desktop` to choose, `--env KEY=VAL` to pass per-companion env vars. Companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `playwright`, `codebase-memory`. Each is a documented server config; the command writes it into `~/.claude.json` (CLI) or the Claude Desktop config (desktop) atomically.
 - `codex doctor [--config <path>] [--json]` — Diagnoses whether `~/.codex/config.toml` is correctly (and *currently*) wired up to this bridge: config file exists, has a `[mcp_servers.claude-ide-bridge]` entry, the entry's `url` is well-formed, and — when a bridge is running — the config's port and Bearer token still match the live bridge's lock file. A bridge restart (without `--fixed-token`) rotates its port/token, silently staling out a previously-generated config with no error until Codex's next tool call 401s; this catches that before it surprises the user. Fail-soft like `recipe doctor`: no live bridge → warns, doesn't fail (config alone can be valid while the bridge just isn't started yet). Exits 1 when unhealthy. Codex CLI itself connects over Streamable HTTP, not the stdio shim — generate the config with `scripts/gen-mcp-config.sh codex`.
-- `doctor [--json]` — **Is the running code the installed code?** Every other gate in this repo verifies the REPOSITORY; none looks at a running process. On 2026-08-19 both live bridges were found containing neither the ADR-0021 privacy code nor `butler` — merged, wired, tested, gated, and absent from every process serving requests, with three workstreams silently blocked for five days. Compares each bridge lock's `startedAt` against the installed build's mtime. **Deliberately NOT a version comparison**: in the live case both stale and fresh reported `1.2.0-beta.2`, because a version marks a release and not a build. Also reports dead locks (the shim discovers by lock file, so an orphan can win discovery) and refuses to judge a lock with no usable `startedAt`. Exits 1 when unhealthy.
+- `doctor [--json] [--expect-running [N]]` — **Is the running code the installed code?** Every other gate in this repo verifies the REPOSITORY; none looks at a running process. On 2026-08-19 both live bridges were found containing neither the ADR-0021 privacy code nor `butler` — merged, wired, tested, gated, and absent from every process serving requests, with three workstreams silently blocked for five days. Compares each bridge lock's `startedAt` against the installed build's mtime. **Deliberately NOT a version comparison**: in the live case both stale and fresh reported `1.2.0-beta.2`, because a version marks a release and not a build. Also reports dead locks (the shim discovers by lock file, so an orphan can win discovery) and refuses to judge a lock with no usable `startedAt`. Exits 1 when unhealthy.
+
+  **`--expect-running [N]` (#1481) — because doctor cannot see a bridge that is not there.**
+  Its denominator is *locks that exist*, not *bridges that should exist*, and
+  `findings.some(...)` on an empty array is `false` — so zero bridges resolved to
+  healthy and `patchwork doctor && echo deployed` printed `deployed` after a total
+  failure to start. That is the worst possible moment for it: doctor is run
+  immediately after a kickstart, which is exactly when a bridge is most likely to be
+  absent. Observed 2026-08-20 — doctor printed one of two bridges and exited 0 while
+  the second was still restarting. Pass `--expect-running 2` after a kickstart; bare
+  `--expect-running` means at least one. Absent, zero bridges stays HEALTHY on
+  purpose, since "nothing is running" is legitimate for anyone who never started one.
+  A dead lock never counts toward the expectation (a corpse must not satisfy the
+  check); a live-but-stale bridge does count as running, because staleness is already
+  reported separately and conflating them sends the operator to the wrong remedy.
 
   **What it does NOT answer: is the installed code the MERGED code.** There are
   three states, not two — `merged → installed → running` — and `doctor` guards
