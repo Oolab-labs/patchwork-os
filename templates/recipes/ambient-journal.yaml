@@ -8,7 +8,8 @@ trigger:
   # fired. `recipe lint` now refuses it.
   event: post-commit
 steps:
-  - tool: file.append
+  - id: journal
+    tool: file.append
     path: ~/.patchwork/journal/{{date}}.md
     content: "- {{time}}  committed {{hash}} — {{message}}\n"
 output:

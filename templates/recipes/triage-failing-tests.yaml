@@ -12,10 +12,12 @@ trigger:
   type: on_test_run
   filter: failure
 steps:
-  - tool: git.log_since
+  - id: triage
+    tool: git.log_since
     since: 12h
     into: recent
-  - agent:
+  - id: summarise
+    agent:
       # Declared `internal` — source, diagnostics, git history, test output, issue
       # text. Declared EXPLICITLY rather than left to the default, which is also
       # `internal`: an absent policy means nobody decided, and a reference template
@@ -36,7 +38,8 @@ steps:
         command to run to confirm.
       driver: claude-code
       into: triage
-  - tool: file.write
+  - id: record
+    tool: file.write
     path: ~/.patchwork/inbox/test-triage-{{date}}-{{time}}.md
     content: |
       # Test triage — {{date}} {{time}}

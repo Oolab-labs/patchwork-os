@@ -4,9 +4,11 @@ trigger:
   type: on_file_save
   glob: "**/*.{ts,tsx}"
 steps:
-  - tool: diagnostics.get
+  - id: lint
+    tool: diagnostics.get
     uri: "{{file}}"
     into: diags
-  - tool: file.append
+  - id: report
+    tool: file.append
     path: ~/.patchwork/inbox/lint.md
     content: "- {{time}}  {{file}} — {{diags}}\n"

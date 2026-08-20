@@ -4,7 +4,8 @@ trigger:
   type: on_test_run
   filter: failure
 steps:
-  - agent:
+  - id: diagnose
+    agent:
       # Declared `internal` — source, diagnostics, git history, test output, issue
       # text. Declared EXPLICITLY rather than left to the default, which is also
       # `internal`: an absent policy means nobody decided, and a reference template
@@ -16,6 +17,7 @@ steps:
         Failures: {{failures}}.
         Write 3 sentences: which test, likely cause, first thing to check.
       into: summary
-  - tool: file.append
+  - id: record
+    tool: file.append
     path: ~/.patchwork/inbox/test-failures.md
     content: "\n## {{date}} {{time}}\n{{summary}}\n"
