@@ -28,6 +28,17 @@ export default defineConfig({
         "src/index.ts",
       ],
       all: true,
+      // `json-summary` is added to the defaults (text/html/clover/json) rather
+      // than replacing them — `getCodeCoverage` parses lcov/clover, so dropping
+      // one would break a shipped tool.
+      //
+      // It exists so the GATE'S NUMBERS SURVIVE THE GATE. #1386 fails this step
+      // on unrelated PRs; diagnosing it needs the percentages it failed on, and
+      // those were unrecoverable twice: the step log retrievable from the API
+      // ends ~30s before the failure, so the summary and the threshold error —
+      // the only part anyone needs — are simply gone. A gate that refuses
+      // without recording what it refused on cannot be argued with.
+      reporter: ["text", "html", "clover", "json", "json-summary"],
       // Re-baselined for vitest 4's AST-aware coverage counting (the ast-v8
       // remapper counts more branches/functions than v3's heuristic, so the
       // SAME tests measure lower). Was 75/70/75 under vitest 3. Set ~1pt below
