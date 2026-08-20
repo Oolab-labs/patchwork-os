@@ -158,6 +158,29 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `recipe run <name> [--local --dry-run --step <id> --attempt <n> --ledger-dir <path> --var k=v]` — Manual run with overrides; `--local` skips the bridge API.
 - `recipe rollback <name> --attempt <id> --ledger-dir <path> [--json]` — Undo a recipe attempt's `file.write`/`file.append` side effects, restoring each touched file to its pre-run content (or deleting it if the run created it). `<name>` must match the recipe's declared `name:`, and `--attempt`/`--ledger-dir` must match the original `recipe run` invocation. No bridge required — reads `${ledgerDir}/file_rollback.jsonl` (see `src/recipes/fileRollback.ts`), the pre-image counterpart to `--ledger-dir`'s idempotency ledger (PR5b). Ephemeral rollback: attempt-scoped undo of filesystem side effects, not a general version-control system, and deliberately narrow to file tools — undoing a GitHub issue creation, Slack post, or git push has no generic inverse and is out of scope.
 - `recipe lint <file.yaml>` — Lint a recipe YAML against the schema + best-practice rules.
+
+  **Three rules exist because lint and runtime had drifted, and drift here is
+  silent and permissive — the recipe passes every check and never runs.**
+  `compoundSteps.ts` and `dataPolicyPlacement.ts` were each written for an
+  earlier instance of exactly this; these are the next three.
+
+  - **`git_hook.event`** must be `post-commit` / `pre-push` / `post-merge`.
+    `parseTrigger` throws otherwise, so the recipe is skipped at bridge startup
+    with only a WARN in a log. Two live recipes named the key `on:` — the value
+    was right, so nothing looked broken. A shipped template did too.
+  - **Event-triggered recipes need a step `id` on every step.** `parseStep`
+    calls `requireString(s, "id")`, so without one the recipe never registers.
+    **Five shipped templates were dead this way.** Scoped to event triggers
+    deliberately: 20 of 29 templates omit `id` somewhere and run fine, because
+    the flat runner does not need it — a global rule would break most of the
+    library to fix five files.
+  - **A tool-enabled agent step with no `data_policy`** is a WARNING, never an
+    error (ADR-0021 fail-soft: absent ⇒ `internal`). It marks the population
+    most likely to be under-classified, and says in its own text that it cannot
+    see a step whose driver is `auto`.
+
+  A recipe that fails any of these is reported by `recipe doctor`, which is
+  where an operator will actually look.
 - `recipe preflight <file.yaml>` — Connector preflight: list authorisations the recipe needs.
 - `recipe doctor <name|file.yaml> [--json] [--local]` — One-screen "why is this recipe unhealthy + how do I fix it" diagnosis. Composes the static preflight check (lint + write-policy + plan) with the recipe-scoped runtime halt summary from a live bridge (`/runs/halt-summary?recipe=`), mapping every finding to an actionable hint (shared `HALT_CATEGORY_HINTS`/`HALT_CATEGORY_LABELS` in `src/recipes/haltCategory.ts`, also used by `halts`). Fail-soft: no bridge → static-only; a recipe too broken to plan → lint-only diagnosis (never stack-traces). `--local` skips the runtime check. Exits 1 when unhealthy. Same composition is exposed over HTTP at `GET /recipes/doctor?recipe=<name>` (name-only over HTTP; reuses `deps.haltSummaryFn` in-process) and surfaced in the dashboard as a **Doctor** panel on the recipe-detail page (needs the dedicated `api/bridge/recipes/doctor` proxy — the dynamic `recipes/[...name]` proxy would otherwise swallow the `?recipe=` query). Run-detail step rows also render the per-category fix hint next to `haltReason` (shared `HALT_CATEGORY_HINT` in `dashboard/src/lib/haltCategory.ts`).
 - `recipe fmt <file.yaml>` — Format a recipe YAML in place.
@@ -489,6 +512,28 @@ worker may DO; this answers what a destination may RECEIVE.
   - Direct `requestOrNull` + inline unwrap — when handler has rich contract (e.g. `{success: true/false, data, error}`) and caller needs structured error (see `closeTab`, `saveFile`). Do NOT use `tryRequest` — hides info caller needs.
   - When auditing: read handler in `vscode-extension/src/handlers/*.ts`, enumerate ALL return statements (success AND error paths) before choosing helper. Test mocks always lie — handler file is ground truth.
 - **Automation DSL**: automation hooks compile to an `AutomationProgram` ADT (`src/fp/automationProgram.ts`) via `parsePolicy` (`src/fp/policyParser.ts`) and run through a single interpreter `executeAutomationPolicy` (`src/fp/automationInterpreter.ts`). Seven nodes: `Hook`, `Sequence`, `Parallel`, `WithCooldown`, `WithDedup`, `WithRateLimit`, `WithRetry`. Side effects isolated behind the `Backend` interface (`src/fp/interpreterContext.ts`): `VsCodeBackend` (prod) + `TestBackend` (collector with `reset()`). `AutomationHooks` holds one `AutomationState` value (`src/fp/automationState.ts`) — all state transitions go through pure functions. New hooks: extend `HookType` union, add parser case, wire handler to `_runInterpreter(hookType, eventData)`. Parallel branches merge via `mergeAutomationStates` (max timestamp per key).
+
+## Packaging gate
+
+`npm run audit:pack` (wired into `prepublishOnly`) refuses to publish any file
+git does not track, `dist/` aside.
+
+`package.json`'s `files` includes `templates` wholesale, and **git exclusions
+have no effect on npm packaging** — `.git/info/exclude` is per-clone and
+invisible to everyone else, and the `.npmignore` makes npm ignore `.gitignore`
+entirely. So a file deliberately kept out of the repository is still packed.
+Releases cut in CI are safe only because a fresh clone has no untracked files;
+that is a property of the RUNNER, not of the package.
+
+It is a gate rather than a denylist on purpose: `files` already carried
+name-based exclusions for the private tool modules, which handled the compiled
+side and missed the template side. It also **never prints filenames** — the
+name of a deliberately-excluded file is itself the disclosure — reporting a
+count and directory, with `--show` for a local listing. Same reasoning as the
+private-identifier gate.
+
+Deliberately NOT in CI: a clean clone can never fail it, and a check that
+always reports OK is the noise that teaches people to ignore checks.
 
 ## Testing Requirements
 
