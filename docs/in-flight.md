@@ -29,11 +29,13 @@ verified (which is how this line came to be written).
 
 ## Active
 
+_Nothing in flight._
+
+## Recently closed (informal log, prune periodically)
+
 - 2026-08-20 `fix/butler-errand-project-id` — #1464: butler-errand template passed `project_id`
   where `todoist.create_task` declares `projectId`, so every errand filed to the default
   inbox. One-line template fix + a scoped regression test. — main session
-
-## Recently closed (informal log, prune periodically)
 
 - 2026-08-19 `fix/evidence-workspace-seed` — the evidence workspace tag (#1455) records WHICH PROCESS
   wrote the row, not which workspace. `evidenceWorkspaceId()` in `yamlRunner` calls
