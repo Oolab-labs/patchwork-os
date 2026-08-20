@@ -62,7 +62,7 @@ steps:
   - when: "{{title}} != DUPLICATE"
     tool: todoist.create_task
     content: "{{title}}"
-    project_id: "{{project_id}}"
+    projectId: "{{project_id}}"
     into: created
 
   # The receipt. `created.id` is what todoist.delete_task needs to undo this —
