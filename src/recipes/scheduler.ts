@@ -458,6 +458,13 @@ export class RecipeScheduler {
       return;
     }
 
+    // Resolve WHAT would be dispatched before deciding WHETHER to, so the
+    // claim below covers both call sites by construction rather than by
+    // someone remembering (#1463). Both protections used to live inside the
+    // YAML branch, and the JSON branch reached neither — invisible because
+    // every installed cron recipe is YAML, so nothing exercises it.
+    let dispatch: (() => void) | null = null;
+
     if (yamlPath) {
       if (!this.opts.runYaml) {
         this.opts.logger?.warn?.(
@@ -476,74 +483,94 @@ export class RecipeScheduler {
         );
         return;
       }
-      // Cross-process claim (#1458) — LAST, and the ordering is load-bearing.
-      // Every local "should I even run this" decision has already been made. If
-      // the claim came first, a bridge with this recipe disabled locally would
-      // burn the slot and then skip, blocking a differently-configured peer that
-      // would have run it — and the recipe would run nowhere.
-      if (slotEpochMs !== undefined) {
-        const claim = claimCronSlot(name, slotEpochMs, this.opts.claim ?? {});
-        if (claim.kind === "taken") {
-          this.opts.logger?.info?.(
-            `[scheduler] skipped "${name}" — another process claimed this tick`,
-          );
-          return;
-        }
-        if (claim.kind === "refused") {
-          // Fail-closed, because the operator asked for it. Loud: a silent skip
-          // of every scheduled recipe is the failure mode fail-open exists to
-          // avoid, so it must never be merely absent from the log.
-          this.opts.logger?.warn?.(
-            `[scheduler] NOT firing "${name}" — cron claim store unusable (${claim.reason}) ` +
-              "and PATCHWORK_CRON_CLAIM_REQUIRED is set",
-          );
-          return;
-        }
-        if (claim.kind === "unavailable") {
-          this.opts.logger?.warn?.(
-            `[scheduler] cron claim store unusable (${claim.reason}) — firing "${name}" ` +
-              "ANYWAY; a second bridge may fire it too. Set PATCHWORK_CRON_CLAIM_REQUIRED=1 to skip instead.",
-          );
-        }
+      const runYaml = this.opts.runYaml;
+      dispatch = () => {
+        this.inflight.add(name);
+        runYaml(name)
+          .catch((err) => {
+            this.opts.logger?.warn?.(
+              `[scheduler] YAML recipe "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          })
+          .finally(() => {
+            this.inflight.delete(name);
+          });
+        this.opts.logger?.info?.(`[scheduler] fired YAML recipe "${name}"`);
+      };
+    } else {
+      // JSON recipe — legacy path
+      const loaded = loadRecipePrompt(this.opts.recipesDir, name);
+      if (!loaded) {
+        // After PR #49, findYamlRecipePath / loadRecipePrompt return null for
+        // recipes whose install dir has a `.disabled` marker — that's the
+        // common case here. "Disappeared" was misleading; prefer a message
+        // that names both possibilities.
+        this.opts.logger?.warn?.(
+          `[scheduler] skipped "${name}" — recipe not found or disabled`,
+        );
+        return;
       }
-      this.inflight.add(name);
-      this.opts
-        .runYaml(name)
-        .catch((err) => {
+      // NO in-flight guard on this path, and that is a limitation rather than
+      // an oversight — #1463 asked for the guard to be hoisted too, and it
+      // cannot be. `enqueue` returns a task id SYNCHRONOUSLY and exposes no
+      // completion signal, so a name added to `this.inflight` here would never
+      // be removed and would wedge the recipe permanently. A wedged recipe is
+      // worse and quieter than the overlap it would prevent.
+      //
+      // The cross-process claim below DOES apply, because it is keyed on the
+      // slot rather than on completion. So a JSON cron recipe is protected
+      // against two bridges firing the same tick, and remains exposed to one
+      // bridge overlapping its own slow previous run. Closing that needs a
+      // completion signal on the enqueue path, which is a change to
+      // SchedulerEnqueue's contract and not this one.
+      dispatch = () => {
+        try {
+          this.opts.enqueue({
+            prompt: loaded.prompt,
+            triggerSource: `cron:${name}`,
+          });
+          this.opts.logger?.info?.(`[scheduler] enqueued "${name}"`);
+        } catch (err) {
           this.opts.logger?.warn?.(
-            `[scheduler] YAML recipe "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+            `[scheduler] failed to enqueue "${name}": ${err instanceof Error ? err.message : String(err)}`,
           );
-        })
-        .finally(() => {
-          this.inflight.delete(name);
-        });
-      this.opts.logger?.info?.(`[scheduler] fired YAML recipe "${name}"`);
-      return;
+        }
+      };
     }
 
-    // JSON recipe — legacy path
-    const loaded = loadRecipePrompt(this.opts.recipesDir, name);
-    if (!loaded) {
-      // After PR #49, findYamlRecipePath / loadRecipePrompt return null for
-      // recipes whose install dir has a `.disabled` marker — that's the
-      // common case here. "Disappeared" was misleading; prefer a message
-      // that names both possibilities.
-      this.opts.logger?.warn?.(
-        `[scheduler] skipped "${name}" — recipe not found or disabled`,
-      );
-      return;
+    // Cross-process claim (#1458) — LAST, and the ordering is load-bearing.
+    // Every local "should I even run this" decision has already been made,
+    // for BOTH dispatch shapes. If the claim came first, a bridge with this
+    // recipe disabled locally — or unable to run it at all — would burn the
+    // slot and then skip, blocking a differently-configured peer that would
+    // have run it, and the recipe would run nowhere.
+    if (slotEpochMs !== undefined) {
+      const claim = claimCronSlot(name, slotEpochMs, this.opts.claim ?? {});
+      if (claim.kind === "taken") {
+        this.opts.logger?.info?.(
+          `[scheduler] skipped "${name}" — another process claimed this tick`,
+        );
+        return;
+      }
+      if (claim.kind === "refused") {
+        // Fail-closed, because the operator asked for it. Loud: a silent skip
+        // of every scheduled recipe is the failure mode fail-open exists to
+        // avoid, so it must never be merely absent from the log.
+        this.opts.logger?.warn?.(
+          `[scheduler] NOT firing "${name}" — cron claim store unusable (${claim.reason}) ` +
+            "and PATCHWORK_CRON_CLAIM_REQUIRED is set",
+        );
+        return;
+      }
+      if (claim.kind === "unavailable") {
+        this.opts.logger?.warn?.(
+          `[scheduler] cron claim store unusable (${claim.reason}) — firing "${name}" ` +
+            "ANYWAY; a second bridge may fire it too. Set PATCHWORK_CRON_CLAIM_REQUIRED=1 to skip instead.",
+        );
+      }
     }
-    try {
-      this.opts.enqueue({
-        prompt: loaded.prompt,
-        triggerSource: `cron:${name}`,
-      });
-      this.opts.logger?.info?.(`[scheduler] enqueued "${name}"`);
-    } catch (err) {
-      this.opts.logger?.warn?.(
-        `[scheduler] failed to enqueue "${name}": ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+
+    dispatch();
   }
 }
 
