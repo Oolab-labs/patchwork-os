@@ -13,12 +13,14 @@ trigger:
   glob: "**/*.{ts,tsx}"
 
 steps:
-  - tool: diagnostics.get
+  - id: read_file
+    tool: diagnostics.get
     uri: "{{file}}"
     filter: error
     into: errors
 
-  - agent:
+  - id: fix
+    agent:
       # Declared `internal` — source, diagnostics, git history, test output, issue
       # text. Declared EXPLICITLY rather than left to the default, which is also
       # `internal`: an absent policy means nobody decided, and a reference template
@@ -71,7 +73,8 @@ steps:
 
   # Only append to the inbox when fixes were applied. When no errors exist
   # the agent outputs nothing (empty string) and {{result}} is empty → falsy → skip.
-  - tool: file.append
+  - id: write_back
+    tool: file.append
     path: ~/.patchwork/inbox/auto-fixes.md
     content: "{{result}}\n\n"
     when: "{{result}}"

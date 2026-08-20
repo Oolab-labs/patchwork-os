@@ -189,6 +189,42 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
           message: `Invalid trigger.type. Must be one of: ${validTypes.join(", ")}`,
         });
       }
+      // An event-triggered recipe whose steps have no `id` can never
+      // register. `collectEventTriggerPrograms` parses with `parseRecipe`, and
+      // `parseStep` calls `requireString(s, "id")` — so it throws, the recipe
+      // is skipped at bridge startup with only a WARN in a log, and it never
+      // fires. Five SHIPPED templates were dead this way.
+      //
+      // Scoped to event triggers on purpose, and the scope is measured: `id`
+      // is required by `parseRecipe` (which also backs the installer), but 20
+      // of 29 shipped templates omit it somewhere and run fine, because the
+      // flat runner does not need it. A global error would break most of the
+      // library to fix five files.
+      if (
+        typeof trigger.type === "string" &&
+        ["file_watch", "git_hook", "on_file_save", "on_test_run"].includes(
+          trigger.type,
+        ) &&
+        Array.isArray(r.steps)
+      ) {
+        (r.steps as unknown[]).forEach((step: unknown, idx: number) => {
+          if (!step || typeof step !== "object" || Array.isArray(step)) return;
+          const id = (step as Record<string, unknown>).id;
+          if (typeof id !== "string" || id.trim() === "") {
+            issues.push({
+              level: "error",
+              message:
+                `Step ${idx + 1}: an event-triggered recipe (trigger.type: ` +
+                `${trigger.type}) requires a non-empty \`id\` on every step. ` +
+                "Without one the recipe never registers — it is skipped at " +
+                "bridge startup and never fires.",
+              path: `steps.${idx}.id`,
+              code: "event-trigger-step-id-missing",
+            });
+          }
+        });
+      }
+
       // A git_hook recipe that lints clean and never fires. `parseTrigger`
       // (parser.ts) requires `event` to be one of these three and throws
       // otherwise, which surfaces only as a startup WARN in a log — the
