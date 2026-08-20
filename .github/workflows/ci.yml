@@ -109,6 +109,19 @@ jobs:
           path: vitest-progress/
           if-no-files-found: warn
           retention-days: 14
+      # `if: always()` for the same reason as above, and it matters more here:
+      # the only run whose coverage numbers anyone wants is the run that FAILED
+      # the threshold, which is exactly the run a success-only condition
+      # discards. See #1386 — the percentages were unrecoverable from the step
+      # log twice, because the retrievable log ends before the failure.
+      - name: Upload coverage summary (#1386)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: coverage/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
 
   schema-audit:
     name: Tool schema breaking-change gate
