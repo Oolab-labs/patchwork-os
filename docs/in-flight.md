@@ -29,7 +29,9 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-20 `fix/doctor-expect-running` — #1481: `doctor`'s denominator is locks that
+  EXIST, not bridges that SHOULD exist, so it exits 0 when a bridge is missing — including
+  when nothing is running at all. Adds `--expect-running [N]`. — main session
 
 ## Recently closed (informal log, prune periodically)
 
