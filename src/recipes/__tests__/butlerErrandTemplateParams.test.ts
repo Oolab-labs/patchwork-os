@@ -86,9 +86,13 @@ describe("#1464: butler-errand template names declared tool parameters", () => {
       if (typeof step.tool !== "string") continue;
       const tool = getTool(step.tool);
       if (!tool) continue;
-      const declared = Object.keys(
-        (tool.paramsSchema?.properties ?? {}) as Record<string, unknown>,
-      );
+      // `paramsSchema` is typed `{}` on RegisteredTool, so `.properties`
+      // needs a narrowing cast — the core-ratchet typecheck is stricter than
+      // the main tsconfig and rejects the property access otherwise.
+      const schema = tool.paramsSchema as {
+        properties?: Record<string, unknown>;
+      };
+      const declared = Object.keys(schema?.properties ?? {});
       for (const key of Object.keys(step)) {
         if (STEP_CONTROL_KEYS.has(key)) continue;
         if (!declared.includes(key)) offenders.push(`${step.tool}.${key}`);
