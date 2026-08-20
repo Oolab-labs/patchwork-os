@@ -29,6 +29,19 @@ steps:
     max: 10
     into: calendar
   - agent:
+      # Declared `personal` because this step HANDLES personal data — mail,
+      # calendar entries, a private task list — even where the prompt text only
+      # says how to go and fetch it (#1473). Classify by what the step handles,
+      # including whatever its tools return.
+      #
+      # CONSEQUENCE, stated so it is not a surprise: if you have registered a
+      # remote destination that does not accept `personal`, this step resolves to
+      # LOCAL_ONLY and REFUSES rather than silently downgrading. That is the
+      # boundary working. Resolve it by pointing this step at a local driver, or
+      # by widening the destination's classifications if that is what you intend.
+      # With no `privacy` block configured the boundary is inert and nothing changes.
+      data_policy:
+        classification: personal
       prompt: |
         You are a personal assistant writing a concise morning brief. Use ONLY the data provided below — do not call any tools or fetch additional information.
 

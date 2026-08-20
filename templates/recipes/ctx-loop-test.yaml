@@ -17,6 +17,12 @@ steps:
     into: recent_commits
 
   - agent:
+      # Declared `internal` — source, diagnostics, git history, test output, issue
+      # text. Declared EXPLICITLY rather than left to the default, which is also
+      # `internal`: an absent policy means nobody decided, and a reference template
+      # should model the deciding (#1473).
+      data_policy:
+        classification: internal
       prompt: |
         You are validating the Patchwork cross-session memory loop end-to-end.
 

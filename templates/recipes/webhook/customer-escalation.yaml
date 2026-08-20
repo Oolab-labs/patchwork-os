@@ -33,6 +33,16 @@ steps:
     query: "{{payload.customer_email}}"
     into: contact
   - agent:
+      # Declared `confidential`: this step handles a THIRD PARTY's data pulled from
+      # a CRM, which is a stronger claim than `personal` — it is not the operator's
+      # own data to route wherever they like, and a customer did not consent to a
+      # vendor's model seeing it (#1473).
+      #
+      # CONSEQUENCE: under any destination that does not accept `confidential` this
+      # step REFUSES rather than downgrading. That is the intended behaviour. With
+      # no `privacy` block configured the boundary is inert and nothing changes.
+      data_policy:
+        classification: confidential
       prompt: |
         Compose a Slack alert for the customer-success team. Keep it under
         12 lines. Include: customer name + company, tier (from contact.tier

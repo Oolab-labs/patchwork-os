@@ -16,6 +16,12 @@ steps:
     max: 30
     into: prs
   - agent:
+      # Declared `internal` — source, diagnostics, git history, test output, issue
+      # text. Declared EXPLICITLY rather than left to the default, which is also
+      # `internal`: an absent policy means nobody decided, and a reference template
+      # should model the deciding (#1473).
+      data_policy:
+        classification: internal
       prompt: |
         Open pull requests:
         {{prs}}
