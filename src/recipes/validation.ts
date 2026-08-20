@@ -155,10 +155,36 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
       // shape error worth flagging.
       !/^@[a-z0-9-]+\/[a-z0-9][a-z0-9-]{0,63}$/.test(r.name)
     ) {
+      // `parseRecipe` REFUSES a name outside RECIPE_NAME_RE, and it backs both
+      // the installer and the event-trigger collector. So this is not a style
+      // preference: the recipe cannot be installed via `recipe install`, and
+      // it can never register an event trigger.
+      //
+      // The severity is SPLIT rather than raised wholesale, and the split is
+      // measured. A cron recipe with such a name still runs — the scheduler
+      // loads it by its own path, and the live logs show no scheduler
+      // complaint about either offending recipe. An error everywhere would
+      // fail recipes that work, which is the opposite mistake and the one that
+      // gets a rule deleted.
+      const eventTriggered =
+        typeof (r.trigger as Record<string, unknown> | undefined)?.type ===
+          "string" &&
+        ["file_watch", "git_hook", "on_file_save", "on_test_run"].includes(
+          (r.trigger as Record<string, unknown>).type as string,
+        );
       issues.push({
-        level: "warning",
+        level: eventTriggered ? "error" : "warning",
         message:
-          "Recipe name should use kebab-case (lowercase letters, numbers, hyphens; max 64 chars; must start with a letter or digit)",
+          "Recipe name must be kebab-case (lowercase letters, numbers, hyphens; " +
+          "max 64 chars; must start with a letter or digit). " +
+          (eventTriggered
+            ? "This recipe declares an event trigger, and a name the parser " +
+              "refuses means it never registers — it is skipped at bridge " +
+              "startup and never fires."
+            : "As written it cannot be installed via `recipe install`, and it " +
+              "could never register an event trigger."),
+        path: "name",
+        code: "recipe-name-invalid",
       });
     }
 
