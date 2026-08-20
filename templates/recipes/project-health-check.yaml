@@ -2,6 +2,13 @@
 apiVersion: patchwork.sh/v1
 name: project-health-check
 description: Fetch git activity, open issues, and diagnostics in parallel, then write a health summary.
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - file.write
+
 trigger:
   type: manual
 maxConcurrency: 4

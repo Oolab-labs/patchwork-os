@@ -1,5 +1,12 @@
 name: lint-on-save
 description: On every save of a .ts/.tsx file, surface new diagnostics to the inbox.
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - file.append
+
 trigger:
   type: on_file_save
   glob: "**/*.{ts,tsx}"

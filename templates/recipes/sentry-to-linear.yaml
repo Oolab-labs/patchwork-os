@@ -15,6 +15,13 @@ description: |
 #     path: /hooks/sentry-to-linear
 #   Then POST from a Sentry alert rule to https://<bridge-url>/hooks/sentry-to-linear
 
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - file.write
+
 trigger:
   type: manual
   vars:

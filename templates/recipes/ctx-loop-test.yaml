@@ -9,6 +9,13 @@ description: |
   so the agent subprocess has MCP access. Running via `patchwork recipe run`
   (local yamlRunner) will fail at Step 1 — the local claude -p subprocess has
   no bridge MCP context. Trigger from the dashboard Recipes page instead.
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - file.write
+
 trigger:
   type: manual
 steps:

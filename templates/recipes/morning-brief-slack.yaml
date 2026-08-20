@@ -1,5 +1,13 @@
 name: morning-brief-slack
 description: Daily morning brief combining calendar, GitHub PRs, and Linear issues — posted to Slack.
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - file.write
+  - slack.post_message
+
 trigger:
   type: cron
   at: "0 8 * * 1-5"

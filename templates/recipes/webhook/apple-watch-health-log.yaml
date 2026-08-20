@@ -42,6 +42,14 @@ description: |
       -H 'Content-Type: application/json' \
       -d '{"sleep_hours":7.4,"sleep_quality":"restful","move_percent":112,"move_calories":645,"exercise_percent":150,"exercise_min":45,"stand_percent":100,"notes":"Closed all three rings."}'
 
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - file.append
+  - http.post
+
 trigger:
   type: webhook
   path: /apple-watch-health

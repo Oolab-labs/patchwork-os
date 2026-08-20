@@ -23,6 +23,13 @@ description: |
       -H 'Content-Type: application/json' \
       -d '{"title":"checkout p99 over 2s","severity":"high","source":"datadog","url":"https://app.datadoghq.com/monitor/123"}'
 
+# Writes this recipe performs, acknowledged up front. Enforced only when
+# PATCHWORK_FLAG_ENFORCE_ALLOWWRITES is set, which is off by default — but a
+# template that omits it breaks at its write step the moment an operator turns
+# that hardening flag on, which is a reasonable thing for them to do.
+allowWrites:
+  - slack.post_message
+
 trigger:
   type: webhook
   path: /incident-intake
