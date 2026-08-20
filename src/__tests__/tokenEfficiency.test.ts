@@ -45,6 +45,26 @@ describe("tokenEfficiencyStatus", () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    // #1483 — `findActiveLockFile` short-circuits on PATCHWORK_BRIDGE_PORT
+    // BEFORE reaching the discovery path every mock below is written for:
+    //
+    //   const portEnv = process.env.PATCHWORK_BRIDGE_PORT;
+    //   if (portEnv && /^\d{1,5}$/.test(portEnv)) { ...; return ...; }
+    //   const found = findBridgeLock({ lockDir });   // <- what we mock
+    //
+    // So on a machine where that variable is set — which CLAUDE.md documents
+    // as the supported way for CLI subcommands to find the bridge, and which
+    // anyone running two bridges pins — three of these tests failed, while CI
+    // stayed green because CI has it unset. A false red that nobody who sees
+    // it can reproduce, and nobody who could reproduce it ever sees.
+    //
+    // The file already guards one leak (the `default` export, see the mock
+    // factory above). The environment was the second one, and unstubbed
+    // ambient state is the same family as the PATCHWORK_HOME lesson: a spy on
+    // the reader does not help when the code never reaches the reader.
+    vi.stubEnv("PATCHWORK_BRIDGE_PORT", "");
+    vi.stubEnv("PATCHWORK_BRIDGE_URL", "");
+
     consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.mocked(config.loadConfigFile).mockReturnValue({
       lspVerbosity: "minimal",
@@ -52,6 +72,7 @@ describe("tokenEfficiencyStatus", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     consoleSpy.mockRestore();
     vi.restoreAllMocks();
   });
