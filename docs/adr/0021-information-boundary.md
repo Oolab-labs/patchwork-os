@@ -179,6 +179,51 @@ are unaffected. This is the same fail-soft choice `members.json` makes and for
 the same reason: a boundary that breaks every existing install to solve a
 problem those installs do not have will be turned off.
 
+#### Classify by what the step HANDLES, not by what is in its prompt
+
+An author writing a `data_policy` naturally reads the prompt and classifies what
+they see there. For a tool-enabled driver (`claude-code`, `subprocess`) that
+**under-classifies**, because the prompt is frequently *instructions to go and
+fetch the data* rather than the data itself.
+
+```yaml
+- id: weekly_summary
+  agent:
+    driver: claude-code
+    prompt: |
+      Step 1 — Gather data. Run:
+        ls -1t ~/records/*.md | head -7
+      For each file, extract the recorded measurements and summarise the week.
+```
+
+Read literally, that prompt contains no records at all. Read for what the step
+*handles*, it processes a week of them. **The second reading is the correct
+one, and it is not the one a careful author necessarily arrives at.** The
+abstract rule is easy to agree with and still get wrong, which is why the
+example is here rather than only the rule.
+
+So: **classify by everything the step will handle, including whatever its tools
+will fetch.** If a human could not read the output without seeing the
+underlying records, the step handles those records.
+
+This is not a hole in enforcement, and the obvious inference from the above is
+wrong. The boundary gates the **dispatch**, not the payload. A step declared
+`personal` against a remote destination resolves to `LOCAL_ONLY`, so the step
+runs against a local model and *that* model performs the tool fetch — the data
+never leaves. `DENY` stops the step outright. Either way the fetch happens on
+the correct side of the line, or does not happen.
+
+The gap is entirely in **how an author picks the label**, and this ADR's design
+already anticipates it: classification is *declared, never detected*, precisely
+so that it can describe a step's subject matter rather than its bytes. What was
+missing was saying so where an author reads.
+
+`recipe lint` emits a hint for the population most likely to be affected — an
+agent step with a tool-enabled driver and no `data_policy`. It is a hint and
+not an error: absence is a legitimate default, deliberately, and the hint marks
+where the default is most likely to be the wrong one. It does not and cannot
+find an under-classified step that *did* declare a policy.
+
 ### Phase 2 — the decision
 
 `ALLOW` · `ALLOW_REDACTED` · `LOCAL_ONLY` · `REQUIRE_APPROVAL` · `DENY`
