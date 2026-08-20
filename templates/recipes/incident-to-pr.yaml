@@ -67,6 +67,12 @@ trigger:
 steps:
   - id: investigate
     agent:
+      # Declared `internal` — source, diagnostics, git history, test output, issue
+      # text. Declared EXPLICITLY rather than left to the default, which is also
+      # `internal`: an absent policy means nobody decided, and a reference template
+      # should model the deciding (#1473).
+      data_policy:
+        classification: internal
       driver: claude-code
       prompt: |
         A production incident has fired. Root-cause it against THIS repository.
@@ -92,6 +98,12 @@ steps:
     awaits:
       - investigate
     agent:
+      # Declared `internal` — source, diagnostics, git history, test output, issue
+      # text. Declared EXPLICITLY rather than left to the default, which is also
+      # `internal`: an absent policy means nobody decided, and a reference template
+      # should model the deciding (#1473).
+      data_policy:
+        classification: internal
       driver: claude-code
       prompt: |
         Using the root-cause analysis below, write a concrete, MINIMAL fix.
@@ -123,6 +135,12 @@ steps:
     awaits:
       - draft_fix
     agent:
+      # Declared `internal` — source, diagnostics, git history, test output, issue
+      # text. Declared EXPLICITLY rather than left to the default, which is also
+      # `internal`: an absent policy means nobody decided, and a reference template
+      # should model the deciding (#1473).
+      data_policy:
+        classification: internal
       kind: judge
       reviews: fix_draft
       max_revisions: 2
@@ -148,6 +166,12 @@ steps:
     awaits:
       - review_fix
     agent:
+      # Declared `internal` — source, diagnostics, git history, test output, issue
+      # text. Declared EXPLICITLY rather than left to the default, which is also
+      # `internal`: an absent policy means nobody decided, and a reference template
+      # should model the deciding (#1473).
+      data_policy:
+        classification: internal
       driver: claude-code
       prompt: |
         The fix below has passed judge review. Open a pull request for it.
