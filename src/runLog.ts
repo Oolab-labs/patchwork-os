@@ -41,7 +41,16 @@ import {
  * dropped — see the `append()` implementation for the exact ordering.
  */
 
-export type RunTrigger = "cron" | "webhook" | "recipe";
+/**
+ * How a run was started.
+ *
+ * `automation` covers the event triggers — `file_watch`, `git_hook`,
+ * `on_file_save`, `on_test_run`. It was absent until #1487, and its absence
+ * was not merely a missing label: `record()` bails when `parseTrigger` fails,
+ * so those runs were executed and never written down at all. Measured across
+ * 1214 live rows, the log held only `cron` and `recipe`.
+ */
+export type RunTrigger = "cron" | "webhook" | "recipe" | "automation";
 export type RunStatus =
   | "running"
   | "done"
@@ -413,7 +422,9 @@ export class RecipeRunLog {
     if (!triggerSource) return null;
     // Format: "<kind>:<name>" or "<kind>:<name>:p<parentSeq>"
     // parentSeq suffix ":p<N>" is always at the end and uses a numeric-only value.
-    const m = /^(cron|webhook|recipe):(.+?)(?::p(\d+))?$/.exec(triggerSource);
+    const m = /^(cron|webhook|recipe|automation):(.+?)(?::p(\d+))?$/.exec(
+      triggerSource,
+    );
     if (!m?.[1] || !m[2]) return null;
     return {
       trigger: m[1] as RunTrigger,

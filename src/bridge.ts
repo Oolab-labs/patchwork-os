@@ -1453,7 +1453,14 @@ export class Bridge {
                 filePath: patchworkPath("recipes", `${opts.recipeName}.yaml`),
                 name: opts.recipeName,
                 taskIdPrefix: `automation-recipe-${opts.recipeName}`,
-                triggerSourceSuffix: `automation:${opts.triggerSource}`,
+                // The RECIPE name, not the hook type (#1487). Every other kind
+                // carries the recipe — `webhook:${match.name}`, `recipe:${name}`
+                // — and this carried `program.hookType`, so once the run log
+                // learned to parse `automation:` it would have filed all these
+                // recipes under a handful of names invented from hook types,
+                // merging distinct recipes and cross-attributing their trust.
+                // The hook type is still available to the run via seedContext.
+                triggerSourceSuffix: `automation:${opts.recipeName}`,
                 logLabel: `automation "${opts.recipeName}"`,
                 seedContext: Object.fromEntries(Object.entries(opts.eventData)),
               }).then((r) => {
@@ -1501,7 +1508,14 @@ export class Bridge {
                   filePath: patchworkPath("recipes", `${opts.recipeName}.yaml`),
                   name: opts.recipeName,
                   taskIdPrefix: `automation-recipe-${opts.recipeName}`,
-                  triggerSourceSuffix: `automation:${opts.triggerSource}`,
+                  // The RECIPE name, not the hook type (#1487). Every other kind
+                  // carries the recipe — `webhook:${match.name}`, `recipe:${name}`
+                  // — and this carried `program.hookType`, so once the run log
+                  // learned to parse `automation:` it would have filed all these
+                  // recipes under a handful of names invented from hook types,
+                  // merging distinct recipes and cross-attributing their trust.
+                  // The hook type is still available to the run via seedContext.
+                  triggerSourceSuffix: `automation:${opts.recipeName}`,
                   logLabel: `automation "${opts.recipeName}"`,
                   seedContext: Object.fromEntries(
                     Object.entries(opts.eventData),
