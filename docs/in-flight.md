@@ -29,12 +29,14 @@ verified (which is how this line came to be written).
 
 ## Active
 
+_Nothing in flight._
+
+## Recently closed (informal log, prune periodically)
+
 - 2026-08-20 `fix/cron-claim-legacy-json` — #1463: both cron guards lived inside the
   `if (yamlPath)` branch, so the legacy-JSON dispatch site had neither. Hoists the claim
   above the fork; the in-flight guard cannot follow (`enqueue` gives no completion
   signal, so a name added there would never clear). — main session
-
-## Recently closed (informal log, prune periodically)
 
 - 2026-08-20 `fix/token-efficiency-env-isolation` — #1483: `findActiveLockFile` short-circuits
   on `PATCHWORK_BRIDGE_PORT` before the discovery path the tests mock, so three tests failed
