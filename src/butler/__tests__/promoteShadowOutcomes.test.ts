@@ -323,3 +323,64 @@ describe("a worker cannot reach this", () => {
     expect(SRC).toMatch(/PATCHWORK_FLAG_BUTLER_PROMOTE/);
   });
 });
+
+/**
+ * #1477 — the report counted ledger ROWS in its headline and distinct ACTIONS
+ * in the breakdown beneath it, with no line saying the unit had changed.
+ *
+ * Found by running the command against the live ledger: it printed 9 rows and
+ * then "1 promotable · 2 withheld", and one plus two is three. Nothing was
+ * wrong with the fold — an errand is re-graded on every pass, so the same ref
+ * legitimately appears many times and `latest` keeps the newest grade. The
+ * reporting was wrong, and it was wrong in the one place it matters most: the
+ * summary a person reads before authorising a one-way write to the trust dial.
+ * The two plausible readings of a gap like that — rows silently dropped, rows
+ * that failed to parse — are both good reasons to refuse.
+ */
+describe("#1477: the report's arithmetic closes", () => {
+  it("counts distinct actions separately from ledger rows", () => {
+    // Three errands, each graded three times — the live shape exactly.
+    seedLedger([
+      { ref: "todoist.create_task:aaa", disposition: "unknown", gradedAt: 1 },
+      { ref: "todoist.create_task:bbb", disposition: "unknown", gradedAt: 2 },
+      { ref: "todoist.create_task:ccc", disposition: "unknown", gradedAt: 3 },
+      { ref: "todoist.create_task:aaa", disposition: "unknown", gradedAt: 4 },
+      { ref: "todoist.create_task:bbb", disposition: "unknown", gradedAt: 5 },
+      { ref: "todoist.create_task:ccc", disposition: "unknown", gradedAt: 6 },
+      { ref: "todoist.create_task:aaa", disposition: "confirmed", gradedAt: 7 },
+      { ref: "todoist.create_task:bbb", disposition: "unknown", gradedAt: 8 },
+      { ref: "todoist.create_task:ccc", disposition: "unknown", gradedAt: 9 },
+    ]);
+    const r = promoteShadowOutcomes({ patchworkDir: dir, dryRun: true });
+
+    expect(r.rows).toBe(9);
+    expect(r.actions).toBe(3);
+    // The breakdown is per-action, and it must account for every action.
+    expect(r.promotable + r.withheld).toBe(r.actions);
+  });
+
+  it("names both units in the rendered report", () => {
+    seedLedger([
+      { ref: "todoist.create_task:aaa", disposition: "unknown", gradedAt: 1 },
+      { ref: "todoist.create_task:aaa", disposition: "confirmed", gradedAt: 2 },
+    ]);
+    const out = formatPromoteResult(
+      promoteShadowOutcomes({ patchworkDir: dir, dryRun: true }),
+    );
+    expect(out).toMatch(/2 graded row\(s\)/);
+    expect(out).toMatch(/1 distinct action/);
+    // A reader must be told WHY the two numbers differ, or the report has
+    // merely replaced an unexplained gap with an unexplained pair.
+    expect(out).toMatch(/re-graded/i);
+  });
+
+  it("keeps rows and actions equal when nothing was re-graded", () => {
+    seedLedger([
+      { ref: "todoist.create_task:aaa", disposition: "confirmed", gradedAt: 1 },
+      { ref: "todoist.create_task:bbb", disposition: "unknown", gradedAt: 2 },
+    ]);
+    const r = promoteShadowOutcomes({ patchworkDir: dir, dryRun: true });
+    expect(r.rows).toBe(2);
+    expect(r.actions).toBe(2);
+  });
+});

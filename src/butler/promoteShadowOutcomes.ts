@@ -73,11 +73,24 @@ export interface PromoteOptions {
 }
 
 export interface PromoteResult {
-  /** Every graded row considered — the DENOMINATOR, always reported. */
+  /**
+   * Every graded row read from the shadow ledger.
+   *
+   * NOT the denominator of the breakdown below — see `actions`. The two are in
+   * different units, and printing them as though they were the same is #1477.
+   */
   rows: number;
-  /** Rows whose disposition is `confirmed` or `junk`. */
+  /**
+   * Distinct actions those rows cover, after folding by ref. THIS is the
+   * denominator of `promotable` / `withheld` / `alreadyRecorded`.
+   *
+   * An errand is re-graded on every ingester pass, so one action legitimately
+   * contributes many rows and only its latest grade counts.
+   */
+  actions: number;
+  /** Actions whose latest disposition is `confirmed` or `junk`. */
   promotable: number;
-  /** Rows withheld because the grader said `unknown`. */
+  /** Actions withheld because the latest grade was `unknown`. */
   withheld: number;
   /** Rows written to the outcome log. Zero on a dry run or with the flag off. */
   promoted: number;
@@ -139,6 +152,9 @@ export function promoteShadowOutcomes(opts: PromoteOptions): PromoteResult {
   const enabled = flagEnabled(opts);
   const result: PromoteResult = {
     rows: rows.length,
+    // Filled in once the fold below has run — it is the size of `latest`, and
+    // deriving it any other way would let the two drift apart again.
+    actions: 0,
     promotable: 0,
     withheld: 0,
     promoted: 0,
@@ -159,6 +175,8 @@ export function promoteShadowOutcomes(opts: PromoteOptions): PromoteResult {
     const prev = latest.get(row.ref);
     if (!prev || row.gradedAt >= prev.gradedAt) latest.set(row.ref, row);
   }
+
+  result.actions = latest.size;
 
   for (const row of latest.values()) {
     if (!wouldCountAsEvidence(row.disposition)) {
@@ -207,9 +225,20 @@ export function promoteShadowOutcomes(opts: PromoteOptions): PromoteResult {
  */
 export function formatPromoteResult(r: PromoteResult): string {
   const lines: string[] = [];
-  lines.push(`[butler-promote] ${r.rows} graded row(s) in the shadow ledger`);
   lines.push(
-    `  ${r.promotable} promotable (confirmed or junk) · ${r.withheld} withheld as unknown`,
+    `[butler-promote] ${r.rows} graded row(s) covering ${r.actions} distinct action(s)`,
+  );
+  // Say WHY the two differ whenever they do. Printing an unexplained pair is
+  // only marginally better than printing an unexplained gap — the reader still
+  // has to guess, and the plausible guesses are all worse than the truth.
+  if (r.rows !== r.actions) {
+    lines.push(
+      "  (an errand is re-graded on every pass; only its latest grade counts)",
+    );
+  }
+  lines.push(
+    `  of those ${r.actions}: ${r.promotable} promotable (confirmed or junk) · ` +
+      `${r.withheld} withheld as unknown`,
   );
   if (r.alreadyRecorded > 0) {
     lines.push(`  ${r.alreadyRecorded} already recorded with the same verdict`);

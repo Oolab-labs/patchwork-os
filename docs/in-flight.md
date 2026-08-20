@@ -29,7 +29,10 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-20 `fix/butler-promote-denominator` — #1477: the promote report counted ledger
+  ROWS in its headline and distinct ACTIONS in the breakdown, with nothing saying the unit
+  changed, so its arithmetic did not close on the screen a person reads before a one-way
+  write. — main session
 
 ## Recently closed (informal log, prune periodically)
 
