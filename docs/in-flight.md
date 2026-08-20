@@ -29,11 +29,15 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-20 `fix/token-efficiency-env-isolation` — #1483: `findActiveLockFile` short-circuits
+  on `PATCHWORK_BRIDGE_PORT` before the discovery path the tests mock, so three tests failed
+  on any machine with the documented variable set while CI stayed green. — main session
+
+## Recently closed (informal log, prune periodically)
+
 - 2026-08-20 `fix/doctor-expect-running` — #1481: `doctor`'s denominator is locks that
   EXIST, not bridges that SHOULD exist, so it exits 0 when a bridge is missing — including
   when nothing is running at all. Adds `--expect-running [N]`. — main session
-
-## Recently closed (informal log, prune periodically)
 
 - 2026-08-20 `docs/classify-by-what-a-step-handles` — #1473: an author classifies what the
   prompt shows, but a tool-enabled step's prompt is instructions to FETCH, so it
