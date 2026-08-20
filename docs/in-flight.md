@@ -29,16 +29,17 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-20 `fix/butler-promote-denominator` — #1477: the promote report counted ledger
-  ROWS in its headline and distinct ACTIONS in the breakdown, with nothing saying the unit
-  changed, so its arithmetic did not close on the screen a person reads before a one-way
-  write. — main session
 - 2026-08-20 `docs/classify-by-what-a-step-handles` — #1473: an author classifies what the
   prompt shows, but a tool-enabled step's prompt is instructions to FETCH, so it
   under-classifies. ADR-0021 paragraph + worked example, plus a `recipe lint` WARNING (never
   an error) on the population most likely affected. — main session
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-20 `fix/butler-promote-denominator` — #1477: the promote report counted ledger
+  ROWS in its headline and distinct ACTIONS in the breakdown, with nothing saying the unit
+  changed, so its arithmetic did not close on the screen a person reads before a one-way
+  write. — main session
 
 - 2026-08-20 `fix/butler-errand-project-id` — #1464: butler-errand template passed `project_id`
   where `todoist.create_task` declares `projectId`, so every errand filed to the default
