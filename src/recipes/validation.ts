@@ -3,7 +3,10 @@ import cron from "node-cron";
 import { createAjv2020, type ErrorObject } from "../ajv2020.js";
 import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
 import { unsupportedKeysOf, unsupportedStepMessage } from "./compoundSteps.js";
-import { misplacedDataPolicy } from "./dataPolicyPlacement.js";
+import {
+  misplacedDataPolicy,
+  unclassifiedToolEnabledAgent,
+} from "./dataPolicyPlacement.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
@@ -271,6 +274,19 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
             message: `Step ${i + 1}: ${bad.message}`,
             path: `steps.${i}.${bad.key}`,
             code: "data-policy-misplaced",
+          });
+        }
+        // #1473 — a WARNING, never an error. Absence of a policy is a
+        // legitimate default; this marks where that default is most likely to
+        // be the wrong one, because the prompt of a tool-enabled step is often
+        // instructions to fetch rather than the data being handled.
+        const hint = unclassifiedToolEnabledAgent(rawSteps[i]);
+        if (hint) {
+          issues.push({
+            level: "warning",
+            message: `Step ${i + 1}: ${hint.message}`,
+            path: `steps.${i}.agent`,
+            code: "data-policy-tool-enabled-unclassified",
           });
         }
       }

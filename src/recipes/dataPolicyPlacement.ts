@@ -99,3 +99,72 @@ export function misplacedDataPolicy(step: unknown): MisplacedDataPolicy | null {
       "A classification on a step that never talks to a model describes nothing.",
   };
 }
+
+/**
+ * Drivers that spawn a CLI able to run tools, and so can FETCH data the prompt
+ * does not contain.
+ *
+ * Deliberately a closed list of the drivers that are explicitly tool-enabled.
+ * It does NOT include `auto` (the value an agent step gets when it names no
+ * driver), and that limit is real rather than an oversight: `auto` resolves at
+ * RUN time to whatever the deployment configured, so it may well become one of
+ * these. Flagging every driver-less agent step would flag most steps in most
+ * recipes, and a hint that fires everywhere is one people learn to skip.
+ *
+ * So the hint below covers the population it can name with certainty and says
+ * so out loud. It is not a claim that every under-classified step is caught —
+ * a correct rule pointed at a partial surface, presented as total, is the
+ * recurring defect this codebase keeps paying for.
+ */
+const TOOL_ENABLED_DRIVERS = new Set(["claude-code", "subprocess", "codex"]);
+
+export interface UnclassifiedToolStep {
+  message: string;
+  key: "data_policy";
+}
+
+/**
+ * Hint at an agent step that can fetch data and declared no classification.
+ *
+ * A HINT, never an error. Absence of a `data_policy` is a legitimate default
+ * (ADR-0021 fail-soft: absent ⇒ `internal`), and the shadow report already
+ * counts the defaulted population. What this adds is authoring-time signal at
+ * the point where the default is most likely to be WRONG — a tool-enabled step
+ * whose prompt is instructions to go and fetch rather than the data itself, so
+ * an author classifying what they can see under-classifies what the step
+ * handles.
+ *
+ * It cannot find an under-classified step that DID declare a policy. Nothing
+ * can: classification is declared and never detected, on purpose.
+ */
+export function unclassifiedToolEnabledAgent(
+  step: unknown,
+): UnclassifiedToolStep | null {
+  if (!step || typeof step !== "object" || Array.isArray(step)) return null;
+  const rec = step as Record<string, unknown>;
+
+  const agent = rec.agent;
+  if (!agent || typeof agent !== "object" || Array.isArray(agent)) return null;
+  const agentRec = agent as Record<string, unknown>;
+
+  // A policy declared at step level is a DIFFERENT defect with its own error
+  // (`misplacedDataPolicy`). Staying silent here keeps one author mistake to
+  // one message instead of two that suggest opposite fixes.
+  if (rec.data_policy !== undefined) return null;
+  if (agentRec.data_policy !== undefined) return null;
+
+  const driver =
+    typeof agentRec.driver === "string" ? agentRec.driver : undefined;
+  if (driver === undefined || !TOOL_ENABLED_DRIVERS.has(driver)) return null;
+
+  return {
+    key: "data_policy",
+    message:
+      `agent step uses the tool-enabled driver "${driver}" and declares no \`data_policy\`, ` +
+      "so it dispatches at the default `internal` classification. Classify by what the step " +
+      "HANDLES — including anything its tools will fetch — not by what appears in the prompt: " +
+      "a prompt that only says how to go and read the records still handles those records. " +
+      "This is a hint, not an error; absence is a legitimate default, and this hint cannot see " +
+      "a step whose driver is `auto`.",
+  };
+}
