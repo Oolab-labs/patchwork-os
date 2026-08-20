@@ -1141,3 +1141,59 @@ describe("RecipeRunLog — inboxOutputs (Phase 0β provenance)", () => {
     expect(found?.inboxOutputs).toBeUndefined();
   });
 });
+
+/**
+ * #1487 — event-triggered runs were never recorded at all.
+ *
+ * `parseTrigger` accepted `cron|webhook|recipe`; `bridge.ts` emits
+ * `automation:*`; and `record()` bails on a failed parse — so the run executed
+ * and nothing was written. Measured across the live log plus its rotation
+ * archive: 1214 rows, `cron` 1087 and `recipe` 127, and nothing else. Eleven
+ * installed recipes declare `file_watch` / `git_hook` / `on_file_save` /
+ * `on_test_run` and not one of their runs had ever appeared.
+ *
+ * That matters beyond ops visibility: the run log IS the trust evidence the
+ * autonomy gate replays, so a trigger class absent from it can never earn or
+ * lose trust.
+ *
+ * THE SECOND HALF, which is easy to miss and worse than the first: the emitted
+ * string carried `program.hookType`, not the recipe name — `automation:onFileSave`.
+ * Every other kind carries the recipe (`webhook:${match.name}`,
+ * `recipe:${name}`). Teaching the parser `automation` WITHOUT fixing the
+ * emission would have recorded all eleven recipes under a handful of invented
+ * names taken from hook types, collapsing distinct recipes into one and
+ * attributing their trust to each other. That is materially worse than
+ * recording nothing, and it would have looked like a fix.
+ */
+describe("#1487: automation-triggered runs are recordable", () => {
+  it("parses an automation trigger and keeps the recipe name", () => {
+    expect(RecipeRunLog.parseTrigger("automation:lint-on-save")).toEqual({
+      trigger: "automation",
+      recipeName: "lint-on-save",
+    });
+  });
+
+  it("preserves colons in an automation recipe name", () => {
+    expect(RecipeRunLog.parseTrigger("automation:foo:bar")).toEqual({
+      trigger: "automation",
+      recipeName: "foo:bar",
+    });
+  });
+
+  it("still extracts a parentSeq suffix", () => {
+    expect(RecipeRunLog.parseTrigger("automation:child:p9")).toEqual({
+      trigger: "automation",
+      recipeName: "child",
+      parentSeq: 9,
+    });
+  });
+
+  it("rejects an automation source with no name", () => {
+    expect(RecipeRunLog.parseTrigger("automation:")).toBeNull();
+  });
+
+  it("leaves unrelated sources alone", () => {
+    expect(RecipeRunLog.parseTrigger("onFileSave")).toBeNull();
+    expect(RecipeRunLog.parseTrigger("automation")).toBeNull();
+  });
+});

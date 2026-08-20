@@ -44,7 +44,7 @@ import {
   setRecipeEnabled,
   setTrustLevel,
 } from "./recipesHttp.js";
-import type { RecipeRunLog } from "./runLog.js";
+import type { RecipeRunLog, RunTrigger } from "./runLog.js";
 import type { Server } from "./server.js";
 import { boundaryForRecipe } from "./workers/boundaryPreview.js";
 import {
@@ -685,7 +685,9 @@ export class RecipeOrchestration {
       return this.deps.recipeRunLog.query({
         ...(q.limit !== undefined && { limit: q.limit }),
         ...(q.trigger !== undefined && {
-          trigger: q.trigger as "cron" | "webhook" | "recipe",
+          // Widened for #1487 — a hand-written union here silently excluded
+          // `automation` from run queries the moment the type gained it.
+          trigger: q.trigger as RunTrigger,
         }),
         ...(q.status !== undefined && {
           status: q.status as
