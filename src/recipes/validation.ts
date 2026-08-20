@@ -189,6 +189,51 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
           message: `Invalid trigger.type. Must be one of: ${validTypes.join(", ")}`,
         });
       }
+      // A git_hook recipe that lints clean and never fires. `parseTrigger`
+      // (parser.ts) requires `event` to be one of these three and throws
+      // otherwise, which surfaces only as a startup WARN in a log — the
+      // recipe is skipped and nothing else says so.
+      //
+      // Observed live: two installed recipes had been silently dead this way,
+      // both naming the key `on:` with an otherwise VALID value. Same
+      // reasoning as the `cron.at` check below, which exists so the author
+      // sees this at save time rather than never.
+      if (trigger.type === "git_hook") {
+        const GIT_HOOK_EVENTS = ["post-commit", "pre-push", "post-merge"];
+        const event = trigger.event;
+        if (event === undefined) {
+          // `on:` is the natural guess and what GitHub Actions uses, so name
+          // it. A generic "event is required" would be correct and much less
+          // useful — the author DID say post-commit; the KEY is wrong, not the
+          // value, and a message about the value sends them hunting the wrong
+          // thing.
+          const hint =
+            (trigger as Record<string, unknown>).on !== undefined
+              ? " Found `on` instead — rename it to `event`."
+              : "";
+          issues.push({
+            level: "error",
+            message:
+              `git_hook trigger requires \`event\` (one of: ${GIT_HOOK_EVENTS.join(", ")}).` +
+              `${hint} Without it the recipe is skipped at bridge startup and never fires.`,
+            path: "trigger.event",
+            code: "git-hook-event-missing",
+          });
+        } else if (
+          typeof event !== "string" ||
+          !GIT_HOOK_EVENTS.includes(event)
+        ) {
+          issues.push({
+            level: "error",
+            message:
+              `Invalid git_hook.event ${JSON.stringify(event)}. Must be one of: ` +
+              `${GIT_HOOK_EVENTS.join(", ")}. Otherwise the recipe is skipped at ` +
+              "bridge startup and never fires.",
+            path: "trigger.event",
+            code: "git-hook-event-invalid",
+          });
+        }
+      }
       if (trigger.type === "cron" && !trigger.at) {
         issues.push({
           level: "warning",

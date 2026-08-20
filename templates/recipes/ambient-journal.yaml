@@ -2,7 +2,11 @@ name: ambient-journal
 description: Append a timestamped line to your daily journal whenever a git commit lands.
 trigger:
   type: git_hook
-  on: post-commit
+  # The key is `event`, not `on` (#1464-family). The parser requires
+  # `event` and skips the recipe at bridge startup otherwise, with only a
+  # WARN in a log — so `on:` produced a recipe that linted clean and never
+  # fired. `recipe lint` now refuses it.
+  event: post-commit
 steps:
   - tool: file.append
     path: ~/.patchwork/journal/{{date}}.md
