@@ -33,6 +33,22 @@ _Nothing in flight._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-21 `fix/roster-unreadable-is-not-an-owner` — #1501: `loadRoster` answered five
+  situations with one implicit OWNER, four of which mean "a membership decision exists and
+  we could not read it" — so corrupting `members.json` was a way to become the owner.
+  Inert today (zero production call sites consult the roster to permit anything), which is
+  the argument for fixing it before the first consumer arms it. — main session
+
+- 2026-08-21 `docs/adr-0023-sync-model` — #1500: ADR-0023. The multitenant fork's
+  `COPY src/` had drifted 145 files since its last sync (2026-06-08) and every governance
+  feature built here since was absent from it, so a fix landed here reached zero hosted
+  tenants. Decided: the tenant image installs a pinned `patchwork-os` from npm. — main session
+
+- 2026-08-21 `docs/prune-two-false-claims` — #1499: two CLAUDE.md claims were false and both
+  mis-scoped work — the "verbatim vendored copy" of `src/`, and the session cookie payload
+  being "literally `v1.${expiresAt}`" (dead since ADR-0020 Phase A). Called out rather than
+  deleted. — main session
+
 - 2026-08-20 `fix/cron-claim-legacy-json` — #1463: both cron guards lived inside the
   `if (yamlPath)` branch, so the legacy-JSON dispatch site had neither. Hoists the claim
   above the fork; the in-flight guard cannot follow (`enqueue` gives no completion
@@ -50,12 +66,6 @@ _Nothing in flight._
   prompt shows, but a tool-enabled step's prompt is instructions to FETCH, so it
   under-classifies. ADR-0021 paragraph + worked example, plus a `recipe lint` WARNING (never
   an error) on the population most likely affected. — main session
-
-- 2026-08-20 `fix/doctor-expect-running` — #1481: `doctor`'s denominator is locks that
-  EXIST, not bridges that SHOULD exist, so it exits 0 when a bridge is missing — including
-  when nothing is running at all. Adds `--expect-running [N]`. — main session
-
-## Recently closed (informal log, prune periodically)
 
 - 2026-08-20 `fix/butler-promote-denominator` — #1477: the promote report counted ledger
   ROWS in its headline and distinct ACTIONS in the breakdown, with nothing saying the unit
