@@ -18,7 +18,7 @@ import { implicitOwner } from "../roster.js";
 const SECRET = "d".repeat(48);
 
 function rosterOf(...members: Roster["members"]): Roster {
-  return { members, implicit: false, dropped: [] };
+  return { members, implicit: false, unreadable: false, dropped: [] };
 }
 
 const ada: Roster["members"][number] = {
@@ -104,7 +104,12 @@ describe("createApproverResolver", () => {
     const owner = implicitOwner();
     const cookie = await signSession({ memberId: owner.id });
     const resolve = createApproverResolver({
-      rosterFor: () => ({ members: [owner], implicit: true, dropped: [] }),
+      rosterFor: () => ({
+        members: [owner],
+        implicit: true,
+        unreadable: false,
+        dropped: [],
+      }),
     });
     // No members.json exists, so this "member" was synthesised as a degraded
     // default rather than configured by anyone. Attributing to them would be

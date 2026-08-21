@@ -28,7 +28,12 @@ const ada: Roster["members"][number] = {
   active: true,
 };
 
-const roster: Roster = { members: [ada], implicit: false, dropped: [] };
+const roster: Roster = {
+  members: [ada],
+  implicit: false,
+  unreadable: false,
+  dropped: [],
+};
 
 function makeQueue(): ApprovalQueue {
   return {

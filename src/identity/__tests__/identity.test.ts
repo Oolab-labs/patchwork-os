@@ -270,11 +270,22 @@ describe("loadRoster", () => {
     expect(r.members).toEqual([implicitOwner()]);
   });
 
-  it("malformed JSON degrades to the implicit owner rather than locking anyone out", () => {
-    // Opposite stance to the approval gate's fail-closed (ADR-0016), and
-    // deliberately so: this decides who you are on your own machine.
+  it("malformed JSON is UNREADABLE, not the implicit owner", () => {
+    // Changed deliberately. This test previously asserted `implicit === true`,
+    // on the reasoning that deciding "who you are on your own machine" should
+    // fail soft — the opposite stance to the approval gate's fail-closed
+    // (ADR-0016). The fail-soft stance is right and is kept for an ABSENT file.
+    //
+    // It is wrong here: this file EXISTS, so a membership decision was made,
+    // and answering "I could not read it" with an owner who holds every
+    // capability makes corrupting the file a way to become the owner. Nothing
+    // consults the roster to permit an action yet, so the distinction costs
+    // nothing to draw now and would be a live escalation to discover later.
     writeFileSync(at(), "{ not json");
-    expect(loadRoster(at()).implicit).toBe(true);
+    const r = loadRoster(at());
+    expect(r.unreadable).toBe(true);
+    expect(r.implicit).toBe(false);
+    expect(r.members).toEqual([]);
   });
 
   it("accepts both a bare array and a { members } wrapper", () => {
@@ -315,9 +326,16 @@ describe("loadRoster", () => {
     expect(r.dropped).toEqual([1]);
   });
 
-  it("a roster whose entries are all invalid degrades to the implicit owner", () => {
+  it("a roster whose entries are all invalid is UNREADABLE, not implicit", () => {
+    // Same reversal, same reason as the malformed-JSON case above: the
+    // operator listed members and we understood none of them, which is not the
+    // same fact as "this is a one-person machine". The rejected positions are
+    // carried through so the report can say which.
     writeFileSync(at(), JSON.stringify([{ nope: true }]));
-    expect(loadRoster(at()).implicit).toBe(true);
+    const r = loadRoster(at());
+    expect(r.unreadable).toBe(true);
+    expect(r.implicit).toBe(false);
+    expect(r.dropped).toEqual([0]);
   });
 
   it("a real one-entry roster is not implicit", () => {
@@ -370,6 +388,7 @@ describe("resolvePrincipal", () => {
       },
     ] as Member[],
     implicit: false,
+    unreadable: false,
     dropped: [],
   };
 
@@ -405,7 +424,12 @@ describe("resolvePrincipal", () => {
 
 describe("findMember", () => {
   it("finds by id and returns null when absent", () => {
-    const r = { members: [member()], implicit: false, dropped: [] };
+    const r = {
+      members: [member()],
+      implicit: false,
+      unreadable: false,
+      dropped: [],
+    };
     expect(findMember(r, "anna")?.id).toBe("anna");
     expect(findMember(r, "nobody")).toBeNull();
   });
@@ -417,6 +441,7 @@ describe("describeRoster", () => {
       describeRoster({
         members: [implicitOwner()],
         implicit: true,
+        unreadable: false,
         dropped: [],
       }),
     ).toContain("single implicit owner");
@@ -434,13 +459,19 @@ describe("describeRoster", () => {
         }),
       ],
       implicit: false,
+      unreadable: false,
       dropped: [],
     };
     expect(describeRoster(r)).toBe("roster loaded: 2 people, 1 worker");
   });
 
   it("omits workers when there are none, and singularises", () => {
-    const r = { members: [member()], implicit: false, dropped: [] };
+    const r = {
+      members: [member()],
+      implicit: false,
+      unreadable: false,
+      dropped: [],
+    };
     expect(describeRoster(r)).toBe("roster loaded: 1 person");
   });
 
@@ -448,7 +479,12 @@ describe("describeRoster", () => {
     // Without this, a typo silently removes a member — they never appear and
     // nothing errors, which is the worst failure for a file deciding who may
     // approve things.
-    const r = { members: [member()], implicit: false, dropped: [1, 3] };
+    const r = {
+      members: [member()],
+      implicit: false,
+      unreadable: false,
+      dropped: [1, 3],
+    };
     const out = describeRoster(r);
     expect(out).toContain("REJECTED");
     expect(out).toContain("1, 3");
