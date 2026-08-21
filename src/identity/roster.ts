@@ -47,6 +47,20 @@ export interface Roster {
    * decision, the first is the absence of one.
    */
   implicit: boolean;
+  /**
+   * True when a roster file EXISTS and could not be understood — unparseable,
+   * the wrong shape, or holding no entry that parses.
+   *
+   * This is the opposite of `implicit` and must never be confused with it. An
+   * absent file means nobody has made a membership decision here, and the
+   * one-person default is right. An unreadable file means a decision EXISTS
+   * and we cannot read it, so the safe answer is nobody — otherwise breaking
+   * the file is a way to become the owner.
+   *
+   * `members` is empty in this state, so `resolvePrincipal` yields `null` and
+   * `principalCan` grants nothing.
+   */
+  unreadable: boolean;
   /** Entries that failed to parse, by index, so the operator can be told. */
   dropped: number[];
 }
@@ -63,7 +77,22 @@ export function implicitOwner(): Member {
 }
 
 function implicitRoster(): Roster {
-  return { members: [implicitOwner()], implicit: true, dropped: [] };
+  return {
+    members: [implicitOwner()],
+    implicit: true,
+    unreadable: false,
+    dropped: [],
+  };
+}
+
+/**
+ * A roster file we found and could not read. Deliberately NOT `implicitRoster`:
+ * see `Roster.unreadable`. `dropped` carries the entry indices when we got far
+ * enough to have any, so the operator can be told what was lost rather than
+ * only that something was.
+ */
+function unreadableRoster(dropped: number[] = []): Roster {
+  return { members: [], implicit: false, unreadable: true, dropped };
 }
 
 /** Default location: `~/.patchwork/members.json`, honouring `PATCHWORK_HOME`. */
@@ -90,11 +119,14 @@ export function defaultRosterPath(): string {
 export function loadRoster(path = defaultRosterPath()): Roster {
   if (!existsSync(path)) return implicitRoster();
 
+  // Every `return` below this line is `unreadableRoster`, never
+  // `implicitRoster`. The file exists, so a membership decision was made here;
+  // failing to read it must not answer with an owner who can do everything.
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    return implicitRoster();
+    return unreadableRoster();
   }
 
   const raw = Array.isArray(parsed)
@@ -102,7 +134,7 @@ export function loadRoster(path = defaultRosterPath()): Roster {
     : Array.isArray((parsed as { members?: unknown })?.members)
       ? (parsed as { members: unknown[] }).members
       : null;
-  if (!raw) return implicitRoster();
+  if (!raw) return unreadableRoster();
 
   const members: Member[] = [];
   const dropped: number[] = [];
@@ -119,8 +151,11 @@ export function loadRoster(path = defaultRosterPath()): Roster {
     members.push(m);
   }
 
-  if (members.length === 0) return implicitRoster();
-  return { members, implicit: false, dropped };
+  // A file whose every entry was dropped is unreadable, not one-person: the
+  // operator listed members and we understood none of them. `dropped` is
+  // carried through so the report says which.
+  if (members.length === 0) return unreadableRoster(dropped);
+  return { members, implicit: false, unreadable: false, dropped };
 }
 
 /**
@@ -134,6 +169,21 @@ export function loadRoster(path = defaultRosterPath()): Roster {
 export function describeRoster(roster: Roster): string {
   if (roster.implicit) {
     return "no members.json — running as a single implicit owner";
+  }
+  // Loud, and deliberately not phrased as a degraded-but-fine state. Without
+  // this branch the line below reports "roster loaded: 0 people", which reads
+  // like an empty workspace rather than an unreadable file — and this string is
+  // the startup log an operator actually sees.
+  if (roster.unreadable) {
+    const where =
+      roster.dropped.length > 0
+        ? ` — every entry REJECTED at position ${roster.dropped.join(", ")}`
+        : "";
+    return (
+      `members.json EXISTS but could not be read${where}. ` +
+      "Nobody is identified in this workspace until it is fixed; this is NOT " +
+      "the single-owner default, which applies only when the file is absent."
+    );
   }
   const humans = roster.members.filter((m) => m.kind === "human").length;
   const workers = roster.members.length - humans;
