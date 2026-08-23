@@ -36,6 +36,12 @@ verified (which is how this line came to be written).
   src/tools/recentTracesDigest.ts. — main session
 - 2026-08-23 `feat/privacy-receipts-reader` — PR #1503, a reader + CLI verb + panel for
   the write-only ADR-0021 receipt ledger. — main session
+- 2026-08-23 `feat/privacy-receipts-reader` — a file-backed reader + `patchwork privacy
+  receipts` + dashboard panel for `boundary_receipts.jsonl`. The ADR-0021 enforcement
+  ledger is currently write-only in this repo: `recent()`/`summary()` have no production
+  caller, so the only thing that reads our own enforcement evidence lives outside it.
+  Touches src/privacy/, src/index.ts (privacy CLI), one bridge route, one dashboard page.
+  — main session
 
 ## Recently closed (informal log, prune periodically)
 
