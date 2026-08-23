@@ -1,6 +1,7 @@
 import type { ActivityLog } from "../activityLog.js";
 import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { DecisionTraceLog } from "../decisionTraceLog.js";
+import { sanitizeForPrompt } from "../promptSafety.js";
 import { summariseHalts } from "../recipes/haltCategory.js";
 import { summariseJudgments } from "../recipes/judgeSummary.js";
 import type { RecipeRunLog } from "../runLog.js";
@@ -70,13 +71,20 @@ function formatTraceLine(
   now: number,
 ): string {
   const when = relTime(t.ts, now);
+  // Sanitise BEFORE truncating. Truncation is a budget, not a defence: it
+  // shortens a hostile value without disarming it, and slicing mid-sequence
+  // could even leave a lone control character as the last character on the
+  // line. Every field rendered below is agent-written via `ctxSaveTrace`.
   if (t.traceType === "decision") {
-    const ref = String(t.body.ref ?? t.key);
-    const solution =
-      typeof t.body.solution === "string" ? t.body.solution : t.summary;
+    const ref = sanitizeForPrompt(String(t.body.ref ?? t.key));
+    const solution = sanitizeForPrompt(
+      typeof t.body.solution === "string" ? t.body.solution : t.summary,
+    );
     const tags = Array.isArray(t.body.tags)
       ? (t.body.tags as unknown[])
           .filter((x): x is string => typeof x === "string")
+          .map(sanitizeForPrompt)
+          .filter((x) => x.length > 0)
           .slice(0, 3)
       : [];
     const tagPart = tags.length > 0 ? ` [${tags.join(",")}]` : "";
@@ -87,7 +95,7 @@ function formatTraceLine(
     const body = budget > 10 ? truncate(solution, budget) : "";
     return `${prefix}${body}${suffix}`;
   }
-  return `${truncate(t.summary, MAX_SUMMARY_CHARS)} — ${when}`;
+  return `${truncate(sanitizeForPrompt(t.summary), MAX_SUMMARY_CHARS)} — ${when}`;
 }
 
 interface FormatOptions {

@@ -29,7 +29,13 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Nothing in flight._
+- 2026-08-23 `fix/digest-prompt-safety` — the session traces digest renders
+  `ctxSaveTrace` text into the instructions block with no sanitisation, while the
+  Butler card a few lines away in the same prompt has had it since it shipped. Lifts
+  `sanitizeForPrompt` into `src/promptSafety.ts` and applies it. Touches src/butler/,
+  src/tools/recentTracesDigest.ts. — main session
+- 2026-08-23 `feat/privacy-receipts-reader` — PR #1503, a reader + CLI verb + panel for
+  the write-only ADR-0021 receipt ledger. — main session
 
 ## Recently closed (informal log, prune periodically)
 
