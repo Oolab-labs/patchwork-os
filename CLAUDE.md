@@ -243,6 +243,19 @@ Comply with all docs in `/documents/`. Consult before changes:
   process claimed this tick`. That last line is what distinguishes "the fix
   worked" from "the second bridge quietly stopped scheduling" — which produces
   an identical run-row count.
+- `approvals [--window 1h|24h|overnight|7d|any] [--json]` — Recent approval decisions across bridges.
+- `approve <callId>` — Approve one queued approval from the terminal. Prompts for confirmation on a TTY.
+- `reject <callId>` — Reject one queued approval. Same shape as `approve`.
+- `connect [list]` / `connect <vendor>` / `connect test <vendor>` / `connect disconnect <vendor>` — Connector authorisation from the terminal: list connectors and their status, start an OAuth flow or store a PAT, health-probe one, or revoke one. Documented in `--help` since it shipped and absent from this file until now.
+- `butler <shadow|observe|ingest|promote>` — The errand-outcome channel.
+  - `shadow [--json]` — summarise the graded shadow ledger.
+  - `observe [--file <path>] [--stale-after-days N]` — discover errands from the run log, look up live task state, then grade. **Operator path only**: a recipe step runs AS the worker, and a worker that could observe its own filings could report them completed.
+  - `ingest [--file <path>|-]` — grade a JSON array of observations.
+  - `promote [--dry-run]` — fold confirmed/junk grades into the trust ledger. Requires `PATCHWORK_FLAG_BUTLER_PROMOTE=1`; reports without writing otherwise, because promotion is one-way (trust replay absorbs a folded row into a checkpoint that deleting the row does not undo).
+- `dashboard` — Launch the local dashboard. Guards first run: without `patchwork init` it prints a pointer instead of an empty panel.
+- `members [list|set-password <id>]` — Workspace roster plus which members hold credentials. Bare `members` lists. A member with no password is reported as `NO password — cannot authenticate`, and an absent `members.json` reports the single implicit owner rather than pretending a roster exists.
+- `runstore <backfill|compare> [--json]` — Durable run-store maintenance. `compare` prints ledger contents, so its output is **operator data, not a diagnostic blob** — never paste it into an issue, a PR body or a fixture.
+- `shadow-scan [--since <duration|ISO>] [--limit <n>] [--runs-file <path>] [--json]` — Reclassification scan over the run log.
 - `privacy suggest [--json]` — Derive a STARTER `privacy.shadow` block from the drivers your installed recipes actually declare. The destinations are MEASURED; the classifications are a conservative placeholder you are told to review. Reports agent steps that declare no driver separately rather than folding them in — they dispatch somewhere too. Emits `privacy.shadow` only, never the enforcing `privacy.destinations` key.
 - `privacy shadow [--since-days N] [--json]` — What a candidate policy WOULD have stopped, without enforcing it (ADR-0021). Leads with the DENOMINATOR and refuses to print a bare crossing count; an empty ledger reports "nothing observed", never "0 crossings". Reads `privacy_shadow.jsonl`.
 - `kill-switch engage|release|status [--reason <text>]` — Toggle the global write-disable gate (see ADR-0013).

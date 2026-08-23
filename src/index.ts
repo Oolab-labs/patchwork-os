@@ -366,6 +366,8 @@ if (
       `Operate\n` +
       `  start [--port N] [--workspace <dir>]      Start a single bridge (no tmux)\n` +
       `  status                                    One-line bridge status (port, uptime)\n` +
+      `  dashboard                                 Launch the local dashboard\n` +
+      `  members [list|set-password <id>]          Workspace roster + per-member credentials\n` +
       `  tools [list|search <q>] [--slim] [--json] List tools the bridge would register\n` +
       `  analytics <show|configure|clear|test>     Manage opt-in telemetry config\n` +
       `  launchd <install|uninstall|status>        Manage the macOS auto-start LaunchAgent\n\n` +
@@ -377,7 +379,17 @@ if (
       `  suggest [--since-days N]                  Recipe + unused-tool suggestions\n` +
       `  token-efficiency benchmark                Measure token cost across tool sets\n` +
       `  traces export                             Bundle approval / recipe / decision traces\n` +
-      `  print-token [--port N]                    Print the active bridge auth token\n\n` +
+      `  print-token [--port N]                    Print the active bridge auth token\n` +
+      `  runstore <backfill|compare> [--json]      Durable run-store maintenance + drift check\n` +
+      `  shadow-scan [--since <d>] [--json]        Reclassification scan over the run log\n\n` +
+      `Review\n` +
+      `  approvals [--window 1h|24h|7d] [--json]   Recent approval decisions\n` +
+      `  approve <callId> / reject <callId>        Decide one queued approval\n\n` +
+      `Butler\n` +
+      `  butler shadow [--json]                    Summarise the graded shadow ledger\n` +
+      `  butler observe [--stale-after-days N]     Discover errands, look up live state, grade\n` +
+      `  butler ingest [--file <path>|-]           Grade a JSON array of observations\n` +
+      `  butler promote [--dry-run]                Fold grades into the trust ledger (flagged)\n\n` +
       `Safety\n` +
       `  kill-switch <engage|release|status>       Block / resume write-tier tools across bridges\n` +
       `  panic [--reason "..."]                    Shorthand for kill-switch engage\n\n` +
@@ -389,7 +401,7 @@ if (
       `  --version, -v                             Print package version\n` +
       `  shim                                      stdio↔WebSocket shim (used by MCP clients)\n` +
       `  notify <event>                            Notify a running bridge of a CC hook event\n\n` +
-      `Bridge-daemon flags: run \`${binName} --workspace . --help-flags\` for the full list,\n` +
+      `Bridge-daemon flags: run \`${binName} --workspace . --help\` for the full list,\n` +
       `or see https://github.com/Oolab-labs/patchwork-os#readme.\n`,
   );
   process.exit(0);

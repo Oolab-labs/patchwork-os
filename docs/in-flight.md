@@ -35,6 +35,10 @@ verified (which is how this line came to be written).
   caller, so the only thing that reads our own enforcement evidence lives outside it.
   Touches src/privacy/, src/index.ts (privacy CLI), one bridge route, one dashboard page.
   — main session
+- 2026-08-23 `docs/undocumented-subcommands` — nine subcommands dispatch and appear in no
+  doc; `audit-docs-wired` has been printing them as informational and exiting 0. Documents
+  all nine (incl. `butler`) and fixes the dead `--help-flags` pointer. Touches CLAUDE.md,
+  src/index.ts. — main session
 
 ## Recently closed (informal log, prune periodically)
 
