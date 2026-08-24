@@ -10597,3 +10597,63 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 @media (max-width: 900px) {
   .cb-cols { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------- privacy
+   Information-boundary receipts (/privacy). Deliberately plain: the page's
+   job is to state a denominator honestly, so nothing here should make a
+   refusal count look more dramatic than the total it sits beside. */
+.privacy-headline {
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+}
+.privacy-figure {
+  margin: 0 0 8px;
+}
+.privacy-figure strong {
+  font-size: 2rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.privacy-rows {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.privacy-rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.privacy-rows li strong {
+  font-variant-numeric: tabular-nums;
+}
+.privacy-legend,
+.privacy-receipts {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.privacy-legend li,
+.privacy-receipts li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.privacy-coverage {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+}
+.privacy-coverage ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.privacy-coverage li {
+  margin-bottom: 8px;
+}

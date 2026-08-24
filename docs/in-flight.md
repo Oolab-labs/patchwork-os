@@ -29,15 +29,21 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-23 `fix/digest-prompt-safety` — the session traces digest renders
-  `ctxSaveTrace` text into the instructions block with no sanitisation, while the
-  Butler card a few lines away in the same prompt has had it since it shipped. Lifts
-  `sanitizeForPrompt` into `src/promptSafety.ts` and applies it. Touches src/butler/,
-  src/tools/recentTracesDigest.ts. — main session
-- 2026-08-23 `feat/privacy-receipts-reader` — PR #1503, a reader + CLI verb + panel for
-  the write-only ADR-0021 receipt ledger. — main session
+- 2026-08-23 `feat/privacy-receipts-reader` — a file-backed reader + `patchwork privacy
+  receipts` + dashboard panel for `boundary_receipts.jsonl`. The ADR-0021 enforcement
+  ledger is currently write-only in this repo: `recent()`/`summary()` have no production
+  caller, so the only thing that reads our own enforcement evidence lives outside it.
+  Touches src/privacy/, src/index.ts (privacy CLI), one bridge route, one dashboard page.
+  — main session
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-23 `fix/digest-prompt-safety` — #1504: `ctxSaveTrace` text was spliced into
+  `buildInstructions()` unsanitised, so a saved trace could forge an instruction heading
+  in the block every later session reads as authority. The Butler card renders into the
+  SAME prompt a few lines away and had `sanitizeForPrompt` since it shipped — one
+  prompt-rendering path hardened, its neighbour not. Helper LIFTED to
+  `src/promptSafety.ts` rather than copied. — main session
 
 - 2026-08-21 `fix/roster-unreadable-is-not-an-owner` — #1501: `loadRoster` answered five
   situations with one implicit OWNER, four of which mean "a membership decision exists and

@@ -372,6 +372,7 @@ if (
       `Diagnose\n` +
       `  halts [--window 1h|24h|overnight|7d]      Morning summary of recent recipe halts\n` +
       `  judgments [--window ...] [--recipe N]     Recent judge-step verdicts across runs\n` +
+      `  privacy receipts [--since-days N]        What the LIVE information boundary actually decided\n` +
       `  privacy shadow [--since-days N]          What a candidate privacy policy would have stopped\n` +
       `  suggest [--since-days N]                  Recipe + unused-tool suggestions\n` +
       `  token-efficiency benchmark                Measure token cost across tool sets\n` +
@@ -5500,9 +5501,31 @@ if (process.argv[2] === "privacy") {
       }
       process.exit(0);
     }
+    if (args[0] === "receipts") {
+      // The ENFORCING ledger's reader. `shadow` answers "what would a candidate
+      // policy have stopped"; this answers "what did the live policy actually
+      // do" — the question the boundary was built to make answerable, and the
+      // one nothing in this repo could answer until now (ADR-0019:88-92).
+      const { summariseBoundaryReceipts, formatBoundaryReceipts } =
+        await import("./privacy/boundaryReceipts.js");
+      const i = args.indexOf("--since-days");
+      const n = i !== -1 ? Number(args[i + 1]) : undefined;
+      const summary = summariseBoundaryReceipts(
+        n !== undefined && Number.isFinite(n) && n > 0
+          ? { since: Date.now() - n * 86_400_000 }
+          : {},
+      );
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${formatBoundaryReceipts(summary)}\n`);
+      }
+      process.exit(0);
+    }
     if (args[0] !== "shadow") {
       process.stderr.write(
-        "Usage: patchwork privacy shadow [--since-days N] [--json]\n" +
+        "Usage: patchwork privacy receipts [--since-days N] [--json]\n" +
+          "       patchwork privacy shadow [--since-days N] [--json]\n" +
           "       patchwork privacy suggest [--json]\n" +
           "\n" +
           "  Observes boundary decisions WITHOUT enforcing them. Configure a\n" +

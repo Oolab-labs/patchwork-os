@@ -130,6 +130,10 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/tasks",        label: "Tasks",        paletteLabel: "Activity — Tasks",        icon: "tasks" },
       { href: "/sessions",     label: "Sessions",     paletteLabel: "Activity — Sessions",     icon: "person" },
       { href: "/traces",       label: "Traces",       paletteLabel: "Activity — Traces",       icon: "git" },
+      // The ADR-0021 enforcement ledger. Lives here rather than under Review
+      // because it is a timestamped per-event log, which is what this section
+      // is for — it records what the boundary DID, not something awaiting you.
+      { href: "/privacy",      label: "Data boundary", paletteLabel: "Activity — Data boundary", icon: "shield" },
       { href: "/transactions", label: "Transactions", paletteLabel: "Activity — Transactions", icon: "diff" },
     ],
   },

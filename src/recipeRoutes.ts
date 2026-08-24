@@ -49,6 +49,7 @@ import {
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
 import { patchworkPath } from "./patchworkHome.js";
+import { summariseBoundaryReceipts } from "./privacy/boundaryReceipts.js";
 import { cancelRun } from "./recipes/runRegistry.js";
 import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
@@ -976,6 +977,33 @@ export function tryHandleRecipeRoute(
         ...(Number.isFinite(limit) && { limit }),
         ...(recipe && { recipe }),
       }) ?? { total: 0, byCategory: {}, recent: [] };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(summary));
+    } catch (err) {
+      respond500(res, err);
+    }
+    return true;
+  }
+
+  // GET /privacy/receipts — what the LIVE information boundary actually decided.
+  //
+  // Sibling of the `patchwork privacy receipts` verb and, like it, reads the
+  // ledger FROM DISK rather than through `BoundaryReceiptLog`, whose in-memory
+  // array is capped at 500 rows — a cap that would silently become this
+  // endpoint's denominator. Imported directly rather than injected because it
+  // is a pure file read keyed on PATCHWORK_HOME, which is also how a test
+  // redirects it.
+  if (parsedUrl.pathname === "/privacy/receipts" && req.method === "GET") {
+    try {
+      const sp = parsedUrl.searchParams;
+      const sinceMsRaw = sp.get("sinceMs");
+      const sinceMs = sinceMsRaw ? Number.parseInt(sinceMsRaw, 10) : Number.NaN;
+      const limitRaw = sp.get("limit");
+      const limit = limitRaw ? Number.parseInt(limitRaw, 10) : Number.NaN;
+      const summary = summariseBoundaryReceipts({
+        ...(Number.isFinite(sinceMs) && { since: sinceMs }),
+        ...(Number.isFinite(limit) && limit > 0 && { recentLimit: limit }),
+      });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(summary));
     } catch (err) {
