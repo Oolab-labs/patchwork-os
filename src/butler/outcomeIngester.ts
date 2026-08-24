@@ -47,8 +47,10 @@ import {
 import {
   appendShadowOutcome,
   firstSeenByRef,
+  SHADOW_REASONS,
   type ShadowSummary,
   summariseShadowLog,
+  UNOBSERVED_REASONS,
 } from "./outcomeShadowLog.js";
 
 /** One artifact to grade, plus the key it joins on. */
@@ -163,14 +165,52 @@ export function formatShadowSummary(s: ShadowSummary): string {
     ].join("\n");
   }
   const pct = (n: number) => `${((n / s.total) * 100).toFixed(1)}%`;
+
+  // Split the `unknown` bucket by what it actually means. "Still in flight" and
+  // "could not be observed" are both withheld by the fold, and they call for
+  // opposite responses — wait, versus go and fix the observation path. Reporting
+  // one number for both leaves an operator unable to tell a healthy young ledger
+  // from a channel that is seeing nothing.
+  const unobserved = UNOBSERVED_REASONS.reduce(
+    (n, r) => n + (s.byReason[r] ?? 0),
+    0,
+  );
+  const inFlight = s.unknown - unobserved;
+
+  const reasonLines = SHADOW_REASONS.filter((r) => (s.byReason[r] ?? 0) > 0)
+    .sort((a, b) => (s.byReason[b] ?? 0) - (s.byReason[a] ?? 0))
+    .map((r) => `    ${r.padEnd(18)}${s.byReason[r]} (${pct(s.byReason[r])})`);
+
+  const unattributed =
+    s.total - SHADOW_REASONS.reduce((n, r) => n + (s.byReason[r] ?? 0), 0);
+
   return [
     `[butler-shadow] ${s.total} graded row(s):`,
     `  confirmed  ${s.confirmed} (${pct(s.confirmed)})`,
     `  junk       ${s.junk} (${pct(s.junk)})`,
     `  unknown    ${s.unknown} (${pct(s.unknown)}) — withheld by the fold`,
+    ...(s.unknown > 0
+      ? [
+          `    of which ${inFlight} still in flight, ${unobserved} could not be observed`,
+        ]
+      : []),
+    "",
+    "  by reason",
+    ...(reasonLines.length > 0 ? reasonLines : ["    (none recorded)"]),
+    ...(unattributed > 0
+      ? [`    (${unattributed} row(s) carry an unrecognised reason)`]
+      : []),
     "",
     `  ${s.wouldCount} row(s) (${pct(s.wouldCount)}) would have become evidence.`,
     "",
+    ...(unobserved > 0
+      ? [
+          `  ${unobserved} row(s) were never observed at all. That is a broken or`,
+          "  unauthorised observation path, not a verdict about the errand — fix it",
+          "  before reading anything into the proportions above.",
+          "",
+        ]
+      : []),
     "  These rows moved nothing. Before promoting, check a sample against the",
     "  real errands they describe — a disposition that reads plausibly in",
     "  aggregate can still be wrong on every individual row.",
