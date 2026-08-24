@@ -29,12 +29,19 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-23 `docs/undocumented-subcommands` — nine subcommands dispatch and appear in no
-  doc; `audit-docs-wired` has been printing them as informational and exiting 0. Documents
-  all nine (incl. `butler`) and fixes the dead `--help-flags` pointer. Touches CLAUDE.md,
-  src/index.ts. — main session
+- 2026-08-24 `chore/example-recipe-neutral-name` — give one example recipe and its two
+  references a neutral identifier, per the repository-privacy convention in CLAUDE.md. The
+  recipe's own contents were already neutral; only the filename was not. Touches
+  examples/recipes/, docs/recipe-phone-notifications.md, one test fixture value.
+  — main session
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-23 `docs/undocumented-subcommands` — #1505: nine subcommands dispatched and
+  appeared in no doc, and `audit-docs-wired` had been printing them as informational and
+  exiting 0. Documents all nine, fixes the dead `--help-flags` pointer, and (after #1503
+  landed) documents `privacy receipts` and corrects `recipe record`, which was wrong in
+  both its argument and its semantics. — main session
 
 - 2026-08-23 `feat/privacy-receipts-reader` — #1503: `boundary_receipts.jsonl` was
   write-only in this repo — `recent()`/`summary()` had no production caller, so the only

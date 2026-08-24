@@ -888,7 +888,7 @@ describe("POST /settings — push/ntfy persistence", () => {
         },
       },
       JSON.stringify({
-        ntfyTopic: "patchwork-oolabs-abc123",
+        ntfyTopic: "patchwork-example-abc123",
         ntfyServer: "https://ntfy.example.com",
       }),
     );
@@ -898,7 +898,7 @@ describe("POST /settings — push/ntfy persistence", () => {
       string,
       unknown
     >;
-    expect(persisted.ntfyTopic).toBe("patchwork-oolabs-abc123");
+    expect(persisted.ntfyTopic).toBe("patchwork-example-abc123");
     expect(persisted.ntfyServer).toBe("https://ntfy.example.com");
   });
 
