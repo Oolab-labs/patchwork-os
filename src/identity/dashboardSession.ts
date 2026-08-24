@@ -33,8 +33,46 @@
 export const SESSION_COOKIE_NAME = "patchwork_session";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+/**
+ * Secret supplied by the Node-side host when the environment does not carry
+ * one. Set by the bridge from `$PATCHWORK_HOME/.env` — see
+ * `sessionSecretFile.ts` for why that read cannot happen in this module.
+ *
+ * A plain variable, deliberately: no `node:` import may appear here, because
+ * the dashboard's Edge middleware imports this file and a build failure there
+ * locks every user out of the dashboard.
+ *
+ * The Edge consumer never calls the setter, so its behaviour is unchanged —
+ * `undefined` fallback, environment only.
+ */
+let sessionSecretFallback: string | undefined;
+
+/**
+ * Injection point for the Node host. Underscore-prefixed because it is not part
+ * of the session API — nothing but the bridge's startup and tests should call it.
+ */
+export function __setSessionSecretFallback(secret: string | undefined): void {
+  sessionSecretFallback = secret;
+}
+
+/**
+ * Whether a secret is reachable at all, by either route.
+ *
+ * Exported so the bridge's wiring condition and this module cannot disagree
+ * about what "attribution is available" means. They were two separate reads of
+ * `process.env` before, which is precisely how one site gains a fallback and
+ * its neighbour silently does not.
+ */
+export function hasSessionSecret(): boolean {
+  return getSecret() !== "";
+}
+
 function getSecret(): string {
-  return process.env.DASHBOARD_SESSION_SECRET ?? "";
+  // Environment wins. An operator who exports the variable is making a
+  // deliberate choice, and a file on disk must not silently override it.
+  const fromEnv = process.env.DASHBOARD_SESSION_SECRET;
+  if (fromEnv !== undefined && fromEnv !== "") return fromEnv;
+  return sessionSecretFallback ?? "";
 }
 
 function base64url(bytes: ArrayBuffer | Uint8Array): string {

@@ -54,6 +54,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-24 `fix/attribution-secret-reachability` — #1509: ADR-0020 attribution was shipped
+  and unreachable on nearly every launch path — `src/index.ts` builds its dotenv candidates
+  from `import.meta.url`, so it read `<install-dir>/.env` (destroyed by
+  `npm run install:global`) and never `$PATCHWORK_HOME/.env`. Measured: all three live
+  bridges lacked the variable while the secret sat correctly on disk. Adds a single-key
+  Node-side reader injected into `dashboardSession` — not a second dotenv load, because
+  agent subprocesses inherit `process.env` wholesale. — main session
+
 - 2026-08-24 `feat/butler-shadow-reason-breakdown` — #1508: `butler shadow` reported one
   `unknown` count covering two opposite situations — `open-recent` (looked; errand still in
   flight, so wait) and `not-observed` (could not look, so go fix the path). The rows always
