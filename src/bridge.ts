@@ -34,7 +34,12 @@ import {
 } from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
 import { createApproverResolver } from "./identity/approverFromSession.js";
+import {
+  __setSessionSecretFallback,
+  hasSessionSecret,
+} from "./identity/dashboardSession.js";
 import { describeRoster, loadRoster } from "./identity/roster.js";
+import { readSessionSecretFromHome } from "./identity/sessionSecretFile.js";
 import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
 import { Logger } from "./logger.js";
@@ -1260,31 +1265,40 @@ export class Bridge {
     // ADR-0020 Phase A: attribute approve/reject to the member whose dashboard
     // session cookie the request carries.
     //
-    // Only wired when `DASHBOARD_SESSION_SECRET` is in the BRIDGE's own
-    // environment. Whether it is there depends on how the bridge was launched,
-    // and the original note here was wrong about it:
+    // The secret is resolved from the environment FIRST and from
+    // `$PATCHWORK_HOME/.env` second — the file `patchwork init` writes.
     //
-    //   - `patchwork init` writes the secret to `~/.patchwork/.env` FIRST
-    //     (commands/patchworkInit.ts) and then also to `dashboard/.env.local`.
-    //     It does NOT write it "into the dashboard's env alone".
-    //   - The bridge's own dotenv loader reads `<install-dir>/.env`, never
-    //     `~/.patchwork/.env`, so `init` alone does not put it here.
-    //   - BUT `scripts/start-all.sh` (--no-tmux) does `set -a; source
-    //     ~/.patchwork/.env` and then launches the bridge from that shell, so
-    //     on that path the bridge DOES inherit it and attribution is wired.
-    //     The tmux path sources it after the bridge pane is already running,
-    //     so there it does not.
+    // That fallback exists because attribution was shipped and unreachable on
+    // nearly every launch path. The dotenv loader in `src/index.ts` builds its
+    // candidates from `import.meta.url`, so it reads `<install-dir>/.env` (which
+    // `npm run install:global` destroys) and never `$PATCHWORK_HOME/.env`.
+    // `scripts/start-all.sh --no-tmux` is the sole path that worked, and only
+    // because it sources the file into the shell before launching; launchd, the
+    // tmux path and a bare `patchwork start` did not. Measured 2026-08-24: all
+    // three live bridges lacked the variable while the secret sat correctly on
+    // disk, so every approval was unattributed despite correct setup.
     //
-    // Either way this is safe and additive: with no `members.json` the
-    // resolver refuses an implicit roster and stamps nobody, so a decision is
-    // recorded unattributed exactly as before. What is NOT true is that
-    // attribution is off on every unchanged install — say what the code does,
-    // not what would be tidier.
+    // Injected rather than written into `process.env`: `claudeDriver.ts` spawns
+    // agents with `{ ...process.env }`, so exporting it would hand the secret to
+    // every agent subprocess. `readSessionSecretFromHome` reads ONE key for the
+    // same reason — a second dotenv load would also ship `DASHBOARD_PASSWORD`.
+    //
+    // The condition asks `hasSessionSecret()` rather than re-reading the
+    // environment, so this site and `dashboardSession.ts` cannot disagree about
+    // whether a secret is reachable. Two independent reads of `process.env` is
+    // exactly how one site gains a fallback and its neighbour silently does not.
+    //
+    // Still safe and additive: with no `members.json` the resolver refuses an
+    // implicit roster and stamps nobody, so a decision is recorded unattributed
+    // exactly as before.
     //
     // The roster is captured by reference to the one already loaded above
     // rather than re-read per approval, matching the load-once contract the
     // roster and credential store both document.
-    if ((process.env.DASHBOARD_SESSION_SECRET ?? "") !== "") {
+    if ((process.env.DASHBOARD_SESSION_SECRET ?? "") === "") {
+      __setSessionSecretFallback(readSessionSecretFromHome());
+    }
+    if (hasSessionSecret()) {
       const roster = this.server.roster;
       this.server.resolveApprover = createApproverResolver({
         rosterFor: () => roster,
