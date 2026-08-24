@@ -143,7 +143,40 @@ export interface ShadowSummary {
   unknown: number;
   /** Rows that would have become evidence had the grader been live. */
   wouldCount: number;
+  /**
+   * Rows per grading reason.
+   *
+   * The disposition counts alone cannot answer the only question an operator
+   * has when `unknown` dominates: is this channel WORKING on errands that are
+   * simply still in flight, or is it seeing nothing at all? Those are
+   * `open-recent` and `not-observed`, and they collapse into the same
+   * `unknown` bucket while calling for opposite responses — wait, versus go
+   * and fix the observation path.
+   *
+   * The rows have always carried `reason`; only the summary discarded it. Same
+   * defect as #1469, where the shadow report named a defaulted-classification
+   * count and gave no way to find WHICH recipes to go and label.
+   */
+  byReason: Record<GradedOutcome["reason"], number>;
 }
+
+/** Every reason, so a summary always reports the full space rather than only what it saw. */
+export const SHADOW_REASONS: ReadonlyArray<GradedOutcome["reason"]> = [
+  "completed",
+  "deleted",
+  "stale-unactioned",
+  "open-recent",
+  "not-observed",
+];
+
+/**
+ * Reasons that mean "the observation channel could not answer", as opposed to
+ * "it answered, and the errand is not finished yet". Exported so the formatter
+ * and its tests cannot drift on which is which.
+ */
+export const UNOBSERVED_REASONS: ReadonlyArray<GradedOutcome["reason"]> = [
+  "not-observed",
+];
 
 /**
  * Summarise the shadow ledger — the number this phase exists to produce.
@@ -153,12 +186,18 @@ export interface ShadowSummary {
  * count someone is about to make a decision on.
  */
 export function summariseShadowLog(opts: { dir?: string } = {}): ShadowSummary {
+  const emptyByReason = () =>
+    Object.fromEntries(SHADOW_REASONS.map((r) => [r, 0])) as Record<
+      GradedOutcome["reason"],
+      number
+    >;
   const empty: ShadowSummary = {
     total: 0,
     confirmed: 0,
     junk: 0,
     unknown: 0,
     wouldCount: 0,
+    byReason: emptyByReason(),
   };
   const p = shadowLogPath(opts.dir);
   if (!existsSync(p)) return empty;
@@ -168,11 +207,21 @@ export function summariseShadowLog(opts: { dir?: string } = {}): ShadowSummary {
   } catch {
     return empty;
   }
-  const out = { ...empty };
+  // Fresh `byReason` rather than sharing `empty`'s. NOT a live bug — `empty` is
+  // built per call, so the spread aliasing its object harms nothing today. It is
+  // here so that hoisting `empty` to module scope, an obvious tidy-up, cannot
+  // silently make every summary cumulative. Deliberately NOT covered by a test:
+  // no test can distinguish the two while `empty` stays local, and a test that
+  // passes either way would be worse than none.
+  const out: ShadowSummary = { ...empty, byReason: emptyByReason() };
   for (const row of parseShadowRows(text)) {
     out.total++;
     out[row.disposition]++;
     if (row.wouldCountAsEvidence) out.wouldCount++;
+    // A row whose reason is outside the known space is counted in `total` but
+    // not attributed. Silently coercing it into a known bucket would put a
+    // number a person acts on behind a guess.
+    if (row.reason in out.byReason) out.byReason[row.reason]++;
   }
   return out;
 }

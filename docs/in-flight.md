@@ -36,6 +36,12 @@ verified (which is how this line came to be written).
   `github.*` tool can mutate issue state — a load-bearing ABSENCE with no test on it.
   Adds a guard test + corrects the reasoning. Touches src/recipes/tools/__tests__/,
   CLAUDE.md. — main session
+- 2026-08-24 `feat/butler-shadow-reason-breakdown` — `butler shadow` reports one `unknown`
+  count covering two opposite situations: `open-recent` (looked, errand still in flight —
+  wait) and `not-observed` (could not look — go fix the path). The rows always carried
+  `reason`; only the summary discarded it. Adds a per-reason breakdown and splits the
+  unknown line. Touches src/butler/outcomeShadowLog.ts + outcomeIngester.ts — collides with
+  any Butler or outcome-store work. — main session
 
 ## Recently closed (informal log, prune periodically)
 
