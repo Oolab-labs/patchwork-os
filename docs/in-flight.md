@@ -29,13 +29,19 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-24 `chore/example-recipe-neutral-name` — give one example recipe and its two
-  references a neutral identifier, per the repository-privacy convention in CLAUDE.md. The
-  recipe's own contents were already neutral; only the filename was not. Touches
-  examples/recipes/, docs/recipe-phone-notifications.md, one test fixture value.
-  — main session
+- 2026-08-24 `fix/guard-self-confirmation-invariant` — "a worker cannot self-confirm its
+  own filings" is TRUE but CLAUDE.md attributes it to the wrong mechanism
+  (`outcomes confirm|reject` being CLI-only). `outcomes.classify_issues` is a recipe tool
+  that also writes dispositions. What actually holds the property is that no recipe-facing
+  `github.*` tool can mutate issue state — a load-bearing ABSENCE with no test on it.
+  Adds a guard test + corrects the reasoning. Touches src/recipes/tools/__tests__/,
+  CLAUDE.md. — main session
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-24 `chore/example-recipe-neutral-name` — #1506: gave one example recipe and its
+  two references a neutral identifier, per the repository-privacy convention. The recipe's
+  own contents were already neutral; only the filename was not. — main session
 
 - 2026-08-23 `docs/undocumented-subcommands` — #1505: nine subcommands dispatched and
   appeared in no doc, and `audit-docs-wired` had been printing them as informational and
