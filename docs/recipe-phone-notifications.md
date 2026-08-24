@@ -96,4 +96,4 @@ ntfy supports two publish forms: header-based (`-H "Title: ..."` against `https:
 
 ## Working example
 
-[`oolabs-daily-tweets.yaml`](../examples/recipes/oolabs-daily-tweets.yaml) drafts three tweets from recent merged PRs and pushes them to the user's phone via ntfy with a `Click: https://x.com/compose/tweet` header so tapping the notification opens X compose. The push step is a single `curl` against the topic — the entire path from `patchwork recipe run` to phone-buzz is under five seconds after the agent step completes.
+[`daily-tweets-from-prs.yaml`](../examples/recipes/daily-tweets-from-prs.yaml) drafts three tweets from recent merged PRs and pushes them to the user's phone via ntfy with a `Click: https://x.com/compose/tweet` header so tapping the notification opens X compose. The push step is a single `curl` against the topic — the entire path from `patchwork recipe run` to phone-buzz is under five seconds after the agent step completes.
