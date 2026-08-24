@@ -29,18 +29,19 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-23 `feat/privacy-receipts-reader` — a file-backed reader + `patchwork privacy
-  receipts` + dashboard panel for `boundary_receipts.jsonl`. The ADR-0021 enforcement
-  ledger is currently write-only in this repo: `recent()`/`summary()` have no production
-  caller, so the only thing that reads our own enforcement evidence lives outside it.
-  Touches src/privacy/, src/index.ts (privacy CLI), one bridge route, one dashboard page.
-  — main session
 - 2026-08-23 `docs/undocumented-subcommands` — nine subcommands dispatch and appear in no
   doc; `audit-docs-wired` has been printing them as informational and exiting 0. Documents
   all nine (incl. `butler`) and fixes the dead `--help-flags` pointer. Touches CLAUDE.md,
   src/index.ts. — main session
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-23 `feat/privacy-receipts-reader` — #1503: `boundary_receipts.jsonl` was
+  write-only in this repo — `recent()`/`summary()` had no production caller, so the only
+  reader of our own ADR-0021 enforcement evidence lived in the non-MIT control plane, the
+  ADR-0019:88-92 failure arrived at by default. Adds `patchwork privacy receipts`,
+  `GET /privacy/receipts` and a dashboard page. Reads the FILE, not the class, which trims
+  to 500 rows and would serve that as a total. — main session
 
 - 2026-08-23 `fix/digest-prompt-safety` — #1504: `ctxSaveTrace` text was spliced into
   `buildInstructions()` unsanitised, so a saved trace could forge an instruction heading
