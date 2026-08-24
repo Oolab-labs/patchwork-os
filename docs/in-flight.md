@@ -18,8 +18,29 @@ force-moving it back — avoidable with five minutes of a shared ledger.
 
 Before starting non-trivial work (a new branch, a fix touching shared
 subsystems like the worker-trust gate, the recipe runner, or the bridge
-init/shim path), add a line here. Remove the line once the PR merges (or
-mark it merged and delete on the next sweep).
+init/shim path), add a line here.
+
+### Retire your own entry before merging
+
+Move your line to **Recently closed** with its PR number **in the PR itself**,
+as its last commit. Not afterwards.
+
+"Remove the line once the PR merges" is what this file used to say, and it
+cannot work: nothing removes the line during the merge, so `audit-in-flight`
+fails on `main` the moment the PR lands and stays failing until some later PR
+sweeps it — and that PR leaves its own entry behind in turn. Observed on
+2026-08-24, when #1507 merged and immediately turned `main` red; CI runs this
+gate at `.github/workflows/ci.yml:188`. Three hand sweeps had already been
+needed before that, which is the same failure showing up as decay rather than
+as a red build.
+
+The cost is that an entry leaves Active slightly before the work lands. That is
+a few minutes of a stale-clear ledger, against `main` being red after every
+single merge — and a red gate nobody can act on is how a real warning gets
+ignored.
+
+An empty Active section is therefore normal and is not a sign the ledger is
+being neglected.
 
 Format: `- <date> `<branch-or-PR>` — <one-line scope> — <session/chat identity if known>`
 
@@ -29,21 +50,22 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-24 `fix/guard-self-confirmation-invariant` — "a worker cannot self-confirm its
-  own filings" is TRUE but CLAUDE.md attributes it to the wrong mechanism
-  (`outcomes confirm|reject` being CLI-only). `outcomes.classify_issues` is a recipe tool
-  that also writes dispositions. What actually holds the property is that no recipe-facing
-  `github.*` tool can mutate issue state — a load-bearing ABSENCE with no test on it.
-  Adds a guard test + corrects the reasoning. Touches src/recipes/tools/__tests__/,
-  CLAUDE.md. — main session
-- 2026-08-24 `feat/butler-shadow-reason-breakdown` — `butler shadow` reports one `unknown`
-  count covering two opposite situations: `open-recent` (looked, errand still in flight —
-  wait) and `not-observed` (could not look — go fix the path). The rows always carried
-  `reason`; only the summary discarded it. Adds a per-reason breakdown and splits the
-  unknown line. Touches src/butler/outcomeShadowLog.ts + outcomeIngester.ts — collides with
-  any Butler or outcome-store work. — main session
+_Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-24 `feat/butler-shadow-reason-breakdown` — #1508: `butler shadow` reported one
+  `unknown` count covering two opposite situations — `open-recent` (looked; errand still in
+  flight, so wait) and `not-observed` (could not look, so go fix the path). The rows always
+  carried `reason`; only the summary discarded it. Adds a per-reason breakdown and splits
+  the unknown line. — main session
+
+- 2026-08-24 `fix/guard-self-confirmation-invariant` — #1507: "a worker cannot self-confirm
+  its own filings" is true, but CLAUDE.md attributed it to the wrong mechanism
+  (`outcomes confirm|reject` being CLI-only). `outcomes.classify_issues` is a recipe tool
+  that also writes dispositions. What actually holds the property is that no recipe-facing
+  `github.*` tool can mutate issue state — a load-bearing absence with no test on it, until
+  this added one. — main session
 
 - 2026-08-24 `chore/example-recipe-neutral-name` — #1506: gave one example recipe and its
   two references a neutral identifier, per the repository-privacy convention. The recipe's
