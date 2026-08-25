@@ -64,7 +64,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   that look identical drift on the first edit to either. Injected AFTER the env/seed
   spreads, unlike `date`, so a recipe variable cannot shadow it: an absent id is
   recoverable, a confidently wrong one is not. Verified end to end — the artifact's id and
-  the run-log row's `taskId` are identical strings. (#TBD)
+  the run-log row's `taskId` are identical strings. (#1524)
 
 - 2026-08-25 `feat/butler-shadow-rows` — `butler shadow` closes by telling the operator to
   "check a sample against the real errands they describe" before promoting, and gave them
