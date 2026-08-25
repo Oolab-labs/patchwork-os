@@ -54,6 +54,18 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-25 `docs/evidence-spine-after-1522` — the "next join" note added that morning
+  described `boundary_receipts.jsonl` as the unbuilt next step and told a future session how
+  to build it; #1522 then built it, so the note became an instruction to redo finished work.
+  Replaced with how it was actually done (the dep-builder ordering problem generalises) and
+  with the MEASURED status of the remaining three, so the next session scopes from numbers
+  rather than from a survey: `permission_exercises.jsonl` has no grants at all and must not
+  get a join yet; `outcome-log.jsonl`'s hazard is meaning, not plumbing (a bare
+  `correlationId` would be ambiguous between the run that FILED an action and the run that
+  JUDGED it); `worker_trust/` is derived state, not events. Also records that an
+  unregistered tool id skips silently BY DESIGN, guard-tested, and that `recipe doctor`
+  already reports it per step — two builds were spent rediscovering that. (#1525)
+
 - 2026-08-25 `feat/run-id-in-templates` — a published artifact could not cite the run that
   produced it. The flat runner injected `date`/`time`/`YYYY`… into the template context but
   never the run's own identity, and `{{taskId}}` failed template-ref lint outright, so an
