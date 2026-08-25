@@ -66,7 +66,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   "assertions for mocked recipe tests" — the docs and the code disagreed about what it was,
   which is the likeliest reason zero shipped templates use it. Measured before landing: 0 of
   1404 runs in the live log carry `assertionFailures`, so nothing is re-labelled
-  retroactively. (#TBD)
+  retroactively. (#1520)
 
 - 2026-08-25 `feat/correlation-sentinel` — the correlation-id sentinel (the irreversible
   decision doc 13 §4.1 reserved for the owner), settled by adversarial review first. A gate
