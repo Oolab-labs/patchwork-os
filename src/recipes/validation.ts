@@ -1351,6 +1351,9 @@ function validateTemplateReferences(
     "YYYY-MM",
     "YYYY-MM-DD",
     "ISO_NOW",
+    // The run's own identity (`yaml:<recipe>:<startedAt>`), injected by the
+    // flat runner so a published artifact can cite the run that produced it.
+    "taskId",
     "HH",
     "MM",
     "SS",

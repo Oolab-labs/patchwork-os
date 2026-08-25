@@ -1266,6 +1266,25 @@ export async function runYamlRecipe(
   // redaction. See PR body / docs/recipe-feature-investigation-2026-06-05.md.
   const secretKeys = new Set<string>(Object.keys(envCtx));
 
+  const recipeStartedAt = now.getTime();
+  /**
+   * This run's identity, minted ONCE.
+   *
+   * The same expression was written out twice (the run-log `startRun` and the
+   * terminal `appendDirect`). Both were in this function over this const, so
+   * they could not diverge — but a join key computed independently in two
+   * places is one edit away from a spine that breaks silently, and there are
+   * now FOUR readers of it: those two, the approval seam, and `{{taskId}}` in
+   * the template context below.
+   *
+   * Lifted above the context construction for that last reader. It was
+   * declared ~140 lines further down, after `ctx` was already built, so the
+   * only way to expose it to templates without moving it would have been to
+   * recompute it — two expressions that look identical and drift on the first
+   * edit to either.
+   */
+  const runTaskId = `yaml:${recipe.name}:${recipeStartedAt}`;
+
   const iso = now.toISOString();
   const ctx: RunContext = {
     date: iso.slice(0, 10),
@@ -1282,6 +1301,12 @@ export async function runYamlRecipe(
     SS: iso.slice(17, 19),
     ...envCtx,
     ...seedContext,
+    // AFTER the spreads, unlike `date` and the YYYY family, which a recipe
+    // variable may deliberately override. This one is an attribution, not a
+    // convenience: a recipe that shadowed it would publish a document naming a
+    // run that did not produce it. An absent id is recoverable; a confidently
+    // wrong one is not.
+    taskId: runTaskId,
   };
 
   // Merge the recipe's declared allowWrites with any caller-supplied
@@ -1404,17 +1429,6 @@ export async function runYamlRecipe(
   // as in flight. Only when a long-lived `runLog` is provided (bridge path);
   // CLI runs fall back to `appendDirect` at end via the existing logDir
   // path. Skip in test mode.
-  const recipeStartedAt = now.getTime();
-  /**
-   * This run's identity, minted ONCE.
-   *
-   * The same expression was written out twice (the run-log `startRun` and the
-   * terminal `appendDirect`). Both were in this function over this const, so
-   * they could not diverge — but a join key computed independently in two
-   * places is one edit away from a spine that breaks silently, and there are
-   * now three readers of it rather than two.
-   */
-  const runTaskId = `yaml:${recipe.name}:${recipeStartedAt}`;
   const recipeTriggerKind =
     (recipe.trigger as { type?: string } | undefined)?.type ?? "manual";
   const yamlTriggerKind = (

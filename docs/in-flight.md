@@ -54,6 +54,18 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-25 `feat/run-id-in-templates` — a published artifact could not cite the run that
+  produced it. The flat runner injected `date`/`time`/`YYYY`… into the template context but
+  never the run's own identity, and `{{taskId}}` failed template-ref lint outright, so an
+  audit pack or reconciliation workbook had no way to name its own run — the ledger knew
+  the `taskId`, the document could not reach it. Same join the gate ledger and boundary
+  receipts now carry, and the same rule: `taskId`, never `seq`. `runTaskId` was declared
+  ~140 lines BELOW the context, so it is lifted rather than recomputed — two expressions
+  that look identical drift on the first edit to either. Injected AFTER the env/seed
+  spreads, unlike `date`, so a recipe variable cannot shadow it: an absent id is
+  recoverable, a confidently wrong one is not. Verified end to end — the artifact's id and
+  the run-log row's `taskId` are identical strings. (#1524)
+
 - 2026-08-25 `feat/butler-shadow-rows` — `butler shadow` closes by telling the operator to
   "check a sample against the real errands they describe" before promoting, and gave them
   no way to do it: the summary was all `--json` printed, and `readShadowRows` had exactly
