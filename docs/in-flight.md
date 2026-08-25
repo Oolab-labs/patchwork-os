@@ -54,6 +54,13 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-25 `docs/transport-elicit-has-a-caller` — `transport.ts`'s note asserted `elicit()`
+  had NO in-repo caller and must not be cleaned up. #1218 wrote that; #1223 added the caller
+  (`recipes/elicitMissingVars.ts`) eight days later and closed #1217 with it, and the note was
+  never updated. A roadmap survey on 2026-08-23 then read the stale note, concluded the path
+  was dead and #1217 was work pointed at nothing, and ranked it on that basis — while #1217
+  had been CLOSED three weeks earlier. Corrects the note and gates its factual half.
+
 - 2026-08-25 `fix/plugin-tools-outside-sandbox-universe` — the agent-step sandbox built its
   universe from two static module constants, so no plugin-registered tool could ever be
   enumerated, classified or denied. Measured under one worker and one empty store:

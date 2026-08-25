@@ -416,14 +416,27 @@ export class McpTransport {
    * @param requestedSchema JSON Schema describing the shape of the expected response.
    * @param timeoutMs Maximum time to wait for a response (default: 5 minutes).
    *
-   * NO IN-REPO CALLER — deliberate, do not "clean up". Audited 2026-08-01:
-   * `git grep '\.elicit('` matches only this definition. The implementation is
-   * complete and works if called; it is unused, not rotted. Deleting it would
-   * also orphan the client half we ship — `claude-ide-bridge-plugin/hooks/
-   * hooks.json` + `scripts/elicitation.sh`, which pre-answer file/path fields
-   * from the active editor — plus the advertisements at :1035 and
-   * `src/mcpRoutes.ts:63` and three docs. Wiring a caller (e.g. the recipe
-   * approval prompt, today a dashboard/phone round-trip) is tracked in #1217.
+   * HAS A CALLER since #1223 — `src/recipes/elicitMissingVars.ts`, reached from
+   * `recipeOrchestration.ts` when a manual run would otherwise halt with
+   * `missing_required_vars`. That closed #1217.
+   *
+   * This note previously asserted the opposite — that no in-repo caller existed
+   * and that `git grep` matched only this definition — audited 2026-08-01. The
+   * exact former wording is deliberately not repeated here: a guard test
+   * (`__tests__/elicitHasAProductionCaller.test.ts`) fails if it reappears, and
+   * quoting it would trip that gate. #1218 wrote it, #1223
+   * added the caller eight days later and did not come back for it, and the
+   * grep it cites has returned a real caller ever since. It is corrected rather
+   * than deleted because it did not merely go out of date quietly: a roadmap
+   * survey on 2026-08-23 read it, concluded this path was dead and #1217 was
+   * scheduled work pointed at nothing, and ranked the item accordingly. A stale
+   * comment that instructs the reader is worse than no comment.
+   *
+   * Still do not "clean up" — the reason simply changed from "unused but
+   * complete" to "used". Deleting it would ALSO orphan the client half we ship
+   * — `claude-ide-bridge-plugin/hooks/hooks.json` + `scripts/elicitation.sh`,
+   * which pre-answer file/path fields from the active editor — plus the
+   * advertisements at :1035 and `src/mcpRoutes.ts:63` and three docs.
    * Note this path is WS-only: it requires
    * `activeWs`, so Streamable-HTTP and stdio sessions can never use it.
    *
