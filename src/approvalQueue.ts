@@ -71,9 +71,17 @@ export interface PendingApproval {
    *
    * TODO(phase-0β-pop): population is deferred — the immediate goal
    * is unblocking the dashboard schema. Computing the link without a
-   * deeper refactor requires sessionId→runSeq mapping that today
+   * deeper refactor requires sessionId→run mapping that today
    * lives behind `personalSignals.source: "recipe_run_log"`. Wiring
    * that explicitly into `handleApprovalRequest` is the follow-up.
+   *
+   * WHEN THAT FOLLOW-UP HAPPENS, DO NOT POPULATE THIS FIELD. `seq` is a
+   * per-instance counter over a file several bridges write, and it
+   * collides — measured 255 distinct values across 272 rows of the live
+   * gate ledger. An approval joined on it lands on an arbitrary one of
+   * the colliding runs. Add a `runTaskId` alongside (or instead), the
+   * same key `ApprovalRequestInput` and the Decision Record's
+   * `correlationId` already use, and retire this one.
    */
   runSeq?: number;
   recipeName?: string;

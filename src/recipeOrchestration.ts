@@ -132,16 +132,7 @@ async function makeRecipeApprovalFn(gate: "high" | "all"): Promise<ApprovalFn> {
   };
 }
 
-type ApprovalFn = (input: {
-  toolId: string;
-  tier: import("./riskTier.js").RiskTier;
-  summary?: string;
-  params?: Record<string, unknown>;
-  /** The run's AbortSignal — when it fires, the pending approval resolves
-   * "cancelled" so a cancelled run halts promptly instead of waiting the full
-   * approval TTL (L1). */
-  signal?: AbortSignal;
-}) => Promise<boolean>;
+type ApprovalFn = import("./recipes/approvalRequest.js").ApprovalFn;
 
 /**
  * Worker-autonomy gate (worker-ramp-v0 phase 2, `worker.autonomy` flag, default
@@ -304,6 +295,9 @@ export async function buildWorkerAutonomyGate(
       try {
         ctxOpts?.recordGateDecision?.({
           recipeName,
+          // The run this decision belongs to. Required on the approval input, so
+          // a new call site cannot reach here without naming one.
+          correlationId: input.runTaskId,
           workerId: worker.id,
           toolName: input.toolId,
           action: decision.action,

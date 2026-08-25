@@ -26,6 +26,14 @@ import { RecipeRunLog } from "../runLog.js";
 import type { RecordGateDecisionInput } from "../workerGateDecisionLog.js";
 import { OutcomeStore } from "../workers/outcomeStore.js";
 
+/**
+ * A stand-in run id for gate inputs. `runTaskId` is required on
+ * `ApprovalRequestInput` so that a new approval call site cannot forget the
+ * join key onto its run; a test that only exercises the decision still has to
+ * name one.
+ */
+const TEST_RUN = "yaml:test-recipe:1756000000000";
+
 /** Seed durable, dwell-separated successes so the worker earns autonomy on
  *  `tool`'s class (ancient timestamps → durable under durable-outcome labels). */
 function seedEarned(dir: string, recipeName: string, tool: string, n = 18) {
@@ -121,7 +129,12 @@ describe("buildWorkerAutonomyGate", () => {
     // auto-allow it just because it is reversible.
     const tierFn = vi.fn(async () => false);
     const g = await buildWorkerAutonomyGate("test-recipe", tierFn, opts);
-    const r = await g!({ toolId: "editText", tier: "high", params: {} });
+    const r = await g!({
+      runTaskId: TEST_RUN,
+      toolId: "editText",
+      tier: "high",
+      params: {},
+    });
     expect(tierFn).toHaveBeenCalledTimes(1);
     expect(r).toBe(false); // tier protection retained
   });
@@ -129,7 +142,12 @@ describe("buildWorkerAutonomyGate", () => {
   it("FLOOR: a reversible step is allowed when the tier fn allows", async () => {
     const tierFn = vi.fn(async () => true);
     const g = await buildWorkerAutonomyGate("test-recipe", tierFn, opts);
-    const r = await g!({ toolId: "editText", tier: "low", params: {} });
+    const r = await g!({
+      runTaskId: TEST_RUN,
+      toolId: "editText",
+      tier: "low",
+      params: {},
+    });
     expect(tierFn).toHaveBeenCalledTimes(1);
     expect(r).toBe(true);
   });
@@ -137,20 +155,35 @@ describe("buildWorkerAutonomyGate", () => {
   it("agent steps defer to the tier fn, never gate forever (M3)", async () => {
     const tierFn = vi.fn(async () => true);
     const g = await buildWorkerAutonomyGate("test-recipe", tierFn, opts);
-    const r = await g!({ toolId: "agent", tier: "medium", params: {} });
+    const r = await g!({
+      runTaskId: TEST_RUN,
+      toolId: "agent",
+      tier: "medium",
+      params: {},
+    });
     expect(tierFn).toHaveBeenCalledTimes(1);
     expect(r).toBe(true);
   });
 
   it("a reversible step flows when there is no tier fn (approvalGate off)", async () => {
     const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-    const r = await g!({ toolId: "editText", tier: "low", params: {} });
+    const r = await g!({
+      runTaskId: TEST_RUN,
+      toolId: "editText",
+      tier: "low",
+      params: {},
+    });
     expect(r).toBe(true);
   });
 
   it("fail-closed: a risky unearned step queues and REJECT → false (M4)", async () => {
     const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-    const p = g!({ toolId: "gitPush", tier: "high", params: {} });
+    const p = g!({
+      runTaskId: TEST_RUN,
+      toolId: "gitPush",
+      tier: "high",
+      params: {},
+    });
     await tick();
     expect(getApprovalQueue().list()).toHaveLength(1);
     getApprovalQueue().reject(firstCallId());
@@ -159,7 +192,12 @@ describe("buildWorkerAutonomyGate", () => {
 
   it("fail-closed: a risky unearned step CANCEL → false (M4)", async () => {
     const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-    const p = g!({ toolId: "gitPush", tier: "high", params: {} });
+    const p = g!({
+      runTaskId: TEST_RUN,
+      toolId: "gitPush",
+      tier: "high",
+      params: {},
+    });
     await tick();
     getApprovalQueue().cancel(firstCallId());
     expect(await p).toBe(false);
@@ -167,7 +205,12 @@ describe("buildWorkerAutonomyGate", () => {
 
   it("fail-closed: a risky unearned step EXPIRE → false (M4)", async () => {
     const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-    const p = g!({ toolId: "gitPush", tier: "high", params: {} });
+    const p = g!({
+      runTaskId: TEST_RUN,
+      toolId: "gitPush",
+      tier: "high",
+      params: {},
+    });
     await tick();
     getApprovalQueue().clear(); // resolves pending as "expired"
     expect(await p).toBe(false);
@@ -175,7 +218,12 @@ describe("buildWorkerAutonomyGate", () => {
 
   it("a risky unearned step APPROVE → true (M4)", async () => {
     const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-    const p = g!({ toolId: "gitPush", tier: "high", params: {} });
+    const p = g!({
+      runTaskId: TEST_RUN,
+      toolId: "gitPush",
+      tier: "high",
+      params: {},
+    });
     await tick();
     getApprovalQueue().approve(firstCallId());
     expect(await p).toBe(true);
@@ -185,6 +233,7 @@ describe("buildWorkerAutonomyGate", () => {
     const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
     const ac = new AbortController();
     const p = g!({
+      runTaskId: TEST_RUN,
       toolId: "gitPush",
       tier: "high",
       params: {},
@@ -209,7 +258,12 @@ describe("buildWorkerAutonomyGate", () => {
       },
     );
     expect(
-      await clean!({ toolId: "githubCreatePR", tier: "high", params: {} }),
+      await clean!({
+        runTaskId: TEST_RUN,
+        toolId: "githubCreatePR",
+        tier: "high",
+        params: {},
+      }),
     ).toBe(true);
 
     // Dangerous live context → the SAME earned action is throttled to a gate
@@ -225,7 +279,12 @@ describe("buildWorkerAutonomyGate", () => {
         }),
       },
     );
-    const p = risky!({ toolId: "githubCreatePR", tier: "high", params: {} });
+    const p = risky!({
+      runTaskId: TEST_RUN,
+      toolId: "githubCreatePR",
+      tier: "high",
+      params: {},
+    });
     await tick();
     expect(getApprovalQueue().list()).toHaveLength(1);
     getApprovalQueue().reject(firstCallId());
@@ -241,7 +300,12 @@ describe("buildWorkerAutonomyGate", () => {
     });
     // provider threw → contextRisk undefined → earned action still flows.
     expect(
-      await gate!({ toolId: "githubCreatePR", tier: "high", params: {} }),
+      await gate!({
+        runTaskId: TEST_RUN,
+        toolId: "githubCreatePR",
+        tier: "high",
+        params: {},
+      }),
     ).toBe(true);
   });
 
@@ -251,14 +315,24 @@ describe("buildWorkerAutonomyGate", () => {
       recordGateDecision: (r) => records.push(r),
     });
     // GATE path: unowned risky gitPush (worker owns vcs-remote, not vcs-push).
-    const p = gate!({ toolId: "gitPush", tier: "high", params: {} });
+    const p = gate!({
+      runTaskId: TEST_RUN,
+      toolId: "gitPush",
+      tier: "high",
+      params: {},
+    });
     await tick();
     getApprovalQueue().reject(firstCallId());
     await p;
     // ALLOW path: reversible editText flows.
-    expect(await gate!({ toolId: "editText", tier: "low", params: {} })).toBe(
-      true,
-    );
+    expect(
+      await gate!({
+        runTaskId: TEST_RUN,
+        toolId: "editText",
+        tier: "low",
+        params: {},
+      }),
+    ).toBe(true);
 
     const gated = records.find((r) => r.toolName === "gitPush");
     const allowed = records.find((r) => r.toolName === "editText");
@@ -320,7 +394,12 @@ describe("buildWorkerAutonomyGate", () => {
       store.grant({ scope: { domains: ["vcs-push"] }, note: "small pushes" });
 
       const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-      const result = await g!({ toolId: "gitPush", tier: "high", params: {} });
+      const result = await g!({
+        runTaskId: TEST_RUN,
+        toolId: "gitPush",
+        tier: "high",
+        params: {},
+      });
 
       expect(result).toBe(true);
       // The point of the whole feature: nobody was asked.
@@ -332,7 +411,12 @@ describe("buildWorkerAutonomyGate", () => {
       const p = store.grant({ scope: { domains: ["vcs-push"] } });
 
       const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-      await g!({ toolId: "gitPush", tier: "high", params: {} });
+      await g!({
+        runTaskId: TEST_RUN,
+        toolId: "gitPush",
+        tier: "high",
+        params: {},
+      });
 
       const exercises = (await permStore()).exercises();
       expect(exercises).toHaveLength(1);
@@ -349,7 +433,12 @@ describe("buildWorkerAutonomyGate", () => {
       const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts, {
         recordGateDecision: (r) => records.push(r),
       });
-      await g!({ toolId: "gitPush", tier: "high", params: {} });
+      await g!({
+        runTaskId: TEST_RUN,
+        toolId: "gitPush",
+        tier: "high",
+        params: {},
+      });
 
       // The gate's own verdict is unchanged — the trust maths still gated it.
       expect(records[0]?.action).toBe("gate");
@@ -362,14 +451,24 @@ describe("buildWorkerAutonomyGate", () => {
       const p = store.grant({ scope: { domains: ["vcs-push"] } });
 
       const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-      expect(await g!({ toolId: "gitPush", tier: "high", params: {} })).toBe(
-        true,
-      );
+      expect(
+        await g!({
+          runTaskId: TEST_RUN,
+          toolId: "gitPush",
+          tier: "high",
+          params: {},
+        }),
+      ).toBe(true);
 
       store.revoke(p.id);
 
       // Same gate instance — a grant cached for the run would keep flowing.
-      const pending = g!({ toolId: "gitPush", tier: "high", params: {} });
+      const pending = g!({
+        runTaskId: TEST_RUN,
+        toolId: "gitPush",
+        tier: "high",
+        params: {},
+      });
       await tick();
       expect(getApprovalQueue().list()).toHaveLength(1);
       getApprovalQueue().reject(firstCallId());
@@ -382,7 +481,12 @@ describe("buildWorkerAutonomyGate", () => {
       store.grant({ scope: { domains: ["shell", "messaging", "vcs-push"] } });
 
       const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-      const pending = g!({ toolId: "runCommand", tier: "high", params: {} });
+      const pending = g!({
+        runTaskId: TEST_RUN,
+        toolId: "runCommand",
+        tier: "high",
+        params: {},
+      });
       await tick();
       expect(getApprovalQueue().list()).toHaveLength(1);
       getApprovalQueue().reject(firstCallId());
@@ -394,7 +498,12 @@ describe("buildWorkerAutonomyGate", () => {
       store.grant({ scope: { domains: ["issue"] } });
 
       const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
-      const pending = g!({ toolId: "gitPush", tier: "high", params: {} });
+      const pending = g!({
+        runTaskId: TEST_RUN,
+        toolId: "gitPush",
+        tier: "high",
+        params: {},
+      });
       await tick();
       expect(getApprovalQueue().list()).toHaveLength(1);
       getApprovalQueue().reject(firstCallId());
@@ -409,9 +518,14 @@ describe("buildWorkerAutonomyGate", () => {
       },
     });
     // logging blew up, but the reversible action still flows.
-    expect(await gate!({ toolId: "editText", tier: "low", params: {} })).toBe(
-      true,
-    );
+    expect(
+      await gate!({
+        runTaskId: TEST_RUN,
+        toolId: "editText",
+        tier: "low",
+        params: {},
+      }),
+    ).toBe(true);
   });
 });
 
@@ -536,6 +650,7 @@ forbids:
     const tierFn = vi.fn(async () => true);
     const g = await buildWorkerAutonomyGate("fin-recipe", tierFn, opts);
     const r = await g!({
+      runTaskId: TEST_RUN,
       toolId: "slackPostMessage",
       tier: "high",
       params: {},
@@ -549,7 +664,12 @@ forbids:
     // Guards against the rule over-matching and bricking the worker entirely.
     const tierFn = vi.fn(async () => true);
     const g = await buildWorkerAutonomyGate("fin-recipe", tierFn, opts);
-    const r = await g!({ toolId: "editText", tier: "low", params: {} });
+    const r = await g!({
+      runTaskId: TEST_RUN,
+      toolId: "editText",
+      tier: "low",
+      params: {},
+    });
     expect(r).toBe(true);
   });
 });
