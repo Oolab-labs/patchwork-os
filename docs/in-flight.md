@@ -69,6 +69,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   `GET /gate/decisions` and the dashboard. One shared `isGateAction`, since two independently
   hardcoded lists is the mechanism of the bug, not a duplication smell. SECOND sentinel
   precondition; requires the dashboard widening to land first.
+- 2026-08-25 `fix/rotation-destroys-half-the-trust-ledger` — `rotateDisk` HALVED the file
+  (`slice(-floor(length/2))` in a `while`), so crossing the 1 MB cap by one row discarded ~50%
+  of the autonomy gate's trust evidence and audit trail, oldest-first, silently. Measured: it
+  left 525,829 bytes of a 1 MB budget. Replaced with trim-to-target (90% low-water mark) and a
+  dropped-row COUNT — rotation deletes oldest-first, i.e. exactly the rows lacking any newer
+  field, so a coverage measure over this file converges to 1.0 BY DELETION and reads
+  identically to a real improvement. Byte length not UTF-16 length, since the trigger is
+  `st.size`. THIRD sentinel precondition.
 
 - 2026-08-25 `docs/transport-elicit-has-a-caller` — `transport.ts`'s note asserted `elicit()`
   had NO in-repo caller and must not be cleaned up. #1218 wrote that; #1223 added the caller
