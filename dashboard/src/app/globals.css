@@ -10198,6 +10198,12 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-gate-verb { color: #e0b054; font-weight: 600; letter-spacing: 0.02em; }
 [data-theme="paper"] .td-gate-verb { color: var(--warn-text); }
 .td-gate-verb-allow { color: var(--ok-text); }
+/* ADR-0017 `forbid` — a terminal state, not a stronger gate. It must not
+   read as the amber GATE it previously rendered as: same colour would say
+   "needs approval" while the word says no approval unlocks it. Uses the
+   shared error token so it tracks the theme, including [data-theme="paper"],
+   rather than pinning a literal that would only be checked in one mode. */
+.td-gate-verb-forbid { color: var(--err-text); }
 .td-gate-arrow { opacity: 0.6; }
 .td-gate-explain {
   font-size: var(--fs-xs);

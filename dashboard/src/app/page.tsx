@@ -32,6 +32,7 @@ import {
 } from "@/lib/workerTrust";
 import { describeNextRun, humanizeSchedule } from "@/lib/humanSchedule";
 import { classifyPendingAction, reversibilityRank } from "@/lib/actionClass";
+import { type GateAction, gateActionLabel } from "@/lib/gateAction";
 import { BlastBadge } from "@/components/patchwork";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 import { isNoiseEvent } from "@/lib/activityNoise";
@@ -174,7 +175,11 @@ interface GateDecisionRecord {
   workerId: string;
   toolName: string;
   classKey: string;
-  action: "allow" | "gate";
+  // Widened to include ADR-0017's terminal `forbid`. This interface is a
+  // hand-copied slim mirror of `src/workerGateDecisionLog.ts` — the dashboard
+  // is a separate package and cannot import from `src/` — so it does not track
+  // the source type automatically and drifted silently once already.
+  action: GateAction;
   owned: boolean;
   earnedLevel: number;
   autonomyCeiling: number;
@@ -221,15 +226,13 @@ function GateRow({
     minute: "2-digit",
     hour12: false,
   });
-  const isAllow = d.action === "allow";
+  const label = gateActionLabel(d.action);
   return (
     <div className={`td-gate-row-wrap${indent ? " td-gate-row-indent" : ""}`}>
       <button type="button" className="td-gate-row" aria-expanded={isOpen} onClick={onToggle}>
         <span className="td-gate-row-top">
           <span className="mono td-muted td-gate-time">{hhmm}</span>
-          <span className={`td-gate-verb${isAllow ? " td-gate-verb-allow" : ""}`}>
-            {isAllow ? "ALLOW" : "GATE"}
-          </span>
+          <span className={`td-gate-verb${label.className}`}>{label.verb}</span>
           <span className="td-gate-arrow" aria-hidden="true">→</span>
           <span className="td-gate-result">{gateLevelPhrase(d.effectiveLevel)}</span>
         </span>
@@ -242,7 +245,7 @@ function GateRow({
           <div>
             effective L{d.effectiveLevel} ({gateLevelPhrase(d.effectiveLevel)})
             {" vs required "}
-            {d.action === "allow" ? "— none (allowed)" : "higher"}
+            {label.requiredPhrase}
           </div>
           <div>
             earned L{d.earnedLevel} · autonomy ceiling L{d.autonomyCeiling}
