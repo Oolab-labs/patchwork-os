@@ -77,7 +77,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   (boundary receipts) is a design step rather than a one-liner: `buildChainedDeps` is called
   before `runChainedRecipe` computes `runTaskId`, so the chained path has no run id at
   deps-build time, and filling the field on the flat path only would repeat the `stepId`
-  mistake this ledger already made once. (#TBD)
+  mistake this ledger already made once. (#1521)
 
 - 2026-08-25 `feat/correlation-sentinel` — the correlation-id sentinel (the irreversible
   decision doc 13 §4.1 reserved for the owner), settled by adversarial review first. A gate
