@@ -68,6 +68,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   the latter reached `--disallowed-tools`. Threads the live registry in through a thunk (not a
   snapshot — `--plugin-watch` would otherwise reopen it) and narrows the other-domain
   exemption, which alone is inert because an unknown name infers `tier=medium, domain=other`.
+- 2026-08-25 `test/proxy-session-forwarding-guard` — the dashboard proxy's session-forwarding
+  block is the only path by which a bridge can attribute an approval to a named member
+  (ADR-0020 Phase A). Measured: deleting it outright left the dashboard suite at 126 files /
+  1299 tests, ALL GREEN — a total, silent loss of approval attribution passed every check we
+  had, because unattributed is a legitimate state and looks like normal operation. Adds a
+  test asserting the scoping in BOTH directions; a happy-path-only test would pass equally
+  well if the scope were widened to every request, which is a credential leak rather than an
+  attribution loss. Both mutations verified to fail.
 
 - 2026-08-24 `fix/attribution-secret-reachability` — #1509: ADR-0020 attribution was shipped
   and unreachable on nearly every launch path — `src/index.ts` builds its dotenv candidates
