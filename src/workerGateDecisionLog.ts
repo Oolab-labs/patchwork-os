@@ -177,6 +177,29 @@ export interface GateDecisionQuery {
   limit?: number;
 }
 
+/**
+ * The three terminal actions a Decision Record may carry (ADR-0017).
+ *
+ * Shared because the writer and the reader each hardcoded their own list and
+ * drifted: `record()` validated all three while the loader accepted only
+ * `allow` and `gate`, so a `forbid` row was written correctly and then dropped
+ * by every subsequent read. It survived in the writing process's memory ring
+ * and vanished at the next restart — leaving the one state whose whole purpose
+ * is to be visible and unappealable invisible in `gate explain`, in
+ * `GET /gate/decisions` and on the dashboard.
+ *
+ * One literal, two call sites. The same reason `AGENT_STEP_TOOL` lives in one
+ * place: two independent copies of a list is not a duplication smell here, it
+ * is the mechanism of the bug.
+ */
+export const GATE_ACTIONS = ["allow", "gate", "forbid"] as const;
+
+export function isGateAction(v: unknown): v is GateDecisionRecord["action"] {
+  return (
+    typeof v === "string" && (GATE_ACTIONS as readonly string[]).includes(v)
+  );
+}
+
 export class WorkerGateDecisionLog {
   private records: GateDecisionRecord[] = [];
   private seq = 0;
@@ -216,11 +239,7 @@ export class WorkerGateDecisionLog {
     if (!workerId) throw new Error("workerId is required");
     if (!toolName) throw new Error("toolName is required");
     if (!classKey) throw new Error("classKey is required");
-    if (
-      input.action !== "allow" &&
-      input.action !== "gate" &&
-      input.action !== "forbid"
-    ) {
+    if (!isGateAction(input.action)) {
       throw new Error(`invalid action: ${String(input.action)}`);
     }
 
@@ -458,7 +477,9 @@ export class WorkerGateDecisionLog {
           typeof parsed.seq !== "number" ||
           typeof parsed.workerId !== "string" ||
           typeof parsed.toolName !== "string" ||
-          (parsed.action !== "allow" && parsed.action !== "gate")
+          // Narrowed, not removed: a genuinely unrecognised action is still a
+          // malformed row and is still skipped.
+          !isGateAction(parsed.action)
         ) {
           continue;
         }

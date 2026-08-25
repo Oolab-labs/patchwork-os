@@ -62,6 +62,13 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   colour), widens the type, adds the missing `td-gate-verb-forbid` style on the shared
   `--err-text` token. Unknown actions fall back to the forbid presentation. FIRST of the
   sentinel preconditions — must land before `consumeRawJsonl` accepts `forbid`.
+- 2026-08-25 `fix/forbid-rows-dropped-on-read` — `record()` validated all three actions while
+  `consumeRawJsonl` accepted only `allow` and `gate`, so a `forbid` row was written correctly
+  and dropped by every subsequent read — surviving in the writing process's memory ring and
+  vanishing at the next restart. ADR-0017's terminal state was invisible in `gate explain`,
+  `GET /gate/decisions` and the dashboard. One shared `isGateAction`, since two independently
+  hardcoded lists is the mechanism of the bug, not a duplication smell. SECOND sentinel
+  precondition; requires the dashboard widening to land first.
 
 - 2026-08-25 `docs/transport-elicit-has-a-caller` — `transport.ts`'s note asserted `elicit()`
   had NO in-repo caller and must not be cleaned up. #1218 wrote that; #1223 added the caller
