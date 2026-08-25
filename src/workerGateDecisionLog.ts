@@ -12,7 +12,6 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { withFileLockSync } from "./fileLockSync.js";
-import type { Logger } from "./logger.js";
 import type { Reversibility } from "./workers/actionClass.js";
 
 /**
@@ -153,15 +152,42 @@ export type RecordGateDecisionInput = Omit<
 >;
 
 const DEFAULT_MEMORY_CAP = 2_000;
-const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
+export const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
 const MAX_PERSIST_LINES = 10_000;
+/**
+ * Low-water mark for rotation, as a fraction of the cap. The cap is the
+ * TRIGGER; this is the TARGET. The gap between them is what stops rotation from
+ * running on every append once the file is full — see `rotateDisk`.
+ */
+const ROTATE_TARGET_RATIO = 0.9;
 const MAX_REASON_LEN = 1_000;
 const MAX_CONTEXT_REASONS = 16;
 
 export interface WorkerGateDecisionLogOptions {
   dir: string;
-  logger?: Logger;
+  /**
+   * Only `warn` is ever called (`logger?.warn?.(…)` at every site), so the
+   * option asks for only that — matching `ButlerFactStore` and
+   * `permissionStore`, which take the same shape for the same reason.
+   *
+   * It used to demand the full `Logger`. A real caller passing one still
+   * satisfies this structurally, but the wide type made a `{ warn }` object
+   * a type error in tests while being indistinguishable at runtime — and the
+   * strict `tsconfig.tests.core.json` ratchet is where that surfaced, not the
+   * default `npm run typecheck`.
+   */
+  logger?: { warn?: (msg: string) => void };
   memoryCap?: number;
+  /**
+   * Byte cap before rotation, defaulting to `MAX_PERSIST_BYTES`.
+   *
+   * Injectable for the same reason `memoryCap` is: a test that must observe
+   * rotation should not have to write a real megabyte through a lock-guarded
+   * append on every row. The first version of the rotation test did exactly
+   * that — ~3,400 locked appends across four cases — which is merely slow on
+   * Linux and a plausible timeout on Windows.
+   */
+  maxPersistBytes?: number;
   now?: () => number;
 }
 
@@ -205,6 +231,8 @@ export class WorkerGateDecisionLog {
   private seq = 0;
   private readonly file: string;
   private readonly memoryCap: number;
+  private readonly maxBytes: number;
+  private readonly rotateTarget: number;
   private readonly now: () => number;
   /** Byte offset up to which `file` has been loaded (ADR-0007 tail-on-read). */
   private lastReadOffset = 0;
@@ -212,6 +240,14 @@ export class WorkerGateDecisionLog {
   constructor(private readonly opts: WorkerGateDecisionLogOptions) {
     this.file = path.join(opts.dir, "worker_gate_decisions.jsonl");
     this.memoryCap = opts.memoryCap ?? DEFAULT_MEMORY_CAP;
+    this.maxBytes =
+      opts.maxPersistBytes && opts.maxPersistBytes > 0
+        ? opts.maxPersistBytes
+        : MAX_PERSIST_BYTES;
+    this.rotateTarget = Math.max(
+      1,
+      Math.floor(this.maxBytes * ROTATE_TARGET_RATIO),
+    );
     this.now = opts.now ?? Date.now;
     try {
       mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
@@ -333,7 +369,7 @@ export class WorkerGateDecisionLog {
     try {
       try {
         const st = statSync(this.file);
-        if (st.size > MAX_PERSIST_BYTES) this.rotateDisk();
+        if (st.size > this.maxBytes) this.rotateDisk();
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== "ENOENT") throw err;
@@ -358,19 +394,64 @@ export class WorkerGateDecisionLog {
     }
   }
 
-  /** Trim to the most recent MAX_PERSIST_LINES / MAX_PERSIST_BYTES. Best-effort. */
+  /** Trim to the most recent MAX_PERSIST_LINES / `this.maxBytes`. Best-effort. */
   private rotateDisk(): void {
     try {
       const raw = readFileSync(this.file, "utf-8");
       let lines = raw.split("\n").filter((l) => l.trim());
+      const before = lines.length;
       if (lines.length > MAX_PERSIST_LINES)
         lines = lines.slice(-MAX_PERSIST_LINES);
-      let joined = lines.join("\n");
-      while (joined.length + 1 > MAX_PERSIST_BYTES && lines.length > 1) {
-        lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
-        joined = lines.join("\n");
+
+      // Trim to fit, newest-first, dropping only what the cap actually
+      // requires.
+      //
+      // This used to halve: `lines.slice(-floor(length / 2))` inside a `while`,
+      // so crossing the cap by one row discarded ~50% of the file and a second
+      // pass could take ~75%. Measured on a synthetic fill, the old code left
+      // 525,829 bytes of a 1 MB budget — half the ledger destroyed to reclaim
+      // one row. This file is the autonomy gate's trust evidence and its audit
+      // trail, so that was 50% of both.
+      //
+      // Byte length, not string length: rotation is TRIGGERED on `st.size`
+      // (real bytes) but the old arithmetic used `.length` (UTF-16 code units),
+      // so a reason containing non-ASCII could leave the file over a cap whose
+      // own name says bytes.
+      //
+      // Trims to ROTATE_TARGET_BYTES, not to the cap. Trimming to exactly the
+      // cap looks tidier and is much worse: `append` rotates when the file is
+      // over the cap and then writes its row, so a file sitting exactly at the
+      // limit rotates on EVERY subsequent append — dropping one row and
+      // emitting one warning each time, forever. Measured while building this:
+      // 826 rotations and 826 identical warnings across one fill. A high-water
+      // trigger needs a low-water target, and a warning that fires on every
+      // write is one nobody reads.
+      let budget = this.rotateTarget;
+      let keepFrom = lines.length;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const cost = Buffer.byteLength(lines[i] as string, "utf8") + 1;
+        if (cost > budget) break;
+        budget -= cost;
+        keepFrom = i;
       }
-      if (lines.length === 1 && joined.length + 1 > MAX_PERSIST_BYTES) {
+      lines = lines.slice(keepFrom);
+      let joined = lines.join("\n");
+
+      const dropped = before - lines.length;
+      if (dropped > 0) {
+        // Say the COUNT, not just that it happened.
+        //
+        // Rotation deletes oldest-first, which is exactly the population of
+        // rows lacking any newer field. So a coverage measure over this file
+        // converges toward 1.0 BY DELETION, and "98% of decisions carry a run
+        // id" would read identically whether the ledger improved or ate its own
+        // counter-examples. Without this number a denominator computed here is
+        // not merely imprecise, it is confidently backwards.
+        this.opts.logger?.warn?.(
+          `[gate-decision-log] rotate dropped ${dropped} of ${before} row(s) (oldest first) to get under ${this.rotateTarget} bytes — coverage figures computed over this file exclude them`,
+        );
+      }
+      if (lines.length === 1 && joined.length + 1 > this.maxBytes) {
         this.opts.logger?.warn?.(
           `[gate-decision-log] rotate dropped 1 oversized row (${joined.length} bytes)`,
         );
