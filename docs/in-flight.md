@@ -54,6 +54,15 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-25 `fix/dashboard-renders-forbid-as-gate` — the dashboard typed a gate decision's
+  `action` as `"allow" | "gate"` and rendered `isAllow ? "ALLOW" : "GATE"`, so ADR-0017's
+  terminal `forbid` displayed as a GATE with the explain line "vs required higher" — telling
+  the operator to seek more approval for the one thing no approval unlocks. Extracts the
+  labels to `lib/gateAction.ts` sharing ControlBoundary's wording (distinct in WORDS, not only
+  colour), widens the type, adds the missing `td-gate-verb-forbid` style on the shared
+  `--err-text` token. Unknown actions fall back to the forbid presentation. FIRST of the
+  sentinel preconditions — must land before `consumeRawJsonl` accepts `forbid`.
+
 - 2026-08-25 `docs/transport-elicit-has-a-caller` — `transport.ts`'s note asserted `elicit()`
   had NO in-repo caller and must not be cleaned up. #1218 wrote that; #1223 added the caller
   (`recipes/elicitMissingVars.ts`) eight days later and closed #1217 with it, and the note was
