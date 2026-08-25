@@ -525,3 +525,70 @@ describe("disallowedToolsForAgentStep — forbidden tools must be sandboxed", ()
     expect(blocked).not.toContain("getGitStatus");
   });
 });
+
+describe("disallowedToolsForAgentStep — plugin tools must reach the universe", () => {
+  /**
+   * The sandbox's universe is `TIER_MAP ∪ DOMAIN_BY_TOOL` — two static module
+   * constants. A plugin registers its MCP tools at runtime, so no plugin tool
+   * can ever appear in either, and the loop that builds `--disallowed-tools`
+   * never sees it. The agent subprocess could therefore call it at any trust
+   * level: exactly the bypass this function's own doc comment says it closes.
+   *
+   * Measured before the fix, under one worker and one empty store:
+   * `decideWorkerAction` returned "gate" for BOTH `im_send` (the shipped
+   * example plugin's only tool) and `slackPostMessage`, and only
+   * `slackPostMessage` reached the deny list.
+   *
+   * Two things had to change and the first ALONE IS INERT — which is the whole
+   * reason this block asserts on the deny list and not on the universe. An
+   * unknown tool infers `tier=medium, domain=other`, so the over-block guard
+   * skips it even once it is enumerated. That guard justifies itself by naming
+   * built-in reads (getDiagnostics, searchWorkspace, goToDefinition); a plugin
+   * tool is not one of those but an unclassified third-party side effect, so it
+   * does not inherit their benefit of the doubt.
+   */
+  const w = () => parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+
+  it("agrees with decideWorkerAction, which gates that same tool (control)", () => {
+    // Pins that the next test is not passing for a trivial reason: the gate
+    // really does refuse this tool, so the sandbox omitting it was a
+    // divergence between the two and not a deliberate carve-out.
+    const d = decideWorkerAction(
+      w(),
+      "im_send",
+      undefined,
+      new WorkerLevelStore(),
+    );
+    expect(d.action).toBe("gate");
+  });
+
+  it("blocks a plugin tool the gate would have queued for approval", () => {
+    const blocked = disallowedToolsForAgentStep(w(), new WorkerLevelStore(), {
+      pluginTools: ["im_send"],
+    });
+    expect(blocked).toContain("im_send");
+    expect(blocked).toContain("mcp__patchwork__im_send");
+  });
+
+  it("does not strip the harmless built-in reads the guard protects", () => {
+    // The over-block guard is NARROWED, not removed: only names the caller
+    // declared as plugin tools lose the exemption.
+    const blocked = disallowedToolsForAgentStep(w(), new WorkerLevelStore(), {
+      pluginTools: ["im_send"],
+    });
+    expect(blocked).not.toContain("getDiagnostics");
+    expect(blocked).not.toContain("searchWorkspace");
+  });
+
+  it("changes nothing for tools that were already enumerated", () => {
+    // Additivity. Fails if the fix over-blocks — the only difference between
+    // the two lists must be the plugin names themselves.
+    const base = disallowedToolsForAgentStep(w(), new WorkerLevelStore());
+    const withPlugin = disallowedToolsForAgentStep(
+      w(),
+      new WorkerLevelStore(),
+      { pluginTools: ["im_send"] },
+    );
+    expect(withPlugin.filter((t) => !t.endsWith("im_send"))).toEqual(base);
+  });
+});

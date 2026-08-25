@@ -1407,6 +1407,12 @@ export class Bridge {
           activityLog: this.activityLog,
           workerGateDecisionLog: this.workerGateDecisionLog,
           workdir: this.config.workspace,
+          // Same live-list idiom the tool registry uses above: prefer the
+          // watcher's current view so a hot-reloaded plugin is covered too.
+          pluginToolNames: () =>
+            (this.pluginWatcher?.getTools() ?? this.pluginTools).map(
+              (t) => t.schema.name,
+            ),
           logger: this.logger,
         });
         this.recipeOrchestration.wireServerFns();

@@ -54,6 +54,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-25 `fix/plugin-tools-outside-sandbox-universe` — the agent-step sandbox built its
+  universe from two static module constants, so no plugin-registered tool could ever be
+  enumerated, classified or denied. Measured under one worker and one empty store:
+  `decideWorkerAction` returned `gate` for both a plugin tool and `slackPostMessage`, and only
+  the latter reached `--disallowed-tools`. Threads the live registry in through a thunk (not a
+  snapshot — `--plugin-watch` would otherwise reopen it) and narrows the other-domain
+  exemption, which alone is inert because an unknown name infers `tier=medium, domain=other`.
+
 - 2026-08-24 `fix/attribution-secret-reachability` — #1509: ADR-0020 attribution was shipped
   and unreachable on nearly every launch path — `src/index.ts` builds its dotenv candidates
   from `import.meta.url`, so it read `<install-dir>/.env` (destroyed by
