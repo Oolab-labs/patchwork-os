@@ -64,6 +64,19 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   operator-data warning `runstore compare` and `privacy receipts` carry. The wiring test
   is the load-bearing one: mutating the flag lookup makes `--rows` fall silently back to
   the summary while all six formatter tests still pass. (#1523)
+- 2026-08-25 `feat/boundary-receipt-correlation` — the second ledger joins. A boundary
+  receipt now carries `correlationId` (the run's `taskId`, never `seq`) behind an `rv`
+  record level, the protocol #1519 settled for the gate ledger. `recipeName` said WHICH
+  recipe to fix; an hourly recipe still produced receipts no reader could tell apart.
+  The reason this was not a one-liner: one write site, four dep-builders, and
+  `buildChainedDeps` is called from three places BEFORE `runChainedRecipe` computes its
+  run id — so the chained path had nothing to pass. Closed with a cell created by
+  `buildChainedDeps` and filled by the runner, rather than filling the field on the flat
+  path only, which would have repeated the `stepId` this same ledger once declared, never
+  supplied, and removed rather than wired. Also fixes the READER, which enumerated fields
+  explicitly and would have dropped both new ones — #1517's defect, caught before shipping
+  rather than after. Sentinel: a receipt is never written outside a run, so absence of
+  `correlationId` at `rv >= 1` is a writer defect, not a state. (#TBD)
 
 - 2026-08-25 `feat/completion-contracts-trust` — bind the completion contract that already
   runs. `evaluateExpect` has evaluated `recipe.expect` on every non-testMode flat run since
