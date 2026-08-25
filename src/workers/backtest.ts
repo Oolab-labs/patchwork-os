@@ -118,6 +118,11 @@ export function backtestWorker(
       // foldOutcome): junk → bad, unknown/null → withheld, pending → withheld.
       const decision = foldOutcome(step, run.at, {
         now,
+        // Run-level completion contract — carried so the backtest labels an
+        // outcome exactly as the live dial does. Omitting it here is the
+        // flat-vs-chained divergence in miniature: a rule that covers one of
+        // two callers looks correct in both and agrees in neither.
+        ...(run.contractViolated && { contractViolated: true }),
         windowMs,
         outcomeStore: opts.outcomeStore,
       });

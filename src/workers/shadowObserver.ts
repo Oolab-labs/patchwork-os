@@ -37,6 +37,19 @@ export interface RunRecord {
   recipeName: string;
   /** epoch ms */
   at: number;
+  /**
+   * The run violated its declared completion contract — `recipe.expect`
+   * produced at least one assertion failure (`RecipeRun.assertionFailures`).
+   *
+   * A completion contract is a postcondition on the JOB, not on any one step,
+   * so it is recorded here and not per-step. Until this field existed the fold
+   * could not see it at all: `evaluateExpect` has run on every non-testMode
+   * flat run since it shipped, persisted its failures, and the dial read
+   * `step.status` only — so a run that demonstrably did not finish its job
+   * still folded each ok step as positive trust evidence. Failing a
+   * postcondition cost a worker nothing.
+   */
+  contractViolated?: boolean;
   steps: Array<{
     tool?: string;
     status: "ok" | "skipped" | "error";
@@ -150,6 +163,7 @@ type FoldStep = Pick<RunRecord["steps"][number], "tool" | "status" | "output">;
  * junk check runs BEFORE the durability window — a human rejection is durable
  * evidence of failure the moment it lands, so it demotes instantly, like any
  * outright failure; only confirmed/unknown successes wait out the window):
+ *   - run violated its completion contract     → WITHHOLD (every step; see below)
  *   - agent (reasoning) step, ANY status       → WITHHOLD (not a durable action; see below)
  *   - failure (status ≠ ok)                    → count, good:false (durable evidence of failure)
  *   - success, no `now`                        → count, good:true (back-compat status-only)
@@ -179,9 +193,36 @@ export function foldOutcome(
      * success carrying no URL earned full trust with no confirmation.
      */
     strictOutcomeJoin?: boolean;
+    /**
+     * The enclosing run violated its declared completion contract. Passed in
+     * from `RunRecord.contractViolated` by every caller, so the run-level
+     * signal reaches the ONE place that decides how an outcome is labelled.
+     *
+     * Deliberately a parameter here rather than a check in `ingestRun`: the
+     * live dial and the cold-start backtest both fold through this function
+     * precisely so they cannot disagree about what an outcome means, and a
+     * run-level rule applied in only one of them is that drift by another
+     * name.
+     */
+    contractViolated?: boolean;
   },
 ): FoldDecision {
   if (!step.tool) return { fold: false };
+  // The run did not finish the job it declared. Withhold EVERY step in it —
+  // neither credit nor penalty — which is the same shape as the agent-step and
+  // unkeyable-action rules below: evidence that cannot be tied to a completed
+  // job is not credited, and is not turned into a penalty either.
+  //
+  // Withheld rather than counted `good: false` on purpose. A completion
+  // contract is an assertion about the RUN, so reading it as a verdict on each
+  // individual action would demote steps that did exactly what they were asked,
+  // and would hand anyone writing a sloppy `expect` a way to destroy a worker's
+  // earned trust. Withholding only ever removes evidence, so it can never
+  // widen autonomy by accident.
+  //
+  // Placed FIRST, ahead of the failure branch, so the rule is the whole run
+  // without exception. A branch that ran earlier would be a path around it.
+  if (opts.contractViolated) return { fold: false };
   // An agent (reasoning) step is NOT evidence, in either direction.
   //
   // The gate already decided this: `decideWorkerAction` carves `agent` out
@@ -385,6 +426,7 @@ export class WorkerShadowObserver {
         now: this.now,
         windowMs: this.durabilityWindowMs,
         outcomeStore: this.outcomeStore,
+        ...(run.contractViolated && { contractViolated: true }),
       });
       if (!decision.fold) continue;
       this.store.apply(

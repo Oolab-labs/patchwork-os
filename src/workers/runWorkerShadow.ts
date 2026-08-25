@@ -111,6 +111,11 @@ function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
     return rows.map((r) => ({
       recipeName: r.recipeName,
       at: r.doneAt ?? r.startedAt ?? r.createdAt,
+      // The run's completion contract (`recipe.expect`). Persisted on the run
+      // since `evaluateExpect` shipped and never read by the dial, so a run
+      // that violated its declared postcondition still folded its ok steps as
+      // earned trust. Withholding, not penalising — see `foldOutcome`.
+      ...((r.assertionFailures?.length ?? 0) > 0 && { contractViolated: true }),
       steps: (r.stepResults ?? []).map((s) => ({
         tool: s.tool,
         status: s.status,
