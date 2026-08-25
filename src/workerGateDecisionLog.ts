@@ -156,11 +156,11 @@ const DEFAULT_MEMORY_CAP = 2_000;
 export const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
 const MAX_PERSIST_LINES = 10_000;
 /**
- * Low-water mark for rotation. `MAX_PERSIST_BYTES` is the trigger; this is the
- * target. The gap between them is what stops rotation from running on every
- * append once the file is full — see `rotateDisk`.
+ * Low-water mark for rotation, as a fraction of the cap. The cap is the
+ * TRIGGER; this is the TARGET. The gap between them is what stops rotation from
+ * running on every append once the file is full — see `rotateDisk`.
  */
-const ROTATE_TARGET_BYTES = Math.floor(MAX_PERSIST_BYTES * 0.9);
+const ROTATE_TARGET_RATIO = 0.9;
 const MAX_REASON_LEN = 1_000;
 const MAX_CONTEXT_REASONS = 16;
 
@@ -168,6 +168,16 @@ export interface WorkerGateDecisionLogOptions {
   dir: string;
   logger?: Logger;
   memoryCap?: number;
+  /**
+   * Byte cap before rotation, defaulting to `MAX_PERSIST_BYTES`.
+   *
+   * Injectable for the same reason `memoryCap` is: a test that must observe
+   * rotation should not have to write a real megabyte through a lock-guarded
+   * append on every row. The first version of the rotation test did exactly
+   * that — ~3,400 locked appends across four cases — which is merely slow on
+   * Linux and a plausible timeout on Windows.
+   */
+  maxPersistBytes?: number;
   now?: () => number;
 }
 
@@ -211,6 +221,8 @@ export class WorkerGateDecisionLog {
   private seq = 0;
   private readonly file: string;
   private readonly memoryCap: number;
+  private readonly maxBytes: number;
+  private readonly rotateTarget: number;
   private readonly now: () => number;
   /** Byte offset up to which `file` has been loaded (ADR-0007 tail-on-read). */
   private lastReadOffset = 0;
@@ -218,6 +230,14 @@ export class WorkerGateDecisionLog {
   constructor(private readonly opts: WorkerGateDecisionLogOptions) {
     this.file = path.join(opts.dir, "worker_gate_decisions.jsonl");
     this.memoryCap = opts.memoryCap ?? DEFAULT_MEMORY_CAP;
+    this.maxBytes =
+      opts.maxPersistBytes && opts.maxPersistBytes > 0
+        ? opts.maxPersistBytes
+        : MAX_PERSIST_BYTES;
+    this.rotateTarget = Math.max(
+      1,
+      Math.floor(this.maxBytes * ROTATE_TARGET_RATIO),
+    );
     this.now = opts.now ?? Date.now;
     try {
       mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
@@ -339,7 +359,7 @@ export class WorkerGateDecisionLog {
     try {
       try {
         const st = statSync(this.file);
-        if (st.size > MAX_PERSIST_BYTES) this.rotateDisk();
+        if (st.size > this.maxBytes) this.rotateDisk();
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== "ENOENT") throw err;
@@ -364,7 +384,7 @@ export class WorkerGateDecisionLog {
     }
   }
 
-  /** Trim to the most recent MAX_PERSIST_LINES / MAX_PERSIST_BYTES. Best-effort. */
+  /** Trim to the most recent MAX_PERSIST_LINES / `this.maxBytes`. Best-effort. */
   private rotateDisk(): void {
     try {
       const raw = readFileSync(this.file, "utf-8");
@@ -396,7 +416,7 @@ export class WorkerGateDecisionLog {
       // 826 rotations and 826 identical warnings across one fill. A high-water
       // trigger needs a low-water target, and a warning that fires on every
       // write is one nobody reads.
-      let budget = ROTATE_TARGET_BYTES;
+      let budget = this.rotateTarget;
       let keepFrom = lines.length;
       for (let i = lines.length - 1; i >= 0; i--) {
         const cost = Buffer.byteLength(lines[i] as string, "utf8") + 1;
@@ -418,10 +438,10 @@ export class WorkerGateDecisionLog {
         // counter-examples. Without this number a denominator computed here is
         // not merely imprecise, it is confidently backwards.
         this.opts.logger?.warn?.(
-          `[gate-decision-log] rotate dropped ${dropped} of ${before} row(s) (oldest first) to get under ${ROTATE_TARGET_BYTES} bytes — coverage figures computed over this file exclude them`,
+          `[gate-decision-log] rotate dropped ${dropped} of ${before} row(s) (oldest first) to get under ${this.rotateTarget} bytes — coverage figures computed over this file exclude them`,
         );
       }
-      if (lines.length === 1 && joined.length + 1 > MAX_PERSIST_BYTES) {
+      if (lines.length === 1 && joined.length + 1 > this.maxBytes) {
         this.opts.logger?.warn?.(
           `[gate-decision-log] rotate dropped 1 oversized row (${joined.length} bytes)`,
         );

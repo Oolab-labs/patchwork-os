@@ -1,7 +1,7 @@
 /**
  * Rotation destroyed half the ledger to reclaim one byte, and said nothing.
  *
- *   while (joined.length + 1 > MAX_PERSIST_BYTES && lines.length > 1) {
+ *   while (joined.length + 1 > CAP && lines.length > 1) {
  *     lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
  *     joined = lines.join("\n");
  *   }
@@ -26,10 +26,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  MAX_PERSIST_BYTES,
   type RecordGateDecisionInput,
   WorkerGateDecisionLog,
 } from "../workerGateDecisionLog.js";
+
+/**
+ * A small injected cap, not the real 1 MB one. The properties under test —
+ * how much rotation drops, whether it repeats on every append, whether it
+ * reports a count — are all ratios and do not depend on the absolute size.
+ *
+ * The first version of this file filled a genuine megabyte, which meant ~840
+ * lock-guarded appends per case and ~3,400 across the file. That is merely slow
+ * on Linux and a plausible CI timeout on Windows, where this repo already has a
+ * documented heavy-tail problem. Testing a ratio by writing a megabyte is a
+ * cost with no matching evidence.
+ */
+const CAP = 16 * 1024;
 
 let dir: string;
 let warnings: string[];
@@ -56,7 +68,7 @@ function bigRow(n: number): RecordGateDecisionInput {
     earnedLevel: 4,
     autonomyCeiling: 4,
     effectiveLevel: 4,
-    reason: `r${n}`.padEnd(900, "x"),
+    reason: `r${n}`.padEnd(400, "x"),
     gatePolicyVersion: "worker-ramp-v1",
   };
 }
@@ -70,7 +82,7 @@ function fillPastCap(log: WorkerGateDecisionLog): number {
   const file = join(dir, "worker_gate_decisions.jsonl");
   let n = 0;
   let peak = 0;
-  for (let i = 0; i < 8000; i++) {
+  for (let i = 0; i < 4000; i++) {
     log.record(bigRow(i));
     n++;
     let size = 0;
@@ -81,7 +93,7 @@ function fillPastCap(log: WorkerGateDecisionLog): number {
     }
     if (size > peak) {
       peak = size;
-    } else if (peak > MAX_PERSIST_BYTES * 0.9 && size < peak) {
+    } else if (peak > CAP * 0.9 && size < peak) {
       return n; // the file got smaller: rotation ran
     }
   }
@@ -94,10 +106,42 @@ function rowsOnDisk(): number {
     .filter((l) => l.trim()).length;
 }
 
+describe("the injected cap does not change the production default", () => {
+  it("rotates at the real 1 MB cap when maxPersistBytes is omitted", () => {
+    // A test-only knob that silently lowered the production cap would be a
+    // worse bug than the one this file exists for. Writes a row well under the
+    // small CAP used elsewhere here and asserts nothing rotates — which it
+    // would, immediately, if the default had become CAP.
+    const log = new WorkerGateDecisionLog({
+      dir,
+      logger: { warn: (m: string) => warnings.push(m) },
+    });
+    for (let i = 0; i < 40; i++) log.record(bigRow(i));
+    expect(warnings.filter((w) => /dropped/i.test(w))).toHaveLength(0);
+    expect(
+      new WorkerGateDecisionLog({ dir }).query({ limit: 100 }),
+    ).toHaveLength(40);
+  });
+
+  it("ignores a nonsense cap rather than trusting it", () => {
+    // 0 or negative would make every append rotate the file to nothing.
+    const log = new WorkerGateDecisionLog({
+      dir,
+      maxPersistBytes: 0,
+      logger: { warn: (m: string) => warnings.push(m) },
+    });
+    for (let i = 0; i < 5; i++) log.record(bigRow(i));
+    expect(
+      new WorkerGateDecisionLog({ dir }).query({ limit: 100 }),
+    ).toHaveLength(5);
+  });
+});
+
 describe("rotation keeps what it can and reports what it dropped", () => {
   it("does not discard roughly half the ledger in one step", () => {
     const log = new WorkerGateDecisionLog({
       dir,
+      maxPersistBytes: CAP,
       logger: { warn: (m: string) => warnings.push(m) },
     });
     fillPastCap(log);
@@ -107,10 +151,10 @@ describe("rotation keeps what it can and reports what it dropped", () => {
     );
     // Trim-to-target leaves the file near its low-water mark. Halving left it
     // at ~50% of the cap (measured: 525,829 bytes), which is the tell.
-    expect(after.length).toBeGreaterThan(MAX_PERSIST_BYTES * 0.8);
+    expect(after.length).toBeGreaterThan(CAP * 0.8);
     // Never above the cap: `append` rotates BEFORE writing, so the post-rotate
     // file is target + one row, comfortably inside.
-    expect(after.length).toBeLessThanOrEqual(MAX_PERSIST_BYTES);
+    expect(after.length).toBeLessThanOrEqual(CAP);
   });
 
   it("does not rotate on every append once the file is full", () => {
@@ -120,6 +164,7 @@ describe("rotation keeps what it can and reports what it dropped", () => {
     // warning that fires on every write is one nobody reads.
     const log = new WorkerGateDecisionLog({
       dir,
+      maxPersistBytes: CAP,
       logger: { warn: (m: string) => warnings.push(m) },
     });
     fillPastCap(log);
@@ -130,6 +175,7 @@ describe("rotation keeps what it can and reports what it dropped", () => {
   it("says how many rows it dropped", () => {
     const log = new WorkerGateDecisionLog({
       dir,
+      maxPersistBytes: CAP,
       logger: { warn: (m: string) => warnings.push(m) },
     });
     fillPastCap(log);
@@ -143,6 +189,7 @@ describe("rotation keeps what it can and reports what it dropped", () => {
   it("keeps the NEWEST rows, never the oldest", () => {
     const log = new WorkerGateDecisionLog({
       dir,
+      maxPersistBytes: CAP,
       logger: { warn: (m: string) => warnings.push(m) },
     });
     const n = fillPastCap(log);
