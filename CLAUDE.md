@@ -515,6 +515,72 @@ worker may DO; this answers what a destination may RECEIVE.
 
   **What is still true: authorisation is enforced NOWHERE.** `canApproveAction`, `capabilitiesFor`, `principalCan`, `roleGrants` have zero production call sites outside `src/identity/` and its tests. Six roles and eight capabilities currently grant nothing. The trap when that changes: the roster's fail-SOFT default (an implicit owner on a missing or malformed `members.json`) becomes privilege ESCALATION the moment anything consults it to permit an action. **Decided shape:** a pluggable auth seam resolving to `members.json`; Phase A per-member credentials via `crypto.scrypt` (no password-hash dep exists in the tree, and a native-compilation dep is a real cross-platform install risk here); Phase B OIDC mapped on `sub`, never `email` — **and Phase B is built in `patchwork-control-plane`, not here**: ADR-0019 reserves organisation identity (SSO/SCIM) for the non-MIT repo, the two ADRs were written in the same commit, and ADR-0020 originally cited ADR-0019 zero times. The SEAM and Phase A stay MIT here; federation does not. `src/identity/` as it stands is runtime and stays — the line is federation, not identity. The roster keeps its fail-SOFT default, and an unauthenticated principal stays UNATTRIBUTED. **Never default the actor to the implicit owner** — that writes a claim about a real person into an audit record on no evidence, which is worse than an absent `actor` (absence already means "nobody recorded this", and is never backfilled).
 
+## Evidence Spine
+
+**A design principle, not a subsystem.** Nothing here is a thing to go and build;
+it is a constraint on how the things already being built should record what they
+did. Its purpose is that six good subsystems converge instead of staying six
+disconnected ledgers.
+
+The rule: **every consequential operation should progressively become
+attributable to a stable member, worker, policy, tool, model destination,
+decision, approval and observed outcome.** A new feature is reviewed for whether
+it strengthens, weakens or bypasses that chain.
+
+**Do NOT build the readers ahead of the evidence.** A cross-ledger graph, a
+replay/simulation surface, or a unified query UI built now would be a view over
+data that does not exist yet, and the shape of the view would then dictate the
+shape of the evidence — backwards. Preserve the evidence; the readers are cheap
+once it is there and expensive to retrofit once it is wrong.
+
+### What is actually true today
+
+The ledgers are good and they do not join. `taskId` exists on `runs.jsonl` and
+`run_steps.jsonl` **and nowhere else** — `worker_gate_decisions.jsonl`,
+`boundary_receipts.jsonl`, `privacy_shadow.jsonl`, `outcome-log.jsonl`,
+`permission_exercises.jsonl` and `worker_trust/` carry no shared correlation id.
+(Verified 2026-08-25: `workerGateDecisionLog.ts` and `privacy/boundaryReceiptLog.ts`
+match `taskId|correlationId` zero times; both carry `workspaceId`, which is a tag
+and not a join key.)
+`GraduationEvent` is defined and serialisable, has a parse path, and is **never
+persisted by production code** — it lives in an in-memory `AuditEvent[]` that
+dies with the process, so the `earnedLevel` every Decision Record rests on has no
+derivation on disk.
+`ctxQueryTraces` reads four stores and none of those.
+
+### The constraint that makes this hard, and it is irreversible
+
+`workerGateDecisionLog.ts` is doctrine: **absence is meaningful and is never
+backfilled.** "Nobody recorded this" must stay distinguishable from "we do not
+know". Stamping a correlation id onto new rows without first designing a
+sentinel turns every existing row into a permanent orphan that a reader cannot
+tell apart from a future row which legitimately had no run — two *different*
+absences collapsing into one, silently, and the collapse cannot be undone.
+
+So: **design the sentinel, then stamp.** Never the other way round, and never
+"we can fix the old rows later" — that sentence is the bug.
+
+### Working rules
+
+- **Prefer deterministic, replayable inputs at every decision point.** Where a
+  decision could be a pure function of recorded state, make it one. This is why
+  `classifyIssueDisposition` has no LLM in it and why the privacy boundary is a
+  pure function of (classification, destination). A decision that cannot be
+  recomputed from what was written down cannot later be audited or replayed.
+- **Shadow before enforce.** `privacy shadow` and `workers shadow` are the
+  pattern: observe against real traffic, report the denominator, and only then
+  turn a boundary on.
+- **An unidentifiable action is not an approved one.** Evidence that cannot be
+  joined to the thing it is evidence *of* must be withheld, never credited —
+  see the strict outcome join in the workers section.
+- **The ledgers stay open-format and fully usable standalone** (ADR-0019: the
+  open runtime emits evidence, only the control plane attests to it). Evidence
+  the operator cannot read and export without us is not evidence, it is
+  hostage-taking.
+- **Coverage is enumerated, never asserted as total.** A join that covers part
+  of a surface must say which part; see the privacy section for why a crossing
+  count over a partial surface reads as reassurance.
+
 ## Architecture Rules
 
 - **Tools**: factory pattern `createXxxTool(deps)` returning `{ schema, handler }`. Register in `src/tools/index.ts`.
