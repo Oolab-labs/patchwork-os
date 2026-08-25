@@ -182,6 +182,24 @@ Comply with all docs in `/documents/`. Consult before changes:
 
   A recipe that fails any of these is reported by `recipe doctor`, which is
   where an operator will actually look.
+
+  **An unregistered tool id SKIPS the step silently, and that is DELIBERATE —
+  do not "fix" it.** `executeStep` returns null for a tool nothing is
+  registered under, the run loop records `skipped`, and the run finishes
+  `done`. It is pinned by a guard test in a describe block named *"skip paths
+  that must NOT change"* (`flatCompoundSteps.test.ts`), with the stated reason:
+  forward compat for un-loaded plugins. Whoever landed the compound-step fix
+  changed THAT class and carved this one out on purpose; changing it fails
+  three tests across the flat path, the chained path and the SSE lifecycle.
+
+  It reads like a fail-open defect and the concern is real — a plugin that
+  fails to load produces a green run that did nothing. But the diagnosis
+  already exists and is easy to miss: **`recipe doctor` reports it per step**
+  as `(unresolved-tool) [step "x"] Tool "y" is not registered`, and marks the
+  recipe unhealthy. Measured 2026-08-25: 20 unregistered ids across 14 of 82
+  installed recipes, all from plugins that live elsewhere. Run `recipe doctor`
+  before concluding anything is missing here. Two separate builds were spent
+  rediscovering this.
 - `recipe preflight <file.yaml>` — Connector preflight: list authorisations the recipe needs.
 - `recipe doctor <name|file.yaml> [--json] [--local]` — One-screen "why is this recipe unhealthy + how do I fix it" diagnosis. Composes the static preflight check (lint + write-policy + plan) with the recipe-scoped runtime halt summary from a live bridge (`/runs/halt-summary?recipe=`), mapping every finding to an actionable hint (shared `HALT_CATEGORY_HINTS`/`HALT_CATEGORY_LABELS` in `src/recipes/haltCategory.ts`, also used by `halts`). Fail-soft: no bridge → static-only; a recipe too broken to plan → lint-only diagnosis (never stack-traces). `--local` skips the runtime check. Exits 1 when unhealthy. Same composition is exposed over HTTP at `GET /recipes/doctor?recipe=<name>` (name-only over HTTP; reuses `deps.haltSummaryFn` in-process) and surfaced in the dashboard as a **Doctor** panel on the recipe-detail page (needs the dedicated `api/bridge/recipes/doctor` proxy — the dynamic `recipes/[...name]` proxy would otherwise swallow the `?recipe=` query). Run-detail step rows also render the per-category fix hint next to `haltReason` (shared `HALT_CATEGORY_HINT` in `dashboard/src/lib/haltCategory.ts`).
 - `recipe fmt <file.yaml>` — Format a recipe YAML in place.
@@ -549,9 +567,13 @@ The ledgers are good and they mostly do not join. **One now does:**
 Verified on the live ledger the same day: a new decision carries `rv:1` +
 `correlationId`, and the 272 pre-existing rows hash byte-identical with no `rv`.
 
-The rest still carry no shared correlation id: `boundary_receipts.jsonl`,
-`privacy_shadow.jsonl`, `outcome-log.jsonl`, `permission_exercises.jsonl` and
-`worker_trust/`. They carry `workspaceId`, which is a tag and not a join key.
+**Two now do.** `boundary_receipts.jsonl` joined the same way in #1522 — same
+`rv` protocol, same rule (`taskId`, never `seq`), and covering BOTH runners, not
+the easy half.
+
+The rest still carry no shared correlation id: `privacy_shadow.jsonl`,
+`outcome-log.jsonl`, `permission_exercises.jsonl` and `worker_trust/`. They
+carry `workspaceId`, which is a tag and not a join key.
 
 **`GraduationEvent` IS persisted, and the claim that it is not was wrong.**
 `WorkerLevelStore.toJSONL()` serialises every event as `rec: "event"`,
@@ -569,22 +591,42 @@ the check before scoping against it.
 
 `ctxQueryTraces` reads four stores and none of those.
 
-**The next join, and what actually blocks it.** `boundary_receipts.jsonl` is the
-natural second ledger: one write site (`yamlRunner.ts`, inside
-`buildAgentExecutorDeps`), reached from four dep-builders. Three are inside
-`runYamlRecipe`, where `runTaskId` is already in scope — trivial. The fourth is
-`buildChainedDeps`, and it is called from `recipeOrchestration`, `replayRun` and
-`commands/recipe` **before** `runChainedRecipe` computes `runTaskId`, so at
-deps-build time the chained path has no run id to give.
+**How the second join was done, since the shape generalises.**
+`boundary_receipts.jsonl` has ONE write site but FOUR dep-builders. Three sit
+inside `runYamlRecipe` where `runTaskId` is already in scope; the fourth is
+`buildChainedDeps`, called from `recipeOrchestration`, `replayRun` and
+`commands/recipe` **before** `runChainedRecipe` computes the id. That was closed
+with a cell created by `buildChainedDeps` and filled by the runner at the top of
+the run — NOT by filling the field on the flat path only, which would have
+repeated the `stepId` this same ledger once declared, never supplied, and
+removed rather than wired. Expect the same ordering problem on any ledger
+written from a dep-builder.
 
-That is the same shape as the `stepId` field this ledger once declared and
-nothing supplied — removed rather than wired, on the grounds that a
-declared-but-empty field tells a reader that attribution exists when it does
-not. So do NOT add `correlationId` to `BoundaryReceipt` and fill it on the flat
-path only: a half-covered join is worse than none, because its absences stop
-meaning one thing. #1519 solved the equivalent problem for the approval seam by
-riding the id on the per-step context minted inside `runChainedRecipe`; that is
-the precedent to follow, and it is a design step, not a one-liner.
+The reader mattered as much as the writer: `view()` in `boundaryReceipts.ts`
+enumerates fields explicitly, so both new fields would have been dropped on read
+— #1517's defect exactly, caught only because it was checked.
+
+**The remaining three, measured 2026-08-25 rather than assumed. Read this before
+scoping any of them.**
+
+- `permission_exercises.jsonl` — **do not build a join for it yet.** The file is
+  absent, and so is `butler/permissions.jsonl`: no standing permission has ever
+  been granted, so there is nothing to correlate. Its absence is correct, not a
+  bug. This is the "do NOT build the readers ahead of the evidence" rule with a
+  concrete instance attached.
+- `outcome-log.jsonl` — 99 rows, all keyed, none carrying a run reference. The
+  hazard here is NOT plumbing, it is meaning: a disposition is recorded by a
+  later run (or by an operator at a CLI) about an action performed by an
+  *earlier* one, so a bare `correlationId` would be ambiguous between "the run
+  that filed this action" and "the run that judged it". Two different facts
+  under one field name is the kind of claim the `rv` protocol exists to prevent,
+  so name it for what it is or leave it off. Note also that this ledger already
+  has an `origin: "manual" | "ingester"` field distinguishing an operator's
+  judgement from an automated one, and already defaults absence on read — a
+  deliberate, documented departure from the gate ledger's never-backfill
+  doctrine. Do not "fix" it to match without reading why.
+- `worker_trust/` — checkpoints, i.e. derived state rather than an event stream.
+  A correlation id belongs on the events folded into it, not on the snapshot.
 
 ### The constraint that makes this hard, and it is irreversible
 
