@@ -78,6 +78,35 @@ export interface GateDecisionRecord {
    */
   workspaceId?: string;
 
+  /**
+   * Record level — the writer's claim about which fields this row is
+   * guaranteed to carry. Stamped by `record()`, never by a caller.
+   *
+   * ABSENT means the row carries NO claim, and nothing may be inferred from
+   * which optional fields it lacks. That is the sentinel: it is the only
+   * pre-sentinel signal obtainable without touching the past, and it is
+   * unrepairable by construction. Do NOT default it on read — `parsed.rv ?? 0`
+   * is a backfill performed on every load, invisible in the file itself.
+   *
+   * NOT monotone in file order: several writers share this file, so an older
+   * bridge can append an un-levelled row after a newer one. It therefore says
+   * nothing about time, and a reader must never render it as "pre-dates" —
+   * that exact conflation shipped once already for `actor`.
+   */
+  rv?: number;
+  /**
+   * The run this decision belongs to: `taskId`, verbatim, as written to
+   * `runs.jsonl` / `run_steps.jsonl`. Never `seq`, which is a per-instance
+   * counter over a shared file and collides (255 distinct across 272 live rows).
+   *
+   * At `rv >= 1` its absence is a WRITER DEFECT, not a state. Every gate
+   * decision happens inside a run — `buildWorkerAutonomyGate` is wired from one
+   * site, inside `fireYamlRecipe` — so "recorded, and legitimately had no run"
+   * cannot occur here. A scheme that could express it would only be able to
+   * express it falsely.
+   */
+  correlationId?: string;
+
   /** Monotonic sequence id within the process — stable for pagination. */
   seq: number;
   /** ms epoch when the decision was made. */
@@ -146,9 +175,23 @@ export interface GateDecisionRecord {
   gatePolicyVersion: string;
 }
 
+/**
+ * The current record level. Bump ONLY when adding a new guarantee, and never
+ * retroactively: a row already on disk claiming level N is a permanent
+ * assertion about what level N meant when it was written, so widening level N
+ * later falsifies rows nobody can go back and fix.
+ */
+export const GATE_RECORD_VERSION = 1 as const;
+
+/**
+ * `rv` is excluded, and that exclusion is load-bearing rather than tidy. If a
+ * caller could supply it, the level would be a claim made by whoever happened
+ * to call `record()` rather than by the writer that actually knows which fields
+ * it stamps — and the whole scheme rests on the level being trustworthy.
+ */
 export type RecordGateDecisionInput = Omit<
   GateDecisionRecord,
-  "seq" | "decidedAt"
+  "seq" | "decidedAt" | "rv"
 >;
 
 const DEFAULT_MEMORY_CAP = 2_000;
@@ -224,6 +267,51 @@ export function isGateAction(v: unknown): v is GateDecisionRecord["action"] {
   return (
     typeof v === "string" && (GATE_ACTIONS as readonly string[]).includes(v)
   );
+}
+
+/**
+ * What a row says about the run it belongs to.
+ *
+ * Three states, and the point of the whole scheme is that they stay distinct:
+ *
+ *  - `unclaimed` — the row carries no record level. Written before the level
+ *    existed, OR by a bridge still running older code. Those two are NOT
+ *    distinguishable and must never be conflated in prose: say "no claim
+ *    recorded", never "pre-dates".
+ *  - `linked`    — the row names its run.
+ *  - `defect`    — the row claims a level that guarantees a correlation id and
+ *    does not carry one. A writer bug, not a state of the world.
+ *
+ * There is deliberately NO "recorded, legitimately had no run". Every gate
+ * decision happens inside a run, so such a row would be a false claim, and a
+ * vocabulary that can express something untrue eventually will.
+ *
+ * `runExists` is optional because most callers have no run log to hand. Absent,
+ * a row that names a run is reported `linked` WITHOUT checking — "we did not
+ * look" is not the same as "we looked and found it", so the caller is never
+ * told more than was actually verified.
+ */
+export type CorrelationState =
+  | { state: "unclaimed" }
+  | { state: "linked"; taskId: string }
+  | { state: "unresolved"; taskId: string }
+  | { state: "defect"; rv: number };
+
+export function correlationOf(
+  rec: Pick<GateDecisionRecord, "rv" | "correlationId">,
+  runExists?: (taskId: string) => boolean,
+): CorrelationState {
+  if (typeof rec.rv !== "number" || !Number.isFinite(rec.rv)) {
+    return { state: "unclaimed" };
+  }
+  const id = rec.correlationId;
+  if (typeof id === "string" && id.length > 0) {
+    if (!runExists) return { state: "linked", taskId: id };
+    return runExists(id)
+      ? { state: "linked", taskId: id }
+      : { state: "unresolved", taskId: id };
+  }
+  return { state: "defect", rv: rec.rv };
 }
 
 export class WorkerGateDecisionLog {
@@ -309,6 +397,19 @@ export class WorkerGateDecisionLog {
     const rec: GateDecisionRecord = {
       seq: this.seq,
       decidedAt: this.now(),
+      rv: GATE_RECORD_VERSION,
+      // `correlationId` and `workspaceId` are copied EXPLICITLY because this
+      // literal enumerates every field rather than spreading `input`. That is a
+      // deliberate shape — a spread would let an unvetted caller field reach
+      // disk — but it also means a new field is silently dropped until someone
+      // adds a line here.
+      //
+      // `workspaceId` was exactly that: `recipeOrchestration` has stamped it on
+      // every decision since the workspace-tag work landed, and this literal
+      // never copied it, so 0 of 272 rows in the live ledger carry one. The tag
+      // was wired end to end and thrown away by the last step.
+      ...(input.correlationId && { correlationId: input.correlationId }),
+      ...(input.workspaceId && { workspaceId: input.workspaceId }),
       recipeName,
       workerId,
       toolName,

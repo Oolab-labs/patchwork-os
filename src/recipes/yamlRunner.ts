@@ -669,15 +669,7 @@ export interface RunnerDeps {
    * runner only has to act on an explicit rejection. Never consulted for
    * automated (cron/webhook/recipe) triggers, so crons can't block mid-run.
    */
-  requireApprovalFn?: (input: {
-    toolId: string;
-    tier: import("../riskTier.js").RiskTier;
-    summary?: string;
-    params?: Record<string, unknown>;
-    /** The run's AbortSignal — lets the approval wait be cancelled promptly
-     * when the run is aborted, instead of blocking for the full TTL (L1). */
-    signal?: AbortSignal;
-  }) => Promise<boolean>;
+  requireApprovalFn?: import("./approvalRequest.js").ApprovalFn;
   /**
    * Worker-autonomy gate (worker.autonomy flag). When set, the approval gate
    * ALSO engages on automated (cron/webhook/recipe) triggers — not just manual
@@ -1413,6 +1405,16 @@ export async function runYamlRecipe(
   // CLI runs fall back to `appendDirect` at end via the existing logDir
   // path. Skip in test mode.
   const recipeStartedAt = now.getTime();
+  /**
+   * This run's identity, minted ONCE.
+   *
+   * The same expression was written out twice (the run-log `startRun` and the
+   * terminal `appendDirect`). Both were in this function over this const, so
+   * they could not diverge — but a join key computed independently in two
+   * places is one edit away from a spine that breaks silently, and there are
+   * now three readers of it rather than two.
+   */
+  const runTaskId = `yaml:${recipe.name}:${recipeStartedAt}`;
   const recipeTriggerKind =
     (recipe.trigger as { type?: string } | undefined)?.type ?? "manual";
   const yamlTriggerKind = (
@@ -1424,7 +1426,7 @@ export async function runYamlRecipe(
   if (deps.runLog && !stepDeps.testMode) {
     try {
       runSeq = deps.runLog.startRun({
-        taskId: `yaml:${recipe.name}:${recipeStartedAt}`,
+        taskId: runTaskId,
         recipeName: recipe.name,
         trigger: yamlTriggerKind,
         createdAt: recipeStartedAt,
@@ -2192,6 +2194,9 @@ export async function runYamlRecipe(
             ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
             : `tool ${approvalToolId}`,
           params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
+          // The join key onto this run's rows in the run log. Same const the
+          // run-log writes above, never a second expression.
+          runTaskId,
           ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
         });
         if (!approved) {
@@ -2925,7 +2930,7 @@ export async function runYamlRecipe(
         const resolvedLogDir = deps.logDir ?? patchworkPath();
         const log = createRecipeRunLog({ dir: resolvedLogDir });
         log.appendDirect({
-          taskId: `yaml:${recipe.name}:${recipeStartedAt}`,
+          taskId: runTaskId,
           recipeName: recipe.name,
           trigger: yamlTriggerKind,
           status: runError ? "error" : "done",

@@ -7,7 +7,7 @@
  *   - Dry-run mode
  */
 
-import { classifyTool, type RiskTier } from "../riskTier.js";
+import { classifyTool } from "../riskTier.js";
 import type { AgentResult } from "./agentExecutor.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
@@ -196,6 +196,16 @@ export interface StepExecutionContext {
   /** Shared per-run budget (admit before dispatch, reconcile after). */
   budget?: RunBudget;
   /**
+   * This run's identity (`taskId`, never `seq`), threaded so a step's approval
+   * can name the run it belongs to.
+   *
+   * It rides on the context rather than being a new parameter because
+   * `executeChainedStep` is minted in `runChainedRecipe` and has exactly one
+   * production caller, inside that same function — so the value is already in
+   * scope at the only place a context is built.
+   */
+  runTaskId?: string;
+  /**
    * Price table loaded ONCE per run and threaded through so each agent step's
    * `computeAgentCallUsage` call avoids a synchronous existsSync/readFileSync
    * round-trip (mirrors the flat runner, which loads it once at run start).
@@ -253,14 +263,7 @@ export interface ExecutionDeps {
    * runner only acts on an explicit rejection. Per-recipe opt-out via
    * `requireApproval: false`.
    */
-  requireApprovalFn?: (input: {
-    toolId: string;
-    tier: RiskTier;
-    summary?: string;
-    params?: Record<string, unknown>;
-    /** Run AbortSignal — cancels the approval wait promptly on run abort (L1). */
-    signal?: AbortSignal;
-  }) => Promise<boolean>;
+  requireApprovalFn?: import("./approvalRequest.js").ApprovalFn;
 }
 
 function nestedRecipeRef(step: ChainedStep): string | undefined {
@@ -679,6 +682,9 @@ export async function executeChainedStep(
         summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
         params: step.agent ? undefined : (resolved as Record<string, unknown>),
         ...(options.signal && { signal: options.signal }), // L1
+        // Join key onto this run's rows — the same id `runChainedRecipe`
+        // writes to the run log, threaded through the step context.
+        runTaskId: ctx.runTaskId ?? "",
       });
       if (!approved) {
         return {
@@ -1482,6 +1488,7 @@ export async function runChainedRecipe(
       depth,
       budget,
       priceTable,
+      runTaskId,
     };
 
     const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;

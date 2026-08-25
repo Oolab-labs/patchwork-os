@@ -54,6 +54,17 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-25 `feat/correlation-sentinel` — the correlation-id sentinel (the irreversible
+  decision doc 13 §4.1 reserved for the owner), settled by adversarial review first. A gate
+  decision now carries `rv` (writer-stamped record level) and `correlationId` (the run's
+  `taskId`, never `seq`, which collides 255-of-272). Absence of `rv` is the sentinel and is
+  never backfilled — a reader must not default it, since `parsed.rv ?? 0` is a backfill
+  performed invisibly on every load. Consolidates THREE identical declarations of the approval
+  input into one shared type with a REQUIRED `runTaskId`, so a new approval call site is a
+  compile error until it names its run. Found en route: `record()` was silently dropping
+  `workspaceId`, which is why 0 of 272 live rows carry a workspace tag despite the orchestrator
+  stamping every one.
+
 - 2026-08-25 `fix/dashboard-renders-forbid-as-gate` — the dashboard typed a gate decision's
   `action` as `"allow" | "gate"` and rendered `isAllow ? "ALLOW" : "GATE"`, so ADR-0017's
   terminal `forbid` displayed as a GATE with the explain line "vs required higher" — telling
