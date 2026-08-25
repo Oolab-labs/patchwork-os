@@ -67,6 +67,17 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   which is the likeliest reason zero shipped templates use it. Measured before landing: 0 of
   1404 runs in the live log carry `assertionFailures`, so nothing is re-labelled
   retroactively. (#1520)
+- 2026-08-25 `docs/evidence-spine-current-state` — the Evidence Spine section's two
+  load-bearing claims were both wrong within two days of being written, and they mis-scoped
+  a session before being caught. `GraduationEvent` IS persisted (`toJSONL` writes
+  `rec: "event"`, `saveTrustCheckpoint` calls it); the real fact is narrower — the only
+  checkpoint on disk holds zero event rows because nothing has ever graduated, which is a
+  dial that has not moved, not a hole to plumb. And `worker_gate_decisions.jsonl` now DOES
+  carry a correlation id, as of #1519 deployed the same day. Also records why the next join
+  (boundary receipts) is a design step rather than a one-liner: `buildChainedDeps` is called
+  before `runChainedRecipe` computes `runTaskId`, so the chained path has no run id at
+  deps-build time, and filling the field on the flat path only would repeat the `stepId`
+  mistake this ledger already made once. (#TBD)
 
 - 2026-08-25 `feat/correlation-sentinel` — the correlation-id sentinel (the irreversible
   decision doc 13 §4.1 reserved for the owner), settled by adversarial review first. A gate

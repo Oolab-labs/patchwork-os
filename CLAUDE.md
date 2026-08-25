@@ -454,7 +454,7 @@ The `src/workers/` subsystem implements a trust-ramp-aware autonomy gate for rec
 - **Autonomy thresholds**: reversible actions bypass the gate unconditionally. Compensable actions unlock at effective L2. Irreversible actions require L4. None of these apply to a forbidden action.
 - **Control boundary (prospective view)**: `previewActions(worker, candidates, store, opts)` in `src/workers/previewActions.ts` buckets candidate actions into *may do now / needs approval / not permitted* **before** anything is attempted. It calls `decideWorkerAction` and routes through `gateOutcomeFor` — it holds no policy of its own. That is load-bearing, not tidiness: a preview with its own logic would drift, and the failure is silent and permissive (a screen saying "not permitted" while the gate would allow it tells an operator they are protected when they are not). A test asserts preview and gate agree for every candidate under several rule sets. `defaultCandidatesFor(worker)` derives the default list from the worker's `owns` — deliberately not the whole tool registry, which would bury the few that matter and put all of them in "needs approval". Previewing is read-only: it never enqueues an approval and never writes a decision record.
 - **Renderer**: `dashboard/src/components/ControlBoundary.tsx`, presentational only — it renders what the bridge computed and must never filter, re-bucket or infer, or the agreement guarantee dies. The third column differs from the second **in words** ("No approval can unlock these" vs "A named person must say yes"), not only colour, so the distinction survives greyscale and a colour-blind reader.
-- **Decision records**: every decision persists to `~/.patchwork/worker_gate_decisions.jsonl` with `gatePolicyVersion` (now `worker-ramp-v1`) and an optional `actor` — a *snapshot* (id + kind + display name as it was), never a roster reference, so a rename or role change cannot rewrite history. Absent on pre-attribution records and never backfilled: "nobody recorded this" must stay distinguishable from "we do not know".
+- **Decision records**: every decision persists to `~/.patchwork/worker_gate_decisions.jsonl` with `gatePolicyVersion` (now `worker-ramp-v2`) and an optional `actor` — a *snapshot* (id + kind + display name as it was), never a roster reference, so a rename or role change cannot rewrite history. Absent on pre-attribution records and never backfilled: "nobody recorded this" must stay distinguishable from "we do not know".
 - **Durable trust evidence**: `src/workers/trustCheckpoint.ts`. The dial used to live only in `runs.jsonl`, so a worker was silently un-earned whenever its runs rotated out — `WorkerLevelStore.toJSONL()` existed but nothing in production called it. `loadWorkerTrustForRecipe` now seeds from a per-recipe checkpoint under `<patchworkDir>/worker_trust/` and folds only runs the checkpoint has not absorbed. Per-recipe (not global) because that entry replays one recipe's runs, so a shared watermark would starve every other recipe. Only **settled** runs (older than the 24h durability window) are checkpointed: the fold is time-dependent, and persisting a provisional success would pin the watermark past a run that must be re-evaluated once it becomes durable. Fail-soft — missing/corrupt checkpoint ⇒ replay-only, the previous behaviour.
 - **Feature flag**: `PATCHWORK_FLAG_WORKER_AUTONOMY` (default off). With the flag off, the gate is a no-op — byte-identical to pre-ramp behavior. Requires `--driver subprocess`.
 - **Dogfood templates**: `templates/workers/` — three reference workers (release-notes, dependency-bump, triage-failing-tests).
@@ -535,18 +535,48 @@ once it is there and expensive to retrofit once it is wrong.
 
 ### What is actually true today
 
-The ledgers are good and they do not join. `taskId` exists on `runs.jsonl` and
-`run_steps.jsonl` **and nowhere else** — `worker_gate_decisions.jsonl`,
-`boundary_receipts.jsonl`, `privacy_shadow.jsonl`, `outcome-log.jsonl`,
-`permission_exercises.jsonl` and `worker_trust/` carry no shared correlation id.
-(Verified 2026-08-25: `workerGateDecisionLog.ts` and `privacy/boundaryReceiptLog.ts`
-match `taskId|correlationId` zero times; both carry `workspaceId`, which is a tag
-and not a join key.)
-`GraduationEvent` is defined and serialisable, has a parse path, and is **never
-persisted by production code** — it lives in an in-memory `AuditEvent[]` that
-dies with the process, so the `earnedLevel` every Decision Record rests on has no
-derivation on disk.
+The ledgers are good and they mostly do not join. **One now does:**
+`worker_gate_decisions.jsonl` carries `correlationId` (the run's `taskId`, never
+`seq`) behind the `rv` sentinel, shipped as #1519 and deployed 2026-08-25.
+Verified on the live ledger the same day: a new decision carries `rv:1` +
+`correlationId`, and the 272 pre-existing rows hash byte-identical with no `rv`.
+
+The rest still carry no shared correlation id: `boundary_receipts.jsonl`,
+`privacy_shadow.jsonl`, `outcome-log.jsonl`, `permission_exercises.jsonl` and
+`worker_trust/`. They carry `workspaceId`, which is a tag and not a join key.
+
+**`GraduationEvent` IS persisted, and the claim that it is not was wrong.**
+`WorkerLevelStore.toJSONL()` serialises every event as `rec: "event"`,
+`fromJSONL` restores them, and `saveTrustCheckpoint` calls `toJSONL()` — so the
+per-recipe checkpoints under `worker_trust/` are its writer. What is true is
+narrower and different: the only checkpoint on disk holds `meta:1, state:3` and
+**zero** event rows, because nothing has ever graduated — no promote or demote
+has fired, so there was no event to write. "No writer" and "a writer with
+nothing to write" look identical on disk and are not the same problem; the first
+is a hole to plumb, the second is a dial that has not moved.
+
+Two corrections' worth of warning: this section was written from a survey, and
+both of its load-bearing claims went stale or were wrong within two days. Re-run
+the check before scoping against it.
+
 `ctxQueryTraces` reads four stores and none of those.
+
+**The next join, and what actually blocks it.** `boundary_receipts.jsonl` is the
+natural second ledger: one write site (`yamlRunner.ts`, inside
+`buildAgentExecutorDeps`), reached from four dep-builders. Three are inside
+`runYamlRecipe`, where `runTaskId` is already in scope — trivial. The fourth is
+`buildChainedDeps`, and it is called from `recipeOrchestration`, `replayRun` and
+`commands/recipe` **before** `runChainedRecipe` computes `runTaskId`, so at
+deps-build time the chained path has no run id to give.
+
+That is the same shape as the `stepId` field this ledger once declared and
+nothing supplied — removed rather than wired, on the grounds that a
+declared-but-empty field tells a reader that attribution exists when it does
+not. So do NOT add `correlationId` to `BoundaryReceipt` and fill it on the flat
+path only: a half-covered join is worse than none, because its absences stop
+meaning one thing. #1519 solved the equivalent problem for the approval seam by
+riding the id on the per-step context minted inside `runChainedRecipe`; that is
+the precedent to follow, and it is a design step, not a one-liner.
 
 ### The constraint that makes this hard, and it is irreversible
 
