@@ -114,7 +114,11 @@ describe("the injected cap does not change the production default", () => {
     // would, immediately, if the default had become CAP.
     const log = new WorkerGateDecisionLog({
       dir,
-      logger: { warn: (m: string) => warnings.push(m) },
+      logger: {
+        warn: (m: string) => {
+          warnings.push(m);
+        },
+      },
     });
     for (let i = 0; i < 40; i++) log.record(bigRow(i));
     expect(warnings.filter((w) => /dropped/i.test(w))).toHaveLength(0);
@@ -128,7 +132,11 @@ describe("the injected cap does not change the production default", () => {
     const log = new WorkerGateDecisionLog({
       dir,
       maxPersistBytes: 0,
-      logger: { warn: (m: string) => warnings.push(m) },
+      logger: {
+        warn: (m: string) => {
+          warnings.push(m);
+        },
+      },
     });
     for (let i = 0; i < 5; i++) log.record(bigRow(i));
     expect(
@@ -142,7 +150,11 @@ describe("rotation keeps what it can and reports what it dropped", () => {
     const log = new WorkerGateDecisionLog({
       dir,
       maxPersistBytes: CAP,
-      logger: { warn: (m: string) => warnings.push(m) },
+      logger: {
+        warn: (m: string) => {
+          warnings.push(m);
+        },
+      },
     });
     fillPastCap(log);
     const after = readFileSync(
@@ -165,7 +177,11 @@ describe("rotation keeps what it can and reports what it dropped", () => {
     const log = new WorkerGateDecisionLog({
       dir,
       maxPersistBytes: CAP,
-      logger: { warn: (m: string) => warnings.push(m) },
+      logger: {
+        warn: (m: string) => {
+          warnings.push(m);
+        },
+      },
     });
     fillPastCap(log);
     const drops = warnings.filter((w) => /dropped/i.test(w));
@@ -176,7 +192,11 @@ describe("rotation keeps what it can and reports what it dropped", () => {
     const log = new WorkerGateDecisionLog({
       dir,
       maxPersistBytes: CAP,
-      logger: { warn: (m: string) => warnings.push(m) },
+      logger: {
+        warn: (m: string) => {
+          warnings.push(m);
+        },
+      },
     });
     fillPastCap(log);
     const dropMsg = warnings.find((w) => /dropped/i.test(w));
@@ -190,7 +210,11 @@ describe("rotation keeps what it can and reports what it dropped", () => {
     const log = new WorkerGateDecisionLog({
       dir,
       maxPersistBytes: CAP,
-      logger: { warn: (m: string) => warnings.push(m) },
+      logger: {
+        warn: (m: string) => {
+          warnings.push(m);
+        },
+      },
     });
     const n = fillPastCap(log);
     const rows = readFileSync(join(dir, "worker_gate_decisions.jsonl"), "utf-8")

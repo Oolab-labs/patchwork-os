@@ -12,7 +12,6 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { withFileLockSync } from "./fileLockSync.js";
-import type { Logger } from "./logger.js";
 import type { Reversibility } from "./workers/actionClass.js";
 
 /**
@@ -166,7 +165,18 @@ const MAX_CONTEXT_REASONS = 16;
 
 export interface WorkerGateDecisionLogOptions {
   dir: string;
-  logger?: Logger;
+  /**
+   * Only `warn` is ever called (`logger?.warn?.(…)` at every site), so the
+   * option asks for only that — matching `ButlerFactStore` and
+   * `permissionStore`, which take the same shape for the same reason.
+   *
+   * It used to demand the full `Logger`. A real caller passing one still
+   * satisfies this structurally, but the wide type made a `{ warn }` object
+   * a type error in tests while being indistinguishable at runtime — and the
+   * strict `tsconfig.tests.core.json` ratchet is where that surfaced, not the
+   * default `npm run typecheck`.
+   */
+  logger?: { warn?: (msg: string) => void };
   memoryCap?: number;
   /**
    * Byte cap before rotation, defaulting to `MAX_PERSIST_BYTES`.
