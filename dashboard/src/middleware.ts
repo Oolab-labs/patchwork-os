@@ -136,6 +136,23 @@ export async function middleware(req: NextRequest) {
         { status: 503 },
       );
     }
+    // Reaching here in production means the bypass flag turned the 503 above
+    // OFF: the dashboard is serving unauthenticated in production. The twin
+    // warning below fires only when a password IS configured, so without this
+    // the LESS secure configuration — no password at all — was the silent one.
+    // Severity signalling inverted exactly where it mattered.
+    //
+    // Warn, do not refuse. Setting the flag is an explicit operator choice and
+    // refusing here would break a deployment that is working as its owner
+    // intended; the message is the whole change.
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "[dashboard] DANGEROUS: DASHBOARD_ALLOW_UNAUTHENTICATED=1 is set in production " +
+          "with no DASHBOARD_PASSWORD/DASHBOARD_SESSION_SECRET configured. The dashboard " +
+          "is serving every request unauthenticated. Unset DASHBOARD_ALLOW_UNAUTHENTICATED " +
+          "and configure both to enable authentication.",
+      );
+    }
     return NextResponse.next();
   }
 

@@ -84,6 +84,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   test asserting the scoping in BOTH directions; a happy-path-only test would pass equally
   well if the scope were widened to every request, which is a credential leak rather than an
   attribution loss. Both mutations verified to fail.
+- 2026-08-25 `fix/warn-when-production-auth-bypassed` — the middleware's loud `DANGEROUS:`
+  warning for `DASHBOARD_ALLOW_UNAUTHENTICATED=1` lived in the branch reached only when a
+  password IS configured. The other branch (no password at all, so strictly less secure)
+  returned `next()` in production silently, because the bypass flag turns its 503 off. Whether
+  an operator was warned depended on whether a password happened to be set, and the worse
+  configuration was the quiet one. Warns, does not refuse — the flag is an explicit choice and
+  refusing would break a deployment working as intended. Both directions mutation-tested,
+  including that development stays quiet.
 
 - 2026-08-24 `fix/attribution-secret-reachability` — #1509: ADR-0020 attribution was shipped
   and unreachable on nearly every launch path — `src/index.ts` builds its dotenv candidates
