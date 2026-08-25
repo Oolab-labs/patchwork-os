@@ -5577,6 +5577,45 @@ if (process.argv[2] === "butler") {
       );
 
       if (args[0] === "shadow") {
+        // `--rows` is the review surface the summary's own closing advice
+        // requires ("check a sample against the real errands they describe").
+        // Before it existed the only caller of `readShadowRows` was
+        // `promoteShadowOutcomes` — the irreversible step — so the one piece of
+        // code that read the rows was the one that acts on them.
+        const rowsIdx = args.findIndex((a) => a === "--rows");
+        if (rowsIdx !== -1) {
+          const { formatShadowRows } = await import(
+            "./butler/outcomeIngester.js"
+          );
+          const { readShadowRows } = await import(
+            "./butler/outcomeShadowLog.js"
+          );
+          const rows = readShadowRows();
+          // `--rows` alone shows every row; `--rows N` caps it. A bad N is
+          // rejected rather than silently treated as "all", which would show
+          // more of the operator's data than they asked for.
+          const raw = args[rowsIdx + 1];
+          let limit: number | undefined;
+          if (raw !== undefined && !raw.startsWith("--")) {
+            const n = Number(raw);
+            if (!Number.isInteger(n) || n <= 0) {
+              process.stderr.write(
+                `[butler-shadow] --rows expects a positive integer, got "${raw}"\n`,
+              );
+              process.exit(1);
+            }
+            limit = n;
+          }
+          if (args.includes("--json")) {
+            const out = limit === undefined ? rows : rows.slice(0, limit);
+            process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
+          } else {
+            process.stdout.write(
+              `${formatShadowRows(rows, limit === undefined ? {} : { limit })}\n`,
+            );
+          }
+          process.exit(0);
+        }
         const summary = summariseShadowLog();
         if (args.includes("--json")) {
           process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

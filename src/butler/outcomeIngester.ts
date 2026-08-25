@@ -48,6 +48,7 @@ import {
   appendShadowOutcome,
   firstSeenByRef,
   SHADOW_REASONS,
+  type ShadowOutcomeRow,
   type ShadowSummary,
   summariseShadowLog,
   UNOBSERVED_REASONS,
@@ -155,6 +156,89 @@ export function ingestErrandOutcomes(
  * next to the number, because the number's whole purpose is to be weighed
  * against it.
  */
+/**
+ * Render the individual graded rows for review.
+ *
+ * `formatShadowSummary` ends by telling the operator to check a sample against
+ * the real errands before promoting. Until this existed there was no way to do
+ * that: `butler shadow` printed the aggregate, `--json` printed the same
+ * aggregate, and the only caller of `readShadowRows` in the tree was
+ * `promoteShadowOutcomes` — the irreversible step. The single piece of code
+ * that read the rows was the one that acts on them.
+ *
+ * That is worth more than a missing flag because promotion is ONE-WAY: trust
+ * replay absorbs a folded row into a checkpoint that deleting the row does not
+ * undo. "Review before promoting" is the entire safety property of the shadow
+ * phase, and it was advice with no surface behind it.
+ *
+ * Rows that WOULD become evidence are printed first, because those are the only
+ * ones promotion acts on — sorting them under a wall of withheld `unknown` rows
+ * (8 of 9 on the real ledger when this was written) buries the decision.
+ *
+ * ## Output is operator data
+ *
+ * Same rule as `runstore compare` and `privacy receipts`: rows name real
+ * installed recipes and carry external record ids for the operator's own
+ * errands. Quote a measurement; never paste the rows.
+ */
+export function formatShadowRows(
+  rows: readonly ShadowOutcomeRow[],
+  opts: { limit?: number } = {},
+): string {
+  if (rows.length === 0) {
+    return [
+      "[butler-shadow] no graded rows to review.",
+      "",
+      "  Nothing has been measured, so there is nothing to check and nothing",
+      "  may be promoted.",
+    ].join("\n");
+  }
+
+  // Evidence-bearing rows first, then most recently graded. Within the two
+  // groups the order is the ledger's own, so a reviewer can find a row again.
+  const ordered = [...rows].sort((a, b) => {
+    if (a.wouldCountAsEvidence !== b.wouldCountAsEvidence) {
+      return a.wouldCountAsEvidence ? -1 : 1;
+    }
+    return a.gradedAt - b.gradedAt;
+  });
+
+  const limit = opts.limit ?? ordered.length;
+  const shown = ordered.slice(0, Math.max(0, limit));
+  const hidden = ordered.length - shown.length;
+  const evidence = rows.filter((r) => r.wouldCountAsEvidence).length;
+
+  const lines = shown.map((r) => {
+    const when = new Date(r.gradedAt).toISOString().replace(".000Z", "Z");
+    // In words, not by colour or position alone — a reviewer piping this to a
+    // file must still be able to tell the two apart.
+    const mark = r.wouldCountAsEvidence
+      ? "would become evidence"
+      : "withheld            ";
+    // `recipe` is optional. No placeholder that reads like a name: attributing
+    // an errand to something that did not file it is worse than saying nothing.
+    const who = r.recipe ? ` recipe=${r.recipe}` : "";
+    return `  ${when}  ${mark}  ${r.disposition.padEnd(9)} ${r.reason.padEnd(18)} ${r.ref}${who}`;
+  });
+
+  return [
+    `[butler-shadow] ${rows.length} graded row(s); ${evidence} would become evidence.`,
+    "",
+    ...lines,
+    ...(hidden > 0
+      ? [
+          "",
+          `  ${hidden} more row(s) not shown — raise --rows to see them. A sample`,
+          "  that looks representative because it was truncated is not one.",
+        ]
+      : []),
+    "",
+    "  These rows are OPERATOR DATA, not a diagnostic blob: they name real",
+    "  installed recipes and carry external record ids. Quote a measurement if",
+    "  you need to; never paste the rows into an issue, a PR or a fixture.",
+  ].join("\n");
+}
+
 export function formatShadowSummary(s: ShadowSummary): string {
   if (s.total === 0) {
     return [

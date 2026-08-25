@@ -54,6 +54,17 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-25 `feat/butler-shadow-rows` — `butler shadow` closes by telling the operator to
+  "check a sample against the real errands they describe" before promoting, and gave them
+  no way to do it: the summary was all `--json` printed, and `readShadowRows` had exactly
+  ONE caller in the tree — `promoteShadowOutcomes`, the irreversible step. The only code
+  that read the individual rows was the one that acts on them, which matters because
+  promotion is one-way (trust replay absorbs a folded row into a checkpoint that deleting
+  the row does not undo). Adds `shadow --rows [N]`, evidence-bearing rows first, with the
+  operator-data warning `runstore compare` and `privacy receipts` carry. The wiring test
+  is the load-bearing one: mutating the flag lookup makes `--rows` fall silently back to
+  the summary while all six formatter tests still pass. (#1523)
+
 - 2026-08-25 `feat/completion-contracts-trust` — bind the completion contract that already
   runs. `evaluateExpect` has evaluated `recipe.expect` on every non-testMode flat run since
   it shipped and persisted `assertionFailures`; the trust fold read `step.status` only, so a
