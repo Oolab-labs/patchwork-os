@@ -64,7 +64,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   `correlationId` would be ambiguous between the run that FILED an action and the run that
   JUDGED it); `worker_trust/` is derived state, not events. Also records that an
   unregistered tool id skips silently BY DESIGN, guard-tested, and that `recipe doctor`
-  already reports it per step — two builds were spent rediscovering that. (#TBD)
+  already reports it per step — two builds were spent rediscovering that. (#1525)
 
 - 2026-08-25 `feat/run-id-in-templates` — a published artifact could not cite the run that
   produced it. The flat runner injected `date`/`time`/`YYYY`… into the template context but
