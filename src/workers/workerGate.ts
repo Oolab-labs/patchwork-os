@@ -429,14 +429,27 @@ export function decideWorkerAction(
 export function disallowedToolsForAgentStep(
   worker: WorkerManifest,
   store: WorkerLevelStore,
+  opts?: { pluginTools?: readonly string[] },
 ): string[] {
   // Universe = the canonical risk-tier map (broad MCP coverage) ∪ the worker
-  // subsystem's own tool→domain map (adds messaging/http TIER_MAP omits).
-  // Neither alone is complete; the union is the best enumerable approximation of
-  // the risky tool surface.
+  // subsystem's own tool→domain map (adds messaging/http TIER_MAP omits) ∪ the
+  // tool names a PLUGIN registered at runtime.
+  //
+  // The first two are static module constants, so before `pluginTools` existed
+  // the universe structurally could not contain a plugin tool: it was never
+  // enumerated, never classified, and never added to `--disallowed-tools`. A
+  // worker's agent step could call it at any trust level while the recipe path
+  // gated the very same tool — the bypass this function exists to close, open
+  // by omission rather than by decision.
+  //
+  // Passed in rather than imported because the registry is per-process and
+  // mutable (`--plugin-watch` hot-reloads it); this module stays pure and the
+  // caller, which holds the live list, supplies it.
+  const pluginTools = new Set(opts?.pluginTools ?? []);
   const universe = new Set([
     ...Object.keys(getRiskTierMap()),
     ...knownActionTools(),
+    ...pluginTools,
   ]);
   const blocked = new Set<string>();
   const forbidRules = parseForbidRules(worker.forbids).rules;
@@ -476,7 +489,19 @@ export function disallowedToolsForAgentStep(
     // issue) are always blocked. The recipe's explicit tool STEPS still gate on
     // their own class — this list is defense-in-depth, not the only gate.
     const ac = classifyActionClass(toolName);
-    if (ac.domain === "other" && classifyTool(toolName) !== "high") continue;
+    // A plugin tool is exempt from the exemption. Enumerating it above is on
+    // its own INERT: an unregistered name infers `tier=medium, domain=other`,
+    // so this guard would skip it and the deny list would be unchanged — a fix
+    // that lints clean and never fires. The carve-out is justified by the reads
+    // it names, all of which are built-ins the agent needs to do its job; a
+    // plugin tool is not one of them but an unclassified third-party side
+    // effect, so it does not inherit their benefit of the doubt.
+    if (
+      ac.domain === "other" &&
+      classifyTool(toolName) !== "high" &&
+      !pluginTools.has(toolName)
+    )
+      continue;
     // Emit BOTH naming forms the subprocess might use: the bare name (native CC
     // tools like `Bash`, and any non-namespaced match) AND the bridge MCP form
     // `mcp__patchwork__<tool>` (how claude -p sees bridge tools under

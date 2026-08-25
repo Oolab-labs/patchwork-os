@@ -422,6 +422,7 @@ export async function buildWorkerAutonomyGate(
 export async function buildWorkerAgentDisallowedTools(
   recipeName: string,
   trustOpts?: import("./workers/runWorkerShadow.js").RunWorkerShadowOpts,
+  pluginTools?: readonly string[],
 ): Promise<string[] | null> {
   try {
     const { isEnabled, FLAG_WORKER_AUTONOMY } = await import(
@@ -438,7 +439,11 @@ export async function buildWorkerAgentDisallowedTools(
     const { disallowedToolsForAgentStep } = await import(
       "./workers/workerGate.js"
     );
-    const list = disallowedToolsForAgentStep(trust.worker, trust.store);
+    const list = disallowedToolsForAgentStep(
+      trust.worker,
+      trust.store,
+      pluginTools && pluginTools.length > 0 ? { pluginTools } : undefined,
+    );
     return list.length ? list : null;
   } catch {
     return null;
@@ -501,6 +506,19 @@ export interface RecipeOrchestrationDeps {
     | import("./workerGateDecisionLog.js").WorkerGateDecisionLog
     | null;
   workdir: string;
+  /**
+   * The tool names a plugin registered at runtime, read fresh on every call.
+   *
+   * A THUNK, not a snapshot: `--plugin-watch` hot-reloads the registry, so a
+   * list captured at construction goes stale the first time a plugin is edited
+   * — and going stale here means a newly-registered tool silently leaves the
+   * agent-step sandbox's universe again, which is the exact hole this closes.
+   *
+   * Optional: absent (or empty) leaves the sandbox byte-identical to the
+   * pre-plugin behaviour, which is correct for every bridge started without
+   * `--plugin`.
+   */
+  pluginToolNames?: () => string[];
   logger: { info?: (s: string) => void; warn?: (s: string) => void };
 }
 
@@ -1625,6 +1643,8 @@ export class RecipeOrchestration {
     // the per-step gate). Null for non-worker recipes → agent steps unchanged.
     const agentDisallowedTools = await buildWorkerAgentDisallowedTools(
       opts.name,
+      undefined,
+      this.deps.pluginToolNames?.(),
     );
     // Independent of FLAG_WORKER_AUTONOMY — see resolveWorkerIdForRecipe's
     // doc comment. Feeds executeStep's per-worker allowedTools policy check.

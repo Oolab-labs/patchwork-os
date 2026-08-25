@@ -456,6 +456,35 @@ describe("buildWorkerAgentDisallowedTools (agent-step bypass)", () => {
     expect(list).not.toContain("editText");
     expect(list).not.toContain("getGitStatus");
   });
+
+  /**
+   * A plugin's tools are registered at runtime, so they are absent from both
+   * static maps the sandbox universe is built from and were never denied —
+   * callable by the agent subprocess at any trust level, while the recipe path
+   * gated the same tool. This asserts the third argument actually reaches
+   * `disallowedToolsForAgentStep`; the classification half is covered in
+   * `workers/__tests__/workerGate.test.ts`.
+   */
+  it("denies a plugin tool once its name is passed through", async () => {
+    const without = await buildWorkerAgentDisallowedTools("test-recipe", opts);
+    expect(without).not.toContain("im_send");
+
+    const withPlugin = await buildWorkerAgentDisallowedTools(
+      "test-recipe",
+      opts,
+      ["im_send"],
+    );
+    expect(withPlugin).toContain("im_send");
+    expect(withPlugin).toContain("mcp__patchwork__im_send");
+  });
+
+  it("an empty plugin list leaves the deny list byte-identical", async () => {
+    // The no-`--plugin` case is every default install; it must not shift.
+    const base = await buildWorkerAgentDisallowedTools("test-recipe", opts);
+    expect(
+      await buildWorkerAgentDisallowedTools("test-recipe", opts, []),
+    ).toEqual(base);
+  });
 });
 
 describe("buildWorkerAutonomyGate — manifest forbid rules reach ENFORCEMENT", () => {
