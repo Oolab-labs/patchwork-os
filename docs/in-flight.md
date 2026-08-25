@@ -76,7 +76,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   supplied, and removed rather than wired. Also fixes the READER, which enumerated fields
   explicitly and would have dropped both new ones — #1517's defect, caught before shipping
   rather than after. Sentinel: a receipt is never written outside a run, so absence of
-  `correlationId` at `rv >= 1` is a writer defect, not a state. (#TBD)
+  `correlationId` at `rv >= 1` is a writer defect, not a state. (#1522)
 
 - 2026-08-25 `feat/completion-contracts-trust` — bind the completion contract that already
   runs. `evaluateExpect` has evaluated `recipe.expect` on every non-testMode flat run since
