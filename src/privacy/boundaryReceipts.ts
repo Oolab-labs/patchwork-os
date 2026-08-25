@@ -62,6 +62,14 @@ export function boundaryReceiptsPath(dir?: string): string {
 export interface BoundaryReceiptView {
   seq?: number;
   at: number;
+  /**
+   * Writer-stamped record level, carried through verbatim. ABSENT means the row
+   * pre-dates the protocol — never defaulted to 0 on read, which would be a
+   * backfill performed invisibly on every load.
+   */
+  rv?: number;
+  /** The run that produced this receipt (`taskId`, never `seq`). */
+  correlationId?: string;
   decision: BoundaryDecision;
   classification: Classification;
   categories?: string[];
@@ -132,6 +140,15 @@ function view(r: Record<string, unknown>): BoundaryReceiptView | null {
   const dt = str("destinationType");
   return {
     ...(typeof r.seq === "number" ? { seq: r.seq } : {}),
+    // `rv` and `correlationId` are copied EXPLICITLY because this literal
+    // enumerates every field rather than spreading `r`. That shape is
+    // deliberate — a spread would let arbitrary file content reach a caller —
+    // but it also means a newly-written field is silently dropped until someone
+    // adds a line here, which is precisely how a `forbid` decision came to be
+    // written correctly and discarded by every reader (#1517), and how
+    // `workspaceId` was thrown away by the last step of its own pipeline.
+    ...(typeof r.rv === "number" ? { rv: r.rv } : {}),
+    ...(str("correlationId") ? { correlationId: str("correlationId") } : {}),
     at: r.at,
     decision: r.decision as BoundaryDecision,
     classification: (str("classification") ?? "internal") as Classification,

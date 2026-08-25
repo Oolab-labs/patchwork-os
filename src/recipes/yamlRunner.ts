@@ -1636,7 +1636,7 @@ export async function runYamlRecipe(
         ...(providerOptions && { providerOptions }),
         ...(dataPolicy !== undefined && { boundary: { dataPolicy } }),
       },
-      buildAgentExecutorDeps(stepDeps, deps),
+      buildAgentExecutorDeps(stepDeps, deps, undefined, runTaskId),
     );
     runBudget.reconcile(
       // Prefer the driver executeAgent actually resolved+ran; fall back to
@@ -1740,7 +1740,7 @@ export async function runYamlRecipe(
           boundary: { dataPolicy: input.dataPolicy },
         }),
       },
-      buildAgentExecutorDeps(stepDeps, deps),
+      buildAgentExecutorDeps(stepDeps, deps, undefined, runTaskId),
     );
     runBudget.reconcile(
       agentReturn.servedBy?.driver ?? input.driver ?? "auto",
@@ -2318,7 +2318,7 @@ export async function runYamlRecipe(
                 boundary: { dataPolicy: agentCfg.data_policy },
               }),
             },
-            buildAgentExecutorDeps(stepDeps, deps),
+            buildAgentExecutorDeps(stepDeps, deps, undefined, runTaskId),
           );
           agentResult = agentReturn.text;
           runBudget.reconcile(
@@ -3648,6 +3648,17 @@ function buildAgentExecutorDeps(
       disallowedTools?: string[];
     },
   ) => Promise<string | AgentResult>,
+  /**
+   * The run this dispatch belongs to (`taskId`, never `seq`) — stamped onto the
+   * boundary receipt so an auditor can join a refusal to the run that caused it.
+   *
+   * A parameter rather than a `StepDeps` field because the CHAINED path builds
+   * its deps before `runChainedRecipe` computes the id, so there is nothing to
+   * put on `StepDeps` at construction time. The chained caller resolves it from
+   * the `runTaskIdRef` cell on its own deps at dispatch time, by which point
+   * the run has started; the flat caller passes its local const directly.
+   */
+  runTaskId?: string,
 ): AgentExecutorDeps {
   const claudeCliFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
   return {
@@ -3720,6 +3731,11 @@ function buildAgentExecutorDeps(
           // dispatch was refused and not which of 80 recipes to go and fix.
           // `BoundaryReceipt` has declared the field the whole time.
           ...(stepDeps.recipeName && { recipeName: stepDeps.recipeName }),
+          // The run this refusal belongs to. `recipeName` says WHICH recipe to
+          // go and fix; without this an hourly recipe produces a receipt an
+          // hour that no reader can tell apart. Never `seq` — it collides
+          // across concurrent bridges.
+          ...(runTaskId && { correlationId: runTaskId }),
           decision: r.decision as BoundaryDecisionValue,
           classification: r.classification as ClassificationValue,
           destinationId: r.destinationId,
@@ -4250,6 +4266,17 @@ export function buildChainedDeps(
    */
   recipeName?: string,
 ): import("./chainedRunner.js").ExecutionDeps {
+  // A cell for this run's identity, handed back on the returned deps and filled
+  // in by `runChainedRecipe` once it computes `runTaskId`.
+  //
+  // It has to be a cell rather than a value because of an ordering problem no
+  // call site can fix: this function runs in `recipeOrchestration`, `replayRun`
+  // and `commands/recipe` BEFORE the runner those callers then dispatch to has
+  // computed an id. Returning the cell — rather than asking each caller to make
+  // one — is deliberate: a caller that forgot would emit receipts asserting
+  // `rv >= 1` while omitting a field registered as never legitimately absent,
+  // which is a false claim made silently at the one site nobody re-checks.
+  const runTaskIdRef: { current?: string } = {};
   const stepDeps = resolveStepDeps(
     runnerDeps,
     recipeName !== undefined ? { recipeName } : undefined,
@@ -4355,7 +4382,14 @@ export function buildChainedDeps(
           enforceSandbox: true,
         }),
       },
-      buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),
+      buildAgentExecutorDeps(
+        stepDeps,
+        runnerDeps,
+        claudeCodeFnOverride,
+        // Read at DISPATCH time, not build time — by now `runChainedRecipe` has
+        // computed and published the run's `taskId`.
+        runTaskIdRef.current,
+      ),
     );
   };
 
@@ -4464,6 +4498,8 @@ export function buildChainedDeps(
     executeTool,
     executeAgent,
     loadNestedRecipe,
+    // The cell `runChainedRecipe` fills with this run's `taskId`. See above.
+    runTaskIdRef,
     // Tier-1 #4 (audit 2026-06-22): forward the approval gate into the chained
     // path so it is no longer flat-only. Undefined when the bridge didn't
     // inject one (approvalGate == "off") — the chained gate then no-ops.

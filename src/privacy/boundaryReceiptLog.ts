@@ -32,6 +32,36 @@ import path from "node:path";
 
 import type { BoundaryDecision, Classification } from "./dataPolicy.js";
 
+/**
+ * Writer-stamped record level for this ledger.
+ *
+ * `rv: N` asserts: for every field registered as known from level <= N, that
+ * field is present, or its registered not-applicable condition held. Same
+ * protocol the gate ledger adopted in #1519, and adopted here for the same
+ * reason — a reader must be able to tell "no claim was made" from "a claim was
+ * made and honoured" from "a claim was made and broken".
+ *
+ * ## Field registry
+ *
+ * - `correlationId` (level 1) — **never legitimately absent.** Every receipt is
+ *   written from inside a run: the flat write sites are inside `runYamlRecipe`,
+ *   and all three chained dep-builders dispatch into `runChainedRecipe`, which
+ *   always computes a `runTaskId`. So there is no "decided outside any run"
+ *   state for this ledger to represent. Its absence at `rv >= 1` is a WRITER
+ *   DEFECT, not a state.
+ *
+ * ## What absence of `rv` means, and why it is never repaired
+ *
+ * A row with no `rv` pre-dates this protocol. That is the sentinel, and it is
+ * unrepairable by construction: there is no backfill, and `parsed.rv ?? 0` on
+ * read would be a backfill performed invisibly on every load. Never default it.
+ *
+ * Do NOT read "no `rv`" as "old". A stale bridge writing un-`rv`'d rows today
+ * is indistinguishable from a row written months ago — the mistake already
+ * found shipped elsewhere and fixed as #1515.
+ */
+export const BOUNDARY_RECORD_VERSION = 1;
+
 /** Clip so a runaway reason cannot bloat the audit log. */
 const MAX_REASON = 500;
 const DEFAULT_MEMORY_CAP = 500;
@@ -39,6 +69,22 @@ const DEFAULT_MEMORY_CAP = 500;
 export interface BoundaryReceipt {
   seq: number;
   at: number;
+  /**
+   * Writer-stamped record level — see `BOUNDARY_RECORD_VERSION`. Optional on
+   * the TYPE because rows written before this protocol have none, and that
+   * absence is the sentinel. Always present on rows this constructor writes.
+   */
+  rv?: number;
+  /**
+   * The run this decision belongs to — the run log's `taskId`, never `seq`.
+   *
+   * `seq` is a per-INSTANCE counter over a file eight construction sites write,
+   * so it collides across concurrent bridges (255 distinct over 272 rows when
+   * measured on the gate ledger). A join key that collides is not a join key.
+   *
+   * Registered as never legitimately absent at `rv >= 1`.
+   */
+  correlationId?: string;
   decision: BoundaryDecision;
   /** What the step DECLARED it was carrying. */
   classification: Classification;
@@ -65,6 +111,12 @@ export interface BoundaryReceipt {
 }
 
 export interface RecordBoundaryReceiptInput {
+  /**
+   * The run this decision belongs to (`taskId`). Deliberately NOT `rv` — the
+   * record level is the WRITER's claim about its own completeness, so a caller
+   * that could set it could forge it.
+   */
+  correlationId?: string;
   decision: BoundaryDecision;
   classification: Classification;
   categories?: string[];
@@ -145,6 +197,8 @@ export class BoundaryReceiptLog {
     const receipt: BoundaryReceipt = {
       seq: ++this.seq,
       at: this.now(),
+      rv: BOUNDARY_RECORD_VERSION,
+      ...(input.correlationId ? { correlationId: input.correlationId } : {}),
       decision: input.decision,
       classification: input.classification,
       destinationId: input.destinationId,

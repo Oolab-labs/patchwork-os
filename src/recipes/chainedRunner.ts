@@ -242,6 +242,16 @@ function toChainedAgentResult(v: string | AgentResult): AgentResult {
 }
 
 export interface ExecutionDeps {
+  /**
+   * Cell holding this run's identity (`taskId`), created by `buildChainedDeps`
+   * and filled by `runChainedRecipe` at the top of the run.
+   *
+   * It exists because the deps are built before the run id does: the three
+   * callers of `buildChainedDeps` construct deps and only then dispatch here.
+   * Dispatch-time writers (the boundary receipt ledger) read `.current`, by
+   * which point it is set.
+   */
+  runTaskIdRef?: { current?: string };
   executeTool: ToolExecutor;
   executeAgent: AgentExecutor;
   loadNestedRecipe: (
@@ -1245,6 +1255,12 @@ export async function runChainedRecipe(
   ) as "cron" | "webhook" | "recipe";
   const taskIdPrefix = options.taskIdPrefix ?? "chained";
   const runTaskId = `${taskIdPrefix}:${recipe.name}:${runStartedAt}`;
+  // Publish this run's identity to dispatch-time writers (the boundary receipt
+  // ledger). `buildChainedDeps` ran BEFORE this line — its callers build deps
+  // and only then dispatch here — so the id cannot be passed as a value and is
+  // handed over through the shared cell it created. Same const the run log
+  // writes below, never a second expression.
+  if (deps.runTaskIdRef) deps.runTaskIdRef.current = runTaskId;
   let runSeq: number | undefined;
   if (depth === 0 && options.runLog) {
     try {
