@@ -60,6 +60,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   never updated. A roadmap survey on 2026-08-23 then read the stale note, concluded the path
   was dead and #1217 was work pointed at nothing, and ranked it on that basis — while #1217
   had been CLOSED three weeks earlier. Corrects the note and gates its factual half.
+- 2026-08-25 `fix/gate-explain-false-era-claim` — `gate explain` told the operator every
+  actor-less row "pre-dates actor attribution". An actor is stamped only on `allow`
+  (`recipeOrchestration.ts` says why at length: on `gate` the approving human is not known at
+  decision time, on `forbid` nobody acted), so those absences are CURRENT POLICY, not history.
+  Measured on the live ledger: 272 rows, 47 `gate`, all 47 given the false era claim. The
+  two-absences collapse the Decision Record's own doctrine exists to prevent, already shipped,
+  in the surface an operator actually reads. Composes the explanation with `action`; no stored
+  data changes.
 
 - 2026-08-25 `fix/plugin-tools-outside-sandbox-universe` — the agent-step sandbox built its
   universe from two static module constants, so no plugin-registered tool could ever be

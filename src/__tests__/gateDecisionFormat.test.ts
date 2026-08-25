@@ -236,9 +236,28 @@ describe("formatGateDecision — actor", () => {
 
   it("says so explicitly when nobody was recorded", () => {
     // Omitting the line entirely would read as "attribution not applicable".
-    // The honest signal is that nobody recorded it — which must stay
+    // The honest signal is that nobody is named — which must stay
     // distinguishable from a synthesized "unknown" (ADR-0017: no backfill).
-    expect(formatGateDecision(rec())).toContain("not recorded");
+    //
+    // This assertion used to read `toContain("not recorded")`, and `rec()`
+    // defaults to `action: "gate"`. That pinned a real defect: an actor is
+    // stamped only on `allow`, so a gate row names nobody BY CURRENT POLICY,
+    // and the old unconditional string told the operator it "pre-dates actor
+    // attribution" instead. The intent of this test was always right; only the
+    // words it happened to check were wrong.
+    const out = formatGateDecision(rec());
+    expect(out).toContain("Attributed to:");
+    expect(out).toContain("nobody");
+    expect(out).not.toMatch(/\bunknown\b/i);
+    expect(out).not.toContain("pre-dates");
+  });
+
+  it("an actor-less ALLOW is the one row that really was not recorded", () => {
+    // `allow` does stamp an actor today, so its absence genuinely means nobody
+    // recorded it — the only action for which the era reading is defensible.
+    expect(formatGateDecision(rec({ action: "allow" }))).toContain(
+      "not recorded",
+    );
   });
 });
 

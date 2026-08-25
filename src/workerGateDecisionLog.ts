@@ -510,6 +510,38 @@ export function describeGateAction(action: string): string {
   }
 }
 
+/**
+ * Why does this row name nobody?
+ *
+ * The line was previously the single unconditional string "not recorded
+ * (pre-dates actor attribution)". That is true only for `allow`. An actor is
+ * stamped ONLY on `allow` (`recipeOrchestration.ts`), and deliberately so:
+ * on `gate` the approving human is not known at decision time, and on `forbid`
+ * nobody acted at all. Those absences are CURRENT POLICY, not history.
+ *
+ * Measured on the live ledger 2026-08-25: of 272 rows, 47 were `gate`, and every
+ * one of them was told it pre-dated a feature that was working correctly. That
+ * is the collapse this module's own doctrine exists to prevent — "nobody
+ * recorded this" made indistinguishable from "we do not know" — and it is worse
+ * than an omission, because an omitted line invites the question while this one
+ * answered it wrongly.
+ *
+ * Explaining an absence is not the same as filling it. Nothing here synthesises
+ * an actor, and no row's stored data changes; only what the reader is told.
+ */
+function attributionAbsenceReason(
+  action: GateDecisionRecord["action"],
+): string {
+  switch (action) {
+    case "gate":
+      return "nobody — a gated decision records no actor by design, because the approving human is not known when the decision is made";
+    case "forbid":
+      return "nobody — workspace policy refused, so no party acted";
+    default:
+      return "not recorded — an autonomous allow normally names the worker, so this row is from before that was stamped";
+  }
+}
+
 export function formatGateDecision(rec: GateDecisionRecord): string {
   const when = new Date(rec.decidedAt).toISOString();
   const verb = describeGateAction(rec.action);
@@ -535,9 +567,11 @@ export function formatGateDecision(rec: GateDecisionRecord): string {
       : rec.actor.id;
     lines.push(`  Attributed to: ${who} — ${rec.actor.kind}`);
   } else {
-    // Say it out loud. A record that simply omits the line reads as though
-    // attribution was not applicable, when in fact nobody recorded it.
-    lines.push("  Attributed to: not recorded (pre-dates actor attribution)");
+    // Say it out loud — a record that simply omits the line reads as though
+    // attribution was not applicable. But WHY it is absent depends on the
+    // action, and one unconditional string collapsed two different absences
+    // into one. See `attributionAbsenceReason`.
+    lines.push(`  Attributed to: ${attributionAbsenceReason(rec.action)}`);
   }
   lines.push(
     `  Effective level used for this decision: L${rec.effectiveLevel}`,
