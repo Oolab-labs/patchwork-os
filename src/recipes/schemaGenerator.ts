@@ -946,7 +946,12 @@ function generateRecipeSchema(
       },
       expect: {
         type: "object",
-        description: "Optional assertions for mocked recipe tests",
+        description:
+          "Completion contract for the run: assertions that must hold once " +
+          "the recipe finishes. Evaluated on EVERY non-testMode run, not only " +
+          "under `recipe test` — a violation is persisted as " +
+          "`assertionFailures` and withholds the run's trust evidence from " +
+          "the owning worker.",
         properties: {
           stepsRun: {
             type: "number",

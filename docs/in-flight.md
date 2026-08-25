@@ -54,6 +54,20 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-25 `feat/completion-contracts-trust` — bind the completion contract that already
+  runs. `evaluateExpect` has evaluated `recipe.expect` on every non-testMode flat run since
+  it shipped and persisted `assertionFailures`; the trust fold read `step.status` only, so a
+  run that violated its declared postcondition still folded each ok step as earned trust —
+  failing a completion contract cost a worker nothing. The run-level signal now reaches
+  `foldOutcome`, which WITHHOLDS every step of a violating run (neither credit nor penalty,
+  the same shape as the agent-step and unkeyable-action rules). Passed as a parameter to
+  `foldOutcome` rather than checked in `ingestRun`, so the live dial and the cold-start
+  backtest cannot drift. Also corrects the schema description, which called the feature
+  "assertions for mocked recipe tests" — the docs and the code disagreed about what it was,
+  which is the likeliest reason zero shipped templates use it. Measured before landing: 0 of
+  1404 runs in the live log carry `assertionFailures`, so nothing is re-labelled
+  retroactively. (#1520)
+
 - 2026-08-25 `feat/correlation-sentinel` — the correlation-id sentinel (the irreversible
   decision doc 13 §4.1 reserved for the owner), settled by adversarial review first. A gate
   decision now carries `rv` (writer-stamped record level) and `correlationId` (the run's

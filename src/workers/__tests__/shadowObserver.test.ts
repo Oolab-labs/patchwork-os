@@ -426,3 +426,53 @@ describe("foldOutcome — junk demotes immediately, before the durability window
     ).toEqual({ fold: true, good: false });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Completion contracts: a run that violated its declared postcondition
+// ---------------------------------------------------------------------------
+
+describe("completion contracts (run-level expect)", () => {
+  it("withholds every step of a run whose completion contract failed", () => {
+    const obs = new WorkerShadowObserver([release], { cfg: CFG });
+    // Three ok steps a worker would normally earn full credit for — but the
+    // run as a whole violated its declared postcondition.
+    obs.ingestRun({
+      recipeName: "release-notes",
+      at: 1000,
+      contractViolated: true,
+      steps: [
+        { tool: "file.write", status: "ok" },
+        { tool: "file.write", status: "ok" },
+        { tool: "file.write", status: "ok" },
+      ],
+    });
+    const [report] = obs.report();
+    const evidence = report!.board.reduce((n, r) => n + r.observations, 0);
+    expect(evidence).toBe(0);
+  });
+
+  it("still folds the same steps when the contract held", () => {
+    const obs = new WorkerShadowObserver([release], { cfg: CFG });
+    obs.ingestRun({
+      recipeName: "release-notes",
+      at: 1000,
+      steps: [
+        { tool: "file.write", status: "ok" },
+        { tool: "file.write", status: "ok" },
+        { tool: "file.write", status: "ok" },
+      ],
+    });
+    const [report] = obs.report();
+    const evidence = report!.board.reduce((n, r) => n + r.observations, 0);
+    expect(evidence).toBe(3);
+  });
+
+  it("withholds a failed step too — neither credit nor penalty", () => {
+    const decision = foldOutcome(
+      { tool: "file.write", status: "error" },
+      1000,
+      { windowMs: DEFAULT_DURABILITY_WINDOW_MS, contractViolated: true },
+    );
+    expect(decision.fold).toBe(false);
+  });
+});

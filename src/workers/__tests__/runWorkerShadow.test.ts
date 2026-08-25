@@ -179,6 +179,43 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     expect(board.some((b) => b.classKey.startsWith("fs-write"))).toBe(true);
   });
 
+  it("withholds a run that violated its completion contract, end to end from disk", () => {
+    // Wiring test, not a logic test: `assertionFailures` is persisted on the run
+    // and has to survive readRuns -> RunRecord.contractViolated -> foldOutcome
+    // before it can reach the dial. Asserting the fold rule alone would pass
+    // with the disk mapping deleted, which is how the rule was absent for its
+    // whole life while `evaluateExpect` ran on every non-testMode run.
+    const log = new RecipeRunLog({ dir });
+    log.appendDirect({
+      taskId: "broke-its-contract",
+      recipeName: "release-notes",
+      trigger: "recipe",
+      status: "done", // the RUN reports done — only the postcondition failed
+      createdAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+      assertionFailures: [
+        {
+          assertion: "outputs.notes",
+          expected: "release notes",
+          actual: undefined,
+          message: "expected release notes, got none",
+        },
+      ],
+      stepResults: [
+        { id: "s1", tool: "editText", status: "ok", durationMs: 1 },
+        { id: "s2", tool: "getGitStatus", status: "ok", durationMs: 1 },
+      ],
+    });
+    const trust = loadWorkerTrustForRecipe("release-notes", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+    });
+    expect(trust).not.toBeNull();
+    // Two ok steps that would each be evidence in the control case above.
+    expect(trust?.store.board("release-notes-worker")).toEqual([]);
+  });
+
   it("retains a worker's evidence behind >500 unrelated runs (ring not just window)", () => {
     // Stronger than the 150-run case: the in-memory ring defaults to 500, so a
     // worker run buried behind >500 unrelated runs would be evicted from the ring
