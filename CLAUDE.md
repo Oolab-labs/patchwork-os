@@ -249,6 +249,14 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `connect [list]` / `connect <vendor>` / `connect test <vendor>` / `connect disconnect <vendor>` — Connector authorisation from the terminal: list connectors and their status, start an OAuth flow or store a PAT, health-probe one, or revoke one. Documented in `--help` since it shipped and absent from this file until now.
 - `butler <shadow|observe|ingest|promote>` — The errand-outcome channel.
   - `shadow [--json]` — summarise the graded shadow ledger.
+  - `shadow --rows [N] [--json]` — print the INDIVIDUAL graded rows, evidence-bearing
+    ones first. The summary's closing advice is to check a sample against the real
+    errands before promoting, and until this existed there was no way to: `--json` gave
+    the same aggregate, and the only caller of `readShadowRows` was
+    `promoteShadowOutcomes` — the irreversible step. The one piece of code that read the
+    rows was the one that acts on them. Output is **operator data**, like `runstore
+    compare` and `privacy receipts`: it names real installed recipes and carries external
+    record ids, so quote a measurement and never paste the rows.
   - `observe [--file <path>] [--stale-after-days N]` — discover errands from the run log, look up live task state, then grade. **Operator path only**: a recipe step runs AS the worker, and a worker that could observe its own filings could report them completed.
   - `ingest [--file <path>|-]` — grade a JSON array of observations.
   - `promote [--dry-run]` — fold confirmed/junk grades into the trust ledger. Requires `PATCHWORK_FLAG_BUTLER_PROMOTE=1`; reports without writing otherwise, because promotion is one-way (trust replay absorbs a folded row into a checkpoint that deleting the row does not undo).
