@@ -72,7 +72,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   upgrade, and the only new refusal is on a path that could never have been honestly
   attributed. Records that the reference deployment now HAS a `members.json` with one real
   member and the bridge logs "a verified dashboard session will name the approver" in place
-  of the implicit-owner warning. (#TBD)
+  of the implicit-owner warning. (#1526)
 
 - 2026-08-25 `feat/run-id-in-templates` — a published artifact could not cite the run that
   produced it. The flat runner injected `date`/`time`/`YYYY`… into the template context but
