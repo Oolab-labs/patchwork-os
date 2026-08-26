@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-08-26 `feat/privacy-undeclared` — 132 of 214 shadow rows on the GOVERNED path carry
+  an `assumed` label because the step declared no `data_policy`; installed recipes declare
+  on 20 of 87 agent steps against 22 of 22 in shipped templates. `recipe lint` warns per
+  recipe and `privacy suggest` reports undeclared DRIVERS, but nothing reports undeclared
+  `data_policy` fleet-wide with the tool outputs that feed each step. Read-only.
 
 ## Recently closed (informal log, prune periodically)
 

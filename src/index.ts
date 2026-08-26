@@ -5673,6 +5673,75 @@ if (process.argv[2] === "privacy") {
       }
       process.exit(0);
     }
+    // `privacy undeclared` — the population most likely to be
+    // under-classified, fleet-wide. `recipe lint` warns per recipe and
+    // `privacy suggest` reports undeclared DRIVERS; neither answers "across
+    // every installed recipe, which agent steps declare no data_policy, and
+    // what flows into them".
+    if (args[0] === "undeclared") {
+      const { readdirSync, readFileSync } = await import("node:fs");
+      const pathMod = await import("node:path");
+      const { parse: parseYaml } = await import("yaml");
+      const { undeclaredInRecipe, formatUndeclared } = await import(
+        "./privacy/undeclaredSteps.js"
+      );
+      const dirIdx = args.indexOf("--dir");
+      const dir =
+        dirIdx !== -1 && args[dirIdx + 1]
+          ? (args[dirIdx + 1] as string)
+          : patchworkPath("recipes");
+      let entries: string[] = [];
+      try {
+        entries = readdirSync(dir);
+      } catch {
+        process.stderr.write(`[privacy] cannot read ${dir}\n`);
+        process.exit(1);
+      }
+      let agentSteps = 0;
+      let declared = 0;
+      const undeclared: Array<
+        import("./privacy/undeclaredSteps.js").UndeclaredStep
+      > = [];
+      const unreadable: string[] = [];
+      let recipesScanned = 0;
+      for (const f of entries.sort()) {
+        if (!/\.ya?ml$/i.test(f)) continue;
+        recipesScanned++;
+        let parsed: unknown;
+        try {
+          parsed = parseYaml(readFileSync(pathMod.join(dir, f), "utf-8"));
+        } catch {
+          unreadable.push(f);
+          continue;
+        }
+        const name =
+          (parsed as { name?: unknown } | undefined)?.name &&
+          typeof (parsed as { name?: unknown }).name === "string"
+            ? ((parsed as { name: string }).name as string)
+            : f;
+        const r = undeclaredInRecipe(name, parsed);
+        agentSteps += r.agentSteps;
+        declared += r.declared;
+        undeclared.push(...r.steps);
+      }
+      const report = {
+        recipesScanned,
+        agentSteps,
+        declared,
+        undeclared,
+        unreadable,
+      };
+      process.stdout.write(
+        args.includes("--json")
+          ? `${JSON.stringify(report, null, 2)}\n`
+          : formatUndeclared(report),
+      );
+      // A report, not a gate. An undeclared step is fail-soft by design
+      // (ADR-0021), so exiting non-zero would call the documented default a
+      // failure.
+      process.exit(0);
+    }
+
     if (args[0] === "receipts") {
       // The ENFORCING ledger's reader. `shadow` answers "what would a candidate
       // policy have stopped"; this answers "what did the live policy actually
