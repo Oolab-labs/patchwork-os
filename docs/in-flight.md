@@ -50,13 +50,25 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-26 `fix/session-secret-file-permissions` — `~/.patchwork/.env` holds
-  `DASHBOARD_SESSION_SECRET` (the whole ADR-0020 attribution scheme rests on it) and
-  `DASHBOARD_PASSWORD`. `credentialStore` tightens its file on read when group/world
-  readable; nothing does that for `.env`, and `writeFileSync(…, {mode})` in
-  `patchworkInit` is a no-op on an EXISTING file. Found at 644 on the reference machine.
+_Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-26 `fix/session-secret-file-permissions` — `$PATCHWORK_HOME/.env` holds
+  `DASHBOARD_SESSION_SECRET`, so forging one mints a cookie naming any member: the whole
+  ADR-0020 scheme. `credentialStore` tightens its own file on read for exactly that
+  reason; nothing did for `.env`, found at mode 644 on the reference machine. The trap
+  that hid it: `patchworkInit` DOES pass `{ mode: 0o600 }`, but `writeFileSync` applies
+  `mode` only when CREATING a file — on an existing one Node ignores it silently, so a
+  file that ever became loose stayed loose however many times init ran, with the line that
+  appears to set the mode sitting there reading as correct. Fixed at both ends (init
+  chmods after writing; the reader tightens AND reports, because silently repairing leaves
+  the operator unaware and the message has to say to rotate — tightening does not
+  un-disclose what was already readable). Reported via an optional `onWarn` rather than a
+  changed return shape: a second exported reader for one path is how two readers come to
+  disagree. Skipped on win32 in both places, since NTFS reports 0o666 regardless and a
+  warning that always fires is how a real one gets ignored. Still returns the secret when
+  loose — refusing would turn a permissions problem into an attribution outage. (#1533)
 
 - 2026-08-26 `feat/template-completion-contracts` — #1528's `contract_failed` category
   could never fire: 82 installed recipes, 10 with a step-level `expect`, ZERO with a
