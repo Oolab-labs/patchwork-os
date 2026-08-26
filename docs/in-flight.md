@@ -50,13 +50,24 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-26 `feat/privacy-undeclared` — 132 of 214 shadow rows on the GOVERNED path carry
-  an `assumed` label because the step declared no `data_policy`; installed recipes declare
-  on 20 of 87 agent steps against 22 of 22 in shipped templates. `recipe lint` warns per
-  recipe and `privacy suggest` reports undeclared DRIVERS, but nothing reports undeclared
-  `data_policy` fleet-wide with the tool outputs that feed each step. Read-only.
+_Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-26 `feat/privacy-undeclared` — ADR-0021 is fail-soft, so an agent step with no
+  `data_policy` is classified `internal` and passes; correct as a default, and it makes an
+  undeclared step invisible in a way a declared one is not. Measured: 132 of 214 shadow
+  observations are `assumed`, and 58 of 77 agent steps across 82 installed recipes declare
+  none — against 0 of 22 in shipped templates, so the biggest under-classified population
+  is on a channel that ALREADY EXISTS with 22 worked examples. `recipe lint` warns per
+  recipe and `privacy suggest` covers undeclared DRIVERS; nothing was fleet-wide. Reports
+  the TOOL OUTPUTS feeding each step, which is the point rather than a nicety: a step is
+  classified by what it HANDLES including whatever its tools return, so a prompt
+  mentioning nothing sensitive can still be handed a mailbox by the step above it.
+  SUGGESTS NO CLASSIFICATION, deliberately — a declared-but-wrong label is worse than an
+  assumed one because it stops looking like a gap. Corrects a figure published earlier the
+  same day: doc-19's 20-of-87 came from a regex sweep that over-counted; the YAML parse
+  gives 19 of 77. (#1536)
 
 - 2026-08-26 `feat/evidence-join-coverage` — the Evidence Spine section tells the next
   session to re-measure join coverage before scoping a cross-ledger reader, and records
