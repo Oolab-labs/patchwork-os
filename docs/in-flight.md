@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-08-26 `feat/evidence-join-coverage` — CLAUDE.md's Evidence Spine section tells the
+  next session to re-measure join coverage before scoping items 7/8, and warns its own
+  figures went stale within two days. Doing that takes a bespoke script every time. Adds a
+  read-only `patchwork evidence` reporting rows / joinable / distinct ids per ledger and
+  the pairwise intersections. Reports denominators; does NOT build a reader.
 
 ## Recently closed (informal log, prune periodically)
 

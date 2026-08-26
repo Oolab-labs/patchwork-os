@@ -240,6 +240,7 @@ async function downloadVsixFromOpenVsx(): Promise<string> {
 // same list is also used by the unknown-command suggester at L2570.
 const KNOWN_SUBCOMMANDS = [
   "init",
+  "evidence",
   "patchwork-init",
   "start-all",
   "install-extension",
@@ -4990,6 +4991,56 @@ if (process.argv[2] === "shadow-scan") {
         json: jsonFlag,
       });
       // runShadowScanCli sets process.exitCode = 1 on reclassified > 0; no explicit exit needed.
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// `patchwork evidence` — how much of the evidence spine can be joined?
+//
+// CLAUDE.md tells the next session to re-measure this before scoping a
+// cross-ledger reader, and records that its own figures went stale within two
+// days. That measurement was a bespoke throwaway script every time.
+//
+// Reports DENOMINATORS. It is not the reader, and building the reader is
+// exactly what the spine's own rule defers until there is evidence to read.
+if (process.argv[2] === "evidence") {
+  const args = process.argv.slice(3);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork evidence [--dir <path>] [--json]\n\n" +
+        "How much of the evidence spine can actually be joined: per ledger, how many\n" +
+        "rows carry a run id (correlationId) out of how many rows, and how many runs\n" +
+        "appear in more than one ledger.\n\n" +
+        "Read-only. Prints COUNTS ONLY — never a row, an id or any value, because a\n" +
+        "correlationId is a run's taskId and these ledgers hold real task titles and\n" +
+        "third-party record ids. A measurement may leave the machine; the rows may not.\n\n" +
+        "  --dir <path>  ledger directory (default: $PATCHWORK_HOME)\n" +
+        "  --json        emit the raw report\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    try {
+      const dirIdx = args.indexOf("--dir");
+      const dir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
+      const { evidenceCoverage, formatEvidenceCoverage } = await import(
+        "./evidenceCoverage.js"
+      );
+      const report = dir ? evidenceCoverage(dir) : evidenceCoverage();
+      process.stdout.write(
+        args.includes("--json")
+          ? `${JSON.stringify(report, null, 2)}\n`
+          : formatEvidenceCoverage(report),
+      );
+      // Always 0: this is a REPORT, not a gate. Zero joinable rows is a true
+      // and expected state early on, and exiting non-zero for it would make a
+      // correct answer look like a failure.
+      process.exit(0);
     } catch (err) {
       process.stderr.write(
         `Error: ${err instanceof Error ? err.message : String(err)}\n`,
