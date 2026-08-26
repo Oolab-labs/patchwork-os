@@ -60,6 +60,11 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   the tool-bearing `cliOpts` reaches only `claudeCliFn`. It was the only driver that could
   receive `personal` data, so a worker recipe could be honestly labelled or could run, never
   both. Pinned by an arity guard test. — merged as #1541
+- 2026-08-26 `fix/recipe-run-exits-0-on-a-failed-run` — the local-run branch ended in an
+  unconditional `process.exit(0)`, in the same block that computes `summary.ok` and records
+  `status: "error"`, so `patchwork recipe run X && echo ok` printed `ok` after a failure and
+  silently greened every cron caller. Same family as the `doctor --expect-running` gap.
+  — merged as #1540
 
 - 2026-08-26 `fix/expiry-never-reached-the-durable-log` — ADR-0018's live TTL timer tore its
   entry down inline and never persisted, so an approval that expired on a running bridge left
