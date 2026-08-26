@@ -50,12 +50,25 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-26 `feat/template-completion-contracts` — #1528 taught `patchwork halts` to see a
-  violated run-level `expect`, and measured 0 of 82 installed recipes declaring one, so the
-  counter has nothing to count. Adds contracts to the three templates whose postcondition
-  is unambiguous (an agent step whose output IS the artifact). Templates only.
+_Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-26 `feat/template-completion-contracts` — #1528's `contract_failed` category
+  could never fire: 82 installed recipes, 10 with a step-level `expect`, ZERO with a
+  run-level one. Adds contracts to the three templates that end in an agent step whose
+  output IS the artifact (`daily-status`, `morning-brief-slack`, `release-notes`), which is
+  the failure this family actually has — every step ok, run `done`, and the final step
+  writes a heading with nothing under it. Asserts ONLY the artifact: the upstream fetch
+  steps may legitimately come back empty, and turning a quiet day into a halt is a contract
+  that cries wolf. NOT added to the other five candidates — four have no agent step and one
+  produces no single named artifact, so the postcondition would have to be arbitrary.
+  Verified both directions: `release-notes` passes and fails when the asserted key is
+  changed to one nothing produces; `daily-status`'s contract FIRES on the real template
+  because its agent step fails under `recipe test`. Recorded rather than glossed: two of
+  the three already failed `recipe test` on main (failed agent fetch; four missing
+  connector fixture libraries), and that missing `~/.patchwork/fixtures` directory is the
+  same precondition making a worker eval harness premature. (#1532)
 
 - 2026-08-26 `feat/workers-list-validate` — four ways a worker manifest is installed and
   governs NOTHING, all silent: it does not parse (`loadWorkersFromDir` is fail-soft and
