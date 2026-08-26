@@ -60,6 +60,16 @@ export type HaltCategory =
   /** Whole-recipe failure (e.g. circular dependencies) — has no step row. */
   | "run_level"
   /**
+   * The run finished its steps but violated its RUN-LEVEL completion contract
+   * (`recipe.expect` → `assertionFailures`). Distinct from `expect_failed`,
+   * which is a per-STEP assertion and arrives as an error step row.
+   *
+   * Its own category because such a run finishes `done`, not `error`: the
+   * operator-facing halt count could not see it at all, so "nothing halted"
+   * and "the job did not do what it promised" were the same reading.
+   */
+  | "contract_failed"
+  /**
    * The step uses a construct this runner does not implement (a compound
    * step — `parallel`, `each`, `recipe`, `chain`, `branch` — on a non-chained
    * recipe). An AUTHORING defect, not a runtime failure: nothing was attempted
@@ -92,6 +102,7 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   missing_connector: "missing connector",
   approval_rejected: "approval rejected",
   run_level: "run-level halt",
+  contract_failed: "completion contract failed",
   unsupported_step: "unsupported step form",
   unknown: "uncategorised",
 };
@@ -120,6 +131,8 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   approval_rejected:
     "approve the step from the dashboard, or set requireApproval: false",
   run_level: "check recipe for circular deps / parse errors",
+  contract_failed:
+    "the run finished but broke its `expect` postcondition — compare the assertion with the run output",
   unsupported_step: "use `fan_out`, or set trigger.type: chained",
   unknown: "open run trace for raw error",
 };
@@ -191,12 +204,18 @@ export interface HaltSummary {
   recent: Array<{ reason: string; category: HaltCategory; runSeq: number }>;
 }
 
-interface HaltSummaryInputRun {
+export interface HaltSummaryInputRun {
   seq: number;
   /** Top-level run status — `run_level` halts are runs with status === "error" but no error stepResults (e.g. circular-dep failure before any step ran). */
   status?: "running" | "done" | "error" | "cancelled" | "interrupted";
   /** Top-level errorMessage — surfaced as a `run_level` halt when no per-step halts cover it. */
   errorMessage?: string;
+  /**
+   * Run-level `recipe.expect` violations. Present on the run-log row already
+   * — the runner persists them — so every caller passing a whole row gets
+   * this for free and no call site changes.
+   */
+  assertionFailures?: Array<{ message?: string } | unknown>;
   stepResults?: Array<{
     status: "ok" | "skipped" | "error";
     haltReason?: string;
@@ -213,6 +232,19 @@ interface HaltSummaryInputRun {
  * - one entry per error-status stepResult that has a `haltReason`
  * - plus one `run_level` entry if `status === "error"` and there were no
  *   per-step halts that already explained it (avoids double-counting).
+ * - plus ONE `contract_failed` entry if the run violated its run-level
+ *   `recipe.expect`, regardless of the two above.
+ *
+ * The contract entry is deliberately NOT guarded on the step count, unlike
+ * `run_level`. That guard exists because a run's `errorMessage` usually
+ * restates a step failure already counted — the same fact twice. A violated
+ * postcondition is a DIFFERENT fact: every step can succeed and the run still
+ * fail to deliver what it promised, and a step can fail for a reason
+ * unrelated to the assertion that also failed.
+ *
+ * ONE entry per run, not one per failure. A run with three assertion failures
+ * broke one contract in three ways; counting three would inflate the halt
+ * count against "incomplete jobs", which is the reading this count is for.
  */
 export function summariseHalts(runs: HaltSummaryInputRun[]): HaltSummary {
   const byCategory: Partial<Record<HaltCategory, number>> = {};
@@ -230,6 +262,23 @@ export function summariseHalts(runs: HaltSummaryInputRun[]): HaltSummary {
         recent.push({
           reason: step.haltReason,
           category: cat,
+          runSeq: run.seq,
+        });
+      }
+    }
+    const assertionCount = run.assertionFailures?.length ?? 0;
+    if (assertionCount > 0) {
+      total++;
+      byCategory.contract_failed = (byCategory.contract_failed ?? 0) + 1;
+      if (recent.length < 5) {
+        recent.push({
+          // Names the count rather than quoting an assertion: the assertion
+          // text can carry run output, and `recent` is rendered in the CLI,
+          // the dashboard and a Prometheus-adjacent surface.
+          reason: `run-level expect failed (${assertionCount} assertion${
+            assertionCount === 1 ? "" : "s"
+          })`,
+          category: "contract_failed",
           runSeq: run.seq,
         });
       }

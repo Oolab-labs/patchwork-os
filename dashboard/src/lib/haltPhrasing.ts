@@ -128,6 +128,26 @@ export function ownerHaltPhrase(
           "One of its steps uses a feature this kind of recipe can't run, so it stopped.",
         fix: "none",
       };
+    case "judge_revisions_exhausted":
+      return {
+        sentence:
+          "It rewrote this several times and its reviewer still wasn't satisfied, so it stopped.",
+        fix: "open-trace",
+        fixLabel: "See what happened",
+      };
+    case "contract_failed":
+      // The ONLY case in this file where the run did not stop. Every other
+      // sentence ends in "so it stopped"; this one finished and handed back
+      // work that failed its own final check. Saying "stopped" here would
+      // send the owner looking for a halt that never happened, and would
+      // hide the thing that actually matters: the output exists and should
+      // not be trusted.
+      return {
+        sentence:
+          "It finished, but the result didn't pass its own final check — don't rely on it yet.",
+        fix: "open-trace",
+        fixLabel: "See what happened",
+      };
     case "unknown":
       return {
         sentence: "It stopped for a reason we couldn't label.",

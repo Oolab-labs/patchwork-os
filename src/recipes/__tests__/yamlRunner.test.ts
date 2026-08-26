@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { summariseHalts } from "../haltCategory.js";
 
 // Isolate from the developer's real ~/.patchwork/config.json — agent steps
 // now read it via a static import (was a broken `require()` under ESM that
@@ -2345,6 +2346,72 @@ describe("evaluateExpect — multiple assertions", () => {
         context: { key: "expected" },
       }),
     ).toHaveLength(0);
+  });
+});
+
+describe("runYamlRecipe — a violated contract reaches the halt count", () => {
+  /**
+   * The join, not the halves. `evaluateExpect` was already tested and
+   * `summariseHalts` is tested in `haltCategoryContract.test.ts`; what was
+   * broken is that nothing carried one to the other. The run finishes `done`,
+   * so the summariser's run-level branch (which needs `status: "error"`) never
+   * fired and its input type had no field for `assertionFailures` at all.
+   *
+   * Shaped like the `morning-brief` template's contract — an agent step that
+   * produces no output, so the promised key is missing.
+   */
+  it("a done run missing its promised output is counted as contract_failed", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "contract.txt"),
+          content: "wrote something",
+          into: "saved",
+        },
+      ],
+      expect: { outputs: ["brief"] },
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: () => {},
+    });
+
+    // The run did NOT fail — that is the whole point.
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.assertionFailures?.length).toBe(1);
+
+    const summary = summariseHalts([
+      {
+        seq: 1,
+        status: "done",
+        ...(result.assertionFailures
+          ? { assertionFailures: result.assertionFailures }
+          : {}),
+      },
+    ]);
+    expect(summary.byCategory.contract_failed).toBe(1);
+    expect(summary.total).toBe(1);
+  });
+
+  it("a run that honours its contract is counted as nothing", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "contract-ok.txt"),
+          content: "ok",
+          into: "saved",
+        },
+      ],
+      expect: { outputs: [path.join(TMP, "contract-ok.txt")] },
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: () => {},
+    });
+    expect(result.assertionFailures ?? []).toHaveLength(0);
+    expect(summariseHalts([{ seq: 1, status: "done" }]).total).toBe(0);
   });
 });
 

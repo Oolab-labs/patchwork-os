@@ -7,6 +7,20 @@ description: Daily morning brief combining unread emails, calendar, recent git a
 allowWrites:
   - file.write
 
+# Run-level completion contract. The steps can all report `ok` and the run can
+# still finish `done` having produced no brief — an agent that narrates instead
+# of answering, or a driver that returns empty, leaves `brief` unset and the
+# file step then writes a heading with nothing under it. That is the failure
+# this recipe actually has, and it is silent.
+#
+# `expect` is checked AFTER the last step and does not change the run's status:
+# a violated contract is recorded as `assertionFailures` on the run and counted
+# by `patchwork halts` under `completion contract failed`. So the run still
+# writes whatever it produced — this reports, it does not roll back.
+expect:
+  outputs:
+    - brief
+
 trigger:
   type: cron
   at: "0 8 * * 1-5"
