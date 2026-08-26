@@ -18,6 +18,8 @@
  * NOT change". `required` is scoped to the `when:` guard only.
  */
 
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ChainedRecipe,
@@ -51,7 +53,12 @@ function flatRecipe(expectBlock: Record<string, unknown> | undefined) {
         id: "guarded",
         when: "{{never}}",
         tool: "file.write",
-        path: "/tmp/never.txt",
+        // `os.tmpdir()` rather than a literal `/tmp` — the fixture-hygiene gate
+        // rejects hardcoded paths, and it is right to: `/tmp` is not a path on
+        // Windows, where this suite also runs. The step never executes (its
+        // guard is always false), which is precisely why a wrong path here
+        // would have gone unnoticed.
+        path: path.join(os.tmpdir(), "pw-never-written.txt"),
         content: "x",
         ...(expectBlock ? { expect: expectBlock } : {}),
       },
