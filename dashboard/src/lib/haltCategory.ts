@@ -17,12 +17,14 @@ export type HaltCategory =
   | "budget_exceeded"
   | "expect_failed"
   | "step_timeout"
+  | "judge_revisions_exhausted"
   | "auth_failure"
   | "rate_limited"
   | "network_error"
   | "missing_connector"
   | "approval_rejected"
   | "run_level"
+  | "contract_failed"
   | "unsupported_step"
   | "unknown";
 
@@ -42,12 +44,14 @@ export const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   budget_exceeded: "budget exceeded",
   expect_failed: "expect failed",
   step_timeout: "step timeout",
+  judge_revisions_exhausted: "judge revisions exhausted",
   auth_failure: "auth failure",
   rate_limited: "rate limited",
   network_error: "network error",
   missing_connector: "missing connector",
   approval_rejected: "approval rejected",
   run_level: "run-level halt",
+  contract_failed: "completion contract failed",
   unsupported_step: "unsupported step form",
   unknown: "uncategorised",
 };
@@ -72,6 +76,8 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "A step's expect: assertion didn't match. Inspect the assertion + actual output.",
   step_timeout:
     "Step exceeded its timeout_ms. Bump the timeout or speed up the step.",
+  judge_revisions_exhausted:
+    "The judge→refine loop used its max_revisions budget and the judge still asked for changes. Raise max_revisions, refine the prompt, or set on_exhausted: proceed.",
   auth_failure:
     "Connector token expired or scopes insufficient. Reconnect from /connections.",
   rate_limited:
@@ -84,6 +90,8 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "A step was rejected at the approval gate. Approve it from the dashboard, or set requireApproval: false on the recipe.",
   run_level:
     "Whole-recipe failure (no step ran). Check the recipe for circular deps / parse errors.",
+  contract_failed:
+    "The run finished its steps but broke its run-level expect: postcondition — it completed without delivering what it promised. Compare the assertion with the run output.",
   unsupported_step:
     "The step uses a form this recipe type can't run (parallel / each / recipe / chain / branch on a non-chained recipe). Use the fan_out tool step (it loops a tool or an agent sub-step), or set trigger.type: chained.",
   unknown: "Uncategorised halt. Open the run trace for the raw error.",
