@@ -246,3 +246,54 @@ and every day it stays open invites re-litigation rather than progress.
 
 **Defaulting the actor to the implicit owner.** Rejected outright, and recorded
 here so it is not re-proposed as a shortcut. It fabricates evidence.
+
+## Amendment — 2026-08-25: what an UNATTRIBUTED session may do
+
+The last question this ADR left open. `dashboard/src/lib/session.ts` mints two
+cookie forms: `v2.<memberId>.<expiresAt>.<HMAC>` when a real member
+authenticates, and `v1.<expiresAt>.<HMAC>` when only the shared
+`DASHBOARD_PASSWORD` does. The v2 form names a subject; the v1 form cannot, by
+construction. So: once authorisation is actually enforced, what may a v1
+session do?
+
+**Decision: exactly what it does today, minus the actions that structurally
+require a named subject — which today means approving a gated action.**
+
+Three reasons, in order of weight.
+
+1. **Any other answer breaks every existing install on upgrade.** The single
+   operator with a `DASHBOARD_PASSWORD` and no roster is the common case and
+   the shape this project is designed around. Narrowing a v1 session's powers
+   generally would take a working workspace and stop it working, to fix a
+   problem that workspace does not have.
+2. **Approval is the one action that is meaningless without a name.** The
+   entire point of pausing an action for a human is that a *person* accepted
+   responsibility for it. "Somebody who knew the shared password said yes" is
+   not that, and recording it as an approval would be the same fabrication as
+   defaulting the actor to the implicit owner — rejected above, for the same
+   reason.
+3. **It is additive, so it needs no migration.** Nothing consults the roster
+   for permission today, so on the day enforcement lands nothing an existing
+   install already does begins to fail. The only new refusal is on a path that
+   could never have been honestly attributed anyway.
+
+### What this does NOT decide
+
+It does not grant a v1 session anything it lacks today, and it is not a
+statement that shared-secret access is adequate — it is the answer to "what
+happens to the installs that already exist", nothing more. A workspace that
+wants attributed approvals creates a roster and gives its members credentials;
+that path already exists (Phase A) and is unchanged by this.
+
+It also does not weaken the never-backfill rule. A decision record produced
+under a v1 session carries no `actor`, and absence keeps meaning "nobody
+recorded this" rather than "we do not know who".
+
+### Status of the roster on the reference deployment
+
+Recorded because this ADR previously described the roster as absent: as of
+2026-08-25 the reference deployment HAS a `members.json` with one real member,
+and the bridge logs `approval attribution ON — a verified dashboard session
+will name the approver` in place of the implicit-owner warning. Attribution is
+reachable and now has somebody to name; a member still needs a credential
+before a session can be attributed to them.

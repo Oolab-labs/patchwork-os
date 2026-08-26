@@ -65,6 +65,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   JUDGED it); `worker_trust/` is derived state, not events. Also records that an
   unregistered tool id skips silently BY DESIGN, guard-tested, and that `recipe doctor`
   already reports it per step — two builds were spent rediscovering that. (#1525)
+- 2026-08-25 `docs/adr0020-unattributed-session` — closes the last question ADR-0020 left
+  open: what an unattributed (`v1`) dashboard session may do once authorisation is enforced.
+  Decision: exactly what it does today, minus the actions that structurally require a named
+  subject — approving a gated action. Additive, so no existing install starts failing on
+  upgrade, and the only new refusal is on a path that could never have been honestly
+  attributed. Records that the reference deployment now HAS a `members.json` with one real
+  member and the bridge logs "a verified dashboard session will name the approver" in place
+  of the implicit-owner warning. (#1526)
 
 - 2026-08-25 `feat/run-id-in-templates` — a published artifact could not cite the run that
   produced it. The flat runner injected `date`/`time`/`YYYY`… into the template context but
