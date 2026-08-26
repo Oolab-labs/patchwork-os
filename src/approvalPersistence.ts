@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { ApprovalDecision, PendingApproval } from "./approvalQueue.js";
 import { withFileLockSync } from "./fileLockSync.js";
+import type { ActorSnapshot } from "./identity/approverFromSession.js";
 import type { Logger } from "./logger.js";
 import { patchworkHome } from "./patchworkHome.js";
 
@@ -13,6 +14,30 @@ import { patchworkHome } from "./patchworkHome.js";
  *    human reviewing the queue needs to know about what was asked.
  *  - `decision` — written when a call resolves (approved/rejected/expired/
  *    cancelled), whatever produced that resolution.
+ *  - `attribution` — written when, and only when, a named human's own
+ *    authenticated session was verified for that decision (ADR-0020).
+ *
+ * ## Why attribution is a THIRD event and not a field on `decision`
+ *
+ * The decision row is written by `queue.approve()`, and the approver is
+ * resolved deliberately AFTER that call returns, so that a failing identity
+ * lookup can never block or alter an approval (`approvalHttp.ts`). The actor
+ * therefore does not exist yet at the moment the decision row is appended.
+ *
+ * The alternative — resolve first and pass the actor in — inverts that
+ * ordering and lets the audit trail change the outcome it describes. The
+ * alternative to THAT — rewrite the decision row afterwards — is exactly the
+ * mutable store this log's own doc comment rules out. An extra append is the
+ * only shape that keeps both properties.
+ *
+ * ## Absence stays absence
+ *
+ * No verified session ⇒ no attribution row. Not a row naming "unknown", and
+ * never the implicit owner: an absent actor already means "nobody recorded
+ * this" (ADR-0017), and a defaulted one is indistinguishable from a real one.
+ * The rows written before this event kind existed are not backfilled and are
+ * not distinguishable from a future decision that legitimately had no named
+ * approver — which is correct, because those are the same fact.
  *
  * On restart, replaying the log tells you which requests never got a
  * matching decision — those are the ones to restore as pending. This is an
@@ -47,7 +72,24 @@ export interface ApprovalDecisionEvent {
   decidedAt: number;
 }
 
-export type ApprovalLogEvent = ApprovalRequestEvent | ApprovalDecisionEvent;
+/**
+ * Who decided. Written only on evidence: `approvalHttp` verifies the member's
+ * own signed session cookie before this exists (`identity/approverFromSession.ts`).
+ * Never written for a shared-secret (v1) session, an expired timer, or the
+ * phone path's single-use token — none of those name a person.
+ */
+export interface ApprovalAttributionEvent {
+  kind: "attribution";
+  callId: string;
+  /** id + kind + display name AS IT WAS, never a roster reference. */
+  actor: ActorSnapshot;
+  attributedAt: number;
+}
+
+export type ApprovalLogEvent =
+  | ApprovalRequestEvent
+  | ApprovalDecisionEvent
+  | ApprovalAttributionEvent;
 
 /**
  * The directory that holds `approval_log.jsonl`. Honors `PATCHWORK_HOME`, the
@@ -132,6 +174,25 @@ export class ApprovalPersistence {
     this.append(event);
   }
 
+  /**
+   * Append an attribution event. Fail-soft like its siblings: the decision it
+   * describes has already taken effect, so a write failure here must degrade
+   * to an unattributed record, never to a failed approval.
+   */
+  recordAttribution(
+    callId: string,
+    actor: ActorSnapshot,
+    attributedAt: number,
+  ): void {
+    const event: ApprovalAttributionEvent = {
+      kind: "attribution",
+      callId,
+      actor,
+      attributedAt,
+    };
+    this.append(event);
+  }
+
   private append(event: ApprovalLogEvent): void {
     try {
       mkdirSync(path.dirname(this.file), { recursive: true });
@@ -182,6 +243,13 @@ export class ApprovalPersistence {
       } else if (event.kind === "decision") {
         decided.add(event.callId);
       }
+      // Any other kind — `attribution` today — is deliberately ignored here.
+      // Restore answers one question ("what never got decided"), and only
+      // `request` and `decision` bear on it. Do NOT turn this into an
+      // exhaustive switch that throws or warns on an unrecognised kind: this
+      // log is append-only and read by a process that may be older than the
+      // rows it is reading, so tolerating an unknown kind is what lets a new
+      // one ship without stranding a running bridge.
     }
     const unresolved: ApprovalRequestEvent[] = [];
     for (const [callId, req] of requests) {

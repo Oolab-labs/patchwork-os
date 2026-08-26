@@ -54,6 +54,27 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-26 `feat/durable-approver-attribution` — ADR-0020 Phase A resolved the approver
+  and then put the name somewhere it could be thrown away. `approvalHttp` verifies the
+  member's own signed session AFTER `queue.approve()` has landed the decision (deliberate:
+  identity must never block or alter an approval), and handed the name to the
+  `approval_decision` audit hook — whose only production sink is `activityLog`, which
+  ROTATES and halves itself when it grows. The one record of who approved a gated action
+  was the one record allowed to discard its oldest rows, while `approval_log.jsonl` had no
+  actor field at all. Adds a third append-only event kind, on both the approve and the
+  reject path, because attributing only the yes makes the log a record of who permits
+  things and never of who stopped them. A third EVENT and not a field on `decision`: the
+  decision row is written before the approver exists, so resolving first would invert the
+  ordering and rewriting the row afterwards is the mutable store the log rules out. No
+  sentinel needed — existing rows are untouched, and `loadUnresolvedRequests` already
+  ignores unknown kinds, which is now commented as load-bearing rather than incidental.
+  The consumer already exists one repo over and filters strictly on `kind`; that was
+  VERIFIED (identical measures over a synthetic log with and without the new rows) rather
+  than assumed, and it could have failed — an earlier version of that function counted
+  rows. Also corrects the stale comment the whole finding came through: the `gate` branch's
+  actor omission was justified by "an in-memory Map with a 5-minute TTL", which ADR-0018
+  made false; the conclusion survives its premise. (#1527)
+
 - 2026-08-25 `docs/evidence-spine-after-1522` — the "next join" note added that morning
   described `boundary_receipts.jsonl` as the unbuilt next step and told a future session how
   to build it; #1522 then built it, so the note became an instruction to redo finished work.
