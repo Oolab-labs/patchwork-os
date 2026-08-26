@@ -54,6 +54,21 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-26 `fix/doctor-two-handlers` — two top-level `argv[2] === "doctor"` blocks; the
+  deployment-freshness one won every time (stable over five runs, zero health-check
+  lines), so `commands/doctor.ts`'s four config checks never produced output and
+  `runDoctor`'s one production caller was unreachable. Its tests passed because they call
+  it directly with a mocked dependency — logic proven, wiring never exercised — so the new
+  test SPAWNS the built CLI. Worse than dead code: `--help` was answered by the LOSING
+  block, so the documented behaviour of `patchwork doctor` described checks that did not
+  run and omitted `--expect-running`, the flag the repo relies on after every kickstart.
+  Config checks moved to `doctor health` as a SUBCOMMAND, not folded in: `doctor`'s exit
+  code is load-bearing (`patchwork doctor && echo deployed` is a real shape), so a failing
+  config check must not newly fail it. Recorded honestly in the test file: removing the
+  routing guard restores the collision and every test still passes — what is pinned is the
+  OUTCOME, not the guard, because once each block answers its own `--help` the collision
+  is unobservable from outside. (#1534)
+
 - 2026-08-26 `fix/session-secret-file-permissions` — `$PATCHWORK_HOME/.env` holds
   `DASHBOARD_SESSION_SECRET`, so forging one mints a cookie naming any member: the whole
   ADR-0020 scheme. `credentialStore` tightens its own file on read for exactly that
