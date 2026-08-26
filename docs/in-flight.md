@@ -54,6 +54,21 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-26 `feat/halts-see-completion-contracts` — a run that violated its run-level
+  `recipe.expect` finished `done`, and `summariseHalts` only emits a run-level entry for
+  `status === "error"`, so the operator-facing halt count could not distinguish "nothing
+  halted" from "the job finished without delivering what it promised". Adds
+  `contract_failed`, counted ONE per run rather than one per assertion (three failures are
+  one contract broken three ways; counting three inflates the number against the
+  "incomplete jobs" reading it exists for) and NOT guarded on the step count, unlike
+  `run_level` — a postcondition violation is a different fact from a step error, not the
+  same one restated. Would have shipped INERT: measured 1455 run rows with 0
+  `assertionFailures`, because no shipped template declared a run-level `expect`, so
+  `morning-brief` now promises its `brief` output. Also closed a pre-existing drift the
+  work surfaced: `judge_revisions_exhausted` was in the bridge union and absent from the
+  dashboard's entirely, which no compiler could catch — a `Record` over a SHORTER union is
+  well-typed — so the two unions are now compared as text by a test. (#1528)
+
 - 2026-08-26 `feat/durable-approver-attribution` — ADR-0020 Phase A resolved the approver
   and then put the name somewhere it could be thrown away. `approvalHttp` verifies the
   member's own signed session AFTER `queue.approve()` has landed the decision (deliberate:
