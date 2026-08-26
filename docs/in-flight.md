@@ -50,13 +50,26 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-26 `feat/evidence-join-coverage` — CLAUDE.md's Evidence Spine section tells the
-  next session to re-measure join coverage before scoping items 7/8, and warns its own
-  figures went stale within two days. Doing that takes a bespoke script every time. Adds a
-  read-only `patchwork evidence` reporting rows / joinable / distinct ids per ledger and
-  the pairwise intersections. Reports denominators; does NOT build a reader.
+_Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-26 `feat/evidence-join-coverage` — the Evidence Spine section tells the next
+  session to re-measure join coverage before scoping a cross-ledger reader, and records
+  that its own figures went stale within two days; doing so took a bespoke throwaway
+  script every time, which is how a check that must be re-run stops being re-run.
+  `patchwork evidence` reports the denominators: gate decisions 1 of 273, boundary
+  receipts 14 of 170, the other three 0, and ZERO runs reachable in both joined ledgers.
+  That zero is the finding — item 7 is NOT unblocked by the sentinel shipping, because the
+  sentinel settled HOW to stamp and almost nothing is stamped; the two populations barely
+  overlap by construction (gate rows come from worker recipes under the autonomy flag,
+  receipts from agent steps with a registered destination), so the join is sparse rather
+  than young. Denominators, NOT the reader. ABSENT is reported distinctly from 0 rows
+  (permission_exercises is absent because no grant has ever happened — correct, not a
+  gap). COUNTS ONLY, never a row or an id, since a correlationId IS a taskId — so unlike
+  `runstore compare` its output is safe to quote. Always exits 0: zero joinable rows is a
+  true state, not a failure. Note for whoever mutation-tests next: the first attempt at
+  the leak mutation was a NO-OP that passed and proved nothing. (#1535)
 
 - 2026-08-26 `fix/doctor-two-handlers` — two top-level `argv[2] === "doctor"` blocks; the
   deployment-freshness one won every time (stable over five runs, zero health-check
