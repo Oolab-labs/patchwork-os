@@ -5442,6 +5442,7 @@ if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
     const { readdirSync, readFileSync, statSync } = await import("node:fs");
     const { join } = await import("node:path");
     const os = await import("node:os");
+    const { fileURLToPath } = await import("node:url");
     const { assessDeploymentFreshness, formatFreshness } = await import(
       "./deploymentFreshness.js"
     );
@@ -5455,7 +5456,13 @@ if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
         process.env.npm_config_prefix ?? "/opt/homebrew",
         "lib/node_modules/patchwork-os/dist/index.js",
       ),
-      new URL("./index.js", import.meta.url).pathname,
+      // `fileURLToPath`, NOT `.pathname`. On Windows a file URL's pathname is
+      // `/D:/a/...` — a leading slash before the drive letter — which statSync
+      // cannot open, so this fallback never resolved there and `patchwork
+      // doctor` from a checkout always exited 2 with "could not locate an
+      // installed build". Found by the dispatch test added alongside this, on
+      // the Windows CI cells only.
+      fileURLToPath(new URL("./index.js", import.meta.url)),
     ]) {
       try {
         buildTimeMs = statSync(candidate).mtimeMs;
