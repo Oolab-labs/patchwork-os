@@ -4833,13 +4833,33 @@ Options:
 }
 
 // `patchwork doctor` — run CLI-safe bridge health checks.
-if (process.argv[2] === "doctor") {
-  const args = process.argv.slice(3);
+// `doctor health` — the config-sanity checks.
+//
+// These lived on a SECOND top-level `argv[2] === "doctor"` block that could
+// never produce output: the deployment-freshness block below also matched, and
+// won every time. `runDoctor` had one production caller and it was unreachable,
+// while its tests passed because they call it directly with a mocked
+// `runBridgeHealthChecks` — logic proven, wiring never exercised. `--help`
+// printed THIS block's text, so the documented behaviour of `patchwork doctor`
+// described checks that did not run and omitted `--expect-running`, the flag
+// that does.
+//
+// Given a subcommand rather than folded into `doctor`: that verb's exit code is
+// load-bearing (it is run straight after a kickstart, and `patchwork doctor &&
+// echo deployed` is a real shape), so making a failing config check newly able
+// to fail it would change a contract people already depend on.
+if (process.argv[2] === "doctor" && process.argv[3] === "health") {
+  const args = process.argv.slice(4);
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
-      "Usage: patchwork doctor [--workspace <path>] [--port <n>] [--json]\n\n" +
-        "Runs bridge health checks (workspace, git, lock file, automation policy).\n" +
-        "Exits 1 if any check fails.\n",
+      "Usage: patchwork doctor health [--workspace <path>] [--port <n>] [--json]\n\n" +
+        "Bridge config health: workspace, git binary, lock file, automation policy.\n" +
+        "Exits 1 if any check fails.\n\n" +
+        "  --port <n>   check the lock of a RUNNING bridge. Without it the lock check\n" +
+        "               looks for one belonging to THIS process, which is a CLI and\n" +
+        "               never a bridge, so it warns. That warning means 'you did not\n" +
+        "               say which bridge', not 'your bridge is broken'.\n\n" +
+        "For 'is the running code the installed code?', use `patchwork doctor`.\n",
     );
     process.exit(0);
   }
@@ -5397,8 +5417,27 @@ if (process.argv[2] === "members") {
 // installed? Every check in this repo verifies the repository. On 2026-08-19
 // both live bridges were found running neither the privacy code nor `butler`,
 // merged and wired and green throughout.
-if (process.argv[2] === "doctor") {
+if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
   const args = process.argv.slice(3);
+  if (args.includes("--help") || args.includes("-h")) {
+    // Previously this block had no --help of its own, so the OTHER doctor
+    // answered it and described the wrong command.
+    process.stdout.write(
+      "Usage: patchwork doctor [--expect-running [N]] [--json]\n\n" +
+        "Is the running code the installed code? Compares each bridge lock's\n" +
+        "startedAt against the installed build's mtime. Deliberately NOT a version\n" +
+        "comparison: a stale process and a fresh one report the same version,\n" +
+        "because a version marks a release and not a build.\n\n" +
+        "  --expect-running [N]  require at least N live bridges (bare = 1). Absent,\n" +
+        "                        ZERO bridges is HEALTHY — 'nothing is running' is\n" +
+        "                        legitimate, and a check whose denominator is the\n" +
+        "                        locks it found cannot see one that is absent.\n" +
+        "  --json                emit the raw report\n\n" +
+        "For workspace / git / lock-file / automation-policy checks, use\n" +
+        "`patchwork doctor health`.\n",
+    );
+    process.exit(0);
+  }
   (async () => {
     const { readdirSync, readFileSync, statSync } = await import("node:fs");
     const { join } = await import("node:path");

@@ -265,6 +265,25 @@ Comply with all docs in `/documents/`. Consult before changes:
   check); a live-but-stale bridge does count as running, because staleness is already
   reported separately and conflating them sends the operator to the wrong remedy.
 
+  **`doctor health` is a SEPARATE subcommand, and until 2026-08-26 it did not
+  run at all.** `src/index.ts` had two top-level `argv[2] === "doctor"` blocks;
+  the deployment-freshness one won every time, so `commands/doctor.ts`'s four
+  config checks (workspace, git binary, lock file, automation policy) never
+  produced output — `runDoctor` had exactly one production caller and it was
+  unreachable. Its tests passed throughout because they call it directly with a
+  mocked `runBridgeHealthChecks`: logic proven, wiring never exercised. Worse,
+  `--help` was answered by the LOSING block, so the documented behaviour of
+  `patchwork doctor` described checks that did not run and never mentioned
+  `--expect-running`, the flag that does.
+
+  Given a subcommand rather than folded in, deliberately: `doctor`'s exit code
+  is load-bearing (it runs straight after a kickstart, and `patchwork doctor &&
+  echo deployed` is a real shape), so letting a failing config check newly fail
+  it would change a contract that already has users. Without `--port`,
+  `doctor health`'s lock check looks for a lock belonging to the CLI process,
+  which is never a bridge, so it warns — that means "you did not say which
+  bridge", not "your bridge is broken".
+
   **What it does NOT answer: is the installed code the MERGED code.** There are
   three states, not two — `merged → installed → running` — and `doctor` guards
   only the second arrow. Measured 2026-08-19, an hour after #1461 merged and

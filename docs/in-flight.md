@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-08-26 `fix/doctor-two-handlers` — `src/index.ts` has TWO top-level
+  `argv[2] === "doctor"` blocks. The deployment-freshness one always wins, so
+  `commands/doctor.ts`'s four health checks never run and `doctor --help` prints the DEAD
+  handler's text — describing checks that never happen and omitting `--expect-running`.
+  Routing the health checks to `doctor health`; `doctor` itself is unchanged.
 
 ## Recently closed (informal log, prune periodically)
 
