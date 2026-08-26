@@ -164,6 +164,13 @@ jobs:
         run: npm run build
       - name: Audit LSP tool lists
         run: node scripts/audit-lsp-tools.mjs
+      # `schemas/` and `dashboard/public/schema/` are GENERATED and committed.
+      # Nothing compared them to their generator, so an edit without a
+      # regeneration shipped silently — and had: the committed recipe schema
+      # was 184 lines behind. Runs here because this job already builds dist/,
+      # which the gate needs.
+      - name: Audit generated JSON Schemas match their generator
+        run: node scripts/audit-generated-schemas.mjs
       - name: Audit shape safety (proxy<T> usage)
         run: node scripts/audit-shape-safety.mjs
       - name: Audit IntelliJ ↔ VSCode wire-method parity

@@ -50,7 +50,10 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-08-26 `feat/step-expect-required` — an `expect` on a `when:`-guarded step is
+  unenforceable by construction: both runners evaluate it only on a step that RAN. Adds
+  opt-in `expect.required`, written for BOTH runners. Also regenerates the committed JSON
+  Schemas, which were found 184 lines behind their generator, and gates that.
 
 ## Recently closed (informal log, prune periodically)
 
