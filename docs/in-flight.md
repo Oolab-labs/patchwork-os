@@ -54,6 +54,13 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-26 `feat/local-driver-has-no-tool-surface` — the worker-sandbox guard refused every
+  non-subprocess driver, collapsing "cannot enforce a deny list" with "would run
+  un-sandboxed". `local` is the first and not the second: `localFn` is `(prompt, model)` and
+  the tool-bearing `cliOpts` reaches only `claudeCliFn`. It was the only driver that could
+  receive `personal` data, so a worker recipe could be honestly labelled or could run, never
+  both. Pinned by an arity guard test. — merged as #1541
+
 - 2026-08-26 `fix/expiry-never-reached-the-durable-log` — ADR-0018's live TTL timer tore its
   entry down inline and never persisted, so an approval that expired on a running bridge left
   `approval_log.jsonl` holding a bare `request` — indistinguishable from still-pending, and
