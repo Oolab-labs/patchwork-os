@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-08-26 `feat/workers-list-validate` — `patchwork workers` has only `shadow` and
+  `backtest`. A worker manifest that fails to parse is SKIPPED by `loadWorkersFromDir`, so
+  no worker owns the recipe, so the autonomy gate (including ADR-0017 `forbids`) is
+  silently inert for it — and manifest drift is only ever printed at bridge startup. Adds
+  read-only `list` + `validate`. NOT `install` (needs a package-format decision).
 
 ## Recently closed (informal log, prune periodically)
 

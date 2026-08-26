@@ -183,6 +183,38 @@ Comply with all docs in `/documents/`. Consult before changes:
   A recipe that fails any of these is reported by `recipe doctor`, which is
   where an operator will actually look.
 
+  **Completion contracts (`expect`) — three things changed 2026-08-26.**
+  - **Run-level `expect` now runs on CHAINED recipes too.** It lints clean with
+    zero warnings and was previously dropped entirely: `dispatchRecipe` casts a
+    `YamlRecipe` straight across, so the block was on the object at runtime and
+    `ChainedRecipe` simply had no field for it. `outputs` deliberately means
+    **step ids** there and agent `into:` keys / resolved `file.write` paths on
+    the flat runner — that is what each is keyed by — so a flat-style entry
+    fails loudly rather than passing, and lint warns on a path-shaped entry
+    (never on a flat recipe, where a path is correct).
+  - **`expect.required`** (default false). A step skipped by its `when:` guard
+    never evaluated its `expect`, so an expectation on a conditional step was
+    unenforceable by construction. `required: true` makes the skip itself an
+    `expect_failed` error. Scoped to the `when:` guard ONLY — the
+    unregistered-tool skip stays silent by design, pinned by the guard test
+    named *"skip paths that must NOT change"*.
+  - **`patchwork halts` can see a violated contract** (`contract_failed`).
+    Such a run finishes `done`, not `error`, so the run-level branch never
+    fired. Counted ONE per run, not one per assertion, and NOT guarded on the
+    step count — a postcondition violation is a different fact from a step
+    error, not the same one restated.
+
+  Two traps recorded because both cost a build: the committed JSON Schemas were
+  **184 lines behind their generator**, because `schema:generate` emits JSON
+  `biome check` rejects — so regenerating turned CI red and people stopped.
+  `npm run build && npm run schema:generate && npx biome check --write schemas/
+  dashboard/public/schema/`; the biome step is not optional, and
+  `scripts/audit-generated-schemas.mjs` now gates it by comparing PARSED
+  content (a byte gate would demand exactly the state the linter refuses). And
+  the flat runner derives run-log step ids from `into`, never `step.id`, so a
+  halt on a step with an explicit `id:` is reported as `step_N` — consistent
+  everywhere, and not worth the blast radius of changing.
+
   **An unregistered tool id SKIPS the step silently, and that is DELIBERATE —
   do not "fix" it.** `executeStep` returns null for a tool nothing is
   registered under, the run loop records `skipped`, and the run finishes
@@ -289,6 +321,8 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `analytics show|configure|clear|test` — Manage the opt-in telemetry collector config (endpoint + shared secret) at `~/.claude/ide/analytics-config.json` (mode 0600). Replaces the brittle pattern of putting the secret in a launchd plist. `configure --endpoint URL --key KEY` writes both atomically; `test` sends a tiny synthetic payload and reports the HTTP status; `show` prints active values and resolution source (env / config / default). Env vars still win for headless/CI.
 - `panic` — Shortcut for `kill-switch engage --reason "manual panic"`.
 - `judgments [--window 1h|24h|overnight|7d|any] [--recipe <name>] [--json]` — Recent judge-step verdicts (from recipe steps with `agent.kind: judge`) across runs. Discovers the running bridge via lock file, queries `/runs/judge-summary`, prints per-verdict counts + 5 most-recent. Sibling of `halts`; same window/filter shape.
+- `workers list [--workers-dir <path>] [--json]` — what is installed and, the point, **what the bridge IGNORES**. `loadWorkersFromDir` is fail-soft: a manifest that does not parse is SKIPPED, and it logs only when the caller passes a logger — which the resolution path does not. Exits 1 when any manifest is ignored.
+- `workers validate [--workers-dir <path>] [--recipes-dir <path>] [--templates-dir <path>] [--json]` — every way a manifest can be present and govern NOTHING. All of them end identically: `resolveWorkerIdForRecipe` returns undefined, the caller falls back to the tier-based approval fn, and the worker ramp never runs. Since the worker gate is composed as a FLOOR over the tier fn (it can only ADD approvals), losing it means the recipe is governed **less**, and a manifest's ADR-0017 `forbids` list goes inert without a word. Checks: unparseable manifest · `recipe:` not installed · two workers claiming one recipe (**BOTH are ignored — resolution refuses to guess, so there is no winner**) · an unparseable `forbids` entry (**fails OPEN** — the banned action degrades to merely gated, which a human can then approve) · drift against `templates/workers`. Exits 1 when unhealthy. Leads with the denominator: an empty directory reports "nothing to check", never "no problems". Measured 2026-08-26 on the reference install — 8 manifests, all parsing, none dangling, none ambiguous, no drift — so the validator was built against deliberately broken fixtures, since one that has only seen healthy input is not known to be able to fail. **No `install` verb**, deliberately: a package format has to answer the third-copy problem (`templates/workers/` and `~/.patchwork/workers/` already diverge, which is why `manifestDrift` exists), and that is a design decision rather than a missing function.
 - `workers shadow [--workers-dir <path>]` — Replay run + gate logs to show per-worker × action-class trust dial and ramp-vs-gate divergences. Primary monitoring tool during the worker autonomy dogfood campaign. See [docs/runbooks/worker-autonomy-dogfood.md](docs/runbooks/worker-autonomy-dogfood.md).
 - `workers backtest [--workers-dir <path>]` — Cold-start calibration: replay historical runs as if the gate were live; measures how many shadow divergences the gate would have produced.
 - `gate explain <workerId> <classKey> [--limit N] [--diff] [--json]` — "Why did the worker allow/gate THIS action?" Plain-English rendering of the most recent decision(s) for a worker × action-class, from the local Decision Record (`~/.patchwork/worker_gate_decisions.jsonl`) — no bridge required. `--limit N` shows the N most recent (default 1, or 2 with `--diff`). `--diff` compares the 2 most recent decisions and reports only the fields that changed (e.g. `action: gate → allow`) — Tier 2 of the legibility layer. `classKey` is `domain:reversibility:blastTier`, plus a `:magnitudeBand` suffix for value-bearing domains (e.g. `issue:compensable:high`, `payments:irreversible:high:band<=50`). Also exposed over HTTP at `GET /gate/decisions?workerId=&classKey=&limit=` for the dashboard.
