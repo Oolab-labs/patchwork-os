@@ -152,6 +152,38 @@ describe.skipIf(process.platform === "win32")("recipe CLI integration", () => {
     expect(fs.readFileSync(outputPath, "utf-8")).toBe("run cli");
   });
 
+  it("recipe run exits NON-ZERO when the run itself fails", () => {
+    // The local-run branch computed `summary.ok`, printed "✗", wrote the
+    // error to stderr, recorded `status: "error"` in the run log — and then
+    // called `process.exit(0)` unconditionally. So the CLI knew the run had
+    // failed and told the shell it had succeeded, which makes
+    // `patchwork recipe run X && echo ok` print `ok` after a failure and
+    // silently greens every cron and CI caller.
+    //
+    // Asserting on stdout is what the sibling test above does, and it passes
+    // against the broken version — the ✗ was always printed. The exit code is
+    // the part nothing checked.
+    const homeDir = makeTmpDir();
+    const recipeDir = makeTmpDir();
+    const recipePath = path.join(recipeDir, "run-fails.yaml");
+
+    // `file.write` to a path outside the recipe jail is rejected at dispatch,
+    // so the step fails without needing a network, a model or a connector.
+    fs.writeFileSync(
+      recipePath,
+      `name: run-fails\ndescription: Run that fails\ntrigger:\n  type: manual\nsteps:\n  - tool: file.write\n    path: "/proc/nonexistent/denied.txt"\n    content: "nope"\n`,
+    );
+
+    const result = spawnSync(tsxBin, [srcIndex, "recipe", "run", recipePath], {
+      cwd: workspaceRoot,
+      encoding: "utf-8",
+      env: { ...process.env, HOME: homeDir },
+    });
+
+    expect(result.stdout).toMatch(/✗ run-fails/);
+    expect(result.status).not.toBe(0);
+  });
+
   it("recipe run aborts and exits non-zero when the bridge is wedged on HTTP", async () => {
     // A bridge whose PID is alive (findBridgeLock accepts it) but whose
     // HTTP server never responds. Before the AbortController fix the CLI
