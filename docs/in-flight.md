@@ -54,6 +54,12 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-26 `fix/expiry-never-reached-the-durable-log` — ADR-0018's live TTL timer tore its
+  entry down inline and never persisted, so an approval that expired on a running bridge left
+  `approval_log.jsonl` holding a bare `request` — indistinguishable from still-pending, and
+  self-healing only on restart. Fixing it exposed a second question: with two queues over one
+  log dir, both timers fire, so expiry is now written by the OWNER only. — merged as #1537
+
 - 2026-08-26 `feat/privacy-undeclared` — ADR-0021 is fail-soft, so an agent step with no
   `data_policy` is classified `internal` and passes; correct as a default, and it makes an
   undeclared step invisible in a way a declared one is not. Measured: 132 of 214 shadow
