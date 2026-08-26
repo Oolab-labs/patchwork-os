@@ -175,3 +175,68 @@ describe("branch otherwise does not skip co-located step validation (audit 2026-
     expect(errors.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * `expect.outputs` names step ids on a chained recipe and agent `into:` keys /
+ * resolved file paths on a flat one — deliberate, since that is what each
+ * runner is keyed by. The failure mode is quiet and expensive: a path-shaped
+ * entry on a chained recipe can never match, and only says so at the END of a
+ * run that already did all its work.
+ */
+describe("chained expect.outputs written in the flat runner's vocabulary", () => {
+  const chained = {
+    name: "chained-outputs",
+    description: "test recipe",
+    trigger: { type: "chained" as const },
+    steps: [{ id: "fetch", tool: "http.get", url: "https://example.test/x" }],
+  };
+
+  it("warns on a path-shaped entry", () => {
+    const result = validateRecipeDefinition({
+      ...chained,
+      expect: { outputs: ["~/.patchwork/inbox/out.md"] },
+    });
+    const issue = result.issues.find(
+      (i) => i.code === "chained-expect-outputs-path",
+    );
+    expect(issue).toBeDefined();
+    expect(issue?.level).toBe("warning");
+  });
+
+  it("does not warn on a plain step id", () => {
+    const result = validateRecipeDefinition({
+      ...chained,
+      expect: { outputs: ["fetch"] },
+    });
+    expect(
+      result.issues.some((i) => i.code === "chained-expect-outputs-path"),
+    ).toBe(false);
+  });
+
+  it("warns once per offending entry and leaves valid ones alone", () => {
+    const result = validateRecipeDefinition({
+      ...chained,
+      expect: { outputs: ["fetch", "/abs/a.md", "~/b.md"] },
+    });
+    expect(
+      result.issues.filter((i) => i.code === "chained-expect-outputs-path"),
+    ).toHaveLength(2);
+  });
+
+  /**
+   * The flat runner is where a path IS the right vocabulary, so the rule must
+   * not fire there — otherwise it would train authors to ignore it.
+   */
+  it("never fires on a flat recipe, where a path is correct", () => {
+    const result = validateRecipeDefinition({
+      name: "flat-outputs",
+      description: "test recipe",
+      trigger: { type: "manual" as const },
+      steps: [{ id: "s1", agent: { prompt: "hi" }, into: "brief" }],
+      expect: { outputs: ["~/.patchwork/inbox/out.md"] },
+    });
+    expect(
+      result.issues.some((i) => i.code === "chained-expect-outputs-path"),
+    ).toBe(false);
+  });
+});

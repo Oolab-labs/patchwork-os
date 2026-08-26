@@ -2702,7 +2702,6 @@ export async function runTest(
         const { runChainedRecipe } = await import(
           "../recipes/chainedRunner.js"
         );
-        const { evaluateExpect } = await import("../recipes/yamlRunner.js");
         const chainedRecipe =
           recipe as unknown as import("../recipes/chainedRunner.js").ChainedRecipe;
         const recipeRecord = recipe as unknown as Record<string, unknown>;
@@ -2726,22 +2725,19 @@ export async function runTest(
           issues.push({ level: "error", message: run.errorMessage });
         }
 
-        // Evaluate expect: block against chained run results
-        const expectBlock = recipeRecord.expect as
-          | import("../recipes/yamlRunner.js").YamlRecipeExpect
-          | undefined;
-        if (expectBlock) {
-          const failures = evaluateExpect(
-            {
-              stepsRun: run.summary.total,
-              outputs: [],
-              context: run.context,
-              errorMessage: run.errorMessage,
-            },
-            expectBlock,
-          );
-          assertionFailures = failures;
-          for (const failure of failures) {
+        // Read the contract the RUNNER evaluated — do not re-evaluate it here.
+        //
+        // This branch used to run `evaluateExpect` itself, and disagreed with a
+        // real run in two ways: it passed `outputs: []`, so every `outputs`
+        // assertion failed under `recipe test` no matter what the recipe did,
+        // and it passed `summary.total`, which counts SKIPPED steps that a real
+        // run does not. `recipe test` is the surface an author uses to find out
+        // whether their contract holds, so a private second implementation of
+        // it is the worst possible place for drift. Mirrors the flat branch
+        // below, which has always read the runner's own result.
+        if (run.assertionFailures && run.assertionFailures.length > 0) {
+          assertionFailures = run.assertionFailures;
+          for (const failure of run.assertionFailures) {
             issues.push({ level: "error", message: failure.message });
           }
         }

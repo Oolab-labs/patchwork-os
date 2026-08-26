@@ -143,6 +143,43 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
       });
     }
 
+    // `expect.outputs` means DIFFERENT things in the two runners, deliberately:
+    // step ids on a chained recipe, agent `into:` keys and resolved file paths
+    // on a flat one. A path-shaped entry on a chained recipe is therefore a
+    // contract that can never be satisfied — and it fails at the END of a run
+    // that already did its work, which is the expensive place to find out.
+    //
+    // A warning rather than an error: `outputs` is author-supplied and a step
+    // id containing a slash is legal, if odd. The point is to name the mistake
+    // at lint time, where the previous behaviour was to say nothing at all.
+    {
+      const rTrigger =
+        r.trigger && typeof r.trigger === "object"
+          ? (r.trigger as Record<string, unknown>)
+          : undefined;
+      const rExpect =
+        r.expect && typeof r.expect === "object"
+          ? (r.expect as Record<string, unknown>)
+          : undefined;
+      const rOutputs = rExpect?.outputs;
+      if (rTrigger?.type === "chained" && Array.isArray(rOutputs)) {
+        for (const entry of rOutputs) {
+          if (typeof entry !== "string") continue;
+          if (!entry.includes("/") && !entry.startsWith("~")) continue;
+          issues.push({
+            level: "warning",
+            message:
+              `expect.outputs entry "${entry}" looks like a file path, but on a ` +
+              "chained recipe 'outputs' lists STEP IDS (the flat runner is the one " +
+              "that lists agent into: keys and written paths). This assertion can " +
+              "never match — use the step's id, or assert on 'context' instead.",
+            code: "chained-expect-outputs-path",
+            path: "expect.outputs",
+          });
+        }
+      }
+    }
+
     if (!r.name || typeof r.name !== "string") {
       issues.push({
         level: "error",

@@ -68,6 +68,20 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   work surfaced: `judge_revisions_exhausted` was in the bridge union and absent from the
   dashboard's entirely, which no compiler could catch — a `Record` over a SHORTER union is
   well-typed — so the two unions are now compared as text by a test. (#1528)
+- 2026-08-26 `feat/chained-run-level-expect` — `recipe lint` accepted a run-level `expect:`
+  on a chained recipe with ZERO warnings and the runner dropped it; `dispatchRecipe` casts
+  a `YamlRecipe` straight across, so the block was on the object at runtime and
+  `ChainedRecipe` simply had no field for it. Reproduced against a real run first: two
+  impossible assertions, `status: done`, `assertionFailures: None`. `outputs` deliberately
+  means STEP IDS here and `into:` keys / resolved paths on the flat runner — a flat-style
+  entry fails loudly instead of passing, and lint now warns on a path-shaped entry
+  (never on a flat recipe, where a path is correct). A THIRD implementation turned up on
+  the way in: `recipe test` evaluated the chained contract itself with `outputs: []` and
+  `summary.total`, so every `outputs` assertion failed there regardless of the recipe and
+  skipped steps were counted — on the very surface an author uses to check their contract.
+  Collapsed to the runner's result. NOT fixed and called out rather than left to be
+  rediscovered: `recipe run --local` passes no `runLog`/`runLogDir`, so a chained CLI run
+  writes no runner row at all. (#1529)
 
 - 2026-08-26 `feat/durable-approver-attribution` — ADR-0020 Phase A resolved the approver
   and then put the name somewhere it could be thrown away. `approvalHttp` verifies the
