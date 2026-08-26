@@ -8,6 +8,24 @@ allowWrites:
   - file.write
   - slack.post_message
 
+# Run-level completion contract. Every step can report ok and the run can still
+# finish `done` having produced no `brief` — an agent that narrates instead of
+# answering, or a driver that returns empty, leaves the key unset and the step
+# after it writes a heading with nothing under it. That is this recipe's real
+# failure mode and it is silent.
+#
+# Checked AFTER the last step; it does NOT change the run's status. A violation
+# is recorded as `assertionFailures` on the run and counted by `patchwork halts`
+# under `completion contract failed`. So the run still writes whatever it
+# produced — this reports, it does not roll back.
+#
+# Asserts only the brief it posts to Slack: the upstream fetch steps are
+# allowed to come back empty (no commits today, an empty calendar), and turning
+# a quiet day into a halt would be a contract that cries wolf.
+expect:
+  outputs:
+    - brief
+
 trigger:
   type: cron
   at: "0 8 * * 1-5"
