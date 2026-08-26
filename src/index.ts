@@ -4986,12 +4986,23 @@ if (process.argv[2] === "workers") {
   const args = process.argv.slice(3);
   const sub = args[0];
   if (
-    (sub !== "shadow" && sub !== "backtest") ||
+    (sub !== "shadow" &&
+      sub !== "backtest" &&
+      sub !== "list" &&
+      sub !== "validate") ||
     args.includes("--help") ||
     args.includes("-h")
   ) {
     process.stdout.write(
-      "Usage: patchwork workers <shadow|backtest> [--workers-dir <path>]\n\n" +
+      "Usage: patchwork workers <list|validate|shadow|backtest> [--workers-dir <path>]\n\n" +
+        "  list      What is installed, and — the point — what the bridge IGNORES.\n" +
+        "            A manifest that does not parse is skipped by the loader, so no\n" +
+        "            worker owns its recipe and the autonomy gate never runs for it.\n" +
+        "  validate  Every way a manifest can be present and govern nothing:\n" +
+        "            unparseable file, `recipe:` that is not installed, two workers\n" +
+        "            claiming one recipe (BOTH are ignored, not one winner), an\n" +
+        "            unparseable forbids entry (fails OPEN), and drift against\n" +
+        "            templates/workers. Exits 1 when unhealthy.\n" +
         "  shadow    Read-only worker trust dial: replays ~/.patchwork/runs.jsonl\n" +
         "            + the gate decision log through the (worker × action-class)\n" +
         "            ramp. Computes what the ramp WOULD decide vs what the gate DID.\n" +
@@ -5007,6 +5018,58 @@ if (process.argv[2] === "workers") {
     try {
       const dirIdx = args.indexOf("--workers-dir");
       const workersDir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
+      if (sub === "list" || sub === "validate") {
+        const {
+          scanWorkers,
+          validateWorkers,
+          formatWorkersList,
+          formatWorkersValidate,
+          defaultWorkersDir,
+          defaultRecipesDir,
+        } = await import("./workers/workersCli.js");
+        const dir = workersDir ?? defaultWorkersDir();
+        const json = args.includes("--json");
+        if (sub === "list") {
+          const scan = scanWorkers(dir);
+          process.stdout.write(
+            json
+              ? `${JSON.stringify(
+                  {
+                    dir: scan.dir,
+                    loaded: scan.loaded.map((l) => ({
+                      file: l.file,
+                      id: l.worker.id,
+                      name: l.worker.name,
+                      recipe: l.worker.recipe ?? null,
+                      autonomyCeiling: l.worker.autonomyCeiling,
+                      owns: l.worker.owns,
+                    })),
+                    broken: scan.broken,
+                  },
+                  null,
+                  2,
+                )}\n`
+              : formatWorkersList(scan),
+          );
+          // A manifest the bridge ignores is a governance gap, not a note.
+          process.exit(scan.broken.length > 0 ? 1 : 0);
+        }
+        const tIdx = args.indexOf("--templates-dir");
+        const templatesDir = tIdx !== -1 ? args[tIdx + 1] : undefined;
+        const rIdx = args.indexOf("--recipes-dir");
+        const result = validateWorkers({
+          workersDir: dir,
+          recipesDir:
+            rIdx !== -1 ? (args[rIdx + 1] as string) : defaultRecipesDir(),
+          ...(templatesDir ? { templatesDir } : {}),
+        });
+        process.stdout.write(
+          json
+            ? `${JSON.stringify(result, null, 2)}\n`
+            : formatWorkersValidate(result),
+        );
+        process.exit(result.healthy ? 0 : 1);
+      }
       const { runWorkerShadowReport, runWorkerBacktest } = await import(
         "./workers/runWorkerShadow.js"
       );

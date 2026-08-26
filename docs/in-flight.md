@@ -54,6 +54,23 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-26 `feat/workers-list-validate` — four ways a worker manifest is installed and
+  governs NOTHING, all silent: it does not parse (`loadWorkersFromDir` is fail-soft and
+  logs only when given a logger, which the resolution path does not pass), its `recipe:`
+  is not installed, two manifests claim one recipe (resolution refuses to guess, so BOTH
+  lose — there is no winner), or a `forbids` entry does not parse (a dropped deny-rule
+  fails OPEN, degrading a banned action to merely gated). All four end at
+  `resolveWorkerIdForRecipe` returning undefined and the run falling back to the tier fn —
+  and since the worker gate is a FLOOR over that fn, losing it governs the recipe LESS.
+  `detectWorkerManifestDrift` existed but printed only in the bridge STARTUP log; now an
+  operator can ask. Read-only, exits 1 when unhealthy (including `list` — an ignored
+  manifest is a gap, not a note), and leads with the denominator so an empty directory says
+  "nothing to check" rather than "no problems". NO `install` verb: a package format must
+  answer the third-copy problem that `manifestDrift` exists because of. The reference
+  install was healthy on all four checks, so the validator was built against deliberately
+  broken fixtures — one that has only seen healthy input is not known to be able to fail.
+  (#1531)
+
 - 2026-08-26 `feat/step-expect-required` — both runners evaluate `step.expect` only on a
   step that RAN, so an expectation on a `when:`-guarded step could never fail. Opt-in
   `expect.required` (default false, so nothing existing changes) makes a `when:`-skip of a
