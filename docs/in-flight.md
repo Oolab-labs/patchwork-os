@@ -59,6 +59,11 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   `approval_log.jsonl` holding a bare `request` — indistinguishable from still-pending, and
   self-healing only on restart. Fixing it exposed a second question: with two queues over one
   log dir, both timers fire, so expiry is now written by the OWNER only. — merged as #1537
+- 2026-08-26 `fix/set-password-muted-stdout-permanently` — readline's `output` IS
+  `process.stdout`, so muting the echo overwrote `process.stdout.write` and unmuting read
+  that no-op back, rebinding the mute forever. The `Confirm:` prompt was invisible and the
+  operator confirmed blind; the only visible line came from stderr. This is why the roster
+  still had a member with no credential. — merged as #1538
 
 - 2026-08-26 `feat/privacy-undeclared` — ADR-0021 is fail-soft, so an agent step with no
   `data_policy` is classified `internal` and passes; correct as a default, and it makes an
