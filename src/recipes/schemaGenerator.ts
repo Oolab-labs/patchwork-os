@@ -447,6 +447,11 @@ function generateRecipeSchema(
           description:
             "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings.",
         },
+        required: {
+          type: "boolean",
+          description:
+            "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins.",
+        },
       },
     },
   };

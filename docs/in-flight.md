@@ -54,6 +54,21 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-26 `feat/step-expect-required` — both runners evaluate `step.expect` only on a
+  step that RAN, so an expectation on a `when:`-guarded step could never fail. Opt-in
+  `expect.required` (default false, so nothing existing changes) makes a `when:`-skip of a
+  required step an `expect_failed` error the halt count can see. Written for BOTH runners
+  in one change — a mutation disabling only the chained half fails the suite — and scoped
+  to the `when:` guard ONLY, leaving the guard-tested unregistered-tool skip untouched.
+  The schema diff is large because adding one property forced a regeneration, which
+  revealed the committed schemas were 184 lines BEHIND their generator; the published copy
+  being LOOSER than the runtime validator is the dangerous direction, since an editor
+  loads it through the SchemaStore pragma and tells the author their recipe is fine.
+  `audit-generated-schemas.mjs` now gates it: compares in memory and never writes (a gate
+  that fixes what it checks lands the fix unreviewed), names files not schema bodies, and
+  exits NON-ZERO as NOT VERIFIED when `dist/` is missing. Recorded and not changed: an
+  unresolvable `when:` ref is a template ERROR on chained and merely falsy on flat. (#1530)
+
 - 2026-08-26 `feat/halts-see-completion-contracts` — a run that violated its run-level
   `recipe.expect` finished `done`, and `summariseHalts` only emits a run-level entry for
   `status === "error"`, so the operator-facing halt count could not distinguish "nothing

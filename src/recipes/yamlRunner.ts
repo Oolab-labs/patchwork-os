@@ -290,6 +290,23 @@ export interface StepExpect {
    * but attaches the failure list to `stepResult.expectWarnings`.
    */
   on_fail?: "halt" | "warn";
+  /**
+   * Whether the step MUST run for this assertion to be meaningful.
+   *
+   * Default `false`, which is the historical behaviour: a step skipped by its
+   * `when:` guard never evaluates its `expect`, because "if X happened, also
+   * check Y" is the common and correct reading. That makes an expectation on a
+   * conditional step unenforceable by construction, which is the opposite of
+   * what "required evidence exists" needs — so an author who means the step to
+   * be mandatory says so here, and a `when:`-skip then FAILS.
+   *
+   * Scoped to the `when:` guard ONLY. A step whose tool id is not registered
+   * also skips, and that is deliberate forward-compat for un-loaded plugins
+   * (pinned by a guard test named "skip paths that must NOT change"). Letting
+   * `required` reach into that path would change a documented behaviour
+   * sideways, so it does not.
+   */
+  required?: boolean;
 }
 
 export interface YamlTrigger {
@@ -2130,12 +2147,40 @@ export async function runYamlRecipe(
 
         if (!verdict.truthy) {
           const skipId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+          // `expect.required` — the author declared this step mandatory, so the
+          // guard being false is itself the contract violation. Without this an
+          // expectation on a conditional step could never fail, which is the
+          // opposite of "required evidence exists".
+          const requiredSkip = step.expect?.required === true;
+          const skipHaltReason = `expect_failed in step "${skipId}": step is marked expect.required but was skipped by its \`when:\` guard`;
           stepResults.push({
             id: skipId,
             tool: step.agent ? "agent" : step.tool,
-            status: "skipped",
+            status: requiredSkip ? "error" : "skipped",
             durationMs: 0,
+            ...(requiredSkip
+              ? {
+                  error: `expect_failed: required step skipped by \`when:\``,
+                  haltReason: skipHaltReason,
+                  haltCategory: "expect_failed" as const,
+                }
+              : {}),
           });
+          // Same fail-open expression the tool and agent branches use, computed
+          // here because their `failOpen` is declared further down. A step
+          // marked BOTH `optional: true` and `expect.required` is
+          // contradictory; `optional` wins on whether the RUN aborts, exactly
+          // as it does for a real step error — the step is still recorded as an
+          // error so the halt count and `recipe doctor` can see it.
+          const guardFallback = recipe.on_error?.fallback;
+          const requiredSkipFailOpen =
+            step.optional === true ||
+            guardFallback === "log_only" ||
+            guardFallback === "deliver_original";
+          if (requiredSkip && !requiredSkipFailOpen) {
+            runError = runError ?? skipHaltReason;
+            haltAfterFailure = true;
+          }
           stepsRun++;
           persistLiveStepResults();
           emit("recipe_step_done", {

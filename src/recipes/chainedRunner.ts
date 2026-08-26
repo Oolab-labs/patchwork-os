@@ -582,6 +582,18 @@ export async function executeChainedStep(
 
   // Check when condition
   if (!conditionResult) {
+    // `expect.required` — written once for BOTH runners on purpose. A rule
+    // implemented on one of them is the flat-vs-chained divergence this
+    // codebase keeps paying for, and it is silent and permissive: the recipe
+    // author sees the guard honoured on one runner and unenforced on the other
+    // with nothing reporting the difference.
+    if (step.expect?.required === true) {
+      return {
+        success: false,
+        error:
+          "expect failed: step is marked expect.required but was skipped by its `when:` guard",
+      };
+    }
     return {
       success: true,
       skipped: true,
