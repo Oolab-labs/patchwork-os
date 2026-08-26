@@ -318,7 +318,15 @@ export class ApprovalQueue {
         req.expiresAt !== null
           ? setTimeout(
               () => {
-                this.resolveEntry(req.callId, "expired");
+                // `persist: false` — this entry is OWNED by another process,
+                // which arms its own timer and records the expiry itself.
+                // Both writing would put two `expired` rows on one callId,
+                // and readers join on callId (the control plane's approval
+                // measures count decision events). If that owner is in fact
+                // gone, nothing is written here — the next restore sees an
+                // `expiresAt` already passed and records it via the branch
+                // above. Late, but exactly once.
+                this.resolveEntry(req.callId, "expired", { persist: false });
               },
               Math.max(0, req.expiresAt - now),
             )
@@ -447,13 +455,14 @@ export class ApprovalQueue {
     const timer =
       ttl > 0
         ? setTimeout(() => {
-            const entry = this.entries.get(callId);
-            if (!entry) return;
-            this.entries.delete(callId);
-            this.inflight.delete(entry.inflightKey);
-            entry.resolve("expired");
-            for (const r of entry.pendingPromises) r("expired");
-            this.notify();
+            // Goes through resolveEntry rather than tearing the entry down
+            // inline. The inline version did everything resolveEntry does
+            // EXCEPT `persistence.recordDecision`, so an approval that timed
+            // out on a running bridge left `approval_log.jsonl` holding a
+            // bare `request` — which is how that log spells "still pending".
+            // Only the restore-time expiry path was durable. See
+            // `approvalExpiryDurable.test.ts`.
+            this.resolveEntry(callId, "expired");
           }, ttl)
         : null;
     if (timer && typeof timer === "object" && "unref" in timer) timer.unref();
@@ -654,7 +663,11 @@ export class ApprovalQueue {
     this.recentlyDecided.clear();
   }
 
-  private resolveEntry(callId: string, decision: ApprovalDecision): boolean {
+  private resolveEntry(
+    callId: string,
+    decision: ApprovalDecision,
+    opts: { persist?: boolean } = {},
+  ): boolean {
     const entry = this.entries.get(callId);
     if (!entry) return false;
     if (entry.timer) clearTimeout(entry.timer);
@@ -667,7 +680,9 @@ export class ApprovalQueue {
     const decidedAt = Date.now();
     this.recentlyDecided.set(callId, { decision, at: decidedAt });
     this.pruneRecentlyDecided();
-    this.persistence?.recordDecision(callId, decision, decidedAt);
+    if (opts.persist !== false) {
+      this.persistence?.recordDecision(callId, decision, decidedAt);
+    }
     entry.resolve(decision);
     // Wake up any duplicate callers who joined this entry via dedup.
     for (const r of entry.pendingPromises) r(decision);
