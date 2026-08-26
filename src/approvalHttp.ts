@@ -350,6 +350,16 @@ export async function routeApprovalRequest(
       } catch {
         approver = undefined;
       }
+      // Durable home for the name (ADR-0020). The audit hook below reaches
+      // `activityLog`, which persists best-effort and ROTATES — it halves
+      // itself when it grows — so until this line the one record of who
+      // approved a gated action was the one record allowed to discard its
+      // oldest rows. `approval_log.jsonl` is the governance ledger and does
+      // not rotate.
+      //
+      // Guarded on `approver` being present: no verified session ⇒ no row.
+      // An "unknown" row here would be a claim about a person on no evidence.
+      if (approver) deps.queue.recordAttribution?.(callId, approver);
       // Audit 2026-06-03 (MEDIUM #27): fire the audit hook on APPROVE too —
       // previously only the reject path called onDecision, so approvals (the
       // higher-risk decision) left no audit/activity-log trail.
@@ -472,6 +482,8 @@ export async function routeApprovalRequest(
       } catch {
         rejecter = undefined;
       }
+      // Same durable record as the approve path, for the same reason.
+      if (rejecter) deps.queue.recordAttribution?.(callId, rejecter);
       deps.onDecision?.("approval_decision", {
         callId,
         decision: "deny",

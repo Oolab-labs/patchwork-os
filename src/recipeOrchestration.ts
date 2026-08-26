@@ -322,9 +322,24 @@ export async function buildWorkerAutonomyGate(
           // Attribute an autonomous ALLOW to the worker: it is the party that
           // acted, and nobody else was involved. Deliberately absent on the
           // other two paths, because attributing them would be a lie:
-          //   - `gate` — the approving human is not known here, and cannot be
-          //     until the approval path carries an identity (ApprovalQueue is
-          //     an in-memory Map with a 5-minute TTL).
+          //   - `gate` — the approving human is not known AT THIS WRITE SITE.
+          //     This row is written when the decision is MADE; the human
+          //     answers later, over HTTP. So the actor genuinely does not
+          //     exist yet, and the conclusion stands.
+          //
+          //     Its ORIGINAL reason did not: "ApprovalQueue is an in-memory
+          //     Map with a 5-minute TTL" was made false by ADR-0018 (#1245,
+          //     #1246 — the queue persists to `approval_log.jsonl`) and by
+          //     #1214 (timeouts are risk-tiered: 5 min / 1 h / 4 h). A future
+          //     reader checking that premise would have found it false and
+          //     could reasonably have concluded the omission was stale too.
+          //     It is not. Corrected rather than deleted because the wrong
+          //     reason is the part worth warning about.
+          //
+          //     Where the approver IS recorded: `approvalHttp` resolves the
+          //     verified session after the decision lands and appends an
+          //     `attribution` event to the same durable log, joined on
+          //     `callId`.
           //   - `forbid` — nobody acted. Workspace policy refused, and naming
           //     the worker would read as though it did something.
           // An absent actor means "nobody recorded this", which ADR-0017 keeps

@@ -5,6 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { ApprovalPersistence } from "./approvalPersistence.js";
+import type { ActorSnapshot } from "./identity/approverFromSession.js";
 import type { Logger } from "./logger.js";
 import type { RiskTier } from "./riskTier.js";
 
@@ -672,6 +673,21 @@ export class ApprovalQueue {
     for (const r of entry.pendingPromises) r(decision);
     this.notify();
     return true;
+  }
+
+  /**
+   * Durably record who decided a call, after the fact (ADR-0020).
+   *
+   * Separate from `resolveEntry` on purpose: the decision is written the
+   * instant it lands, and the approver is only resolved afterwards so that
+   * identity can never block or alter an approval. The queue does not resolve
+   * an identity itself and holds no opinion about one — it owns the log, so
+   * the write goes through it.
+   *
+   * No-op without a `persistDir`, matching every other durability call here.
+   */
+  recordAttribution(callId: string, actor: ActorSnapshot): void {
+    this.persistence?.recordAttribution(callId, actor, Date.now());
   }
 
   /**
