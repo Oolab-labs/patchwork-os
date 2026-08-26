@@ -16,9 +16,19 @@
  * constrain it. The recipe lints clean in the editor and fails later, which is
  * the failure family this repo keeps paying for.
  *
+ * Compares PARSED CONTENT, not bytes, and that is load-bearing rather than
+ * lenient. `schema:generate` writes `JSON.stringify(x, null, 2)`, which is NOT
+ * what `biome check` wants for a `.json` file — so a regeneration fails Lint
+ * until the file is reformatted, and a reformatted file no longer matches the
+ * generator byte for byte. A byte gate would therefore be unsatisfiable: it
+ * would demand exactly the state the linter rejects. That incompatibility is
+ * also the ROOT CAUSE of the drift this gate exists to catch — regenerating
+ * broke the build, so it stopped being done. Comparing parsed values lets the
+ * formatter own whitespace and this gate own meaning.
+ *
  * Compares in memory and NEVER writes: a gate that fixes the thing it is
  * checking reports success on a repository that is still wrong, and the fix
- * would land unreviewed. It prints WHICH file and how far off, never the
+ * would land unreviewed. It prints WHICH file and what differs, never the
  * schema body — a multi-thousand-line JSON dump in CI output is how a real
  * signal gets scrolled past.
  *
@@ -61,23 +71,38 @@ for (const [ns, schema] of Object.entries(schemas.namespaces ?? {})) {
   targets.push([join(root, "schemas", "tools", `${ns}.json`), schema]);
 }
 
+/** Order-insensitive canonical JSON, so key order is not a schema difference. */
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 const stale = [];
 for (const [file, expected] of targets) {
-  const want = `${JSON.stringify(expected, null, 2)}`;
   if (!existsSync(file)) {
     stale.push({ file, reason: "missing" });
     continue;
   }
-  const have = readFileSync(file, "utf8");
-  // Trailing-newline tolerant: the writer emits none, but an editor may add one
-  // and that is not a schema difference.
-  if (have.trimEnd() !== want.trimEnd()) {
-    const hl = have.split("\n").length;
-    const wl = want.split("\n").length;
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (err) {
     stale.push({
       file,
-      reason: `differs (${hl} lines committed vs ${wl} generated)`,
+      reason: `not valid JSON (${err instanceof Error ? err.message : String(err)})`,
     });
+    continue;
+  }
+  // Canonical form on BOTH sides so key order and whitespace are out of scope
+  // and only meaning is compared.
+  if (canonical(parsed) !== canonical(expected)) {
+    stale.push({ file, reason: "content differs from the generator output" });
   }
 }
 
@@ -89,7 +114,8 @@ if (stale.length > 0) {
     process.stderr.write(`  ✗ ${relative(root, s.file)} — ${s.reason}\n`);
   }
   process.stderr.write(
-    "[generated-schemas] Run `npm run build && npm run schema:generate` and commit the result.\n",
+    "[generated-schemas] Fix: npm run build && npm run schema:generate && npx biome check --write schemas/ dashboard/public/schema/\n" +
+      "[generated-schemas] The biome step is NOT optional — the generator writes JSON the linter rejects, and skipping it turns Lint red.\n",
   );
   process.exit(1);
 }
