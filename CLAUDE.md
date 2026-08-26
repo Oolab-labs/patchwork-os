@@ -332,6 +332,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `dashboard` — Launch the local dashboard. Guards first run: without `patchwork init` it prints a pointer instead of an empty panel.
 - `members [list|set-password <id>]` — Workspace roster plus which members hold credentials. Bare `members` lists. A member with no password is reported as `NO password — cannot authenticate`, and an absent `members.json` reports the single implicit owner rather than pretending a roster exists.
 - `runstore <backfill|compare> [--json]` — Durable run-store maintenance. `compare` prints ledger contents, so its output is **operator data, not a diagnostic blob** — never paste it into an issue, a PR body or a fixture.
+- `evidence [--dir <path>] [--json]` — **how much of the evidence spine can actually be joined?** Per ledger: how many rows carry a `correlationId` out of how many rows exist, plus how many runs appear in more than one ledger. Reports DENOMINATORS; it is deliberately not the cross-ledger reader, which the spine's own rule defers until there is evidence to read. An absent ledger is reported ABSENT, never `0 rows` — `butler/permission_exercises.jsonl` is absent because no standing permission has ever been granted, and rendering that as a zero invites someone to "fix" it. Prints **counts only, never a row, an id or any value**, because a `correlationId` IS a run's `taskId`; unlike `runstore compare` and `privacy receipts`, its output is therefore safe to quote. Always exits 0 — zero joinable rows is a true and expected state, and failing on it would make a correct answer look like an error.
 - `shadow-scan [--since <duration|ISO>] [--limit <n>] [--runs-file <path>] [--json]` — Reclassification scan over the run log.
 - `privacy suggest [--json]` — Derive a STARTER `privacy.shadow` block from the drivers your installed recipes actually declare. The destinations are MEASURED; the classifications are a conservative placeholder you are told to review. Reports agent steps that declare no driver separately rather than folding them in — they dispatch somewhere too. Emits `privacy.shadow` only, never the enforcing `privacy.destinations` key.
 - `privacy shadow [--since-days N] [--json]` — What a candidate policy WOULD have stopped, without enforcing it (ADR-0021). Leads with the DENOMINATOR and refuses to print a bare crossing count; an empty ledger reports "nothing observed", never "0 crossings". Reads `privacy_shadow.jsonl`.
@@ -650,6 +651,22 @@ is a hole to plumb, the second is a dial that has not moved.
 Two corrections' worth of warning: this section was written from a survey, and
 both of its load-bearing claims went stale or were wrong within two days. Re-run
 the check before scoping against it.
+
+**`patchwork evidence` is that check.** It reports, per ledger, how many rows
+carry a `correlationId` out of how many rows exist, and how many runs appear in
+more than one — the denominators, not a reader. Measured 2026-08-26 on the
+reference machine: gate decisions **1 of 273**, boundary receipts **14 of 170**,
+and `privacy_shadow` / `outcome-log` / `approval_log` **0**. Runs reachable in
+BOTH joined ledgers: **zero**. The two populations barely overlap by
+construction — gate rows are written for worker recipes under the autonomy flag,
+receipts for agent steps with a registered destination — so the join is sparse
+rather than merely young.
+
+That zero is what keeps the evidence graph unbuilt, and it is why item 7 is not
+"unblocked by the sentinel shipping": the sentinel settled HOW to stamp, and
+there is still almost nothing stamped. The verb prints COUNTS ONLY — never a
+row, an id or any value, because a `correlationId` is a run's `taskId` — so its
+output is safe to quote where `runstore compare` and `privacy receipts` are not.
 
 `ctxQueryTraces` reads four stores and none of those.
 
