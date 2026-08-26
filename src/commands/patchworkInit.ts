@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -109,6 +110,17 @@ export function ensureDashboardEnv(
   writeFileSync(envPath, `${existing + sep + additions.join("\n")}\n`, {
     mode: 0o600,
   });
+  // `mode` above applies only when CREATING the file — on an existing one Node
+  // ignores it silently, so a `.env` that ever became group/world-readable
+  // stayed that way however many times init ran. This file holds the dashboard
+  // session secret; forging one mints a session naming any member.
+  if (process.platform !== "win32") {
+    try {
+      chmodSync(envPath, 0o600);
+    } catch {
+      /* best-effort: a failure here must not break `init` */
+    }
+  }
   // Also write dashboard/.env.local so Next.js picks up credentials without start-all sourcing
   const dashDir =
     dashboardDirOverride !== undefined

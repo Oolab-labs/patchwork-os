@@ -33,7 +33,7 @@
  * lives here and is injected.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { patchworkHome } from "../patchworkHome.js";
@@ -49,10 +49,56 @@ const KEY = "DASHBOARD_SESSION_SECRET";
  * decisions recorded unattributed. That is the pre-existing behaviour and the
  * correct one, since an absent actor already means "nobody recorded this" and
  * must never be filled in with a guess.
+ *
+ * ## It also tightens the file, and reports having done so
+ *
+ * This file holds `DASHBOARD_SESSION_SECRET` — forge one and you can mint a
+ * session naming any member, which is the whole ADR-0020 attribution scheme —
+ * and in practice `DASHBOARD_PASSWORD` beside it. `credentialStore` already
+ * tightens its own file on read for exactly this reason; nothing did it here,
+ * and the file was found mode 644 on the reference machine.
+ *
+ * `patchworkInit` does pass `{ mode: 0o600 }`, which is why this is easy to
+ * miss: **`writeFileSync` applies `mode` only when CREATING a file.** On an
+ * existing one it is silently ignored, so a file that ever became loose stays
+ * loose no matter how many times init runs.
+ *
+ * `onWarn` rather than a return-shape change: the caller needs to be TOLD, not
+ * just silently fixed — an operator who has been running world-readable has
+ * been doing so for however long — but adding a second exported reader for the
+ * same path is how two readers of one file come to disagree.
  */
-export function readSessionSecretFromHome(dir?: string): string | undefined {
+export function readSessionSecretFromHome(
+  dir?: string,
+  onWarn?: (message: string) => void,
+): string | undefined {
   const file = path.join(dir ?? patchworkHome(), ".env");
   if (!existsSync(file)) return undefined;
+
+  // NTFS reports 0o666 regardless of any chmod, so this check would fire on
+  // every Windows start and tighten nothing. A warning that always fires is
+  // how a real one gets ignored.
+  if (process.platform !== "win32") {
+    try {
+      if ((statSync(file).mode & 0o077) !== 0) {
+        let tightened = false;
+        try {
+          chmodSync(file, 0o600);
+          tightened = true;
+        } catch {
+          /* reported below either way — nothing else to do */
+        }
+        onWarn?.(
+          `[patchwork] ${file} was readable by group or others; it holds the dashboard session secret. ` +
+            (tightened
+              ? "Tightened to 0600 — rotate the secret if the machine is shared."
+              : "FAILED to tighten it — fix the permissions by hand and rotate the secret."),
+        );
+      }
+    } catch {
+      /* stat failed — fall through; the read below decides */
+    }
+  }
 
   let text: string;
   try {

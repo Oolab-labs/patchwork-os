@@ -1296,7 +1296,12 @@ export class Bridge {
     // rather than re-read per approval, matching the load-once contract the
     // roster and credential store both document.
     if ((process.env.DASHBOARD_SESSION_SECRET ?? "") === "") {
-      __setSessionSecretFallback(readSessionSecretFromHome());
+      __setSessionSecretFallback(
+        // The warning is routed to the bridge log rather than swallowed: this
+        // file holds the session secret, and an operator running it
+        // world-readable has been doing so for however long.
+        readSessionSecretFromHome(undefined, (msg) => this.logger.warn(msg)),
+      );
     }
     if (hasSessionSecret()) {
       const roster = this.server.roster;
