@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-08-26 `feat/chained-run-level-expect` — a chained recipe's run-level `expect:` lints
+  clean with zero warnings and is then dropped entirely: `ChainedRecipe` has no `expect`
+  field and `runChainedRecipe` never calls `evaluateExpect`. Reproduced against a real run
+  — two impossible assertions, `status: done`, `assertionFailures: None`. Touches
+  `recipes/chainedRunner.ts` + recipe lint.
 
 ## Recently closed (informal log, prune periodically)
 

@@ -43,7 +43,15 @@ import {
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 import { evaluateWhen } from "./whenGuard.js";
-import type { StepExpect } from "./yamlRunner.js";
+// TYPE-ONLY on purpose. `yamlRunner` imports this module dynamically to break
+// the cycle (see `loadRecipeServers` below); a value import here would close
+// it. `evaluateExpect` is pulled in with `await import()` at its call site for
+// the same reason.
+import type {
+  AssertionFailure,
+  StepExpect,
+  YamlRecipeExpect,
+} from "./yamlRunner.js";
 import {
   computeAgentCallUsage,
   declaredRecipeEnv,
@@ -111,6 +119,22 @@ export interface ChainedRecipe {
    * recipe ran UNBOUNDED API calls (S1 finding).
    */
   budget?: BudgetPolicy;
+  /**
+   * Run-level completion contract, evaluated after the last step.
+   *
+   * Present at RUNTIME long before it was present here: `dispatchRecipe` casts
+   * a `YamlRecipe` straight across, so an author could write `expect:` on a
+   * chained recipe, have lint pass with zero warnings, and have it silently
+   * dropped — the recipe promised a postcondition nothing ever checked.
+   *
+   * ONE KEY MEANS SOMETHING DIFFERENT HERE, deliberately. `outputs` on the
+   * flat runner lists agent `into:` keys and resolved `file.write` paths; on
+   * this runner it lists the STEP IDS that produced data, because that is what
+   * a chained run is keyed by. A flat-style entry therefore never matches and
+   * fails loudly rather than passing by accident, and `recipe lint` warns when
+   * a chained `outputs` entry looks like a path.
+   */
+  expect?: YamlRecipeExpect;
 }
 
 export interface RunOptions {
@@ -1083,6 +1107,12 @@ export interface ChainedRunResult {
   errorMessage?: string;
   /** Step output data keyed by step id, stringified for expect: assertions. */
   context: Record<string, string>;
+  /**
+   * Run-level `expect` violations. Absent when the recipe declared no contract
+   * or the contract held — never an empty array, so "no contract" and "the
+   * contract passed" stay distinguishable from a reader's point of view.
+   */
+  assertionFailures?: AssertionFailure[];
 }
 
 /**
@@ -1629,12 +1659,45 @@ export async function runChainedRecipe(
     }
   }
 
+  const chainedSummary = registry.summary();
+
+  // Run-level completion contract. Evaluated AFTER every step, and it does not
+  // change `success`: a violated postcondition is reported, not rolled back —
+  // identical to the flat runner, where the run still finishes `done`.
+  //
+  // Guarded so a throw here cannot strand the run: an assertion helper that
+  // blows up must not turn a completed run into a crashed one.
+  let assertionFailures: AssertionFailure[] = [];
+  if (recipe.expect) {
+    try {
+      const { evaluateExpect } = await import("./yamlRunner.js");
+      assertionFailures = evaluateExpect(
+        {
+          // `stepsRun` is "steps that actually executed", matching the flat
+          // runner's counter — a skipped step did not run.
+          stepsRun: chainedSummary.total - chainedSummary.skipped,
+          // Step ids that produced data. See the `expect` field's note on
+          // ChainedRecipe: this vocabulary differs from the flat runner's and
+          // that is deliberate, not an oversight.
+          outputs: Object.keys(context),
+          context,
+          ...(failed > 0 ? { errorMessage: `${failed} step(s) failed` } : {}),
+        },
+        recipe.expect,
+      );
+    } catch {
+      // Same posture as the flat path: never let contract evaluation break a
+      // run that already finished.
+    }
+  }
+
   const result: ChainedRunResult = {
     success: failed === 0,
     stepResults: enrichedResults,
-    summary: registry.summary(),
+    summary: chainedSummary,
     errorMessage: failed > 0 ? `${failed} step(s) failed` : undefined,
     context,
+    ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
   };
 
   // Write to RecipeRunLog so the dashboard Runs page shows chained executions.
@@ -1758,6 +1821,7 @@ export async function runChainedRecipe(
           ...(result.errorMessage !== undefined && {
             errorMessage: result.errorMessage,
           }),
+          ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
           ...(tokenTotals ? { tokenTotals } : {}),
           ...(budgetTotals ? { budgetTotals } : {}),
         });
@@ -1796,6 +1860,7 @@ export async function runChainedRecipe(
           errorMessage: result.errorMessage,
           stepResults: stepResultsList,
           ...(budgetWarnings.length > 0 && { budgetWarnings }),
+          ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
           ...(tokenTotals ? { tokenTotals } : {}),
           ...(budgetTotals ? { budgetTotals } : {}),
         });
