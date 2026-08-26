@@ -50,7 +50,10 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-08-26 `feat/template-completion-contracts` — #1528 taught `patchwork halts` to see a
+  violated run-level `expect`, and measured 0 of 82 installed recipes declaring one, so the
+  counter has nothing to count. Adds contracts to the three templates whose postcondition
+  is unambiguous (an agent step whose output IS the artifact). Templates only.
 
 ## Recently closed (informal log, prune periodically)
 
