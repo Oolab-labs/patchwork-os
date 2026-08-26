@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-08-26 `fix/session-secret-file-permissions` — `~/.patchwork/.env` holds
+  `DASHBOARD_SESSION_SECRET` (the whole ADR-0020 attribution scheme rests on it) and
+  `DASHBOARD_PASSWORD`. `credentialStore` tightens its file on read when group/world
+  readable; nothing does that for `.env`, and `writeFileSync(…, {mode})` in
+  `patchworkInit` is a no-op on an EXISTING file. Found at 644 on the reference machine.
 
 ## Recently closed (informal log, prune periodically)
 
