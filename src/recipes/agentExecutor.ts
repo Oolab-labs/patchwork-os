@@ -202,9 +202,27 @@ export const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
  *                       defensible translation is Codex's own coarsest
  *                       lockdown (read-only sandbox, no network, no approval
  *                       escalation) — see CODEX_WORKER_SANDBOX_LOCKDOWN.
+ *   "no-tool-surface" — the `local` driver, which is handed NO tools at all:
+ *                       `localFn` is `(prompt, model) => …` and the `cliOpts`
+ *                       object carrying mcpAccess/allowedTools/disallowedTools
+ *                       goes only to `claudeCliFn`. A sandbox restricts tools,
+ *                       and there is no parameter through which a tool could
+ *                       reach this driver, so "no tools" satisfies the sandbox
+ *                       by construction — strictly stronger than "tools minus
+ *                       a deny list". This is NOT a widening of the guard: it
+ *                       separates "cannot enforce a deny list" from "would run
+ *                       un-sandboxed", which are different facts that were
+ *                       collapsed into one. The distinction holds only while
+ *                       `localFn` takes no tool-bearing parameter, and
+ *                       `localDriverToolSurface.test.ts` fails the build if
+ *                       that ever changes.
  *   "none"            — no enforcement mechanism; enforceSandbox must refuse.
  */
-type SandboxEnforcement = "granular" | "codex-lockdown" | "none";
+type SandboxEnforcement =
+  | "granular"
+  | "codex-lockdown"
+  | "no-tool-surface"
+  | "none";
 
 function resolveSandboxEnforcement(
   driver: string | undefined,
@@ -212,9 +230,12 @@ function resolveSandboxEnforcement(
 ): SandboxEnforcement {
   if (driver === "subprocess" || driver === "claude-code") return "granular";
   if (driver === "codex") return "codex-lockdown";
-  if (driver !== undefined) return "none"; // anthropic/claude/openai/grok/gemini*/local
+  if (driver === "local") return "no-tool-surface";
+  if (driver !== undefined) return "none"; // anthropic/claude/openai/grok/gemini*
   const pwCfg = deps.loadPatchworkConfig();
-  if (pwCfg.model === "local") return "none";
+  // Same driver, reached by config rather than by name. Both paths must agree,
+  // or the exemption would depend on how the driver happened to be spelled.
+  if (pwCfg.model === "local") return "no-tool-surface";
   if (pwCfg.driver === "subprocess" || pwCfg.driver === "claude-code")
     return "granular";
   if (process.env.ANTHROPIC_API_KEY) return "none"; // auto-detect → anthropic API

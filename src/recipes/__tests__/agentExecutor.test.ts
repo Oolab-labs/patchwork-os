@@ -323,8 +323,17 @@ describe("unknown driver", () => {
 
 // ── 9b. enforceSandbox: worker-mandated sandbox needs the subprocess driver ──
 // A worker agent step's --disallowed-tools is enforced ONLY by the subprocess
-// driver. On any other driver the deny list is dropped, re-opening the bypass.
-// enforceSandbox makes executeAgent fail CLOSED instead of running un-sandboxed.
+// driver. On a driver that HAS a tool surface but no deny-list mechanism, the
+// deny list is dropped and the bypass re-opens, so enforceSandbox fails CLOSED
+// instead of running un-sandboxed.
+//
+// `local` was in this sweep and has been removed. It is not a driver whose
+// deny list is dropped — it is handed no tools at all (`localFn` is
+// `(prompt, model) => …`; the tool-bearing `cliOpts` reaches only claudeCliFn),
+// so there is nothing to deny. It was swept in here generically rather than
+// reasoned about, and refusing it left a worker recipe handling `personal`
+// data with nowhere to run. See `localDriverToolSurface.test.ts`, which pins
+// that exemption to `localFn` taking no tool parameter.
 
 describe("enforceSandbox (worker autonomy never-widen guard)", () => {
   afterEach(() => {
@@ -337,7 +346,6 @@ describe("enforceSandbox (worker autonomy never-widen guard)", () => {
     "openai",
     "grok",
     "gemini",
-    "local",
   ])("refuses to run on non-subprocess/non-codex driver %s; no driver fn called", async (driver) => {
     const deps = makeDeps();
     const result = await executeAgent(
