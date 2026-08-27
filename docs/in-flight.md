@@ -54,6 +54,13 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-27 `feat/authority-delta-classifier` — a repository gate must judge a manifest edit
+  with the SAME primitives that govern the worker at runtime, or the two notions of authority
+  drift silently and permissively. One inversion is the point: `parseForbidRules` fails OPEN
+  at runtime (correct there — a banned action degrades to merely gated, and a human still
+  approves it), but a gate cannot report "I could not read your deny-list" as "looks fine".
+  Deleting a manifest is a WIDENING — the gate is a floor over the tier fn. — merged as #1545
+
 - 2026-08-27 `feat/pr-outcome-ledger-phase-1` — the one roadmap item that is wall-clock
   bound: outcome history accrues only with time and a day not recorded cannot be recovered.
   Raw observations, no derived score, `authorIsWorker` omitted rather than defaulted when no
