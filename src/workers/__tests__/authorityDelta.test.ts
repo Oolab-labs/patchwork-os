@@ -200,8 +200,18 @@ describe("comparing whole sets", () => {
 describe("the report", () => {
   it("says nothing changed rather than printing a zero", () => {
     const out = formatAuthorityDeltas([]);
-    expect(out).toMatch(/No worker manifest changed/);
+    expect(out).toMatch(/No authority changed/);
     expect(out).not.toMatch(/\b0 finding/);
+  });
+
+  it("does NOT claim the files were unchanged", () => {
+    // A comment-only edit to a manifest is a real file change and no
+    // authority change. Saying "no manifest changed" would be false, and a
+    // reader looking at a nine-line diff would rightly stop trusting the
+    // report. This is the distinction the whole classifier exists to draw.
+    const out = formatAuthorityDeltas([]);
+    expect(out).not.toMatch(/No worker manifest changed/);
+    expect(out).toMatch(/Manifest files may still have changed/);
   });
 
   it("leads with widenings and says a widening is not a defect", () => {

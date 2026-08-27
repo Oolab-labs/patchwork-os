@@ -275,8 +275,18 @@ export function formatAuthorityDeltas(deltas: AuthorityDelta[]): string {
   if (deltas.length === 0) {
     // "0 findings" invites a reader to assume nothing was examined. Say what
     // was compared and that it came back unchanged.
+    //
+    // And say it PRECISELY: "no manifest changed" would be false whenever a
+    // comment, reordering or an unread field changed, which is exactly the
+    // case this classifier exists to distinguish from a real one. A reader who
+    // sees a nine-line diff and a report claiming nothing changed will stop
+    // trusting the report, and they would be right to.
     L.push("");
-    L.push("  No worker manifest changed, so no authority changed.");
+    L.push("  No authority changed.");
+    L.push("");
+    L.push("  Manifest files may still have changed — comments, ordering and");
+    L.push("  any field the gate does not read cannot affect what a worker is");
+    L.push("  permitted to do.");
     return L.join("\n");
   }
   const widening = deltas.filter((d) => d.widens);

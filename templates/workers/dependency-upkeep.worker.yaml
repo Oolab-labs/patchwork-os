@@ -17,6 +17,15 @@ responsibilities:
 # attach an observation to. If a future recipe variant actually opens PRs,
 # add vcs-remote back then (see the PR-outcome-grader note below, which
 # still applies to that future version).
+#
+# Adding it is a WIDENING, and as of 2026-08-27 the repository says so out
+# loud: `.github/workflows/authority-delta.yml` runs
+# `patchwork workers authority-delta` on every PR touching this directory and
+# fails until a person applies the `authority-widened-approved` label. That is
+# not a wall — a widening is often the point of the change — it just cannot be
+# silent. Raising `autonomyCeiling` from 1 to 2 is flagged the same way, and
+# more loudly, because ceiling 2 is PERMISSIVE (compensable classes stop being
+# gated) and reads like a harmless "+1".
 owns:
   - vcs-read # github.list_prs
   - fs-write # the review-summary file.write
