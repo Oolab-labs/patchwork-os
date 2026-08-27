@@ -2,6 +2,8 @@
 
 // Silence the one-per-process `node:sqlite` ExperimentalWarning (ADR-0022).
 // FIRST, before anything can import node:sqlite — the warning fires at import
+import type { EchoTarget } from "./identity/ttyEcho.js";
+
 // time, so installing this later would suppress nothing. Entry point only:
 // it mutates global process state, which no leaf module should do on import.
 // Unrelated warnings still surface; that is the property its tests guard.
@@ -5370,29 +5372,30 @@ if (process.argv[2] === "members") {
           process.exit(2);
         }
         const { createInterface } = await import("node:readline");
+        const { muteEcho } = await import("./identity/ttyEcho.js");
         const rl = createInterface({
           input: process.stdin,
           output: process.stdout,
         });
         const ask = (q: string): Promise<string> =>
           new Promise((resolve) => rl.question(q, resolve));
-        // Node's readline cannot suppress echo portably; muting the output
-        // stream is the standard trick and is why this is written by hand.
-        const mute = (on: boolean) => {
-          (
-            rl as unknown as { output: { write: (c: string) => void } }
-          ).output.write = on
-            ? () => {}
-            : process.stdout.write.bind(process.stdout);
-        };
+        // Node's readline cannot suppress echo portably, so the output
+        // stream's `write` is replaced for the duration of each prompt.
+        // `muteEcho` captures the original BEFORE installing the no-op. This
+        // used to restore by reading `process.stdout.write` back, which read
+        // the no-op just installed, because readline's `output` IS
+        // `process.stdout`. stdout then stayed muted for the rest of the
+        // process: the "Confirm:" prompt was invisible and the operator
+        // confirmed a password they never saw prompted. See `ttyEcho.ts`.
+        const echoTarget = (rl as unknown as { output: EchoTarget }).output;
         process.stdout.write(`Password for ${memberId}: `);
-        mute(true);
+        let unmute = muteEcho(echoTarget);
         const pw = (await ask("")).trim();
-        mute(false);
+        unmute();
         process.stdout.write("\nConfirm: ");
-        mute(true);
+        unmute = muteEcho(echoTarget);
         const again = (await ask("")).trim();
-        mute(false);
+        unmute();
         process.stdout.write("\n");
         rl.close();
 
