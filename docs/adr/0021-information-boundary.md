@@ -456,3 +456,110 @@ inherently forbidden — it is necessary for "send an appointment reminder" and
 unnecessary for "summarise sales performance". The decision is
 (data × destination × purpose), and this ADR ships the first two. Purpose is
 declared future work, not inferred.
+
+## Amendment 2026-08-27 — the operator's own choice, and what may honestly be said about it
+
+Recorded before any code, because the scope is not settled and building the
+wrong unit is more expensive than the delay. The request that prompted it:
+*let people choose an approach that suits them; where a hosted model is chosen,
+make it clear the data goes to that provider's servers; add privacy where it
+can be added, and accept the limits.*
+
+Three findings changed the shape of that.
+
+### `REQUIRE_APPROVAL` has no consumer, and could not be reached anyway
+
+`executeAgent` refuses every non-`ALLOW` decision identically. `REQUIRE_APPROVAL`
+is a value the decision function can return and nothing acts on — there is no
+prompt, no queue entry, no pause. "Ask me each time" is not configuration that
+was never switched on; it is unbuilt.
+
+It is also unreachable as the rule table currently stands. Rule 1 returns
+`LOCAL_ONLY` whenever any local destination accepts the classification, and
+that test runs BEFORE the `approvable` test. `local-models` accepts `personal`,
+so a `personal` step on a hosted destination resolves `LOCAL_ONLY` every time
+and never reaches the approval branch. Wiring a prompt without reordering rule 1
+would produce a feature that is switched on and never fires — the exact shape of
+defect this repository spent 2026-08-26 removing five instances of.
+
+### Prompt redaction stays rejected, and outside evidence agrees
+
+The 2026-08-18 amendment refused redaction at the decision point because the
+prompt is already rendered, so removal could only mean detection, whose *"recall
+is unknowable"*. Surveying the outside state of the art in 2026 did not weaken
+that; it strengthened it. Production redaction stacks need per-domain custom
+recognizers, miss names in prose without NER, degrade on non-US identifier
+formats, and no vendor claims their output is anonymised. One further point is
+specific to an agent runtime and sharpens the case: a single task fans out into
+many model calls, and every hop is a fresh opportunity for personal data to
+enter from a TOOL RESULT rather than from the original prompt. A detector placed
+at the first hop would not see it.
+
+So "add privacy where you can" must not become prompt scanning here. It would
+present as protection and function as a guess. The honest path to redaction
+remains the one already recorded: per-field labels applied at render time, which
+turn removal into a set difference. That is a recipe-schema change and is still
+not decided.
+
+### A disclosure that states provider behaviour will rot into a lie
+
+The obvious implementation of "make it clear where the data goes" is a sentence
+about the provider's handling. That sentence decays without anyone touching the
+code. Anthropic reduced API retention from 30 days to 7 in September 2025, does
+not train on API inputs, offers zero-retention agreements to some customers, and
+announced in August 2026 a further change requiring 30-day retention for its most
+advanced models on customer-controlled infrastructure. Any string baked in today
+describing that is a claim the code cannot keep.
+
+**A boundary may only assert what it can verify.** What this runtime knows for
+certain is that the prompt leaves the machine and reaches a named provider over
+the network. That is true permanently and needs no maintenance. Anything about
+retention, training or deletion is the provider's claim, not ours, and belongs in
+an operator-editable note carrying the date it was last checked — so a stale claim
+looks stale instead of looking authoritative.
+
+This is the same rule the receipts already follow by refusing to hold a payload:
+record what is known, decline to assert what is not.
+
+### What is DECIDED
+
+- Prompt-scanning redaction is not implemented here. Closed, not deferred.
+- Any disclosure ships only the verifiable half: this leaves the machine, and
+  goes to this named provider. Provider-behaviour claims are operator-supplied
+  and dated.
+- The choice belongs to the OPERATOR, expressed in their own configuration —
+  not to a recipe author, and not to whoever wrote the step. A recipe that could
+  widen its own destination policy would make the policy advisory.
+
+### What is NOT decided, and blocks the build
+
+**1. Granularity.** Clearing a hosted destination for `personal` clears it for
+every `personal` step at once. Measured 2026-08-27: 12 steps declare `personal`,
+3 `restricted`, 2 `confidential`. A per-destination switch is one line of config
+and is blunt; a per-step or per-recipe opt-in is precise and is a schema change.
+Choosing the blunt one first is hard to walk back in a repository that cannot
+withdraw a published policy.
+
+**2. Unattended runs — the trap.** Eleven of those twelve `personal` steps sit in
+DISABLED recipes, and nine of the disabled ones are scheduled. If they are
+enabled and a step resolves "ask" at 06:00 while nobody is awake, the approval
+expires and the run fails. Falling back to local silently is consent theatre —
+the operator is recorded as having chosen to be asked, and was not. Failing every
+morning is useless. There is no defensible default, which means "ask" may not be
+a third option at all so much as a property of how a recipe is TRIGGERED. That
+distinction has to be settled before the queue wiring, not after.
+
+**3. What an approval prompt may display.** A prompt asking "may this be sent?"
+is meaningless unless it shows what is being sent — but receipts hold no payload
+precisely because a privacy log full of prompts would be the largest unprotected
+copy of the protected material. Displaying transiently and never persisting is
+defensible and is a decision, not an implementation detail.
+
+### Sequencing
+
+Exactly one step declaring above-`internal` data sits in an enabled recipe today.
+A consent subsystem built for that population would be a reader built ahead of its
+evidence, which this repository has already recorded as a mistake twice. The
+disclosure and the operator switch are small and can ship once granularity is
+chosen; the prompt, the queue wiring and the display policy wait for a second live
+step or for the scheduled recipes to be enabled.
