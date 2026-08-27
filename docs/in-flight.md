@@ -54,6 +54,12 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-27 `feat/pr-outcome-ledger-phase-1` — the one roadmap item that is wall-clock
+  bound: outcome history accrues only with time and a day not recorded cannot be recovered.
+  Raw observations, no derived score, `authorIsWorker` omitted rather than defaulted when no
+  roster exists. Leads with how many PRs have more than one observation, so a one-shot
+  backfill cannot read as accumulated history. — merged as #1544
+
 - 2026-08-27 `feat/privacy-destinations-disclosure` — the operator's choice already existed
   and was invisible: clearing a remote destination for `personal` is one line of config, and
   nothing said which destinations leave the machine. Adds no policy primitive; a
