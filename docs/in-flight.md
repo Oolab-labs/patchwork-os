@@ -54,6 +54,13 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-27 `feat/privacy-destinations-disclosure` — the operator's choice already existed
+  and was invisible: clearing a remote destination for `personal` is one line of config, and
+  nothing said which destinations leave the machine. Adds no policy primitive; a
+  recipe-scoped allow-list would put recipe identity into the decision point and smuggle in
+  `purpose` early. The disclosure names no retention or training claim, because such a claim
+  rots without a code change. — merged as #1543
+
 - 2026-08-26 `feat/local-driver-has-no-tool-surface` — the worker-sandbox guard refused every
   non-subprocess driver, collapsing "cannot enforce a deny list" with "would run
   un-sandboxed". `local` is the first and not the second: `localFn` is `(prompt, model)` and
