@@ -377,6 +377,7 @@ if (
       `Diagnose\n` +
       `  halts [--window 1h|24h|overnight|7d]      Morning summary of recent recipe halts\n` +
       `  judgments [--window ...] [--recipe N]     Recent judge-step verdicts across runs\n` +
+      `  privacy destinations                     Where prompts may go, and which leave this machine\n` +
       `  privacy receipts [--since-days N]        What the LIVE information boundary actually decided\n` +
       `  privacy shadow [--since-days N]          What a candidate privacy policy would have stopped\n` +
       `  suggest [--since-days N]                  Recipe + unused-tool suggestions\n` +
@@ -5682,6 +5683,47 @@ if (process.argv[2] === "privacy") {
       } else {
         process.stdout.write(`${formatSuggestion(result)}\n`);
       }
+      process.exit(0);
+    }
+    // `privacy destinations` — where prompts may go, and which of those
+    // leave the machine.
+    //
+    // Adds no policy primitive on purpose. Clearing a remote destination for
+    // `personal` is already one line in config.json; what was missing is that
+    // the choice was invisible and undisclosed. A recipe-scoped allow-list
+    // would put recipe identity into the decision point, which the receipt
+    // wiring deliberately keeps out of it, and would smuggle in "purpose"
+    // ahead of the per-field labels ADR-0021 reserves it for.
+    if (args[0] === "destinations") {
+      const { parseRegistry } = await import(
+        "./privacy/destinationRegistry.js"
+      );
+      const { describeDestinations, formatDestinationsReport } = await import(
+        "./privacy/describeDestinations.js"
+      );
+      const { loadConfig } = await import("./patchworkConfig.js");
+      const cfg = loadConfig() as {
+        privacy?: import("./privacy/destinationRegistry.js").PrivacyConfig & {
+          notes?: Record<
+            string,
+            import("./privacy/describeDestinations.js").DestinationNote
+          >;
+        };
+      };
+      const registry = parseRegistry(cfg.privacy);
+      const described = describeDestinations(
+        registry.destinations,
+        registry.driversFor,
+        { ...(cfg.privacy?.notes && { notes: cfg.privacy.notes }) },
+      );
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify(described, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${formatDestinationsReport(described)}\n`);
+      }
+      // Always 0: an inert boundary and a wide-open one are both legitimate
+      // operator states, and exiting non-zero on either would make a correct
+      // answer look like a failure.
       process.exit(0);
     }
     // `privacy undeclared` — the population most likely to be
