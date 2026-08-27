@@ -23,6 +23,17 @@ name: Authority Delta
 
 on:
   pull_request:
+    # `labeled` / `unlabeled` are load-bearing, not thoroughness.
+    #
+    # The human workflow is: see the failure, apply the label. Without
+    # `labeled` the check never re-runs, and re-running it by hand replays the
+    # ORIGINAL event payload — which predates the label. The gate would be
+    # unblockable, i.e. a wall, which is the one thing it must not be.
+    #
+    # `unlabeled` matters for the opposite reason: removing the approval must
+    # re-fail the check. Otherwise a widening could be approved, go green, and
+    # have its approval quietly withdrawn while the green check remains.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - 'templates/workers/**'
 
@@ -72,7 +83,7 @@ jobs:
             const report = process.env.REPORT || '(no report produced)';
             const widened = process.env.EXIT === '1';
             const body = widened
-              ? `## Worker authority changed\n\n\`\`\`\n${report}\n\`\`\`\n\nA widening is not a defect — it often is the point of the change. It does need a person to say so.\n\nTo accept it, apply the **\`authority-widened-approved\`** label. The label and this comment are the record that somebody did.`
+              ? `## Worker authority changed\n\n\`\`\`\n${report}\n\`\`\`\n\nA widening is not a defect — it often is the point of the change. It does need a person to say so.\n\nTo accept it, apply the **\`authority-widened-approved\`** label — the check re-runs automatically. The label and this comment are the record that somebody did.`
               : `## Worker authority unchanged\n\n\`\`\`\n${report}\n\`\`\``;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -89,8 +100,19 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const labels = context.payload.pull_request.labels.map(l => l.name);
-            if (labels.includes('authority-widened-approved')) {
+            // Ask the API for the CURRENT labels rather than reading
+            // `context.payload.pull_request.labels`, which is frozen at the
+            // moment the event fired. Re-running a workflow replays that same
+            // payload, so a label applied in response to the failure would be
+            // invisible and the check could never be unblocked by hand.
+            // Observed on this workflow's own PR before it merged.
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const names = labels.map(l => l.name);
+            if (names.includes('authority-widened-approved')) {
               core.info('Widening accepted: `authority-widened-approved` is applied.');
               return;
             }
