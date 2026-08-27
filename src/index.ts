@@ -284,6 +284,10 @@ const KNOWN_SUBCOMMANDS = [
   "reject",
   "gate",
   "outcomes",
+  // Raw PR-event ledger. Absent from this array a verb IS dispatched but the
+  // suggester calls it unknown — the exact trap the `tools` comment below
+  // records, and audit-cli-commands.mjs reads this array as ground truth.
+  "pr-outcomes",
   "butler",
   "privacy",
   "doctor",
@@ -377,6 +381,7 @@ if (
       `Diagnose\n` +
       `  halts [--window 1h|24h|overnight|7d]      Morning summary of recent recipe halts\n` +
       `  judgments [--window ...] [--recipe N]     Recent judge-step verdicts across runs\n` +
+      `  pr-outcomes <collect|show>               Record raw PR events so trust can be derived later\n` +
       `  privacy destinations                     Where prompts may go, and which leave this machine\n` +
       `  privacy receipts [--since-days N]        What the LIVE information boundary actually decided\n` +
       `  privacy shadow [--since-days N]          What a candidate privacy policy would have stopped\n` +
@@ -5019,6 +5024,174 @@ if (process.argv[2] === "shadow-scan") {
 //
 // Reports DENOMINATORS. It is not the reader, and building the reader is
 // exactly what the spine's own rule defers until there is evidence to read.
+// --- pr-outcomes (maintenance roadmap, phase 1) ---
+//
+// Built before the workers that will read it, deliberately, and it is the one
+// item on that roadmap where that is correct: outcome history accrues only
+// with wall-clock time, and a day not recorded is a day that cannot be
+// recovered. Everything else can be built whenever.
+if (process.argv[2] === "pr-outcomes") {
+  const args = process.argv.slice(3);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork pr-outcomes <collect|show> [--repo owner/name] [--limit N] [--json]\n\n" +
+        "Record raw pull-request events so trust can be derived LATER from evidence\n" +
+        "rather than asserted now. Each row is what the API said at one moment; run\n" +
+        "`collect` regularly and trajectories appear. Run it once and you get final\n" +
+        "states only, which the summary says rather than implying otherwise.\n\n" +
+        "  collect   query the repo and append anything that changed\n" +
+        "  show      summarise what the ledger already holds\n\n" +
+        "No score is derived. Whether a worker opened a PR is OMITTED when no roster\n" +
+        "is configured, never recorded as false: unknown and no are different facts.\n\n" +
+        "Rows name real pull requests and authors, so they are operator data like the\n" +
+        "other ledgers - quote a measurement, never paste the rows.\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    const { readFileSync, appendFileSync, existsSync } = await import(
+      "node:fs"
+    );
+    const { join } = await import("node:path");
+    const { patchworkPath } = await import("./patchworkHome.js");
+    const { execFileSync } = await import("node:child_process");
+    const { toObservation, dedupeAgainst, summarise, formatLedgerSummary } =
+      await import("./maintenance/prOutcomeLedger.js");
+    type Obs = import("./maintenance/prOutcomeLedger.js").PrObservation;
+
+    const file = join(patchworkPath(), "pr_outcomes.jsonl");
+    const read = (): Obs[] => {
+      if (!existsSync(file)) return [];
+      const out: Obs[] = [];
+      for (const line of readFileSync(file, "utf-8").split("\n")) {
+        if (line.trim() === "") continue;
+        try {
+          out.push(JSON.parse(line) as Obs);
+        } catch {
+          // A corrupt line is skipped, never repaired: rewriting an
+          // append-only evidence file to make it parse is how evidence
+          // quietly becomes fiction.
+        }
+      }
+      return out;
+    };
+
+    const sub = args[0] ?? "show";
+
+    if (sub === "show") {
+      const rows = read();
+      const s = summarise(rows);
+      process.stdout.write(
+        args.includes("--json")
+          ? `${JSON.stringify(s, null, 2)}\n`
+          : `${formatLedgerSummary(s)}\n`,
+      );
+      // Always 0. An empty ledger on day one is a true and expected state.
+      process.exit(0);
+    }
+
+    if (sub === "collect") {
+      const repoIdx = args.indexOf("--repo");
+      const limIdx = args.indexOf("--limit");
+      const limit = limIdx >= 0 ? Number(args[limIdx + 1]) : 100;
+      let repo = repoIdx >= 0 ? args[repoIdx + 1] : undefined;
+      if (repo === undefined) {
+        try {
+          repo = execFileSync(
+            "gh",
+            ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+            {
+              encoding: "utf-8",
+              stdio: ["ignore", "pipe", "ignore"],
+            },
+          ).trim();
+        } catch {
+          process.stderr.write(
+            "[pr-outcomes] could not determine the repository. Pass --repo owner/name.\n",
+          );
+          process.exit(2);
+        }
+      }
+      let payload = "";
+      try {
+        payload = execFileSync(
+          "gh",
+          [
+            "pr",
+            "list",
+            "--repo",
+            repo as string,
+            "--state",
+            "all",
+            "--limit",
+            String(Number.isFinite(limit) ? limit : 100),
+            "--json",
+            "number,state,createdAt,mergedAt,closedAt,additions,deletions,changedFiles,author,mergeCommit",
+          ],
+          {
+            encoding: "utf-8",
+            stdio: ["ignore", "pipe", "pipe"],
+            maxBuffer: 32 * 1024 * 1024,
+          },
+        );
+      } catch (err) {
+        // Fail-soft and LOUD. A collector that silently reports success on a
+        // failed query would leave a gap indistinguishable from a quiet week.
+        process.stderr.write(
+          `[pr-outcomes] the GitHub query failed, so NOTHING was recorded: ${
+            err instanceof Error ? err.message.split("\n")[0] : String(err)
+          }\n`,
+        );
+        process.exit(1);
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(payload);
+      } catch {
+        process.stderr.write(
+          "[pr-outcomes] the GitHub response did not parse; nothing recorded.\n",
+        );
+        process.exit(1);
+      }
+      const observedAt = new Date().toISOString();
+      const incoming: Obs[] = [];
+      let unusable = 0;
+      for (const r of Array.isArray(parsed) ? parsed : []) {
+        const o = toObservation(r as never, {
+          repo: repo as string,
+          observedAt,
+        });
+        if (o === null) unusable++;
+        else incoming.push(o);
+      }
+      const existing = read();
+      const { toAppend, unchanged, firstSighting } = dedupeAgainst(
+        existing,
+        incoming,
+      );
+      for (const o of toAppend)
+        appendFileSync(file, `${JSON.stringify(o)}\n`, { mode: 0o600 });
+      process.stdout.write(
+        `[pr-outcomes] ${repo}: ${incoming.length} pull request(s) queried\n` +
+          `  ${toAppend.length} appended (${firstSighting} seen for the first time)\n` +
+          `  ${unchanged} unchanged since the last collection\n` +
+          (unusable > 0
+            ? `  ${unusable} row(s) lacked the fields needed to key them and were DROPPED\n`
+            : "") +
+          (firstSighting === incoming.length && existing.length === 0
+            ? "\n  Every row is a first sighting, so this is a snapshot of final\n" +
+              "  states rather than a history. Trajectories begin from the next\n" +
+              "  collection onward - that part cannot be backfilled.\n"
+            : ""),
+      );
+      process.exit(0);
+    }
+
+    process.stderr.write("Usage: patchwork pr-outcomes <collect|show>\n");
+    process.exit(2);
+  })();
+}
+
 if (process.argv[2] === "evidence") {
   const args = process.argv.slice(3);
   if (args.includes("--help") || args.includes("-h")) {
