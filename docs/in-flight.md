@@ -54,6 +54,12 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-28 `fix/pr-outcomes-swallows-the-real-error` — `gh repo view` ran with stderr
+  ignored, so an expired credential, a missing gh and a missing remote all reported the same
+  guess about the repository. A stale `GITHUB_TOKEN` produced `HTTP 401` and the operator was
+  told to pass `--repo`, which would not have helped. The sibling query path in the same
+  command already piped stderr; detection now matches it. — merged as #1547
+
 - 2026-08-27 `feat/authority-delta-classifier` — a repository gate must judge a manifest edit
   with the SAME primitives that govern the worker at runtime, or the two notions of authority
   drift silently and permissively. One inversion is the point: `parseForbidRules` fails OPEN
