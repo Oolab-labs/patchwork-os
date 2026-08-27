@@ -5244,12 +5244,19 @@ if (process.argv[2] === "workers") {
     (sub !== "shadow" &&
       sub !== "backtest" &&
       sub !== "list" &&
-      sub !== "validate") ||
+      sub !== "validate" &&
+      sub !== "authority-delta") ||
     args.includes("--help") ||
     args.includes("-h")
   ) {
     process.stdout.write(
-      "Usage: patchwork workers <list|validate|shadow|backtest> [--workers-dir <path>]\n\n" +
+      "Usage: patchwork workers <list|validate|authority-delta|shadow|backtest> [--workers-dir <path>]\n\n" +
+        "  authority-delta  What a change does to worker AUTHORITY, comparing manifests\n" +
+        "            between two git refs (--base, --head, --dir). Reuses the runtime\n" +
+        "            policy primitives, with one inversion: an unreadable `forbids`\n" +
+        "            entry fails OPEN at runtime and is reported here as a WIDENING,\n" +
+        '            because "I could not read your deny-list" must never resolve to\n' +
+        '            "looks fine". Exits 1 on a widening.\n' +
         "  list      What is installed, and — the point — what the bridge IGNORES.\n" +
         "            A manifest that does not parse is skipped by the loader, so no\n" +
         "            worker owns its recipe and the autonomy gate never runs for it.\n" +
@@ -5269,78 +5276,136 @@ if (process.argv[2] === "workers") {
     );
     process.exit(0);
   }
-  (async () => {
-    try {
-      const dirIdx = args.indexOf("--workers-dir");
-      const workersDir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
-      if (sub === "list" || sub === "validate") {
-        const {
-          scanWorkers,
-          validateWorkers,
-          formatWorkersList,
-          formatWorkersValidate,
-          defaultWorkersDir,
-          defaultRecipesDir,
-        } = await import("./workers/workersCli.js");
-        const dir = workersDir ?? defaultWorkersDir();
-        const json = args.includes("--json");
-        if (sub === "list") {
-          const scan = scanWorkers(dir);
+  if (sub === "authority-delta") {
+    (async () => {
+      const { execFileSync } = await import("node:child_process");
+      const { parse: parseYaml } = await import("yaml");
+      const { parseWorker } = await import("./workers/worker.js");
+      const { authorityDeltaForSet, formatAuthorityDeltas, widensAuthority } =
+        await import("./workers/authorityDelta.js");
+      type Manifest = import("./workers/worker.js").WorkerManifest;
+      const argAfter = (flag: string): string | undefined => {
+        const i = args.indexOf(flag);
+        return i >= 0 ? args[i + 1] : undefined;
+      };
+      const base = argAfter("--base") ?? "main";
+      const head = argAfter("--head") ?? "HEAD";
+      const dir = argAfter("--dir") ?? "templates/workers";
+      const git = (a: string[]): string =>
+        execFileSync("git", a, { encoding: "utf-8" });
+      const listAt = (ref: string): Map<string, Manifest> => {
+        const m = new Map<string, Manifest>();
+        let files: string[] = [];
+        try {
+          files = git(["ls-tree", "-r", "--name-only", ref, "--", dir])
+            .split("\n")
+            .filter((f) => /\.ya?ml$/i.test(f));
+        } catch {
+          // A ref that cannot be read is a usage error, not "no manifests" —
+          // returning empty would report every worker as newly added, which
+          // this classifier treats as a widening. Failing loudly is the only
+          // honest answer.
+          process.stderr.write(`[authority] cannot read ref "${ref}"\n`);
+          process.exit(2);
+        }
+        for (const f of files) {
+          try {
+            m.set(f, parseWorker(parseYaml(git(["show", `${ref}:${f}`]))));
+          } catch {
+            // An unparseable manifest is SKIPPED by the loader at runtime, so
+            // the worker governs nothing. Omitting it here would masquerade as
+            // a deletion — itself reported as a widening — so say what
+            // happened and point at the verb that diagnoses it.
+            process.stderr.write(
+              `[authority] ${ref}:${f} does not parse — run \`patchwork workers validate\`\n`,
+            );
+          }
+        }
+        return m;
+      };
+      const deltas = authorityDeltaForSet(listAt(base), listAt(head));
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify(deltas, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${formatAuthorityDeltas(deltas)}\n`);
+      }
+      // Exit 1 on a widening so CI can gate on it. A widening is not a defect;
+      // it is a change that requires a person to say so.
+      process.exit(widensAuthority(deltas) ? 1 : 0);
+    })();
+  } else
+    (async () => {
+      try {
+        const dirIdx = args.indexOf("--workers-dir");
+        const workersDir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
+        if (sub === "list" || sub === "validate") {
+          const {
+            scanWorkers,
+            validateWorkers,
+            formatWorkersList,
+            formatWorkersValidate,
+            defaultWorkersDir,
+            defaultRecipesDir,
+          } = await import("./workers/workersCli.js");
+          const dir = workersDir ?? defaultWorkersDir();
+          const json = args.includes("--json");
+          if (sub === "list") {
+            const scan = scanWorkers(dir);
+            process.stdout.write(
+              json
+                ? `${JSON.stringify(
+                    {
+                      dir: scan.dir,
+                      loaded: scan.loaded.map((l) => ({
+                        file: l.file,
+                        id: l.worker.id,
+                        name: l.worker.name,
+                        recipe: l.worker.recipe ?? null,
+                        autonomyCeiling: l.worker.autonomyCeiling,
+                        owns: l.worker.owns,
+                      })),
+                      broken: scan.broken,
+                    },
+                    null,
+                    2,
+                  )}\n`
+                : formatWorkersList(scan),
+            );
+            // A manifest the bridge ignores is a governance gap, not a note.
+            process.exit(scan.broken.length > 0 ? 1 : 0);
+          }
+          const tIdx = args.indexOf("--templates-dir");
+          const templatesDir = tIdx !== -1 ? args[tIdx + 1] : undefined;
+          const rIdx = args.indexOf("--recipes-dir");
+          const result = validateWorkers({
+            workersDir: dir,
+            recipesDir:
+              rIdx !== -1 ? (args[rIdx + 1] as string) : defaultRecipesDir(),
+            ...(templatesDir ? { templatesDir } : {}),
+          });
           process.stdout.write(
             json
-              ? `${JSON.stringify(
-                  {
-                    dir: scan.dir,
-                    loaded: scan.loaded.map((l) => ({
-                      file: l.file,
-                      id: l.worker.id,
-                      name: l.worker.name,
-                      recipe: l.worker.recipe ?? null,
-                      autonomyCeiling: l.worker.autonomyCeiling,
-                      owns: l.worker.owns,
-                    })),
-                    broken: scan.broken,
-                  },
-                  null,
-                  2,
-                )}\n`
-              : formatWorkersList(scan),
+              ? `${JSON.stringify(result, null, 2)}\n`
+              : formatWorkersValidate(result),
           );
-          // A manifest the bridge ignores is a governance gap, not a note.
-          process.exit(scan.broken.length > 0 ? 1 : 0);
+          process.exit(result.healthy ? 0 : 1);
         }
-        const tIdx = args.indexOf("--templates-dir");
-        const templatesDir = tIdx !== -1 ? args[tIdx + 1] : undefined;
-        const rIdx = args.indexOf("--recipes-dir");
-        const result = validateWorkers({
-          workersDir: dir,
-          recipesDir:
-            rIdx !== -1 ? (args[rIdx + 1] as string) : defaultRecipesDir(),
-          ...(templatesDir ? { templatesDir } : {}),
-        });
-        process.stdout.write(
-          json
-            ? `${JSON.stringify(result, null, 2)}\n`
-            : formatWorkersValidate(result),
+        const { runWorkerShadowReport, runWorkerBacktest } = await import(
+          "./workers/runWorkerShadow.js"
         );
-        process.exit(result.healthy ? 0 : 1);
+        const opts = workersDir ? { workersDir } : {};
+        process.stdout.write(
+          sub === "backtest"
+            ? runWorkerBacktest(opts)
+            : runWorkerShadowReport(opts),
+        );
+      } catch (err) {
+        process.stderr.write(
+          `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(1);
       }
-      const { runWorkerShadowReport, runWorkerBacktest } = await import(
-        "./workers/runWorkerShadow.js"
-      );
-      const opts = workersDir ? { workersDir } : {};
-      process.stdout.write(
-        sub === "backtest"
-          ? runWorkerBacktest(opts)
-          : runWorkerShadowReport(opts),
-      );
-    } catch (err) {
-      process.stderr.write(
-        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
-      process.exit(1);
-    }
-  })();
+    })();
 }
 
 // Handle approvals subcommand — considered-approval KPI. Reads the local
