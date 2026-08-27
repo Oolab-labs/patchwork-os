@@ -192,7 +192,7 @@ export function runNew(options: NewOptions): { path: string; content: string } {
   const today = new Date().toISOString().split("T")[0] ?? "";
   const body = template
     .replace(/\{\{name\}\}/g, options.name)
-    .replace(/\{\{description\}\}/g, options.description)
+    .replace(/\{\{description\}\}/g, yamlScalar(options.description))
     .replace(/\{\{date\}\}/g, today);
   const content = `${RECIPE_SCHEMA_HEADER}\n${body}`;
 
@@ -205,6 +205,22 @@ export function runNew(options: NewOptions): { path: string; content: string } {
 
   if (existsSync(outputPath)) {
     throw new Error(`Recipe already exists: ${outputPath}`);
+  }
+
+  // Parse what we are about to write. The scaffold emitted unparseable YAML
+  // for years and still printed "✓ Created", because nothing between the
+  // template and the filesystem ever read the result — the breakage was found
+  // only downstream, by a bridge that skipped the recipe and a report that
+  // could not parse it. Failing here costs one parse and makes that class of
+  // drift impossible to ship silently.
+  try {
+    parseYaml(content);
+  } catch (err) {
+    throw new Error(
+      `Refusing to write ${outputPath}: the generated YAML does not parse ` +
+        `(${err instanceof Error ? err.message.split("\n")[0] : String(err)}). ` +
+        "This is a bug in the scaffold, not in your input.",
+    );
   }
 
   writeFileSync(outputPath, content);
@@ -279,9 +295,24 @@ async function askWithValidation(
   throw new Error("Too many invalid answers");
 }
 
+/**
+ * Render a string as a YAML scalar that survives a round trip.
+ *
+ * Quote unless the string is a simple identifier-ish token. Conservative —
+ * when in doubt, JSON-encode (always parses as a YAML string).
+ *
+ * The INTERACTIVE generator has always routed its description through this.
+ * `runNew` — the non-interactive template path — substituted raw, and the
+ * CLI's own default description is `Recipe: <name>`, which contains ": ". So
+ * every recipe scaffolded without an explicit `--desc` was invalid YAML from
+ * birth, while `recipe new` printed "✓ Created" because nothing parsed what it
+ * had just written. The breakage surfaced far from its cause: a recipe the
+ * bridge skipped at startup, and one `privacy undeclared` could not parse.
+ *
+ * Two generators, one escaped and one not, is how that drift happened. Keep
+ * both on this function.
+ */
 function yamlScalar(value: string): string {
-  // Quote unless the string is a simple identifier-ish token. Conservative
-  // — when in doubt, JSON-encode (always parses as a YAML string).
   if (/^[A-Za-z0-9_.\-/:]+$/.test(value)) return value;
   return JSON.stringify(value);
 }

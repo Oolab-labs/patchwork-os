@@ -65,6 +65,11 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   `status: "error"`, so `patchwork recipe run X && echo ok` printed `ok` after a failure and
   silently greened every cron caller. Same family as the `doctor --expect-running` gap.
   — merged as #1540
+- 2026-08-26 `fix/recipe-new-emits-unparseable-yaml` — the non-interactive scaffold
+  substituted the description raw, and the CLI's own default is `Recipe: <name>`, so every
+  recipe scaffolded without `--desc` was invalid YAML while `recipe new` printed
+  "✓ Created". `yamlScalar` already existed and the interactive path already used it; only
+  the template path did not. `runNew` now parses what it writes. — merged as #1539
 
 - 2026-08-26 `fix/expiry-never-reached-the-durable-log` — ADR-0018's live TTL timer tore its
   entry down inline and never persisted, so an approval that expired on a running bridge left

@@ -351,7 +351,7 @@ describe("runNewInteractive", () => {
 
     const content = readFileSync(result.path, "utf-8");
     expect(content).toContain("name: from-template");
-    expect(content).toContain("description: Built from a template");
+    expect(content).toContain('description: "Built from a template"');
     // "minimal" template writes a single file.write step.
     expect(content).toContain("tool: file.write");
   });
@@ -360,7 +360,7 @@ describe("runNewInteractive", () => {
     const bridgeYaml = [
       "apiVersion: patchwork.sh/v1",
       "name: from-ai",
-      "description: An AI-generated recipe",
+      'description: "An AI-generated recipe"',
       "trigger:",
       "  type: manual",
       "steps:",
