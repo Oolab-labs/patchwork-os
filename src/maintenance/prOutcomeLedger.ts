@@ -290,3 +290,49 @@ export function formatLedgerSummary(s: LedgerSummary): string {
   L.push("  weigh it against.");
   return L.join("\n");
 }
+
+/**
+ * Resolve `owner/name` for the repository the collector should query.
+ *
+ * Extracted and injectable because the inline version swallowed the real
+ * failure. It ran `gh repo view` with stderr set to `"ignore"`, so when `gh`
+ * failed for any reason the catch could only report a guess — "could not
+ * determine the repository" — and the operator went looking for a missing
+ * remote.
+ *
+ * Observed 2026-08-28: a stale `GITHUB_TOKEN` in the environment made `gh`
+ * return `HTTP 401: Bad credentials`, and the collector reported a repository
+ * problem. Nothing about the repository was wrong.
+ *
+ * The sibling query path in the same command already did this correctly —
+ * pipes stderr, surfaces the message, exits loudly. This brings the two into
+ * line rather than inventing a third convention.
+ */
+export interface RepoResolution {
+  /** `owner/name` when it could be determined. */
+  repo?: string;
+  /** Why not, in the underlying tool's own words. Never a guess. */
+  error?: string;
+}
+
+export function resolveRepoSlug(
+  run: () => { ok: true; stdout: string } | { ok: false; stderr: string },
+): RepoResolution {
+  const r = run();
+  if (!r.ok) {
+    const first = r.stderr.split("\n").find((l) => l.trim().length > 0);
+    return {
+      error:
+        first && first.trim().length > 0
+          ? first.trim()
+          : "`gh repo view` failed and said nothing",
+    };
+  }
+  const slug = r.stdout.trim();
+  if (!/^[^/\s]+\/[^/\s]+$/.test(slug)) {
+    // A blank or malformed answer is not the same as a failure, and saying
+    // "could not determine" about a value we DID receive would misdescribe it.
+    return { error: `\`gh repo view\` returned an unusable value: "${slug}"` };
+  }
+  return { repo: slug };
+}
