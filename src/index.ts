@@ -1715,7 +1715,15 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
         // Non-fatal — run log write failure must not abort the CLI
       }
 
-      process.exit(0);
+      // Exit on the RUN's outcome, not merely on having reached the end.
+      // This was `process.exit(0)` unconditionally, in the same block that
+      // computes `summary.ok` and records `status: "error"` in the run log —
+      // so the CLI knew the run had failed and told the shell it had passed.
+      // `patchwork recipe run X && echo ok` printed `ok` after a failure,
+      // greening every cron and CI caller silently. Same family as the
+      // `doctor --expect-running` gap: a check whose denominator was "did I
+      // get here", not "did it work".
+      process.exit(summary.ok ? 0 : 1);
     } catch (err) {
       process.stderr.write(
         `Error: ${err instanceof Error ? err.message : String(err)}\n`,
