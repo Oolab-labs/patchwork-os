@@ -1,7 +1,7 @@
 {
   "name": "patchwork-os",
   "version": "1.2.0-beta.2",
-  "description": "Your personal AI runtime, local-first. Patchwork OS gives any AI model a consistent set of tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all on your machine, all under your policy.",
+  "description": "Your personal AI runtime, local-first. Patchwork OS gives any AI model a consistent set of tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory \u2014 all on your machine, all under your policy.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -128,7 +128,8 @@
     "start-orchestrator:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-orchestrator.ps1",
     "start:bridge": "node dist/index.js --workspace .",
     "start:automation": "claude-ide-bridge --workspace . --automation --automation-policy automation-policy.json --driver subprocess --full",
-    "prepare": "husky"
+    "prepare": "husky",
+    "smoke:fresh-install": "node scripts/fresh-install-smoke.mjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
