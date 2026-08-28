@@ -1,0 +1,17 @@
+{
+  "_comment": "Companion pins DELIBERATELY held back from latest. A pin controls what runs on a USER's machine (`npx -y pkg@version`), so bumping one is a change to their setup, not to ours — and these are third-party MCP servers this repo cannot meaningfully test. Silencing the gate by bumping blind would trade a visible warning for an invisible risk. Each entry needs a reason and a reviewOn date; the gate reports an entry whose pin has MOVED as stale, so a hold-back cannot outlive the pin it was written about.",
+  "holdback": [
+    {
+      "package": "superpowers-mcp",
+      "pinned": "4.3.2",
+      "reason": "Two major versions behind. A major bump to a planning/task-decomposition server changes behaviour users have configured around, and nothing here exercises it. Needs a manual trial before moving.",
+      "reviewOn": "2026-11-01"
+    },
+    {
+      "package": "@bytebase/dbhub",
+      "pinned": "0.21.2",
+      "reason": "0.x to 1.x crosses the first stable major. A database companion is the worst place to discover a breaking connection-string or auth change by shipping it. Needs a manual trial against a real database first.",
+      "reviewOn": "2026-11-01"
+    }
+  ]
+}

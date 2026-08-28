@@ -25,8 +25,8 @@ export const COMPANIONS: Record<string, CompanionEntry> = {
     description: "Persistent memory across Claude sessions",
     npmPackage: "@modelcontextprotocol/server-memory",
     command: "npx",
-    // Pinned: npm view @modelcontextprotocol/server-memory version → 2026.1.26 (2026-05-23)
-    args: ["-y", "@modelcontextprotocol/server-memory@2026.1.26"],
+    // Pinned: npm view @modelcontextprotocol/server-memory version → 2026.7.4 (2026-08-28)
+    args: ["-y", "@modelcontextprotocol/server-memory@2026.7.4"],
   },
   superpowers: {
     description: "Structured planning, task decomposition",
@@ -42,8 +42,8 @@ export const COMPANIONS: Record<string, CompanionEntry> = {
       "Full Chrome browser control — automate, debug, inspect network/console/performance",
     npmPackage: "chrome-devtools-mcp",
     command: "npx",
-    // Pinned: npm view chrome-devtools-mcp version → 1.0.1 (2026-05-23)
-    args: ["-y", "chrome-devtools-mcp@1.0.1"],
+    // Pinned: npm view chrome-devtools-mcp version → 1.8.0 (2026-08-28)
+    args: ["-y", "chrome-devtools-mcp@1.8.0"],
   },
   database: {
     description:
