@@ -109,18 +109,56 @@ export function agentTextFromTask(task: {
  * human approval and resolves true only on an explicit "approved" decision
  * (a reject / expire / cancel halts the run — fail-closed, ADR-0016 spirit).
  */
-async function makeRecipeApprovalFn(gate: "high" | "all"): Promise<ApprovalFn> {
+async function makeRecipeApprovalFn(
+  gate: "high" | "all",
+  server?: Server,
+): Promise<ApprovalFn> {
   const { getApprovalQueue } = await import("./approvalQueue.js");
+  const { enqueueApprovalWithDispatch } = await import("./approvalHttp.js");
   const queue = getApprovalQueue();
   return async (input) => {
     // Below-threshold steps don't need sign-off.
     if (gate === "high" && input.tier !== "high") return true;
-    const { promise } = queue.request(
+    // Goes through `enqueueApprovalWithDispatch`, NOT `queue.request`. The
+    // second queues silently; only the first fans out to the configured
+    // channels (webhook, Web Push, ntfy).
+    //
+    // This path called `queue.request` directly until 2026-08-28, so a recipe
+    // could halt mid-run waiting for a human and never tell one — the
+    // approval then expired, and a stalled worker is indistinguishable from a
+    // broken one. That is the same defect the dispatch helper's own doc
+    // comment records being fixed for the CLI gate; the fix reached the HTTP
+    // route and the CLI gate and missed this third caller.
+    const { promise } = enqueueApprovalWithDispatch(
+      {
+        queue,
+        ...(server?.approvalWebhookUrl && {
+          webhookUrl: server.approvalWebhookUrl,
+        }),
+        ...(server?.pushServiceUrl && {
+          pushServiceUrl: server.pushServiceUrl,
+        }),
+        ...(server?.pushServiceToken && {
+          pushServiceToken: server.pushServiceToken,
+        }),
+        ...(server?.pushServiceBaseUrl && {
+          pushServiceBaseUrl: server.pushServiceBaseUrl,
+        }),
+        ...(server?.pushServiceAllowPrivate !== undefined && {
+          pushServiceAllowPrivate: server.pushServiceAllowPrivate,
+        }),
+        ...(server?.ntfyTopic && { ntfyTopic: server.ntfyTopic }),
+        ...(server?.ntfyServer && { ntfyServer: server.ntfyServer }),
+      },
       {
         toolName: input.toolId,
         params: input.params ?? {},
         tier: input.tier,
         sessionId: "recipe",
+        // No risk signals on this path — the recipe runner computes none. An
+        // empty list is honest; inventing signals to fill the shape would put
+        // fabricated evidence into a notification and a receipt.
+        riskSignals: [],
         ...(input.summary !== undefined && { summary: input.summary }),
       },
       // L1: abort the wait if the run is cancelled (→ "cancelled" → halt)
@@ -1609,7 +1647,7 @@ export class RecipeOrchestration {
     const tierApprovalFn =
       approvalGate === "off"
         ? undefined
-        : await makeRecipeApprovalFn(approvalGate);
+        : await makeRecipeApprovalFn(approvalGate, this.deps.server);
     // worker.autonomy flip (flag-gated, default off). When a worker owns this
     // recipe and the flag is on, the worker-aware fn wraps the tier fn (FLOOR
     // composition — it can only ADD gating, never drop tier-policy protection)
