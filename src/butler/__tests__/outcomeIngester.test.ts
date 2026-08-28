@@ -154,11 +154,18 @@ describe("grading a batch", () => {
       now: NOW + 1000,
       dir,
     });
+    // The LEDGER keeps both observations — that is the append-only design and
+    // the point of this test.
     expect(rows()).toHaveLength(2);
+    // The SUMMARY folds them back into the one errand they describe. This
+    // previously asserted `total: 2, confirmed: 1, unknown: 1`, which counted a
+    // single errand as simultaneously unknown AND confirmed — the row count
+    // wearing the name of an errand count. One errand that went from open to
+    // completed is one confirmed errand.
     expect(summariseShadowLog({ dir })).toMatchObject({
-      total: 2,
+      total: 1,
       confirmed: 1,
-      unknown: 1,
+      unknown: 0,
     });
   });
 });
