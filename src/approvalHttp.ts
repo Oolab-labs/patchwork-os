@@ -971,6 +971,13 @@ export function enqueueApprovalWithDispatch(
     sessionId?: string;
     personalSignals?: ReturnType<typeof computePersonalSignals>;
   },
+  /**
+   * Forwarded to `queue.request`. The recipe runner cancels its wait when the
+   * run is cancelled rather than blocking for the full approval TTL; routing
+   * it through here must not silently drop that, or a cancelled run would
+   * hold a step open for up to the tier's timeout.
+   */
+  opts: { signal?: AbortSignal } = {},
 ): {
   callId: string;
   promise: Promise<ApprovalDecision>;
@@ -989,7 +996,10 @@ export function enqueueApprovalWithDispatch(
         personalSignals: request.personalSignals,
       }),
     },
-    { withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic },
+    {
+      withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic,
+      ...(opts.signal !== undefined && { signal: opts.signal }),
+    },
   );
   recordApprovalPrompted();
 
