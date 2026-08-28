@@ -5096,21 +5096,47 @@ if (process.argv[2] === "pr-outcomes") {
       const limit = limIdx >= 0 ? Number(args[limIdx + 1]) : 100;
       let repo = repoIdx >= 0 ? args[repoIdx + 1] : undefined;
       if (repo === undefined) {
-        try {
-          repo = execFileSync(
-            "gh",
-            ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-            {
-              encoding: "utf-8",
-              stdio: ["ignore", "pipe", "ignore"],
-            },
-          ).trim();
-        } catch {
+        // stderr is PIPED, not ignored. It used to be ignored, so every
+        // failure — expired credentials, no network, gh missing, not a git
+        // repo — collapsed into one guess about the repository. A stale
+        // GITHUB_TOKEN producing `HTTP 401: Bad credentials` was reported as a
+        // repository problem, and `--repo` would not have helped.
+        const { resolveRepoSlug } = await import(
+          "./maintenance/prOutcomeLedger.js"
+        );
+        const res = resolveRepoSlug(() => {
+          try {
+            return {
+              ok: true as const,
+              stdout: execFileSync(
+                "gh",
+                [
+                  "repo",
+                  "view",
+                  "--json",
+                  "nameWithOwner",
+                  "-q",
+                  ".nameWithOwner",
+                ],
+                { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
+              ),
+            };
+          } catch (err) {
+            const e = err as { stderr?: string | Buffer; message?: string };
+            return {
+              ok: false as const,
+              stderr: String(e.stderr ?? e.message ?? ""),
+            };
+          }
+        });
+        if (res.repo === undefined) {
           process.stderr.write(
-            "[pr-outcomes] could not determine the repository. Pass --repo owner/name.\n",
+            `[pr-outcomes] could not resolve the repository: ${res.error}\n` +
+              "  Pass --repo owner/name to skip detection.\n",
           );
           process.exit(2);
         }
+        repo = res.repo;
       }
       let payload = "";
       try {
