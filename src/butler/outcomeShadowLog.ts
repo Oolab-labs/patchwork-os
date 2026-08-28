@@ -214,7 +214,30 @@ export function summariseShadowLog(opts: { dir?: string } = {}): ShadowSummary {
   // no test can distinguish the two while `empty` stays local, and a test that
   // passes either way would be worse than none.
   const out: ShadowSummary = { ...empty, byReason: emptyByReason() };
+  // Fold by ref, LAST GRADE WINS — the identical rule `promoteShadowOutcomes`
+  // applies, and deliberately so.
+  //
+  // The ledger is append-only and an errand is observed repeatedly; that is
+  // the design, not a defect. Counting rows therefore counted OBSERVATIONS and
+  // called them errands: on the reference machine, four errands observed
+  // several times each reported as "17 graded rows, confirmed 3 (17.6%)" when
+  // the truth was one confirmed errand of four.
+  //
+  // Two reasons that is worse than a cosmetic miscount. It DRIFTS — every
+  // observation pushes the percentage further from the truth, so scheduling
+  // observation degrades the number steadily. And this summary is what a
+  // person reads before deciding to promote, which is one-way. This module's
+  // own header names the hazard: two readers of one append-only file with two
+  // copies of "what counts as a row" is how a report and the thing it reports
+  // on come to disagree.
+  const latest = new Map<string, ShadowOutcomeRow>();
   for (const row of parseShadowRows(text)) {
+    const prev = latest.get(row.ref);
+    if (prev === undefined || row.gradedAt >= prev.gradedAt) {
+      latest.set(row.ref, row);
+    }
+  }
+  for (const row of latest.values()) {
     out.total++;
     out[row.disposition]++;
     if (row.wouldCountAsEvidence) out.wouldCount++;
