@@ -379,6 +379,19 @@ jobs:
           node scripts\smoke\run-all.mjs
         timeout-minutes: 5
 
+      # The Consumer Contract check: pack the tarball, install it into a
+      # throwaway prefix, and drive the INSTALLED binary. Every other job in
+      # this workflow reads the source tree and would stay green on a tarball
+      # that is missing a file or ships a broken `bin`.
+      #
+      # POSIX only for now, and that is a real gap rather than a decision:
+      # the Windows port of the existing smoke harness took ten PRs, and
+      # claiming coverage this has not earned is worse than naming the hole.
+      - name: Fresh-install smoke (packaged artifact)
+        if: matrix.os != 'windows-latest'
+        run: npm run smoke:fresh-install
+        timeout-minutes: 6
+
   benchmark:
     runs-on: ubuntu-latest
     needs: ci

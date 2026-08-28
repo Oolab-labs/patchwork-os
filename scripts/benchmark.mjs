@@ -4,7 +4,7 @@
  * Usage:
  *   node scripts/benchmark.mjs [port] [--iterations N] [--json] [--threshold <ms>]
  *
- * Requires a running bridge instance. Discovers it via lockfile (same as smoke-test.mjs).
+ * Requires a running bridge instance. Discovers it via lockfile (same as the smoke suite).
  * Output is a table of latency percentiles in milliseconds.
  *
  * --json        Emit structured JSON to stdout instead of the human table.
