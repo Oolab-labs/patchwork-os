@@ -243,6 +243,7 @@ async function downloadVsixFromOpenVsx(): Promise<string> {
 const KNOWN_SUBCOMMANDS = [
   "init",
   "evidence",
+  "sweep",
   "patchwork-init",
   "start-all",
   "install-extension",
@@ -5049,32 +5050,21 @@ if (process.argv[2] === "pr-outcomes") {
     process.exit(0);
   }
   (async () => {
-    const { readFileSync, appendFileSync, existsSync } = await import(
-      "node:fs"
-    );
+    const { appendFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const { patchworkPath } = await import("./patchworkHome.js");
     const { execFileSync } = await import("node:child_process");
-    const { toObservation, dedupeAgainst, summarise, formatLedgerSummary } =
-      await import("./maintenance/prOutcomeLedger.js");
+    const {
+      toObservation,
+      dedupeAgainst,
+      readObservations,
+      summarise,
+      formatLedgerSummary,
+    } = await import("./maintenance/prOutcomeLedger.js");
     type Obs = import("./maintenance/prOutcomeLedger.js").PrObservation;
 
     const file = join(patchworkPath(), "pr_outcomes.jsonl");
-    const read = (): Obs[] => {
-      if (!existsSync(file)) return [];
-      const out: Obs[] = [];
-      for (const line of readFileSync(file, "utf-8").split("\n")) {
-        if (line.trim() === "") continue;
-        try {
-          out.push(JSON.parse(line) as Obs);
-        } catch {
-          // A corrupt line is skipped, never repaired: rewriting an
-          // append-only evidence file to make it parse is how evidence
-          // quietly becomes fiction.
-        }
-      }
-      return out;
-    };
+    const read = (): Obs[] => readObservations(file);
 
     const sub = args[0] ?? "show";
 
@@ -5215,6 +5205,86 @@ if (process.argv[2] === "pr-outcomes") {
 
     process.stderr.write("Usage: patchwork pr-outcomes <collect|show>\n");
     process.exit(2);
+  })();
+}
+
+if (process.argv[2] === "sweep") {
+  const args = process.argv.slice(3);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork sweep [--dir <path>] [--expect-running [N]] [--no-write] [--json]\n\n" +
+        "What MOVED since the last sweep. Composes doctor, workers validate,\n" +
+        "evidence, privacy undeclared and pr-outcomes into one reading, appends it\n" +
+        "to sweep_snapshots.jsonl, and diffs it against the previous one.\n\n" +
+        "Two of the readings are GATES and can fail this command: deployment\n" +
+        "freshness and worker-manifest validity. Everything else is drift and is\n" +
+        "reported without failing — the evidence ratios fall by construction as\n" +
+        "ledgers accrue rows, and an undeclared agent step is ADR-0021's documented\n" +
+        "default. Wiring those to an exit code would make sweep permanently red,\n" +
+        "which is how a real warning gets ignored.\n\n" +
+        "A first run is a BASELINE, never 'no changes': nothing was observed to\n" +
+        "change, and there was nothing to compare against, are different facts.\n\n" +
+        "The snapshot holds COUNTS ONLY — no recipe name, no path, no id — because\n" +
+        "two of its inputs return operator data and a health check is the last\n" +
+        "place anyone thinks to look for accumulated secrets.\n\n" +
+        "  --dir <path>            ledger directory (default: $PATCHWORK_HOME)\n" +
+        "  --expect-running [N]    bridges that ought to be up (default: no expectation)\n" +
+        "  --no-write              report without appending a snapshot\n" +
+        "  --json                  emit the reading and the delta\n\n" +
+        "Exits 1 only when a gate flipped healthy -> unhealthy.\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    try {
+      const { collectSweep } = await import("./maintenance/sweepCollect.js");
+      const { appendSnapshot, diffReadings, formatSweep, readLastSnapshot } =
+        await import("./maintenance/sweep.js");
+      const { patchworkHome } = await import("./patchworkHome.js");
+
+      const dirIdx = args.indexOf("--dir");
+      const dir =
+        dirIdx !== -1 && args[dirIdx + 1] ? args[dirIdx + 1] : patchworkHome();
+
+      const expectIdx = args.indexOf("--expect-running");
+      let expectRunning: number | undefined;
+      if (expectIdx !== -1) {
+        const raw = args[expectIdx + 1];
+        const parsed =
+          raw !== undefined && !raw.startsWith("--") ? Number(raw) : 1;
+        if (!Number.isInteger(parsed) || parsed < 0) {
+          process.stderr.write(
+            "[sweep] --expect-running takes a non-negative integer\n",
+          );
+          process.exit(2);
+        }
+        expectRunning = parsed;
+      }
+
+      // Read the previous snapshot BEFORE appending this one, or the diff
+      // compares the reading against itself and every sweep reports nothing.
+      const previous = readLastSnapshot(dir as string);
+      const reading = collectSweep({
+        dir: dir as string,
+        ...(expectRunning !== undefined ? { expectRunning } : {}),
+      });
+      const delta = diffReadings(previous, reading);
+
+      const wrote = !args.includes("--no-write");
+      if (wrote) appendSnapshot(dir as string, reading);
+
+      process.stdout.write(
+        args.includes("--json")
+          ? `${JSON.stringify({ reading, delta }, null, 2)}\n`
+          : formatSweep(reading, delta, { wrote }),
+      );
+      process.exit(delta.regressed ? 1 : 0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
   })();
 }
 
@@ -5766,38 +5836,17 @@ if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
     process.exit(0);
   }
   (async () => {
-    const { readdirSync, readFileSync, statSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const os = await import("node:os");
-    const { fileURLToPath } = await import("node:url");
-    const { assessDeploymentFreshness, formatFreshness } = await import(
-      "./deploymentFreshness.js"
-    );
+    const {
+      assessDeploymentFreshness,
+      discoverLocks,
+      formatFreshness,
+      installedBuildTimeMs,
+    } = await import("./deploymentFreshness.js");
 
     // The installed build we are comparing against. Falls back to this
     // process's own dist when the global package is absent (running from a
     // checkout), which is the honest reference in that case.
-    let buildTimeMs: number | undefined;
-    for (const candidate of [
-      join(
-        process.env.npm_config_prefix ?? "/opt/homebrew",
-        "lib/node_modules/patchwork-os/dist/index.js",
-      ),
-      // `fileURLToPath`, NOT `.pathname`. On Windows a file URL's pathname is
-      // `/D:/a/...` — a leading slash before the drive letter — which statSync
-      // cannot open, so this fallback never resolved there and `patchwork
-      // doctor` from a checkout always exited 2 with "could not locate an
-      // installed build". Found by the dispatch test added alongside this, on
-      // the Windows CI cells only.
-      fileURLToPath(new URL("./index.js", import.meta.url)),
-    ]) {
-      try {
-        buildTimeMs = statSync(candidate).mtimeMs;
-        break;
-      } catch {
-        // try the next candidate
-      }
-    }
+    const buildTimeMs = installedBuildTimeMs();
     if (buildTimeMs === undefined) {
       process.stderr.write(
         "[deployment] could not locate an installed build to compare against\n",
@@ -5805,26 +5854,7 @@ if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
       process.exit(2);
     }
 
-    const dir = join(
-      process.env.CLAUDE_CONFIG_DIR || join(os.homedir(), ".claude"),
-      "ide",
-    );
-    const locks: Array<
-      Record<string, unknown> & { file: string; pid: number }
-    > = [];
-    try {
-      for (const f of readdirSync(dir)) {
-        if (!f.endsWith(".lock")) continue;
-        try {
-          const d = JSON.parse(readFileSync(join(dir, f), "utf-8"));
-          if (typeof d?.pid === "number") locks.push({ ...d, file: f });
-        } catch {
-          // An unparseable lock is not this command's problem to solve.
-        }
-      }
-    } catch {
-      // No lock dir ⇒ no bridges ⇒ reported as "nothing running".
-    }
+    const locks = discoverLocks();
 
     // `--expect-running [N]` (#1481). Only the caller knows how many bridges
     // ought to be up — this command cannot discover it — so the expectation is
@@ -5996,10 +6026,7 @@ if (process.argv[2] === "privacy") {
     // every installed recipe, which agent steps declare no data_policy, and
     // what flows into them".
     if (args[0] === "undeclared") {
-      const { readdirSync, readFileSync } = await import("node:fs");
-      const pathMod = await import("node:path");
-      const { parse: parseYaml } = await import("yaml");
-      const { undeclaredInRecipe, formatUndeclared } = await import(
+      const { scanRecipeDir, formatUndeclared } = await import(
         "./privacy/undeclaredSteps.js"
       );
       const dirIdx = args.indexOf("--dir");
@@ -6007,47 +6034,13 @@ if (process.argv[2] === "privacy") {
         dirIdx !== -1 && args[dirIdx + 1]
           ? (args[dirIdx + 1] as string)
           : patchworkPath("recipes");
-      let entries: string[] = [];
+      let report: import("./privacy/undeclaredSteps.js").UndeclaredReport;
       try {
-        entries = readdirSync(dir);
+        report = scanRecipeDir(dir);
       } catch {
         process.stderr.write(`[privacy] cannot read ${dir}\n`);
         process.exit(1);
       }
-      let agentSteps = 0;
-      let declared = 0;
-      const undeclared: Array<
-        import("./privacy/undeclaredSteps.js").UndeclaredStep
-      > = [];
-      const unreadable: string[] = [];
-      let recipesScanned = 0;
-      for (const f of entries.sort()) {
-        if (!/\.ya?ml$/i.test(f)) continue;
-        recipesScanned++;
-        let parsed: unknown;
-        try {
-          parsed = parseYaml(readFileSync(pathMod.join(dir, f), "utf-8"));
-        } catch {
-          unreadable.push(f);
-          continue;
-        }
-        const name =
-          (parsed as { name?: unknown } | undefined)?.name &&
-          typeof (parsed as { name?: unknown }).name === "string"
-            ? ((parsed as { name: string }).name as string)
-            : f;
-        const r = undeclaredInRecipe(name, parsed);
-        agentSteps += r.agentSteps;
-        declared += r.declared;
-        undeclared.push(...r.steps);
-      }
-      const report = {
-        recipesScanned,
-        agentSteps,
-        declared,
-        undeclared,
-        unreadable,
-      };
       process.stdout.write(
         args.includes("--json")
           ? `${JSON.stringify(report, null, 2)}\n`
