@@ -40,6 +40,7 @@ import path from "node:path";
 
 import { patchworkPath } from "../patchworkHome.js";
 import type { BoundaryDecision, Classification } from "./dataPolicy.js";
+import type { LabelSource } from "./shadowLog.js";
 
 export const BOUNDARY_RECEIPTS_BASENAME = "boundary_receipts.jsonl";
 
@@ -78,6 +79,13 @@ export interface BoundaryReceiptView {
   redactCategories?: string[];
   reason: string;
   recipeName?: string;
+  /**
+   * Where the classification came from. Carried through because this reader
+   * copies a WHITELIST — a field added to the writer and not added here is
+   * silently dropped on read, which is #1517's defect exactly and was caught
+   * last time only because someone checked.
+   */
+  labelSource?: LabelSource;
   workspaceId?: string;
 }
 
@@ -138,6 +146,11 @@ function view(r: Record<string, unknown>): BoundaryReceiptView | null {
       ? (r[k] as unknown[]).filter((x): x is string => typeof x === "string")
       : undefined;
   const dt = str("destinationType");
+  const rawLabel = str("labelSource");
+  const lbl: LabelSource | undefined =
+    rawLabel === "declared" || rawLabel === "assumed" || rawLabel === "default"
+      ? rawLabel
+      : undefined;
   return {
     ...(typeof r.seq === "number" ? { seq: r.seq } : {}),
     // `rv` and `correlationId` are copied EXPLICITLY because this literal
@@ -160,6 +173,10 @@ function view(r: Record<string, unknown>): BoundaryReceiptView | null {
       : {}),
     reason: str("reason") ?? "",
     ...(str("recipeName") ? { recipeName: str("recipeName") } : {}),
+    // Validated against the union, not copied as any string: this reader hands
+    // rows to a formatter, and an arbitrary on-disk value reaching a caller
+    // typed as `LabelSource` would be a lie the type system then propagates.
+    ...(lbl ? { labelSource: lbl } : {}),
     ...(str("workspaceId") ? { workspaceId: str("workspaceId") } : {}),
   };
 }

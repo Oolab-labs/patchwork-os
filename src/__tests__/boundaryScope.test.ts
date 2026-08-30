@@ -62,20 +62,44 @@ describe("ADR-0021 scope — the boundary covers the recipe agent-step path", ()
     }
   });
 
-  it("orchestrator dispatch does NOT — and ADR-0021 says so", () => {
+  it("orchestrator dispatch DOES too, since the 2026-08-30 amendment", () => {
+    // INVERTED. This assertion used to require the ABSENCE of a boundary here,
+    // pinning ADR-0021's out-of-scope statement to the code. The amendment
+    // built the precondition that statement named, so the guard flips with it:
+    // the thing that must not silently change is no longer "this path is
+    // ungoverned" but "this path is governed, on an operator's path-level
+    // default".
+    //
+    // The direction matters more than the assertion. A guard that had simply
+    // been DELETED when enforcement landed would have left the path unpinned in
+    // both directions — free to lose its boundary again with nothing failing.
     const orchestrator = read("claudeOrchestrator.ts");
-    for (const marker of BOUNDARY_MARKERS) {
-      expect(
-        mentions(orchestrator, marker),
-        `claudeOrchestrator.ts contains "${marker}", so orchestrator dispatch ` +
-          "is now governed. That is good — but ADR-0021's 'Scope: what the " +
-          "boundary does NOT cover' section now describes something untrue " +
-          "and must be updated in the same change.",
-      ).toBe(false);
-    }
+    expect(
+      mentions(orchestrator, "governOrchestratorDispatch"),
+      "claudeOrchestrator.ts no longer declares governOrchestratorDispatch, " +
+        "so orchestrator dispatch is ungoverned again and ADR-0021's " +
+        "amendment describes something untrue.",
+    ).toBe(true);
+    // The CALL SITE, not just the declaration — the same trap this file's
+    // header records, and the one that left the shadow guard green with the
+    // observation deleted.
+    expect(
+      /governOrchestratorDispatch\s*\(\s*\n?\s*this\.driver/.test(orchestrator),
+      "claudeOrchestrator.ts declares governOrchestratorDispatch but no longer " +
+        "CALLS it at its dispatch point, so every orchestrator task flows " +
+        "unjudged while the ADR says the path is enforced",
+    ).toBe(true);
+    // And it must be able to REFUSE. An enforcement that computes a decision
+    // and never acts on it is the fail-open this whole ADR exists to prevent,
+    // and it looks identical from the outside to one that always allows.
+    expect(
+      mentions(orchestrator, "InformationBoundaryRefusal"),
+      "claudeOrchestrator.ts can no longer refuse a dispatch — the boundary " +
+        "decision is computed and discarded",
+    ).toBe(true);
   });
 
-  it("orchestrator dispatch IS observed in shadow, though not enforced (#1397)", () => {
+  it("orchestrator dispatch IS observed in shadow, alongside enforcement", () => {
     // The pair above only says orchestrator dispatch is not GOVERNED. On its
     // own that is one-sided: deleting the shadow observation would keep it
     // passing, and the privacy report would then show zero orchestrator rows —
@@ -93,9 +117,35 @@ describe("ADR-0021 scope — the boundary covers the recipe agent-step path", ()
         "dispatch point, so `patchwork privacy shadow` will report 0 " +
         "orchestrator rows and read as coverage rather than absence",
     ).toBe(true);
-    // And the observation must stay an OBSERVATION: `enforcing: false` is what
-    // keeps the ADR's out-of-scope statement true.
-    expect(orchestrator).toContain("enforcing: false");
+    // The observation must stay an OBSERVATION — but `enforcing` is no longer
+    // hardcoded. It reports whether a live policy WAS enforcing, which on this
+    // path is now sometimes true, so pinning the literal `false` would pin a
+    // lie. What must hold is that the shadow row still cannot refuse anything:
+    // `recordPrivacyShadow` is the only thing it calls, and the refusal lives
+    // in the other function entirely.
+    expect(orchestrator).toContain(
+      "enforcing: pathClassification !== undefined",
+    );
+    // Observation BEFORE enforcement. Reversed, every refused dispatch would go
+    // unobserved — dropping from the shadow report exactly the traffic a
+    // candidate policy is being evaluated against.
+    //
+    // Anchored on `this.driver`, i.e. the CALL, not the identifier. A first
+    // attempt used plain `indexOf` on the bare name and compared the two
+    // FUNCTION DECLARATIONS instead — which sit in the opposite order and never
+    // move — so it passed against a deliberately swapped call site. Found by
+    // making that swap and watching the guard stay green, not by reading it.
+    const callOf = (name: string) =>
+      orchestrator.search(new RegExp(`${name}\\(\\s*\\n\\s*this\\.driver`));
+    const observeAt = callOf("observeOrchestratorShadow");
+    const governAt = callOf("governOrchestratorDispatch");
+    expect(observeAt).toBeGreaterThan(-1);
+    expect(governAt).toBeGreaterThan(-1);
+    expect(
+      observeAt < governAt,
+      "enforcement now runs before observation, so refused dispatches are " +
+        "never recorded in the shadow ledger",
+    ).toBe(true);
   });
 
   it("the ADR documents the gap rather than leaving the invariant overbroad", () => {
@@ -108,10 +158,22 @@ describe("ADR-0021 scope — the boundary covers the recipe agent-step path", ()
     );
     expect(adr).toContain("Scope: what the boundary does NOT cover");
     expect(adr).toContain("Orchestrator task dispatch is out of scope");
+    // The original scope section stays. It is superseded, not deleted: the
+    // reasoning it records is why the amendment took the shape it did, and a
+    // reader who finds only the outcome cannot tell which alternatives were
+    // rejected or why.
+    expect(adr).toContain(
+      "Amendment 2026-08-30 — orchestrator enforcement, on a path-level default",
+    );
     // The invariant itself must carry the qualifier, not just the prose below
-    // it — the invariant is the line people quote.
+    // it — the invariant is the line people quote. It now names both paths AND
+    // the condition on the second; an unconditional claim here would be the
+    // overbroad invariant this ADR already had to correct once.
     expect(adr).toMatch(
       /No \*\*recipe agent-step\*\* context leaves Patchwork without passing/,
+    );
+    expect(adr).toMatch(
+      /once `privacy\.orchestrator` is\s*\n?> ?configured, no \*\*orchestrator task\*\* does either/,
     );
   });
 });

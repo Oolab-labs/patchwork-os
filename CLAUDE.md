@@ -579,9 +579,50 @@ worker may DO; this answers what a destination may RECEIVE.
 - **Coverage is enumerated, never asserted as total.** `agent` steps were 54 of
   1,795 logged steps (~3%) when this was built. A crossing count over a partial
   surface reads as "your policy is fine" when it partly means "we did not look".
-- **Orchestrator dispatch is OBSERVED but NOT ENFORCED** (#1397). Rows carry
-  `labelSource: "assumed"` — there is no declared-policy channel on that path,
-  and asserting one would claim intent nobody expressed.
+- **Orchestrator dispatch is now ENFORCED, on an operator opt-in** (2026-08-30
+  amendment to ADR-0021; #1397 was the observe-only half). `privacy.orchestrator
+  .classification` is a PATH-LEVEL default — its presence is the opt-in, and its
+  absence leaves the path observed-but-ungoverned exactly as before, so no
+  existing install changes behaviour by upgrading. A refused dispatch fails the
+  task with `InformationBoundaryRefusal` (an `error` with a named cause, not a
+  new lifecycle state).
+
+  **`labelSource` has THREE values, and `default` is not a synonym for either
+  other one.** `declared` = an operator classified THIS dispatch; `assumed` =
+  nobody said anything and the runtime fell back to `internal`; `default` = an
+  operator classified the CHANNEL. Folding `default` into `declared` asserts
+  intent about a prompt no operator saw — the exact claim ADR-0021 refused to
+  make, and the reason this path stayed ungoverned for two weeks. Folding it
+  into `assumed` erases the only operator statement on the path.
+
+  The choice of a path-level default over a per-task label was made from
+  MEASUREMENT, as the ADR required: 10 orchestrator dispatches against 288
+  recipe agent steps over 11 days. On ~3% of traffic an optional per-task label
+  is a field nobody fills, and a mostly-empty declaration channel is worse than
+  none because it looks like coverage.
+
+  **`labelSource` is on the RECEIPT now, not only the shadow row.** It was
+  observed-only from #1397, so the ENFORCING ledger could not distinguish an
+  operator's label from the runtime's fallback — the receipt-shape precondition
+  ADR-0021 set, unmet on the path that already enforced. Adding it meant three
+  edits, not one: the writer type, the `record()` constructor copy, and the
+  reader whitelist in `boundaryReceipts.ts`. That is the same trio `workspaceId`
+  was dropped by (declared twice, copied nowhere) and `forbid` was dropped by on
+  read (#1517).
+
+  **A malformed `privacy.orchestrator.classification` fails OPEN** — deliberate,
+  and asserted by a test so nobody quietly "fixes" it. Failing closed on a typo
+  would refuse every orchestrator task on the machine, automation hooks
+  included, with no hint of the cause in the symptom. A receipt that cannot be
+  WRITTEN does not reopen the boundary: the record is wrapped, the refusal is
+  outside the wrapper.
+
+  **Observation runs BEFORE enforcement.** Reversed, every refused dispatch goes
+  unobserved — dropping from the shadow report precisely the traffic a candidate
+  policy is being evaluated against. `boundaryScope.test.ts` pins the order, and
+  its first version did NOT: it compared the two function DECLARATIONS (which
+  sit in the opposite order and never move) and passed against a deliberately
+  swapped call site. Anchor a source-order guard on the CALL.
 - **Open-core**: engine here (MIT); organisation policy inheritance, retention,
   signed evidence and curated industry policy packs are control-plane
   (ADR-0019). **Never add a policy pack or a real-world policy example here** —

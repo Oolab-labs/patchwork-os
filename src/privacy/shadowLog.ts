@@ -55,17 +55,30 @@ export const PATH_LABELS: Record<ShadowPath, string> = {
 };
 
 /**
- * Whether the classification on a row was DECLARED by an operator or ASSUMED
- * by the runtime.
+ * Where the classification on a row CAME FROM.
  *
  * This is the difference between a measurement and a claim about intent.
- * `orchestrator-task` has no declared-policy channel at all (ADR-0021), so
- * every one of its rows is assumed — and a recipe step with no `data_policy`
- * is assumed too, since `internal` there is a default and not a declaration.
- * Merging the two would let a report say an operator classified something they
- * never labelled.
+ *
+ * - `declared` — the dispatch itself carried a `data_policy`. An operator
+ *   classified THIS step.
+ * - `assumed` — nothing was declared and nothing configured; the runtime fell
+ *   back to `internal`. Nobody said anything, and the row must not pretend
+ *   otherwise. A recipe step with no `data_policy` is assumed, since `internal`
+ *   there is a default and not a declaration.
+ * - `default` — an operator configured a workspace-level classification for the
+ *   whole PATH (`privacy.orchestrator`, ADR-0021 2026-08-30 amendment). A real
+ *   operator statement, but about the channel rather than about this dispatch's
+ *   contents, so it is neither of the other two.
+ *
+ * Three values rather than two because ADR-0021 makes the distinction the
+ * PRECONDITION for enforcing the orchestrator path: "a workspace-level default
+ * that is recorded honestly as a default rather than as a declaration". Folding
+ * `default` into `declared` would let a report claim an operator classified a
+ * free-form prompt they never saw; folding it into `assumed` would erase the
+ * only operator statement on that path and make the enforcement look like the
+ * runtime helping itself to a label.
  */
-export type LabelSource = "declared" | "assumed";
+export type LabelSource = "declared" | "assumed" | "default";
 
 /** @deprecated kept so older rows still render; use PATH_LABELS. */
 export const OBSERVED_PATH = PATH_LABELS["recipe-agent-step"];
@@ -215,6 +228,18 @@ export interface PrivacyShadowSummary {
    * to explain the remainder.
    */
   assumedUnattributed: number;
+  /**
+   * Rows whose classification came from a PATH-LEVEL operator default
+   * (`labelSource: "default"`), not from the dispatch and not from the runtime.
+   *
+   * Counted separately from `assumed` rather than folded into it. An assumed
+   * row is outstanding work — the remedy is to declare a `data_policy`. A
+   * defaulted row is a decision an operator already made, and listing it as
+   * work to do would send them to re-make it. It is reported rather than left
+   * silent because a value that appears in the ledger and in no summary is
+   * indistinguishable, to a reader, from one that never occurs.
+   */
+  defaulted: number;
   observedPath: string;
   unobservedPaths: readonly string[];
 }
@@ -237,6 +262,7 @@ export function summarisePrivacyShadow(
     assumed: 0,
     assumedByRecipe: {},
     assumedUnattributed: 0,
+    defaulted: 0,
     observedPath: OBSERVED_PATH,
     unobservedPaths: UNOBSERVED_PATHS,
   };
@@ -281,6 +307,7 @@ export function summarisePrivacyShadow(
         summary.assumedUnattributed += 1;
       }
     }
+    if (row.labelSource === "default") summary.defaulted += 1;
     if (row.enforcing) summary.enforcingObservations += 1;
     summary.byDecision[row.decision] =
       (summary.byDecision[row.decision] ?? 0) + 1;
@@ -368,6 +395,16 @@ export function formatPrivacyShadow(s: PrivacyShadowSummary): string {
         `    ${String(s.assumedUnattributed).padStart(5)}  (not attributed to a recipe — orchestrator dispatches and rows written before attribution)`,
       );
     }
+  }
+  if (s.defaulted > 0) {
+    // Distinct line, distinct wording. These rows are NOT on the to-do list
+    // above: a path-level default is an operator decision already taken, and
+    // listing it as unlabelled work would send them to make it twice. Reported
+    // rather than silent, because a label that appears in the ledger and in no
+    // summary reads to the operator as one that never occurs.
+    L.push(
+      `  defaulted:  ${s.defaulted} of ${s.observed} row(s) classified by a PATH-LEVEL operator default (not per-dispatch)`,
+    );
   }
   if (s.enforcingObservations > 0) {
     L.push(

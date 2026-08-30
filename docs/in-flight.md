@@ -62,6 +62,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   either would make the command permanently red. A first run is a BASELINE, never "no changes".
   The snapshot holds counts only, reduced at the collection boundary: two inputs return operator
   data, and a health check is the last place anyone looks for accumulated secrets. — #1552
+- 2026-08-30 `feat/orchestrator-boundary-default` — ADR-0021 left orchestrator dispatch
+  ungoverned and named its own precondition: a path-level default "recorded honestly as a
+  default rather than as a declaration", with the choice between that and a per-task label to
+  be made from measured volume. The volume decided it — 10 orchestrator dispatches against 288
+  recipe agent steps over 11 days, so an optional per-task label is a field nobody fills.
+  `labelSource` gains a third value (`default`) and reaches the RECEIPT, not just the shadow
+  row; the enforcing ledger previously could not tell an operator's label from the runtime's
+  fallback. `boundaryScope.test.ts` is inverted rather than deleted. — PR pending
 
 - 2026-08-28 `fix/pr-outcomes-swallows-the-real-error` — `gh repo view` ran with stderr
   ignored, so an expired credential, a missing gh and a missing remote all reported the same

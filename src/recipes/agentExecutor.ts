@@ -78,6 +78,13 @@ export interface AgentExecutorDeps {
     classification: string;
     categories?: string[];
     redactCategories?: string[];
+    /**
+     * Where `classification` came from. The shadow ledger has distinguished
+     * declared from assumed since #1397; the RECEIPT did not, so the enforced
+     * ledger — the one that says what actually happened — could not tell an
+     * operator's label from the runtime's fallback.
+     */
+    labelSource?: "declared" | "assumed" | "default";
   }) => void;
   /**
    * CANDIDATE policy for shadow mode (ADR-0021), deliberately a SEPARATE
@@ -96,7 +103,7 @@ export interface AgentExecutorDeps {
     destinationType: "local" | "remote";
     classification: Classification;
     path?: "recipe-agent-step" | "orchestrator-task";
-    labelSource?: "declared" | "assumed";
+    labelSource?: "declared" | "assumed" | "default";
     categories?: string[];
     redactCategories?: string[];
     enforcing: boolean;
@@ -531,6 +538,10 @@ export async function executeAgent(
       destinationId: boundary.destination.id,
       destinationType: boundary.destination.type,
       classification: boundary.classification,
+      // Same expression as the shadow observation above, deliberately: the two
+      // ledgers describing one dispatch must not disagree about where its label
+      // came from.
+      labelSource: input.boundary?.dataPolicy ? "declared" : "assumed",
       ...(boundary.categories && { categories: boundary.categories }),
       ...(boundary.redactCategories && {
         redactCategories: boundary.redactCategories,
@@ -582,6 +593,7 @@ export async function executeAgent(
       destinationId: boundary.destination.id,
       destinationType: boundary.destination.type,
       classification: boundary.classification,
+      labelSource: input.boundary?.dataPolicy ? "declared" : "assumed",
       ...(boundary.categories && { categories: boundary.categories }),
     });
   }

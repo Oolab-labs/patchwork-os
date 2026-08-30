@@ -15,7 +15,10 @@ function getConfigDir(): string {
 
 import type { IClaudeDriver } from "./drivers/types.js";
 import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
+import { sharedBoundaryReceiptLog } from "./privacy/boundaryReceiptLog.js";
 import {
+  CLASSIFICATIONS,
+  type Classification,
   DEFAULT_CLASSIFICATION,
   decideBoundary,
 } from "./privacy/dataPolicy.js";
@@ -206,24 +209,34 @@ interface PersistedTask {
 function observeOrchestratorShadow(
   driverName: string | undefined,
   workspace: string | undefined,
+  /**
+   * The operator's PATH-LEVEL classification, if they have opted this path into
+   * enforcement. Passed in rather than re-read so the shadow row and the
+   * receipt describe the SAME dispatch with the same label — the two ledgers
+   * disagreeing about where a classification came from is the failure this
+   * field exists to prevent.
+   */
+  pathClassification: Classification | undefined,
 ): void {
   try {
     const cfg = (
       loadPatchworkConfig() as { privacy?: { shadow?: PrivacyConfig } }
     ).privacy?.shadow;
     if (!cfg) return;
+    // Once an operator has classified this channel, the candidate policy must
+    // be evaluated against THAT label. Continuing to shadow against the
+    // runtime's `internal` fallback would answer a question nobody is asking
+    // any more, and would answer it more permissively than the live policy.
+    const classification = pathClassification ?? DEFAULT_CLASSIFICATION;
     const registry = parseRegistry(cfg);
     const resolved = resolveDestination(
       registry,
       driverName,
-      DEFAULT_CLASSIFICATION,
+      classification,
       {},
     );
     if (!resolved) return;
-    const outcome = decideBoundary(
-      { classification: DEFAULT_CLASSIFICATION },
-      resolved.destination,
-    );
+    const outcome = decideBoundary({ classification }, resolved.destination);
     recordPrivacyShadow({
       ...(currentWorkspaceId(workspace) && {
         workspaceId: currentWorkspaceId(workspace),
@@ -232,15 +245,137 @@ function observeOrchestratorShadow(
       reason: outcome.reason,
       destinationId: resolved.destination.id,
       destinationType: resolved.destination.type,
-      classification: DEFAULT_CLASSIFICATION,
+      classification,
       path: "orchestrator-task",
-      // Always assumed. There is no declared-policy channel on this path, and
-      // saying otherwise would be the claim ADR-0021 refuses to make.
-      labelSource: "assumed",
-      enforcing: false,
+      // `default` when the operator classified the CHANNEL, `assumed` when
+      // nobody said anything and the runtime fell back. Never `declared`: no
+      // operator ever saw this prompt, which is the claim ADR-0021 refuses to
+      // make and the reason `default` is a third value rather than a synonym.
+      labelSource: pathClassification ? "default" : "assumed",
+      // TRUE once the path is governed. Leaving this hardcoded false would tell
+      // `patchwork privacy shadow` that a live policy was not enforcing while
+      // it was — turning a counterfactual report into a false one on exactly
+      // the rows an operator would check after switching enforcement on.
+      enforcing: pathClassification !== undefined,
     });
   } catch {
     // Observation must never disturb the dispatch it observes.
+  }
+}
+
+/**
+ * The class of failure a refused dispatch reports.
+ *
+ * A distinct Error subclass rather than a bare `throw new Error`: `_runTask`'s
+ * catch already distinguishes aborts from everything else, and a refusal is
+ * neither a crashed driver nor a cancellation. Naming it means a reader of the
+ * task list can tell "the boundary stopped this" from "the driver died", which
+ * is the entire operator-facing value of enforcing at all.
+ */
+export class InformationBoundaryRefusal extends Error {
+  constructor(reason: string) {
+    super(`information boundary — ${reason}`);
+    this.name = "InformationBoundaryRefusal";
+  }
+}
+
+/**
+ * Read the operator's PATH-LEVEL classification for orchestrator dispatch.
+ *
+ * Presence of `privacy.orchestrator.classification` is the opt-in to
+ * ENFORCEMENT on this path, and its absence leaves the path exactly as it was:
+ * observed in shadow, never refused. That is deliberate and is the same
+ * inert-until-opted-in posture ADR-0021 requires of the recipe path — no
+ * existing install changes behaviour by upgrading.
+ *
+ * An unparseable or unknown value returns undefined, i.e. NOT ENFORCING. That
+ * direction is chosen against the usual fail-closed instinct because the
+ * failure here is a typo in an optional key: failing closed would refuse every
+ * orchestrator task on the machine — including the automation hooks an operator
+ * relies on — on the strength of a misspelling. `patchwork privacy
+ * destinations` reports the misconfiguration; a dead bridge does not.
+ */
+function orchestratorPathClassification(
+  cfg: { orchestrator?: { classification?: unknown } } | undefined,
+): Classification | undefined {
+  const raw = cfg?.orchestrator?.classification;
+  if (typeof raw !== "string") return undefined;
+  return (CLASSIFICATIONS as readonly string[]).includes(raw)
+    ? (raw as Classification)
+    : undefined;
+}
+
+/**
+ * ENFORCE the information boundary on orchestrator dispatch (ADR-0021
+ * 2026-08-30 amendment, closing the gap #1397 recorded).
+ *
+ * ADR-0021 left this path ungoverned for one stated reason, and it was never
+ * "the wiring is hard": enforcing with the runtime's own `internal` default
+ * would write an affirmative receipt about a label nobody supplied. The ADR
+ * named the precondition — "a per-task label, or a workspace-level default that
+ * is recorded honestly as a default rather than as a declaration" — and left
+ * the choice between them to be made from measured volume rather than taste.
+ *
+ * The volume chose it. Over 11 days the shadow ledger recorded 10 orchestrator
+ * dispatches against 288 recipe agent steps. On a path carrying ~3% of traffic,
+ * an optional per-task label is a field nobody fills, and a declaration channel
+ * that is mostly empty manufactures `assumed` rows wearing a `declared` shape —
+ * worse than no channel, because it looks like coverage.
+ *
+ * So: a workspace-level default, stamped `labelSource: "default"` — a third
+ * value, never folded into either existing one. It says exactly what is true:
+ * an operator classified this CHANNEL, not this prompt.
+ *
+ * Returns normally when the dispatch may proceed, including when nothing is
+ * configured. THROWS to refuse. It must never be made fail-soft like the shadow
+ * observation beside it: an enforcement that swallows its own errors is an
+ * enforcement that silently stops enforcing.
+ */
+function governOrchestratorDispatch(
+  driverName: string | undefined,
+  workspace: string | undefined,
+  classification: Classification | undefined,
+): void {
+  // Not opted in. The path stays observed-but-ungoverned, as it has been
+  // since #1397.
+  if (classification === undefined) return;
+  const cfg = (loadPatchworkConfig() as { privacy?: PrivacyConfig }).privacy;
+  const registry = parseRegistry(cfg);
+  const resolved = resolveDestination(registry, driverName, classification, {});
+  // No destination registered for this driver and classification. The registry
+  // is the opt-in for the boundary as a whole (ADR-0021), so an unregistered
+  // destination is inert here exactly as it is on the recipe path — NOT a
+  // refusal, which would make configuring the orchestrator key alone break
+  // every dispatch.
+  if (!resolved) return;
+  const outcome = decideBoundary({ classification }, resolved.destination);
+  const wsId = currentWorkspaceId(workspace);
+  try {
+    sharedBoundaryReceiptLog().record({
+      ...(wsId && { workspaceId: wsId }),
+      decision: outcome.decision,
+      classification,
+      destinationId: resolved.destination.id,
+      destinationType: resolved.destination.type,
+      reason: outcome.reason,
+      // The precondition ADR-0021 names, in the ledger that says what actually
+      // happened. Never "declared": no operator saw this prompt.
+      labelSource: "default",
+      // No `categories`: a path-level default classifies the CHANNEL, and
+      // category names come from a per-dispatch `data_policy` that this path
+      // by definition does not have. Emitting an empty list would suggest the
+      // categories were examined and found to be none.
+      ...(outcome.redactCategories && {
+        redactCategories: outcome.redactCategories,
+      }),
+    });
+  } catch {
+    // A receipt that cannot be written must not change the decision it
+    // describes. This swallow covers the RECORD only — the refusal below is
+    // outside it, so a broken disk cannot quietly reopen the boundary.
+  }
+  if (outcome.decision !== "ALLOW") {
+    throw new InformationBoundaryRefusal(outcome.reason);
   }
 }
 
@@ -533,9 +668,34 @@ export class ClaudeOrchestrator {
       this.workspace;
 
     try {
-      // Shadow observation only — see observeOrchestratorShadow. Nothing here
-      // can refuse or alter this dispatch; #1397 remains open.
-      observeOrchestratorShadow(this.driver.name, resolvedWorkspace);
+      // Observation first, then enforcement — in that order, deliberately.
+      // The shadow ledger's job is to record what a CANDIDATE policy would have
+      // done, and a refused dispatch is exactly the case a candidate policy is
+      // being evaluated against. Enforcing first would drop the observation for
+      // every refusal, leaving the shadow report blind to the traffic that
+      // matters most to it.
+      //
+      // Read ONCE and handed to both, so the two ledgers cannot describe the
+      // same dispatch with different labels.
+      const pathClassification = orchestratorPathClassification(
+        (
+          loadPatchworkConfig() as {
+            privacy?: { orchestrator?: { classification?: unknown } };
+          }
+        ).privacy,
+      );
+      observeOrchestratorShadow(
+        this.driver.name,
+        resolvedWorkspace,
+        pathClassification,
+      );
+      // May THROW. Caught below as a non-abort error, so the task lands
+      // `error` with the boundary's reason as its message.
+      governOrchestratorDispatch(
+        this.driver.name,
+        resolvedWorkspace,
+        pathClassification,
+      );
       const result = await this.driver.run({
         prompt: task.prompt,
         contextFiles: task.contextFiles,

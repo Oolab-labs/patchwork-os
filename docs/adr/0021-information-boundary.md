@@ -127,12 +127,19 @@ before dispatch, with declared labels only. No detection in this ADR.**
 ### The invariant
 
 > No **recipe agent-step** context leaves Patchwork without passing the
-> information-boundary decision point.
+> information-boundary decision point — and, once `privacy.orchestrator` is
+> configured, no **orchestrator task** does either.
 
 The qualifier is load-bearing and was added after the fact — see
 [Scope: what the boundary does NOT cover](#scope-what-the-boundary-does-not-cover)
 below. As originally written this said "no model-bound context", which claimed
 coverage the code does not provide.
+
+The second clause carries a condition and it is not decoration. Orchestrator
+dispatch is enforced only where an operator has classified the channel; on an
+install that has not, the path is observed and ungoverned exactly as before.
+Stating the clause unconditionally would reintroduce, one path over, the
+overbroad-invariant failure this section exists to record.
 
 And, mirroring the never-widen rule the autonomy gate already relies on:
 
@@ -273,6 +280,11 @@ expressed.
 
 Until that exists, the honest statement is the one above: this path is
 ungoverned, and the ADR says so.
+
+**SUPERSEDED 2026-08-30 — the precondition was built. See "Orchestrator
+enforcement" below.** The section above is kept verbatim rather than rewritten,
+because the reasoning it records is the reason the amendment took the shape it
+did. What is no longer true is only its final sentence.
 
 **Observed in shadow since 2026-08-18 (#1397), still not enforced.** The
 objection above is to asserting a DECLARATION nobody made — it is not an
@@ -563,3 +575,94 @@ evidence, which this repository has already recorded as a mistake twice. The
 disclosure and the operator switch are small and can ship once granularity is
 chosen; the prompt, the queue wiring and the display policy wait for a second live
 step or for the scheduled recipes to be enabled.
+
+
+## Amendment 2026-08-30 — orchestrator enforcement, on a path-level default
+
+The section above left orchestrator dispatch out of scope and named exactly what
+would bring it in: *"a per-task label, or a workspace-level default that is
+recorded honestly as a default rather than as a declaration"*, with the receipt
+shape obliged to distinguish `declared` from `assumed`. It then deliberately
+declined to choose between the two, on the grounds that the choice was being
+made from zero measurements and the volume should make it.
+
+**The volume made it.** Measured on the reference machine's
+`privacy_shadow.jsonl`, 19–30 August: **10 orchestrator dispatches against 288
+recipe agent steps**, ~3% of observed traffic, all resolving to a single remote
+destination.
+
+At that share, a per-task label is the wrong instrument. An optional field on a
+free-form prompt is a field that goes unfilled, and a declaration channel which
+is mostly empty is worse than none: it manufactures rows that look like operator
+intent and are not. So the amendment takes the second option.
+
+### What changed
+
+- **`privacy.orchestrator.classification`** — a workspace-level classification
+  for the whole path. Its presence is the opt-in to enforcement. Absent, the
+  path is observed and ungoverned, exactly as it has been since #1397, so no
+  existing install changes behaviour by upgrading.
+- **`labelSource` gains a third value, `default`.** Not a synonym for either
+  existing one. `declared` means an operator classified THIS dispatch;
+  `assumed` means nobody said anything and the runtime fell back; `default`
+  means an operator classified the CHANNEL. Folding `default` into `declared`
+  would assert intent about a prompt no operator saw — the precise claim this
+  ADR refused to make. Folding it into `assumed` would erase the only operator
+  statement on the path and make enforcement look like the runtime helping
+  itself to a label.
+- **`labelSource` is now on the RECEIPT**, not only the shadow row. It was on
+  the shadow ledger from #1397 and absent from the enforcing one, so the log
+  that says what actually happened could not distinguish an operator's label
+  from the runtime's fallback. That was the receipt-shape requirement this ADR
+  set as a precondition, unmet until now on the path that already enforced.
+- **A refused dispatch fails the task** with `InformationBoundaryRefusal`. Not a
+  new lifecycle state: `error` with a named cause, because adding a `refused`
+  status reaches persistence, the dashboard and five MCP tools for a
+  distinction the message already carries.
+
+### What deliberately did NOT change
+
+- **No detection.** Nothing scans a prompt. The classification comes from
+  config; the decision stays a pure function of (classification, destination).
+  The ADR's rejection of detection as a boundary stands unamended.
+- **No per-field labels, no redaction, no purpose.** Those remain deferred
+  behind the same prerequisite — labels on the fields a prompt is assembled
+  from, at render time — which is a recipe-schema change and is still not
+  decided. `ALLOW_REDACTED` still refuses.
+- **Inert by default.** Two independent opt-ins are still required: a registered
+  destination AND the orchestrator key. Either alone enforces nothing.
+
+### Two failure directions, chosen opposite ways
+
+A malformed `privacy.orchestrator.classification` — a typo, an unknown
+classification — resolves to NOT ENFORCING, against the usual fail-closed
+instinct. Failing closed on a misspelling would refuse every orchestrator task
+on the machine, including the automation hooks an operator depends on, and the
+remedy would be invisible from the symptom. `patchwork privacy destinations`
+reports a misconfigured registry; a bridge that dispatches nothing does not.
+
+A receipt that cannot be WRITTEN, by contrast, does not reopen the boundary. The
+record is wrapped; the refusal is outside the wrapper. An enforcement that
+swallows its own errors is an enforcement that silently stops enforcing.
+
+### Ordering, which is load-bearing
+
+The shadow observation runs BEFORE enforcement, so a refused dispatch is still
+observed. A refusal is exactly the traffic a candidate policy is being evaluated
+against; enforcing first would drop those rows and leave the shadow report blind
+to its most interesting case. Relatedly, the shadow row now evaluates against
+the operator's path classification when one exists, and stamps `enforcing: true`
+— it previously hardcoded `false`, which would have told
+`patchwork privacy shadow` that no live policy was enforcing while one was.
+
+### Still open, unchanged by this amendment
+
+`REQUIRE_APPROVAL` remains unreachable — rule 1 returns `LOCAL_ONLY` before
+`approvable` is tested — and an approval expiring at 06:00 against a scheduled
+recipe still has no defensible default. Enforcing a second path does not make
+either question easier, and answering them inside this change would have bundled
+a decision about approval semantics into one about scope.
+
+`src/__tests__/boundaryScope.test.ts` is inverted in the same commit: it now
+fails if orchestrator dispatch LOSES its boundary decision, and still fails if
+the recipe path does, so it cannot pass by both sides being empty.
