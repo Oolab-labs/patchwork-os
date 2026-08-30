@@ -70,6 +70,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   `labelSource` gains a third value (`default`) and reaches the RECEIPT, not just the shadow
   row; the enforcing ledger previously could not tell an operator's label from the runtime's
   fallback. `boundaryScope.test.ts` is inverted rather than deleted. — PR pending
+- 2026-08-30 `docs/adr-0024-field-level-labels` — closed ADR-0021's oldest open deferral with a
+  `no`. Field-level labels (and with them `ALLOW_REDACTED` and purpose) were the stated
+  prerequisite for two capabilities and had never been decided, so each attempt re-derived the
+  same investigation. Declined on the ledger, not on taste: `ALLOW_REDACTED` has been returned
+  0 times in 254 recorded decisions, and the 58-of-77 undeclared population that motivated
+  DERIVING labels is now 0 of 74 — a figure CLAUDE.md was still quoting while work was scoped
+  against it. The workable design is recorded rather than discarded, with a measurable trigger
+  to reopen. — PR pending
 
 - 2026-08-28 `fix/pr-outcomes-swallows-the-real-error` — `gh repo view` ran with stderr
   ignored, so an expired credential, a missing gh and a missing remote all reported the same
