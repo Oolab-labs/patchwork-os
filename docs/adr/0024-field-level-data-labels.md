@@ -35,7 +35,7 @@ Taken 2026-08-30 on the reference machine.
 | `LOCAL_ONLY` | 6 |
 | **`ALLOW_REDACTED`** | **0** |
 | `DENY` | 0 |
-| `REQUIRE_APPROVAL` | 0 (unreachable — see below) |
+| `REQUIRE_APPROVAL` | 0 (nobody has set `approvable` — see below) |
 
 **`ALLOW_REDACTED` has never once been the answer.** The entire capability this
 prerequisite gates would implement a decision that has not occurred.
@@ -142,13 +142,26 @@ not follow from the design above even if that design were built.
 
 ## Not addressed here
 
-`REQUIRE_APPROVAL` is unreachable: rule 1 in `decideBoundary` returns
-`LOCAL_ONLY` before `approvable` is tested, so a destination that could have
-asked a human never does. That is a live defect in the rule table, independent of
-labels, and it is not fixed by this ADR — it needs its own, together with the
-question of what an approval expiring at 06:00 against a scheduled recipe should
-default to. The zero in the table above is a consequence of the defect, not
-evidence that approval is unwanted.
+**`REQUIRE_APPROVAL`'s zero.** An earlier draft of this ADR said the decision was
+*unreachable* — that rule 1 returns `LOCAL_ONLY` before `approvable` is tested,
+so a destination that could ask a human never does. **That claim is wrong**, and
+it is recorded here rather than quietly corrected because it arrived in handoff
+notes and was repeated three times, into this document, before anyone ran it.
+
+`REQUIRE_APPROVAL` fires whenever an uncleared destination is `approvable` and no
+local destination accepts the classification. The zero above has a simpler cause:
+**no destination on the reference machine sets `approvable` at all.**
+
+What *is* true is narrower and is a real defect: on a registry with a permissive
+local destination — the recommended shape — the `approvable` flag on a remote
+destination can never fire, because `localDestinationAccepts` is then always
+true. An operator sets a control expecting to be asked and is refused instead,
+since `LOCAL_ONLY` declines rather than rerouting. That is reported by
+`patchwork privacy destinations` and is deliberately not fixed by reordering,
+which would make live traffic newly approvable.
+
+Neither is fixed by this ADR. The open question that remains genuinely open is
+what an approval expiring at 06:00 against a scheduled recipe should default to.
 
 ## Alternatives considered
 
