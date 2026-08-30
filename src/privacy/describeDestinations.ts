@@ -60,6 +60,27 @@ export interface DescribedDestination {
    * the one that sends data an operator may not expect to leave the machine.
    */
   sendsSensitiveOffMachine: boolean;
+  /** The operator set `approvable: true` on this destination. */
+  approvable: boolean;
+  /**
+   * True when `approvable` is set and can NEVER fire.
+   *
+   * `decideBoundary` rule 1 short-circuits to `LOCAL_ONLY` before it tests
+   * `approvable`, whenever some registered LOCAL destination is cleared for the
+   * classification in question. So on a registry with a permissive local
+   * destination — the shape the docs recommend — an `approvable` remote
+   * destination is never asked about for ANY classification it refuses.
+   *
+   * Reported rather than fixed. The operator set a control expecting to be
+   * asked, and is refused instead, because `LOCAL_ONLY` declines rather than
+   * rerouting. A knob that silently does nothing is worse than an absent one:
+   * it reads as a control that is in place.
+   *
+   * Computed with the SAME predicate the runtime uses (`some local destination
+   * is cleared for this classification`), not a re-derivation — two notions of
+   * reachability would drift, and the drift would be silent and reassuring.
+   */
+  approvalUnreachable: boolean;
   note?: string;
   noteReviewedOn?: string;
   /** True when a note exists but carries no reviewed date, or an unparseable one. */
@@ -93,12 +114,28 @@ export function describeDestinations(
     const dated =
       note?.noteReviewedOn !== undefined &&
       !Number.isNaN(Date.parse(note.noteReviewedOn));
+    // Every classification this destination would REFUSE. If a local
+    // destination accepts all of them, rule 1 short-circuits every time and the
+    // `approvable` flag is dead.
+    const refused = ALL_CLASSIFICATIONS.filter(
+      (c) => !d.classifications.includes(c),
+    );
+    const localAcceptsAllRefused =
+      refused.length > 0 &&
+      refused.every((c) =>
+        destinations.some(
+          (x) => x.type === "local" && x.classifications.includes(c),
+        ),
+      );
     out.push({
       id: d.id,
       type: d.type,
       cleared,
       drivers: driversFor.get(d.id) ?? [],
       sendsSensitiveOffMachine: d.type === "remote" && sensitive,
+      approvable: d.approvable === true,
+      approvalUnreachable:
+        d.approvable === true && d.type === "remote" && localAcceptsAllRefused,
       ...(note?.note !== undefined && { note: note.note }),
       ...(note?.noteReviewedOn !== undefined && {
         noteReviewedOn: note.noteReviewedOn,
@@ -165,6 +202,21 @@ export function formatDestinationsReport(
       );
       L.push(`        own choice, and the one that sends personal data to a`);
       L.push(`        third party's servers.`);
+    }
+    if (d.approvalUnreachable) {
+      // Louder than a note, because the operator believes a control is in
+      // place. Says what will happen INSTEAD — being refused is not what
+      // "approvable" led them to expect, and `LOCAL_ONLY` declines rather than
+      // rerouting, so nothing asks and nothing reaches the local destination
+      // either.
+      L.push(`      ⚠ "approvable" is set here and can NEVER fire: a local`);
+      L.push(
+        `        destination accepts every classification this one refuses,`,
+      );
+      L.push(
+        `        so the decision short-circuits to LOCAL_ONLY first. You will`,
+      );
+      L.push(`        be REFUSED, not asked.`);
     }
     if (d.note !== undefined) {
       L.push(`      note: ${d.note}`);

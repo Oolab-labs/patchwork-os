@@ -115,6 +115,30 @@ export interface BoundaryOutcome {
  * Rule 1 runs FIRST and is not reachable past. A destination cannot become
  * cleared by redacting a category, because the classification is a property of
  * the step as a whole — dropping a tag does not declassify what remains.
+ *
+ * ## The LOCAL_ONLY / REQUIRE_APPROVAL ordering inside rule 1
+ *
+ * The `LOCAL_ONLY` branch is tested BEFORE `approvable`, so on a registry with
+ * a permissive local destination — the shape the docs recommend — an
+ * `approvable: true` remote destination is never asked about for any
+ * classification it refuses. The operator set a control expecting to be asked
+ * and is REFUSED instead, because `LOCAL_ONLY` declines rather than rerouting.
+ *
+ * This is NOT the same as "REQUIRE_APPROVAL is unreachable", which is the
+ * stronger claim that has been written down elsewhere and is wrong: it fires
+ * whenever no local destination accepts the classification. Pinned in
+ * `__tests__/approvableIsInert.test.ts`, in both directions.
+ *
+ * Deliberately NOT reordered here. Note that `narrowest()` below ranks
+ * `REQUIRE_APPROVAL` (3) as stricter than `LOCAL_ONLY` (2), so rule 1 returns
+ * the LESS restrictive of its two candidates — which looks like a defect and
+ * may not be one. In EFFECT today `LOCAL_ONLY` is the stricter of the two,
+ * because it refuses outright and no approval unlocks it, while
+ * `REQUIRE_APPROVAL` can be unlocked by a human. The ranking describes intent,
+ * the runtime describes behaviour, and they disagree. Reordering would make
+ * live traffic newly approvable — an enforcement change, not a tidy-up — so it
+ * needs a decision, not a patch. `patchwork privacy destinations` reports the
+ * dead flag in the meantime.
  */
 export function decideBoundary(
   policy: DataPolicy,
