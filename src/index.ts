@@ -5437,7 +5437,7 @@ if (process.argv[2] === "workers") {
         if (sub === "list" || sub === "validate") {
           const {
             scanWorkers,
-            validateWorkers,
+            validateWorkersWithRecipeHealth,
             formatWorkersList,
             formatWorkersValidate,
             defaultWorkersDir,
@@ -5473,7 +5473,10 @@ if (process.argv[2] === "workers") {
           const tIdx = args.indexOf("--templates-dir");
           const templatesDir = tIdx !== -1 ? args[tIdx + 1] : undefined;
           const rIdx = args.indexOf("--recipes-dir");
-          const result = validateWorkers({
+          // Composes the structural check with `recipe doctor`'s static half,
+          // once per bound recipe. A manifest that binds perfectly to a recipe
+          // that cannot run reported "no problems found" before this.
+          const result = await validateWorkersWithRecipeHealth({
             workersDir: dir,
             recipesDir:
               rIdx !== -1 ? (args[rIdx + 1] as string) : defaultRecipesDir(),
