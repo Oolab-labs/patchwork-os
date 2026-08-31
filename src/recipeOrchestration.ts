@@ -350,6 +350,9 @@ export async function buildWorkerAutonomyGate(
           workerId: worker.id,
           toolName: input.toolId,
           action: decision.action,
+          // Which rule decided it. `reason` beside it is prose and may be
+          // reworded; this is the half a receipt cites (rv>=2 guarantees it).
+          ruleId: decision.ruleId,
           classKey: decision.classKey,
           domain: decision.domain,
           owned: decision.owned,

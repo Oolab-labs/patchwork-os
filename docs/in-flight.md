@@ -55,6 +55,18 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-31 `feat/gate-rule-id` — the Decision Record said WHY in prose and had no stable
+  key for WHICH RULE decided, so a receipt, an operator filter or any grouping had to key on
+  a sentence. `reason` and `ruleId` split into two fields with two jobs; nine terminal
+  branches, nine ids, REQUIRED on the decision so a new branch is a compile error until it
+  names its rule. `rv` 1 → 2, cumulative: 1 promises `correlationId`, 2 promises `ruleId`,
+  and the bump strands no reader because `correlationOf` does not skip unknown versions.
+  `ruleOf` keeps the middle state honest — a pre-rule row is `unversioned`, never "no rule
+  applied". Names a rule the ENGINE applied, never a customer policy id (ADR-0019 reserves
+  curated packs for the control plane). `record()` dropped it on the way to disk, the THIRD
+  field that literal has had to be told about after `correlationId` and `workspaceId`, and
+  its own comment already documents the trap. — #1563
+
 - 2026-08-31 `codex/worker-reliability-fixes` — five reliability fixes for the maintenance
   workers, each one an existing subsystem answering a narrower question than the one an
   operator has. The approval seam collapsed four queue outcomes into a boolean, so an

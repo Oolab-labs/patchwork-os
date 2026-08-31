@@ -106,6 +106,17 @@ export interface GateDecisionRecord {
    * express it falsely.
    */
   correlationId?: string;
+  /**
+   * Stable id of the rule that decided this — see `GateRuleId` in
+   * `workers/workerGate.ts`. The `reason` beside it is prose and may be
+   * reworded; this is the half a receipt cites and a reader groups by.
+   *
+   * At `rv >= 2` its absence is a WRITER DEFECT, not a state, for the same
+   * reason `correlationId`'s is at `rv >= 1`: every decision takes exactly one
+   * terminal branch, so "decided, and legitimately had no rule" cannot occur.
+   * Rows at `rv < 2` predate the field and are not backfilled.
+   */
+  ruleId?: string;
 
   /** Monotonic sequence id within the process — stable for pagination. */
   seq: number;
@@ -181,7 +192,17 @@ export interface GateDecisionRecord {
  * assertion about what level N meant when it was written, so widening level N
  * later falsifies rows nobody can go back and fix.
  */
-export const GATE_RECORD_VERSION = 1 as const;
+/**
+ * Row-schema version. What each level GUARANTEES, cumulatively:
+ *
+ *   1 — the row carries `correlationId` (the run's `taskId`).
+ *   2 — the row additionally carries `ruleId` (which rule decided it).
+ *
+ * Bumped only when a reader may newly RELY on a field being present, never for
+ * a merely additive one. `correlationOf` does not skip rows from an unknown
+ * version, so a bump adds a guarantee without stranding any existing reader.
+ */
+export const GATE_RECORD_VERSION = 2 as const;
 
 /**
  * `rv` is excluded, and that exclusion is load-bearing rather than tidy. If a
@@ -314,6 +335,36 @@ export function correlationOf(
   return { state: "defect", rv: rec.rv };
 }
 
+/**
+ * Which rule a row names, with the same three-way honesty as `correlationOf`.
+ *
+ *  - `unversioned` — written before rules were named. NOT "no rule applied":
+ *    one did, nobody recorded which. Never render it as "unknown rule".
+ *  - `named`       — the row names its rule.
+ *  - `defect`      — the row claims a level that guarantees a rule id and does
+ *    not carry one. A writer bug, not a state of the world.
+ *
+ * As with `correlationOf` there is deliberately NO "decided, legitimately had
+ * no rule": every decision takes exactly one terminal branch, so such a row
+ * would be a false claim.
+ */
+export type RuleState =
+  | { state: "unversioned" }
+  | { state: "named"; ruleId: string }
+  | { state: "defect"; rv: number };
+
+export function ruleOf(
+  rec: Pick<GateDecisionRecord, "rv" | "ruleId">,
+): RuleState {
+  if (typeof rec.rv !== "number" || !Number.isFinite(rec.rv) || rec.rv < 2) {
+    return { state: "unversioned" };
+  }
+  const id = rec.ruleId;
+  if (typeof id === "string" && id.length > 0)
+    return { state: "named", ruleId: id };
+  return { state: "defect", rv: rec.rv };
+}
+
 export class WorkerGateDecisionLog {
   private records: GateDecisionRecord[] = [];
   private seq = 0;
@@ -410,6 +461,11 @@ export class WorkerGateDecisionLog {
       // was wired end to end and thrown away by the last step.
       ...(input.correlationId && { correlationId: input.correlationId }),
       ...(input.workspaceId && { workspaceId: input.workspaceId }),
+      // `ruleId` is the third field this literal has had to be told about.
+      // Copied conditionally, like `correlationId`: the writer cannot force a
+      // caller to supply one, so an absent id at rv>=2 is surfaced by
+      // `ruleOf` as a DEFECT rather than silently written as nothing.
+      ...(input.ruleId && { ruleId: input.ruleId }),
       recipeName,
       workerId,
       toolName,
@@ -745,12 +801,30 @@ function attributionAbsenceReason(
   }
 }
 
+/**
+ * Render the rule for a human, preserving the three states `ruleOf` draws.
+ *
+ * A pre-rule row must NEVER read as "no rule applied" — one did, nobody
+ * recorded which — and a row that promises an id and lacks one must read as a
+ * writer bug rather than as an absence, or the defect is invisible in the one
+ * place an operator actually looks.
+ */
+function describeRule(rec: GateDecisionRecord): string {
+  const r = ruleOf(rec);
+  if (r.state === "named") return r.ruleId;
+  if (r.state === "defect") {
+    return `MISSING — the row claims rv ${r.rv}, which guarantees one (writer defect)`;
+  }
+  return "not recorded — this row predates named rules";
+}
+
 export function formatGateDecision(rec: GateDecisionRecord): string {
   const when = new Date(rec.decidedAt).toISOString();
   const verb = describeGateAction(rec.action);
   const lines: string[] = [
     `${when} — ${rec.workerId} → ${rec.toolName} (${rec.classKey})`,
     `  Result: ${verb}`,
+    `  Rule: ${describeRule(rec)}`,
     `  Owned by this worker: ${rec.owned ? "yes" : "no"}`,
     `  Earned trust level: L${rec.earnedLevel} (autonomy ceiling L${rec.autonomyCeiling})`,
   ];
@@ -808,6 +882,16 @@ const DIFF_FIELDS: Array<{
   read: (r: GateDecisionRecord) => string;
 }> = [
   { field: "action", read: (r) => r.action },
+  // The most consequential diff there is: the same worker on the same class
+  // decided by a DIFFERENT rule. Reads through `ruleOf` so an older row shows
+  // "—" rather than inventing an absence that looks like a rule change.
+  {
+    field: "ruleId",
+    read: (r) => {
+      const st = ruleOf(r);
+      return st.state === "named" ? st.ruleId : "—";
+    },
+  },
   { field: "owned", read: (r) => String(r.owned) },
   { field: "earnedLevel", read: (r) => `L${r.earnedLevel}` },
   { field: "autonomyCeiling", read: (r) => `L${r.autonomyCeiling}` },
