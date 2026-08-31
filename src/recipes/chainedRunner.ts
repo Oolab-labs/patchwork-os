@@ -297,9 +297,21 @@ export interface ExecutionDeps {
    * re-gated. The fn itself applies the gate threshold (high/all) against the
    * step's tier and returns `true` for steps that don't need sign-off, so the
    * runner only acts on an explicit rejection. Per-recipe opt-out via
-   * `requireApproval: false`.
+   * `requireApproval: false` — of the TIER policy only, never of worker
+   * governance (see `gateAutomatedRuns`).
    */
   requireApprovalFn?: import("./approvalRequest.js").ApprovalFn;
+  /**
+   * Set exactly when `buildWorkerAutonomyGate` returned a fn, i.e. when
+   * `requireApprovalFn` IS the worker gate rather than the tier gate. Spread in
+   * from the flat runner's deps, which the chained path already receives whole.
+   *
+   * Load-bearing for one reason: a recipe's own `requireApproval: false` must
+   * not be able to switch off the machinery that governs it. The flag suppresses
+   * the workspace tier policy (applied by the caller, which builds the worker
+   * gate with no tier fn) and nothing else.
+   */
+  gateAutomatedRuns?: boolean;
 }
 
 function nestedRecipeRef(step: ChainedStep): string | undefined {
@@ -721,7 +733,10 @@ export async function executeChainedStep(
       deps.requireApprovalFn &&
       depth === 0 &&
       (step.agent || step.tool) &&
-      (recipe as { requireApproval?: boolean }).requireApproval !== false
+      // Same invariant as the flat runner: the opt-out covers the tier policy,
+      // never worker governance.
+      ((recipe as { requireApproval?: boolean }).requireApproval !== false ||
+        deps.gateAutomatedRuns === true)
     ) {
       const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
       const verdict = normaliseApprovalVerdict(

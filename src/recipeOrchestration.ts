@@ -1673,8 +1673,37 @@ export class RecipeOrchestration {
     // cron/webhook runs never block mid-flight), so this injection does not
     // need to inspect the trigger type here.
     const approvalGate = this.deps.server?.approvalGate ?? "off";
+    // Parse the recipe HERE, through the orchestrator's own resolved loader —
+    // the identical path `fire()` uses — because whether the workspace tier
+    // policy applies is the recipe's own `requireApproval`, and the gate is
+    // composed before `fire()` ever sees the file. A second parser would let
+    // the gate-build reading drift from the execution reading.
+    //
+    // A recipe that will not load fails the run NOW rather than being treated
+    // as "approval enabled" and failing at dispatch a moment later: silently
+    // interpreting malformed configuration is the wrong direction for a
+    // governance decision, and `fire()` would reject it anyway.
+    let tierOptOut = false;
+    try {
+      tierOptOut =
+        (
+          this.deps.recipeOrchestrator.loadRecipe(opts.filePath) as {
+            requireApproval?: boolean;
+          }
+        ).requireApproval === false;
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    // `requireApproval: false` suppresses the TIER gate and nothing else. The
+    // worker gate is composed over whatever this is — with no tier fn, a worker
+    // `allow` returns true immediately, while `gate` still queues and `forbid`
+    // still refuses. The runner enforces the other half: the flag cannot
+    // suppress the worker gate itself.
     const tierApprovalFn =
-      approvalGate === "off"
+      approvalGate === "off" || tierOptOut
         ? undefined
         : await makeRecipeApprovalFn(approvalGate, this.deps.server);
     // worker.autonomy flip (flag-gated, default off). When a worker owns this

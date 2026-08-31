@@ -156,6 +156,21 @@ export class RecipeOrchestrator {
     return { ok: true, taskId, name };
   }
 
+  /**
+   * The RESOLVED recipe loader — the identical function `fire()` uses, test
+   * injection included.
+   *
+   * Exposed because a caller may need the recipe BEFORE `fire()` runs: the
+   * approval gate is composed first, and whether the workspace tier policy
+   * applies depends on the recipe's own `requireApproval`. Re-reading the YAML
+   * through a second parser would let the gate-build interpretation drift from
+   * the execution interpretation, which is the one divergence a governance
+   * decision must never have. Throws exactly as `fire()` would.
+   */
+  loadRecipe(filePath: string): YamlRecipe {
+    return this.fireDeps.loadYamlRecipe(filePath);
+  }
+
   isInFlight(name: string): boolean {
     return this.inFlight.has(name);
   }

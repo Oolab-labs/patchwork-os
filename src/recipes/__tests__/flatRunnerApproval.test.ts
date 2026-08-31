@@ -210,7 +210,24 @@ describe("flat-runner approval gate — gateAutomatedRuns (worker.autonomy)", ()
     expect(writes).toBe(2);
   });
 
-  it("respects requireApproval:false opt-out even with gateAutomatedRuns", async () => {
+  it("requireApproval:false does NOT suppress the gate when it is the WORKER gate", async () => {
+    // INVERTED deliberately, and the behaviour it pinned WAS deliberate —
+    // #1027's own notes list "respects requireApproval:false" as intended
+    // behaviour of the worker-autonomy flip, and #995 introduced the flag as an
+    // opt-out from the original flat-runner gate. This is a supersession, not
+    // the discovery of an accident.
+    //
+    // What changed is the flag's scope. It was defined against a gate that
+    // meant one thing; worker autonomy put a second thing behind the same
+    // gate, and preserving the flag's behaviour let a recipe-level setting
+    // aimed at the workspace tier suppress worker governance too. Since
+    // `recordGateDecision` lives inside the gate fn, it also stopped the
+    // evidence being written: no decision, no ruleId, no correlationId.
+    //
+    // The invariant now is: a recipe may opt out of the workspace TIER policy;
+    // it may never opt out of WORKER governance. The tier half is applied by
+    // the caller, which builds the worker gate with no tier fn.
+    // See `recipeCannotDisableWorkerGate.test.ts`.
     let writes = 0;
     const requireApprovalFn = vi.fn(async () => false);
     await runYamlRecipe(
@@ -223,8 +240,9 @@ describe("flat-runner approval gate — gateAutomatedRuns (worker.autonomy)", ()
         },
       }),
     );
-    expect(requireApprovalFn).not.toHaveBeenCalled();
-    expect(writes).toBe(2);
+    expect(requireApprovalFn).toHaveBeenCalled();
+    // and the refusal still bites — the opt-out cannot make it advisory
+    expect(writes).toBe(0);
   });
 });
 
