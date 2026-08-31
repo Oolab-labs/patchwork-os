@@ -50,19 +50,21 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-31 `feat/approval-log-correlation-id` — ADR-0025's named next stamp. `approval_log
-  .jsonl` carried no run reference on any of 215 live rows, so no run in the whole history
-  could be assembled into "who approved this, under what rule" — the question an outside party
-  asks first. The field that WAS there (`runSeq`) was supplied zero times in 105 request rows
-  and carried an explicit instruction never to populate it, `seq` being a colliding
-  per-instance counter; retired rather than filled. Stamps `rv` + `correlationId` (the run's
-  `taskId`) on both run-bearing paths. Absence stays a STATE here, not a writer defect —
-  unlike the gate ledger, two of four paths into the queue are client-session tool calls with
-  no run.
-
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-31 `feat/approval-log-correlation-id` — ADR-0025's named next stamp. The approval
+  ledger carried no run reference on any of 215 live rows, so no run in the whole history
+  could answer "who approved this, under what rule". The field that WAS there (`runSeq`) was
+  supplied zero times in 105 request rows and carried an explicit instruction never to
+  populate it — `seq` collides across the bridges that share the file — so it is retired
+  rather than filled. Absence stays a STATE here and not a writer defect, unlike the gate
+  ledger: two of the four paths into the queue are client-session tool calls with no run, so
+  encoding absence as a defect would assert a run that never existed. Three of the four
+  wiring hops drop a field silently — the dispatch helper destructures and rebuilds, the
+  restore path enumerates, and `list()` projects — and the last two were caught by the tests
+  rather than by reading the diff. — #1561
 
 - 2026-08-31 `feat/gate-subpath-export` — `previewActions` exists so a screen showing
   "may do now / needs approval / not permitted" is computed by the code that ENFORCES it;
