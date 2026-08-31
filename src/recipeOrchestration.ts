@@ -159,6 +159,10 @@ export async function makeRecipeApprovalFn(
         // empty list is honest; inventing signals to fill the shape would put
         // fabricated evidence into a notification and a receipt.
         riskSignals: [],
+        // ADR-0025 — the join key between this approval and the run that
+        // needed it. Same value the Decision Record stamps as `correlationId`
+        // a few lines up, from the same `input`.
+        correlationId: input.runTaskId,
         ...(input.summary !== undefined && { summary: input.summary }),
       },
       // L1: abort the wait if the run is cancelled (→ "cancelled" → halt)
@@ -455,6 +459,10 @@ export async function buildWorkerAutonomyGate(
           // observer can distinguish worker-gate approvals from plain Claude-
           // session MCP tool approvals (same event type, different source).
           recipeName,
+          // ADR-0025 — same key, same `input`, as the Decision Record written
+          // above. A gated action and the approval it waits on must be
+          // reachable from each other, or the queue is evidence of nothing.
+          correlationId: input.runTaskId,
         },
         { signal: input.signal }, // L1: cancel the wait when the run aborts
       );

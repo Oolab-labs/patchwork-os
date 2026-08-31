@@ -70,6 +70,17 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   And `privacy_shadow.jsonl` carried no run id while `boundary_receipts.jsonl`, written 26
   lines away from the same dispatch, did — so "where do my live and candidate policies
   disagree, on this run?" was a join that could not be expressed. — PR pending
+- 2026-08-31 `feat/approval-log-correlation-id` — ADR-0025's named next stamp. The approval
+  ledger carried no run reference on any of 215 live rows, so no run in the whole history
+  could answer "who approved this, under what rule". The field that WAS there (`runSeq`) was
+  supplied zero times in 105 request rows and carried an explicit instruction never to
+  populate it — `seq` collides across the bridges that share the file — so it is retired
+  rather than filled. Absence stays a STATE here and not a writer defect, unlike the gate
+  ledger: two of the four paths into the queue are client-session tool calls with no run, so
+  encoding absence as a defect would assert a run that never existed. Three of the four
+  wiring hops drop a field silently — the dispatch helper destructures and rebuilds, the
+  restore path enumerates, and `list()` projects — and the last two were caught by the tests
+  rather than by reading the diff. — #1561
 - 2026-08-31 `docs/evidence-spine-adr` — the Evidence Spine existed ONLY as a CLAUDE.md
   section, which records in its own text that both its load-bearing claims went stale or
   were wrong within two days. A third was found false the same week: "zero attribution rows
