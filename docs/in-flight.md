@@ -54,6 +54,15 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-31 `fix/orchestrator-drops-local-accepts` — #1554 dropped
+  `resolveDestination`'s `localDestinationAccepts` on both its call sites, so the same policy
+  gave two answers: the recipe path says LOCAL_ONLY ("a local destination accepts it, set
+  `driver: local`") where the orchestrator said DENY ("no approval can unlock it"). Safe
+  direction, which is why it would have survived review — nothing leaks and the refusal still
+  fires. Wrong in the SENTENCE: it tells an operator their situation is unfixable while a
+  registered local destination would take the data. Found by driving the DEPLOYED build after
+  install, not by reading the diff. — PR pending
+
 - 2026-08-28 `feat/weekly-sweep-deltas` — five read-only verbs each answer "what is true
   now"; none answers "what moved", and read fresh a denominator that has not shifted in three
   weeks looks identical to a gate that flipped yesterday. `patchwork sweep` composes them and
