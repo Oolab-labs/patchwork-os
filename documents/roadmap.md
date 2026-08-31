@@ -4,9 +4,18 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Status (2026-07-08)
+## Status (2026-08-31)
 
-Current: `1.1.0-beta.2` (bridge), `1.4.23` (extension). 180 tools registered. Newer work (worker-autonomy policy gate, dashboard Terminal deck + copilot pane, Decision Record legibility layer, cost-aware model routing, judge→refine self-correction loop, recipe marketplace/Storefront) is in [CHANGELOG.md](../CHANGELOG.md); the waves below are historical (beta.9 era and earlier):
+> **This file is a historical record, not a plan.** It was last given a real
+> status pass on 2026-07-08 and drifted eight weeks before anyone noticed —
+> while `CLAUDE.md` was still instructing every session to consult it before
+> exploratory work. It is kept because the phase narratives below explain *why*
+> things are shaped as they are, which git log does not. For what is true now,
+> read `CLAUDE.md`, [docs/adr/](../docs/adr/) and [CHANGELOG.md](../CHANGELOG.md)
+> in that order. If you are about to scope work from a number on this page, run
+> the verb that produces it instead.
+
+Current: `1.2.0-beta.2` (bridge), `1.4.25` (extension). 180 tools registered. Newer work (worker-autonomy policy gate, dashboard Terminal deck + copilot pane, Decision Record legibility layer, cost-aware model routing, judge→refine self-correction loop, recipe marketplace/Storefront) is in [CHANGELOG.md](../CHANGELOG.md); the waves below are historical (beta.9 era and earlier):
 
 - **Native Windows support** — smoke harness + extension suites green on `windows-latest` CI; advisory→blocking flip in PR #537. Helpers: `winShim`, `processTree`, `fsWatchWithFallback`. ADRs 0010-0012.
 - **Write-tier kill-switch** — `patchwork kill-switch engage|release|status` + `panic` alias, multi-bridge HTTP fan-out, dashboard toggle, fs.watch convergence. Issue #422 design; ADR 0013.
