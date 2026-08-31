@@ -594,6 +594,18 @@ worker may DO; this answers what a destination may RECEIVE.
   presenting as total enforcement.
 - **Precedence `privacy → capability → cost`**, not negotiable by later stages.
   A cheaper or more capable model does not become authorised by being cheaper.
+- **`approvable: true` on a remote destination is a DEAD KNOB on the recommended
+  config shape**, and the claim that `REQUIRE_APPROVAL` is *unreachable* is
+  WRONG — it was carried in handoff notes and repeated three times before anyone
+  checked. It fires whenever no local destination accepts the classification.
+  What is true is narrower and worse: rule 1 tests `LOCAL_ONLY` BEFORE
+  `approvable`, so with a permissive local destination (which is what the
+  reference machine runs) the flag can never fire, and the operator who asked to
+  be asked is REFUSED instead — `LOCAL_ONLY` declines rather than rerouting.
+  Reported by `patchwork privacy destinations`, deliberately NOT fixed by
+  reordering: `narrowest()` ranks `REQUIRE_APPROVAL` stricter than `LOCAL_ONLY`
+  while the runtime behaves the opposite way, so reordering makes live traffic
+  newly approvable and needs a decision rather than a patch.
 - **Five decisions**: `ALLOW` · `ALLOW_REDACTED` · `LOCAL_ONLY` ·
   `REQUIRE_APPROVAL` · `DENY`. Pure function of (declared classification,
   destination policy) — no model in the loop. `narrowest()` enforces never-widen.

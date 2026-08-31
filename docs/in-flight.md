@@ -86,6 +86,13 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   repo, so it cannot run in CI, and it only sees a staged diff). Digit requirement in the
   Slack pattern is load-bearing — without it the gate fires on COMPLETED / CONSEQUENCE /
   CONVERSION, which occur legitimately nine times. — PR pending
+- 2026-08-30 `fix/approvable-is-a-dead-knob` — `approvable: true` can be set on a remote
+  destination and never fire. Rule 1 tests `LOCAL_ONLY` before `approvable`, so with a
+  permissive local destination (the recommended shape) the operator who asked to be asked is
+  REFUSED instead — `LOCAL_ONLY` declines rather than rerouting. Reported by `privacy
+  destinations`, deliberately NOT fixed by reordering, which would make live traffic newly
+  approvable. Also corrects a claim repeated three times from handoff notes without checking:
+  `REQUIRE_APPROVAL` is NOT unreachable. — PR pending
 
 - 2026-08-28 `fix/pr-outcomes-swallows-the-real-error` — `gh repo view` ran with stderr
   ignored, so an expired credential, a missing gh and a missing remote all reported the same
