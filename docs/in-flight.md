@@ -69,7 +69,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   and an ADR-0021 boundary refusal (remedy included in its own text) rendered identically.
   And `privacy_shadow.jsonl` carried no run id while `boundary_receipts.jsonl`, written 26
   lines away from the same dispatch, did — so "where do my live and candidate policies
-  disagree, on this run?" was a join that could not be expressed. — PR pending
+  disagree, on this run?" was a join that could not be expressed. — #1562
 - 2026-08-31 `feat/approval-log-correlation-id` — ADR-0025's named next stamp. The approval
   ledger carried no run reference on any of 215 live rows, so no run in the whole history
   could answer "who approved this, under what rule". The field that WAS there (`runSeq`) was
