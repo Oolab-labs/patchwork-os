@@ -58,11 +58,34 @@ function step(name, fn) {
   }
 }
 
+/**
+ * npm config reaches a child process as `npm_config_*` env vars, and this
+ * script runs `npm pack` and `npm install` as children.
+ *
+ * `npm_config_dry_run` is the one that matters. Under `npm publish --dry-run`
+ * it is inherited by the inner `npm pack`, which then writes no tarball — and
+ * every subsequent check fails against a file that was never meant to exist.
+ * The rehearsal a release engineer runs before a real publish would report
+ * eight failures that look exactly like a broken package.
+ *
+ * That is the failure mode this script's own notes warn about: a verifier that
+ * is wrong in the FAILING direction burns real time chasing a bug in the
+ * product that is actually a bug in the check. This script is never itself a
+ * dry run — it packs and installs for real, into a throwaway prefix — so the
+ * inherited flag is always wrong here.
+ *
+ * Scoped to `dry_run` deliberately. Stripping every `npm_config_*` would also
+ * drop `registry`, proxy and auth settings that the inner install genuinely
+ * needs to fetch dependencies behind a corporate mirror or in CI.
+ */
+const { npm_config_dry_run: _ignoredDryRun, ...cleanEnv } = process.env;
+
 function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 32 * 1024 * 1024,
+    env: cleanEnv,
     ...opts,
   });
 }

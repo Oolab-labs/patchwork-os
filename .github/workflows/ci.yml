@@ -142,6 +142,45 @@ jobs:
       - name: Audit tool schemas against snapshot
         run: node scripts/audit-schema-changes.mjs
 
+  fresh-install:
+    # Does the PACKAGED, INSTALLED product work — not the source checkout?
+    #
+    # `smoke:fresh-install` existed as an npm script wired into NOTHING: not
+    # CI, not `prepublishOnly`, not any of the three publish jobs, each of
+    # which ran `npm ci && build && test` against the source tree and then
+    # published. A correct check pointed at nothing.
+    #
+    # It now also runs from `prepublishOnly`, which is the last moment before
+    # a real publish and covers all three jobs at once. This job is the other
+    # half: `prepublishOnly` only fires on a publish, so without it a break
+    # would surface during a release rather than on the PR that caused it.
+    #
+    # `npm_config_dry_run` is set on purpose. npm config reaches children as
+    # env vars, and under `npm publish --dry-run` the inner `npm pack`
+    # inherited this flag and wrote no tarball — eight failures that looked
+    # exactly like a broken package during the rehearsal a release engineer
+    # runs before a real publish. Setting it here pins that fix: without it the
+    # job is green either way and the guard could be deleted unnoticed.
+    name: Fresh install (packaged artifact)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build
+        run: npm run build
+      - name: Pack, install into a throwaway prefix, and drive the binary
+        run: npm run smoke:fresh-install
+        timeout-minutes: 10
+        env:
+          npm_config_dry_run: "true"
+
   lsp-audit:
     name: LSP tool registry audit
     runs-on: ubuntu-latest
