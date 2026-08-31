@@ -359,7 +359,8 @@ With per-field labels, both become deterministic and model-free:
 wrong.** It sits behind field labels. Anything shipped before them is either a
 detector — rejected — or a rename of the current refusal.
 
-**Field labels are a recipe-schema change, not a privacy-engine change.** The
+**Field labels are a recipe-schema change, not a privacy-engine change.**
+(Declined 2026-08-30 — [ADR-0024](0024-field-level-data-labels.md).) The
 work is in how a step declares its inputs, which is a larger and more visible
 surface than anything ADR-0021 has touched so far, and it changes what recipe
 authors write.
@@ -512,6 +513,17 @@ present as protection and function as a guess. The honest path to redaction
 remains the one already recorded: per-field labels applied at render time, which
 turn removal into a set difference. That is a recipe-schema change and is still
 not decided.
+
+**DECIDED 2026-08-30 — declined, with a trigger to reopen. See
+[ADR-0024](0024-field-level-data-labels.md).** Not because the design is wrong;
+the workable shape is recorded there rather than discarded, including the
+observation that makes it viable at all (removing a value the renderer itself
+placed is bookkeeping, not detection). It is declined because `ALLOW_REDACTED`
+has been returned **0 times in 254 recorded decisions** — the capability would
+implement a branch that has never fired — and because the 58-of-77 undeclared
+population that motivated deriving labels rather than declaring them is now
+**0 of 74**. `ALLOW_REDACTED` continues to REFUSE. Reopen on the ledger, not on
+the argument that redaction would be useful.
 
 ### A disclosure that states provider behaviour will rot into a lie
 
