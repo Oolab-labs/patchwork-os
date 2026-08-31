@@ -171,6 +171,13 @@ export function validateWorkers(opts: {
   workersDir: string;
   recipesDir: string;
   templatesDir?: string;
+  /**
+   * `recipes.disabled` from the patchwork config. Passed IN rather than read
+   * here so this stays a pure function of its inputs — a validator that reads
+   * the operator's config behind the caller's back cannot be tested against a
+   * state the machine is not in.
+   */
+  disabledRecipes?: ReadonlyArray<string>;
 }): ValidateResult {
   const scan = scanWorkers(opts.workersDir);
   const findings: WorkersFinding[] = [];
@@ -186,6 +193,7 @@ export function validateWorkers(opts: {
   }
 
   const recipes = installedRecipeNames(opts.recipesDir);
+  const disabled = new Set(opts.disabledRecipes ?? []);
   const claims = new Map<string, string[]>();
   for (const { worker } of scan.loaded) {
     if (!worker.recipe) {
@@ -201,6 +209,22 @@ export function validateWorkers(opts: {
         level: "error",
         code: "dangling-recipe",
         message: `${worker.id} names recipe "${worker.recipe}", which is not installed. The worker governs nothing.`,
+      });
+    }
+    if (disabled.has(worker.recipe)) {
+      // The completest way a perfect binding governs nothing: the scheduler,
+      // the event-trigger programs and the HTTP route all consult this list, so
+      // the recipe fires from no trigger at all. A WARNING and not an error —
+      // disabling a recipe is a deliberate act, and failing the check on an
+      // intended state is how a gate gets ignored. What is worth saying is the
+      // pairing: the worker is still installed and still claims to govern this.
+      findings.push({
+        level: "warning",
+        code: "disabled-recipe",
+        message:
+          `${worker.id} is bound to recipe "${worker.recipe}", which is DISABLED — ` +
+          "no trigger fires it, so the worker never runs. Re-enable the recipe " +
+          "or uninstall the worker; leaving both is a manifest that governs nothing.",
       });
     }
     claims.set(worker.recipe, [
@@ -301,6 +325,7 @@ export async function validateWorkersWithRecipeHealth(opts: {
   workersDir: string;
   recipesDir: string;
   templatesDir?: string;
+  disabledRecipes?: ReadonlyArray<string>;
   /** Override for tests; defaults to `recipe doctor`'s static half. */
   probe?: RecipeHealthProbe;
 }): Promise<ValidateResult> {

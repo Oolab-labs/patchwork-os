@@ -29,6 +29,7 @@ import {
 } from "../workerRecipeHealth.js";
 import {
   formatWorkersValidate,
+  validateWorkers,
   validateWorkersWithRecipeHealth,
 } from "../workersCli.js";
 
@@ -262,5 +263,62 @@ autonomyCeiling: 1
     });
     const f = result.findings.find((x) => x.code === "recipe-uncheckable");
     expect(f?.message).toMatch(/not a pass/i);
+  });
+});
+
+/**
+ * The third way a perfect binding governs nothing: the recipe is DISABLED.
+ *
+ * `recipes.disabled` in the patchwork config is read by the scheduler, the
+ * event-trigger programs and the HTTP route, so a disabled recipe never fires
+ * from any trigger. A worker bound to one is installed, parses, binds, owns
+ * action classes, carries a `forbids` list — and can never run.
+ *
+ * A WARNING, not an error: disabling a recipe is a deliberate operator act, and
+ * failing the check on an intended state is how a gate gets ignored. What is
+ * worth saying is the PAIRING — the worker is still installed and still claims
+ * to govern something.
+ */
+describe("a worker bound to a disabled recipe", () => {
+  let root: string;
+  let workersDir: string;
+  let recipesDir: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(path.join(os.tmpdir(), "pw-worker-disabled-"));
+    workersDir = path.join(root, "workers");
+    recipesDir = path.join(root, "recipes");
+    for (const d of [workersDir, recipesDir]) mkdirSync(d, { recursive: true });
+    writeFileSync(
+      path.join(workersDir, "w.worker.yaml"),
+      "id: scout\nname: Scout\nresponsibilities: [x]\nrecipe: nightly-scan\nowns: [issue]\nautonomyCeiling: 1\n",
+    );
+    writeFileSync(
+      path.join(recipesDir, "nightly-scan.yaml"),
+      "name: nightly-scan\ndescription: d\ntrigger: { type: manual }\nsteps:\n  - agent:\n      prompt: x\n      into: out\n",
+    );
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("is reported, and says the worker cannot run at all", () => {
+    const result = validateWorkers({
+      workersDir,
+      recipesDir,
+      disabledRecipes: ["nightly-scan"],
+    });
+    const f = result.findings.find((x) => x.code === "disabled-recipe");
+    expect(f).toBeDefined();
+    expect(f?.level).toBe("warning");
+    expect(f?.message).toContain("scout");
+    expect(f?.message).toContain("nightly-scan");
+    // Deliberate operator state — it must not fail the check.
+    expect(result.healthy).toBe(true);
+  });
+
+  it("is silent when the recipe is enabled", () => {
+    const result = validateWorkers({ workersDir, recipesDir });
+    expect(result.findings.some((x) => x.code === "disabled-recipe")).toBe(
+      false,
+    );
   });
 });
