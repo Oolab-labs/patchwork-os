@@ -55,6 +55,22 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-31 `fix/recipe-cannot-disable-worker-gate` — `requireApproval: false` (#995) was
+  DELIBERATELY preserved when worker autonomy arrived (#1027 lists "respects
+  requireApproval:false" as intended). Compatibility was kept, but the flag had been defined
+  against a gate that meant one thing and now sat in front of two — workspace tier policy AND
+  worker governance — and since the worker gate is injected AS `requireApprovalFn` with
+  `recordGateDecision` inside it, an opted-out recipe governed nothing AND recorded nothing.
+  An intentional narrowing of the flag's meaning, not the discovery of an accident. Invariant
+  now explicit: a recipe may opt out of the workspace TIER policy, never of WORKER governance.
+  Tier half applied by the caller (worker gate built with no tier fn — the seam already
+  returned true when absent); governance half by both runners via `gateAutomatedRuns`. Closed
+  on the chained path too, which receives the flat deps whole and had the same hole with no
+  signal. Parsed through `RecipeOrchestrator.loadRecipe` so the gate-build reading cannot
+  drift from the execution reading; an unloadable recipe fails the run there. INVERTS one
+  previously-pinned assertion that carried no rationale — flagged in the PR rather than
+  landed quietly. — #1565
+
 - 2026-08-31 `feat/evidence-field-roundtrip` — the evidence ledgers are copied field-by-field
   by hand (deliberately — a spread would let unvetted caller content reach disk), so a field
   can be declared, stamped by its producer, and dropped by a copy site nobody updated, with
