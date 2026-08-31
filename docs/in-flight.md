@@ -55,6 +55,17 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-31 `feat/evidence-relationship-coverage` — Stage 1 of `patchwork evidence` becoming
+  a coverage instrument. The flat "does this row carry a correlationId?" reading is WRONG on
+  live data three ways: 6 approval requests (MCP client sessions) and 7 privacy-shadow rows
+  (orchestrator dispatches) legitimately have no run, and `runs.jsonl` is an event log whose
+  974 rows are 505 runs. Unit becomes a relationship with an expectation attached —
+  connected / legacy / not-applicable / unresolved / defect — with integrity = connected /
+  (connected + defect + unresolved), so history and rows that never owed a link stay out of
+  the denominator. Approvals traverse in two hops (decision --callId--> request
+  --correlationId--> run); the archive is read alongside the live run log. Found 7 genuinely
+  unresolved receipts on its first run. Stage 2 (`--check`) deliberately deferred. — #1566
+
 - 2026-08-31 `fix/recipe-cannot-disable-worker-gate` — `requireApproval: false` (#995) was
   DELIBERATELY preserved when worker autonomy arrived (#1027 lists "respects
   requireApproval:false" as intended). Compatibility was kept, but the flag had been defined
