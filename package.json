@@ -13,6 +13,10 @@
     "./plugin": {
       "import": "./dist/plugin.js",
       "types": "./dist/plugin.d.ts"
+    },
+    "./gate": {
+      "import": "./dist/gate.js",
+      "types": "./dist/gate.d.ts"
     }
   },
   "bin": {
