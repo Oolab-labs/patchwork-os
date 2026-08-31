@@ -612,7 +612,7 @@ worker may DO; this answers what a destination may RECEIVE.
   destination policy) — no model in the loop. `narrowest()` enforces never-widen.
 - **Inert until opted in.** No `privacy` block ⇒ no destinations ⇒ no decisions.
   Registering a destination is the opt-in; once opted in it fails CLOSED.
-- **`ALLOW_REDACTED` REFUSES, and field labels are DECLINED — [ADR-0024](docs/adr/0024-field-level-data-labels.md), 2026-08-30.** Not because the design is wrong: the shape is recorded there, including the point that makes it viable (removing a value the RENDERER placed is bookkeeping, not detection — `render()` is pure `{{key}}` substitution, so provenance is total at render time and gone one layer later). Declined because `ALLOW_REDACTED` has been returned **0 times in 254 recorded decisions**, so it would implement a branch that has never fired, and because its motivating population (58 undeclared steps) is now zero. **Reopen on the ledger — a non-zero `ALLOW_REDACTED` count naming real operator recipes — never on the argument that redaction would be useful.** Purpose minimisation is declined separately, not by association: it asks about intent rather than provenance and does not follow from the design even if built.
+- **`ALLOW_REDACTED` REFUSES, and field labels are DECLINED — [ADR-0024](docs/adr/0024-field-level-data-labels.md), 2026-08-30.** Not because the design is wrong: the shape is recorded there, including the point that makes it viable (removing a value the RENDERER placed is bookkeeping, not detection — `render()` is pure `{{key}}` substitution, so provenance is total at render time and gone one layer later). Declined because `ALLOW_REDACTED` has been returned **0 times in 254 recorded decisions**, so it would implement a branch that has never fired, and because its motivating population (58 undeclared steps) is now zero. **Trigger re-checked 2026-08-31: still 0, now of 264** (`ALLOW` 258, `LOCAL_ONLY` 6) — the decision stands, and the check is one `patchwork privacy receipts` away, so do it rather than assuming either direction. **Reopen on the ledger — a non-zero `ALLOW_REDACTED` count naming real operator recipes — never on the argument that redaction would be useful.** Purpose minimisation is declined separately, not by association: it asks about intent rather than provenance and does not follow from the design even if built.
 - **`ALLOW_REDACTED` REFUSES, and that is CORRECT — not a stopgap.**
   `executeAgent` receives an already-rendered prompt, so removing a category
   there could only mean finding it in prose, i.e. DETECTION, which the ADR
@@ -696,11 +696,17 @@ worker may DO; this answers what a destination may RECEIVE.
 
   **The reader already exists, one repo over.** `patchwork approvals` reads the *activity* log, not this one; `approval_log.jsonl`'s only in-repo reader is restart restore. Its consumer is the control plane's `approvalMeasures`, which filters strictly on `kind` — verified by deriving the same measures over a synthetic log with and without attribution rows and getting identical counts. That check could have failed: an earlier version of that function counted ROWS, and would have reported requests doubled.
 
-  **Not yet observed in production.** The roster holds one member with no credential (`NO password — cannot authenticate`), so no `v2` session can be minted and zero attribution rows exist anywhere. Also note the trap for anyone measuring this: 44 of 273 rows in `worker_gate_decisions.jsonl` DO carry a non-null actor, and all 44 are `kind: "worker"` — the autonomous-allow attribution, not an approver. `MemberKind` is `"human" | "worker"`; there is no `"member"`. A non-null check will tell you attribution works.
+  **Observed in production 2026-08-31 — and the claim that it was not is the thing this file got most wrong.** Attribution has fired end to end: `approval_log.jsonl` holds **5 `attribution` rows**, each naming a real `memberId` with `kind: "human"`, against **105 `decision` rows** — so coverage is 5 of 105, not zero. The text that stood here said the roster held one member with no credential, so no `v2` session could be minted and zero attribution rows existed anywhere. A credential was set; the path works. It survived long enough to be quoted in a project assessment as a live blocker, which is the specific cost of a stale measurement in this file: **re-measure before scoping, never quote this paragraph.** The trap for anyone measuring is unchanged and still catches people: **50 of 280** rows in `worker_gate_decisions.jsonl` carry a non-null actor and ALL of them are `kind: "worker"` — the autonomous-allow attribution, not an approver. `MemberKind` is `"human" | "worker"`; there is no `"member"`. A non-null check will tell you attribution works.
 
   **What is still true: authorisation is enforced NOWHERE.** `canApproveAction`, `capabilitiesFor`, `principalCan`, `roleGrants` have zero production call sites outside `src/identity/` and its tests. Six roles and eight capabilities currently grant nothing. The trap when that changes: the roster's fail-SOFT default (an implicit owner on a missing or malformed `members.json`) becomes privilege ESCALATION the moment anything consults it to permit an action. **Decided shape:** a pluggable auth seam resolving to `members.json`; Phase A per-member credentials via `crypto.scrypt` (no password-hash dep exists in the tree, and a native-compilation dep is a real cross-platform install risk here); Phase B OIDC mapped on `sub`, never `email` — **and Phase B is built in `patchwork-control-plane`, not here**: ADR-0019 reserves organisation identity (SSO/SCIM) for the non-MIT repo, the two ADRs were written in the same commit, and ADR-0020 originally cited ADR-0019 zero times. The SEAM and Phase A stay MIT here; federation does not. `src/identity/` as it stands is runtime and stays — the line is federation, not identity. The roster keeps its fail-SOFT default, and an unauthenticated principal stays UNATTRIBUTED. **Never default the actor to the implicit owner** — that writes a claim about a real person into an audit record on no evidence, which is worse than an absent `actor` (absence already means "nobody recorded this", and is never backfilled).
 
 ## Evidence Spine
+
+> **Decided in [ADR-0025](docs/adr/0025-evidence-spine.md).** The principle lives
+> there; this section carries the current measurements and the working notes.
+> That split exists because this section's figures have gone stale three times —
+> twice within 48 hours of being written — while the decisions behind them never
+> moved. **Re-run `patchwork evidence` before scoping off any number below.**
 
 **A design principle, not a subsystem.** Nothing here is a thing to go and build;
 it is a constraint on how the things already being built should record what they
@@ -750,13 +756,27 @@ the check before scoping against it.
 
 **`patchwork evidence` is that check.** It reports, per ledger, how many rows
 carry a `correlationId` out of how many rows exist, and how many runs appear in
-more than one — the denominators, not a reader. Measured 2026-08-26 on the
-reference machine: gate decisions **1 of 273**, boundary receipts **14 of 170**,
-and `privacy_shadow` / `outcome-log` / `approval_log` **0**. Runs reachable in
-BOTH joined ledgers: **zero**. The two populations barely overlap by
-construction — gate rows are written for worker recipes under the autonomy flag,
-receipts for agent steps with a registered destination — so the join is sparse
-rather than merely young.
+more than one — the denominators, not a reader. Re-measured **2026-08-31** on
+the reference machine: gate decisions **8 of 280**, boundary receipts **108 of
+264**, `privacy_shadow` **0 of 309**, `outcome-log` **0 of 99**, `approval_log`
+**0 of 215**, `butler/permission_exercises.jsonl` ABSENT. Runs reachable in BOTH
+joined ledgers: **1**. The two populations barely overlap by construction — gate
+rows are written for worker recipes under the autonomy flag, receipts for agent
+steps with a registered destination — so the join is sparse rather than merely
+young.
+
+The figures five days earlier were gate **1 of 273**, receipts **14 of 170**,
+shared runs **zero**. Receipts went 8% → 41% because the writer landed and has
+been accruing since; the gate barely moved because its population barely moved.
+Quote the direction, not either snapshot, and **re-run the verb** — this
+paragraph has been stale twice already.
+
+**`approval_log` at 0 of 215 is the one that matters commercially**, and it is
+not merely another unjoined ledger. It is the ledger an outside auditor asks for
+first ("who approved this, and under what rule"), and with no run reference no
+run in the entire history can be assembled into that answer. Stamping it is the
+smallest change that turns the spine from an internal property into something a
+third party can check — the same `rv` protocol, already proven twice.
 
 That zero is what keeps the evidence graph unbuilt, and it is why item 7 is not
 "unblocked by the sentinel shipping": the sentinel settled HOW to stamp, and
