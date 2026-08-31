@@ -50,6 +50,13 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-31 `docs/evidence-spine-adr` — the Evidence Spine is the strongest architectural
+  idea in the tree and exists ONLY as a CLAUDE.md section, which that section itself records
+  as having gone stale twice inside 48 hours. Promotes it to ADR-0025 and corrects three
+  measurements CLAUDE.md states as fact and that are no longer true — most importantly the
+  claim that zero attribution rows exist anywhere, which is the blocker a reader would scope
+  around and which cleared this week. Docs only; no code paths touched.
+
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
