@@ -17,6 +17,10 @@
     "./gate": {
       "import": "./dist/gate.js",
       "types": "./dist/gate.d.ts"
+    },
+    "./privacy": {
+      "import": "./dist/privacy.js",
+      "types": "./dist/privacy.d.ts"
     }
   },
   "bin": {
