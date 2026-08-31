@@ -171,3 +171,72 @@ describe("orchestrator information boundary", () => {
     expect(s.recent[0]?.labelSource).toBe("default");
   });
 });
+
+describe("the orchestrator and the recipe path agree on one policy", () => {
+  /**
+   * Found by driving the DEPLOYED build, not by reading the source.
+   *
+   * `decideBoundary` offers LOCAL_ONLY — "a local destination accepts it" —
+   * only when told one does. `resolveDestination` computes that and the recipe
+   * path forwards it; the orchestrator dropped it, so the same registry and the
+   * same classification produced DENY on one path and LOCAL_ONLY on the other.
+   *
+   * The direction was safe (DENY is stricter), which is exactly why it would
+   * have survived review — nothing leaks and the refusal still happens. What
+   * was wrong is the sentence an operator reads: DENY says no approval can
+   * unlock it, while a registered local destination would take the data.
+   */
+  const REGISTRY_WITH_LOCAL = {
+    destinations: {
+      "local-models": {
+        type: "local",
+        classifications: [
+          "public",
+          "internal",
+          "personal",
+          "confidential",
+          "restricted",
+        ],
+        drivers: ["local"],
+      },
+      "hosted-models": {
+        type: "remote",
+        drivers: ["remote-driver"],
+        classifications: ["public", "internal"],
+      },
+    },
+  };
+
+  it("says LOCAL_ONLY, not DENY, when a local destination accepts the data", async () => {
+    writeConfig({
+      ...REGISTRY_WITH_LOCAL,
+      orchestrator: { classification: "personal" },
+    });
+    const r = await runOne();
+    expect(r.ran, "the prompt still must not reach the driver").toBe(false);
+    // The refusal must name the remedy that exists. "no approval can unlock it"
+    // is true only when nothing on this machine will take the data.
+    expect(r.errorMessage).toMatch(/may not leave the machine/);
+    expect(r.errorMessage).not.toMatch(/no approval can unlock/);
+  });
+
+  it("still says DENY when NO local destination accepts it", async () => {
+    // The control. Without it the assertion above passes against a build that
+    // hardcodes LOCAL_ONLY for every refusal — which would be the same class of
+    // error in the opposite direction, and would tell an operator a local
+    // driver will fix something it cannot.
+    writeConfig({
+      destinations: {
+        "hosted-models": {
+          type: "remote",
+          drivers: ["remote-driver"],
+          classifications: ["public", "internal"],
+        },
+      },
+      orchestrator: { classification: "personal" },
+    });
+    const r = await runOne();
+    expect(r.ran).toBe(false);
+    expect(r.errorMessage).toMatch(/no approval can unlock/);
+  });
+});

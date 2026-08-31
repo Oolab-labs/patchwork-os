@@ -236,7 +236,12 @@ function observeOrchestratorShadow(
       {},
     );
     if (!resolved) return;
-    const outcome = decideBoundary({ classification }, resolved.destination);
+    const outcome = decideBoundary({ classification }, resolved.destination, {
+      // Forwarded, NOT dropped. `resolveDestination` computes this and the
+      // recipe path passes it on; omitting it here made the same policy give
+      // two answers for one situation — see the enforcement site below.
+      localDestinationAccepts: resolved.localDestinationAccepts,
+    });
     recordPrivacyShadow({
       ...(currentWorkspaceId(workspace) && {
         workspaceId: currentWorkspaceId(workspace),
@@ -348,7 +353,26 @@ function governOrchestratorDispatch(
   // refusal, which would make configuring the orchestrator key alone break
   // every dispatch.
   if (!resolved) return;
-  const outcome = decideBoundary({ classification }, resolved.destination);
+  // `localDestinationAccepts` is FORWARDED, and the omission it replaces was a
+  // real defect caught by running the deployed build rather than by reading it.
+  //
+  // `decideBoundary` rule 1 offers LOCAL_ONLY — "a local destination accepts
+  // it" — only when told that one does. `resolveDestination` computes exactly
+  // that and hands it back; the recipe path forwards it. Dropping it here made
+  // the orchestrator answer DENY ("no approval can unlock it") for a dispatch
+  // the recipe path calls LOCAL_ONLY ("set `driver: local`").
+  //
+  // The direction was safe — DENY is stricter — which is precisely why it would
+  // have survived review: nothing leaks, no test for the refusal itself fails.
+  // What was wrong is the SENTENCE an operator reads. It states their situation
+  // is unfixable while a registered local destination would accept the data, so
+  // the one remedy available is the one the message rules out.
+  //
+  // Two notions of one policy is the failure this whole subsystem is built to
+  // avoid, and it appeared inside the change that was meant to close it.
+  const outcome = decideBoundary({ classification }, resolved.destination, {
+    localDestinationAccepts: resolved.localDestinationAccepts,
+  });
   const wsId = currentWorkspaceId(workspace);
   try {
     sharedBoundaryReceiptLog().record({
