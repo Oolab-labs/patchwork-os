@@ -120,6 +120,42 @@ It never prints the matched string — only which denylist entry number matched,
 and where. Echoing it would put the secret into scrollback, CI logs and
 screenshots, which is the same disclosure one layer over.
 
+## Shipped-artifact identifier gate
+
+`scripts/audit-shipped-identifiers.mjs` (CI-gating) scans `templates/` and
+`examples/` for real-world identifiers by SHAPE — Slack channel ids and
+`/Users/<name>` paths.
+
+It exists because those directories are **distributed**: `package.json`'s
+`files` includes `templates` wholesale, so a real identifier there is published
+AND copied onto every installer's machine as working configuration. Found by
+hand 2026-08-31 — a real Slack channel id shipped three times in one example
+(labelled sales / marketing / engineering, all the same id) and a real workspace
+channel name sat in a shipped template. Nothing was checking.
+
+**It is not a duplicate of the private-identifier gate.** That one matches an
+operator's denylist, which by design never enters the repo — so it cannot run in
+CI and only ever sees a staged diff, a branch name and a commit message. It
+could not have caught these: they were already committed. This one matches
+shape, needs no secret, and therefore runs in CI. Complements, not overlap.
+
+**The digit requirement in the Slack pattern is load-bearing.** `C` plus 8-10
+uppercase alphanumerics also matches ordinary English — `COMPLETED`,
+`CONSEQUENCE`, `CONVERSION` occur legitimately in nine places across shipped
+recipes. Requiring a digit separates a real id from a word; without it the gate
+fires on normal content and gets silenced.
+
+**It deliberately does NOT judge domains or emails.** Real-vs-placeholder is a
+knowledge question, not a shape one (`acme.test` and a genuine company differ by
+what you know, not by form), and a guessing gate would either miss the real ones
+or block legitimate placeholders. That half stays with the denylist gate and
+with reading the diff. Known carve-out: a recipe whose FUNCTION is to filter
+mail from a named service must name that service's sender address — the same
+exception CLAUDE.md already makes for connector product names.
+
+A scan of zero files FAILS rather than passing, so a moved or unreadable
+directory cannot report OK.
+
 ## Documentation
 
 Comply with all docs in `/documents/`. Consult before changes:

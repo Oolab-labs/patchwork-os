@@ -78,6 +78,14 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   DERIVING labels is now 0 of 74 — a figure CLAUDE.md was still quoting while work was scoped
   against it. The workable design is recorded rather than discarded, with a measurable trigger
   to reopen. — PR pending
+- 2026-08-31 `fix/real-identifiers-in-shipped-artifacts` — a real Slack channel id shipped
+  three times in one example and a real workspace channel name sat in a shipped template.
+  `templates/` is packed into npm wholesale, so both were published AND copied onto every
+  installer's machine as working configuration. Replaced with placeholders and gated by shape
+  in CI. The private-identifier gate could not have caught them (denylist never enters the
+  repo, so it cannot run in CI, and it only sees a staged diff). Digit requirement in the
+  Slack pattern is load-bearing — without it the gate fires on COMPLETED / CONSEQUENCE /
+  CONVERSION, which occur legitimately nine times. — PR pending
 
 - 2026-08-28 `fix/pr-outcomes-swallows-the-real-error` — `gh repo view` ran with stderr
   ignored, so an expired credential, a missing gh and a missing remote all reported the same
