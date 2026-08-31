@@ -54,10 +54,27 @@ describe("the information boundary is wired into production dispatch", () => {
   it("the receipt log is a shared instance, not per call", () => {
     // A per-call instance restarts `seq` at 1 on every dispatch — the same
     // per-instance-counter-on-a-shared-file defect that collided 142 of 145
-    // run-log seqs (#1324). The lazy singleton is what prevents it.
-    const src = read("src/recipes/yamlRunner.ts");
-    expect(src).toMatch(/_boundaryReceiptLogs = new Map/);
-    expect(src).toMatch(/function boundaryReceiptLog\(\)/);
+    // run-log seqs (#1324). The per-directory map is what prevents it.
+    //
+    // It MOVED to `boundaryReceiptLog.ts` when the orchestrator path gained
+    // enforcement: two writers each holding their own map is the very defect
+    // above, so the map has to be shared between them and not copied. The
+    // guard follows it rather than being deleted — the property being pinned
+    // did not change, only its address.
+    const src = read("src/privacy/boundaryReceiptLog.ts");
+    expect(src).toMatch(/_sharedLogs = new Map/);
+    expect(src).toMatch(/function sharedBoundaryReceiptLog\(\)/);
+    // And both writers must go through it. A second `new BoundaryReceiptLog`
+    // in production code would reintroduce the colliding counter silently.
+    for (const f of [
+      "src/recipes/yamlRunner.ts",
+      "src/claudeOrchestrator.ts",
+    ]) {
+      expect(read(f), `${f} builds its own receipt log`).not.toMatch(
+        /new BoundaryReceiptLog\(/,
+      );
+      expect(read(f)).toMatch(/sharedBoundaryReceiptLog\(\)/);
+    }
   });
 
   it("reads config per call so an edit takes effect without a restart", () => {

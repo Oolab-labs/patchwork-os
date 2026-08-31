@@ -30,7 +30,10 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { patchworkPath } from "../patchworkHome.js";
+
 import type { BoundaryDecision, Classification } from "./dataPolicy.js";
+import type { LabelSource } from "./shadowLog.js";
 
 /**
  * Writer-stamped record level for this ledger.
@@ -106,6 +109,20 @@ export interface BoundaryReceipt {
    * exists when it does not.
    */
   recipeName?: string;
+  /**
+   * Where `classification` came from — see `LabelSource` in `shadowLog.ts`.
+   *
+   * ADR-0021 makes this the PRECONDITION for enforcing a path that has no
+   * per-dispatch label: a workspace-level default must be "recorded honestly as
+   * a default rather than as a declaration". Without this field on the RECEIPT
+   * (not merely on the shadow row), an enforced orchestrator decision would
+   * assert that an operator classified a free-form prompt they never saw.
+   *
+   * Optional on the type because rows written before the field exist without
+   * it, and that absence is not `assumed` — it is "this writer did not say".
+   * Never defaulted on read.
+   */
+  labelSource?: LabelSource;
   /** Short workspace id — a tag for attribution, never a filter. */
   workspaceId?: string;
 }
@@ -125,6 +142,7 @@ export interface RecordBoundaryReceiptInput {
   redactCategories?: string[];
   reason: string;
   recipeName?: string;
+  labelSource?: LabelSource;
   workspaceId?: string;
 }
 
@@ -209,6 +227,11 @@ export class BoundaryReceiptLog {
         ? { redactCategories: input.redactCategories }
         : {}),
       ...(input.recipeName ? { recipeName: input.recipeName } : {}),
+      // Copied HERE as well as declared on both types. `workspaceId` was
+      // declared on both and never copied by this constructor, so it could not
+      // appear on a receipt from any bridge — the defect the comment below
+      // records. A new field is one omission away from repeating it.
+      ...(input.labelSource ? { labelSource: input.labelSource } : {}),
       // Both types have declared `workspaceId` since #1455 and the caller has
       // been passing it since; this constructor never copied it, so the field
       // could not appear on a receipt from any bridge, in any working
@@ -249,4 +272,32 @@ export class BoundaryReceiptLog {
     for (const r of this.receipts) out[r.decision]++;
     return out;
   }
+}
+
+const _sharedLogs = new Map<string, BoundaryReceiptLog>();
+
+/**
+ * The receipt log for the CURRENT patchwork home, one instance per directory.
+ *
+ * Lifted out of `yamlRunner` when the orchestrator path gained enforcement
+ * (ADR-0021 2026-08-30 amendment), because two writers each holding their own
+ * instance is the bug this shape already exists to prevent: `seq` is a
+ * per-INSTANCE counter over a shared file, and a second instance restarts it at
+ * 1 — the collision that put 142 of 145 run-log seqs on top of each other
+ * (#1324). Sharing the map is the whole point of extracting it; copying the
+ * helper into the orchestrator would have reproduced the defect its own comment
+ * warns about.
+ *
+ * Keyed by resolved directory, NOT a plain singleton: a singleton captures
+ * whichever home existed at first use and then ignores `PATCHWORK_HOME`, the
+ * frozen-at-first-use defect of #1265 and #1266.
+ */
+export function sharedBoundaryReceiptLog(): BoundaryReceiptLog {
+  const dir = patchworkPath();
+  let log = _sharedLogs.get(dir);
+  if (!log) {
+    log = new BoundaryReceiptLog({ dir });
+    _sharedLogs.set(dir, log);
+  }
+  return log;
 }

@@ -118,7 +118,10 @@ import { evaluateWhen } from "./whenGuard.js";
 import { resolveWorkspaceRoot } from "./workspaceRoot.js";
 import "./tools/index.js";
 import { patchworkPath } from "../patchworkHome.js";
-import { BoundaryReceiptLog } from "../privacy/boundaryReceiptLog.js";
+import {
+  type BoundaryReceiptLog,
+  sharedBoundaryReceiptLog,
+} from "../privacy/boundaryReceiptLog.js";
 import type {
   BoundaryDecision as BoundaryDecisionValue,
   Classification as ClassificationValue,
@@ -3634,7 +3637,7 @@ function toAgentResult(v: string | AgentResult): AgentResult {
  * the same per-instance-counter-on-a-shared-file defect that made 142 of 145
  * run-log seqs collide (#1324).
  */
-const _boundaryReceiptLogs = new Map<string, BoundaryReceiptLog>();
+
 /**
  * Short id of the workspace this process is operating in, for evidence
  * attribution (`src/workspaceId.ts`). Resolved per call rather than captured:
@@ -3674,25 +3677,10 @@ function evidenceWorkspaceId(startDir?: string): string | undefined {
 }
 
 function boundaryReceiptLog(): BoundaryReceiptLog {
-  // Keyed BY RESOLVED DIRECTORY, not a single instance.
-  //
-  // A plain singleton captures whichever home existed at first use and ignores
-  // PATCHWORK_HOME afterwards — the same frozen-at-first-use defect as the
-  // module-level RECIPES_DIR (#1265) and the OAuth redirect URI (#1266),
-  // reintroduced by the fix for it. Caught because an end-to-end test set a
-  // fresh home and its receipts went to the previous one.
-  //
-  // Still one instance PER DIRECTORY, which is the property that matters: a
-  // per-call instance would restart `seq` at 1 on every dispatch, the
-  // counter-on-a-shared-file bug that collided 142 of 145 run-log seqs
-  // (#1324).
-  const dir = patchworkPath();
-  let log = _boundaryReceiptLogs.get(dir);
-  if (!log) {
-    log = new BoundaryReceiptLog({ dir });
-    _boundaryReceiptLogs.set(dir, log);
-  }
-  return log;
+  // Delegates to the shared per-directory instance in `boundaryReceiptLog.ts`.
+  // It used to live here; the orchestrator path now writes receipts too, and
+  // two independent instances over one file restart `seq` against each other.
+  return sharedBoundaryReceiptLog();
 }
 
 function buildAgentExecutorDeps(
@@ -3800,6 +3788,12 @@ function buildAgentExecutorDeps(
           destinationId: r.destinationId,
           destinationType: r.destinationType,
           reason: r.reason,
+          // Carried from the executor, which already computes it for the shadow
+          // row. Both ledgers describe the same dispatch, so a receipt that
+          // omitted this would leave the ENFORCING log unable to say what the
+          // observing one could — the same asymmetry #1469 left behind for
+          // `recipeName`.
+          ...(r.labelSource && { labelSource: r.labelSource }),
           ...(r.categories && { categories: r.categories }),
           ...(r.redactCategories && { redactCategories: r.redactCategories }),
         });
