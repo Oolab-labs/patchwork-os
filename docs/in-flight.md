@@ -64,7 +64,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
   anyone choosing one. Adds a curated `./gate` barrel; publishes nothing new (`files` already
   carried `dist` wholesale). Tests assert the map entry AND reference identity — a barrel that
   adapts is the drift it exists to prevent, and a wrapper with correct behaviour today passes
-  every behavioural test. — PR pending
+  every behavioural test. — #1559
 
 - 2026-08-31 `fix/orchestrator-drops-local-accepts` — #1554 dropped
   `resolveDestination`'s `localDestinationAccepts` on both its call sites, so the same policy
