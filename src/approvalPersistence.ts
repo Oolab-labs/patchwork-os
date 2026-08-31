@@ -51,6 +51,15 @@ import { patchworkHome } from "./patchworkHome.js";
  * tail-on-read offset tracking to maintain.
  */
 
+/**
+ * Row-schema version stamped on every `request` event this build writes
+ * (ADR-0025). Bump only when a field's MEANING changes, never for an additive
+ * one: a reader skips a row from a version it does not know rather than
+ * guessing, so a gratuitous bump silently drops rows from every existing
+ * reader.
+ */
+export const APPROVAL_LOG_RV = 1;
+
 export interface ApprovalRequestEvent {
   kind: "request";
   callId: string;
@@ -62,7 +71,30 @@ export interface ApprovalRequestEvent {
   sessionId?: string;
   summary?: string;
   recipeName?: string;
-  runSeq?: number;
+  /**
+   * Schema version of this row (ADR-0025's `rv` protocol, as used by
+   * `worker_gate_decisions.jsonl` and `boundary_receipts.jsonl`).
+   *
+   * Written from `rv >= 1` onward. Its ABSENCE is what distinguishes a row
+   * from a writer that predates correlation from a row whose approval
+   * genuinely had no run — two different absences that would otherwise
+   * collapse into one, permanently and silently. Pre-existing rows are not
+   * backfilled and never will be.
+   *
+   * Says nothing about time: several bridges append to this file, so an older
+   * writer can append an un-versioned row after a newer one.
+   */
+  rv?: number;
+  /**
+   * The run this approval belongs to — `taskId`, verbatim, never `seq`.
+   *
+   * At `rv >= 1` its absence means the approval had no run: an MCP tool call
+   * from a client session, which is two of the four paths that reach
+   * `ApprovalQueue.request`. That is the opposite of the identically-named
+   * field on the gate ledger, where every decision happens inside a run and
+   * absence is therefore a writer defect. Do not copy that doc comment here.
+   */
+  correlationId?: string;
 }
 
 export interface ApprovalDecisionEvent {
@@ -154,7 +186,10 @@ export class ApprovalPersistence {
       ...(entry.sessionId !== undefined && { sessionId: entry.sessionId }),
       ...(entry.summary !== undefined && { summary: entry.summary }),
       ...(entry.recipeName !== undefined && { recipeName: entry.recipeName }),
-      ...(entry.runSeq !== undefined && { runSeq: entry.runSeq }),
+      rv: APPROVAL_LOG_RV,
+      ...(entry.correlationId !== undefined && {
+        correlationId: entry.correlationId,
+      }),
     };
     this.append(event);
   }
