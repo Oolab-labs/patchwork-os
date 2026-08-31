@@ -50,16 +50,19 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-31 `docs/evidence-spine-adr` — the Evidence Spine is the strongest architectural
-  idea in the tree and exists ONLY as a CLAUDE.md section, which that section itself records
-  as having gone stale twice inside 48 hours. Promotes it to ADR-0025 and corrects three
-  measurements CLAUDE.md states as fact and that are no longer true — most importantly the
-  claim that zero attribution rows exist anywhere, which is the blocker a reader would scope
-  around and which cleared this week. Docs only; no code paths touched.
-
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-31 `docs/evidence-spine-adr` — the Evidence Spine existed ONLY as a CLAUDE.md
+  section, which records in its own text that both its load-bearing claims went stale or
+  were wrong within two days. A third was found false the same week: "zero attribution rows
+  exist anywhere" had cleared days earlier and was still being quoted as a live blocker while
+  work was scoped around it. Splits the stable half (ADR-0025 — absence is never backfilled,
+  design the sentinel then stamp, `taskId` never `seq`, no readers ahead of evidence) from
+  the perishable half (the counts, which stay in CLAUDE.md behind an instruction to re-run
+  the verb). Names `approval_log` at 0 of 215 as the next stamp and why it is binding rather
+  than merely next. Docs only. — #1560
 
 - 2026-08-31 `feat/gate-subpath-export` — `previewActions` exists so a screen showing
   "may do now / needs approval / not permitted" is computed by the code that ENFORCES it;
