@@ -252,6 +252,13 @@ function observeOrchestratorShadow(
       destinationType: resolved.destination.type,
       classification,
       path: "orchestrator-task",
+      // NO `correlationId`, deliberately, and registered as such in
+      // `SHADOW_RECORD_VERSION`'s field registry. An orchestrator task is not a
+      // recipe run and has no row in `runs.jsonl`, so there is no run id to
+      // give — and stamping this with the orchestrator's own task id would put
+      // two different kinds of identity under one field name, which is the
+      // thing the `rv` protocol exists to prevent. Absence here is a STATE. Do
+      // not "complete" the coverage by filling it.
       // `default` when the operator classified the CHANNEL, `assumed` when
       // nobody said anything and the runtime fell back. Never `declared`: no
       // operator ever saw this prompt, which is the claim ADR-0021 refuses to

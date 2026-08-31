@@ -3785,6 +3785,17 @@ function buildAgentExecutorDeps(
         // it, and it is absent for callers that build StepDeps without a scope,
         // which the report counts and names rather than dropping.
         ...(stepDeps.recipeName && { recipeName: stepDeps.recipeName }),
+        // The run this observation belongs to. Same source, same rule and the
+        // same sentence as `recordBoundaryDecisionFn` 26 lines below — never
+        // `seq`, which collides across concurrent bridges.
+        //
+        // The two ledgers describe ONE dispatch. `correlationId` reached the
+        // ENFORCING one and stopped there, which is the exact mirror of #1469
+        // reaching the OBSERVING one and stopping there, recorded in that
+        // function's own comment. Without this, "where do my live policy and my
+        // candidate policy disagree, on this run?" is a join that cannot be
+        // expressed.
+        ...(runTaskId && { correlationId: runTaskId }),
         decision: r.decision,
         reason: r.reason,
         destinationId: r.destinationId,
