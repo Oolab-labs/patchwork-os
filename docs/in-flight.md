@@ -55,6 +55,18 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-31 `feat/evidence-field-roundtrip` — the evidence ledgers are copied field-by-field
+  by hand (deliberately — a spread would let unvetted caller content reach disk), so a field
+  can be declared, stamped by its producer, and dropped by a copy site nobody updated, with
+  nothing failing. Four known instances beforehand, in BOTH directions: `workspaceId` (0 of
+  272 rows), #1517's pair on the receipts READ path, `correlationId` on approvals (dropped
+  twice in one change), and `ruleId`, whose copy site's own comment already named the first
+  two. Sentinels typed `Required<T>` so a new field is a COMPILE error until represented;
+  driven through the real writers AND readers; exclusions carry a reason each and are
+  asserted to be real fields so the set cannot grow by accident. Found a fifth on its first
+  run — `recipeName` reaches disk and dies in `list()`, so no reader had ever received the
+  field the worker gate sets to distinguish its approvals. Mutation-checked both ways. — #1564
+
 - 2026-08-31 `feat/gate-rule-id` — the Decision Record said WHY in prose and had no stable
   key for WHICH RULE decided, so a receipt, an operator filter or any grouping had to key on
   a sentence. `reason` and `ruleId` split into two fields with two jobs; nine terminal
