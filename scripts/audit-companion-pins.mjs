@@ -18,6 +18,37 @@ const jsonMode = process.argv.includes("--json");
 // ── Parse registry.ts as text ────────────────────────────────────────────────
 
 const registryPath = resolve(ROOT, "src/companions/registry.ts");
+
+/**
+ * Pins deliberately held back from latest.
+ *
+ * A pin controls what runs on a USER's machine (`npx -y pkg@version`), so
+ * bumping one changes their setup, not ours — and these are third-party MCP
+ * servers this repo cannot meaningfully test. Without this file the only way
+ * to clear the gate was to bump blind, trading a visible warning for an
+ * invisible risk, so the gate stayed red instead and everyone stopped reading
+ * it. A held pin is a decision with a reason and a date; a red gate is not.
+ *
+ * A hold-back CANNOT outlive the pin it was written about: if `pinned` no
+ * longer matches the registry, the entry is reported stale and the gate fails.
+ * Otherwise a bump would silently inherit an exemption argued for a version
+ * nobody is running any more.
+ */
+function loadHoldback() {
+  try {
+    const raw = readFileSync(
+      resolve(__dirname, "audit-companion-pins-holdback.json"),
+      "utf-8",
+    );
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed.holdback) ? parsed.holdback : [];
+  } catch {
+    // Absent or unreadable ⇒ nothing held back. Fail toward reporting MORE,
+    // never fewer, stale pins.
+    return [];
+  }
+}
+const holdback = loadHoldback();
 const registryText = readFileSync(registryPath, "utf8");
 
 // Match patterns like: "@modelcontextprotocol/server-memory@2026.1.26"
@@ -130,9 +161,22 @@ await Promise.all(
       cmp.behind === true &&
       (cmp.level === "major" || (cmp.level === "minor" && cmp.by > 5));
 
+    // A hold-back suppresses the VERDICT as well as the tag. Suppressing only
+    // the tag is the exact divergence this file already warns about a few
+    // lines up — "the reader's summary and the build's verdict telling
+    // different stories" — and it would leave the gate red while printing
+    // nothing red, which is worse than either alone.
+    //
+    // Only an EXACT pin match counts: once the pin moves, the exemption stops
+    // applying and the display path reports it stale, so a bump cannot inherit
+    // an argument made about a version nobody runs.
+    const heldExactly = holdback.some(
+      (h) => h.package === pkg && h.pinned === pinned,
+    );
+
     results.push({ package: pkg, pinned, latest, upToDate, distance, error });
 
-    if (error || significantlyBehind) anyFailed = true;
+    if (error || (significantlyBehind && !heldExactly)) anyFailed = true;
   }),
 );
 
@@ -176,6 +220,27 @@ if (jsonMode) {
       const c = compareVersions(pinned, latest);
       const stale =
         c.behind && (c.level === "major" || (c.level === "minor" && c.by > 5));
+      const held = holdback.find((h) => h.package === pkg);
+      if (held && held.pinned === pinned) {
+        console.log(
+          `HELD  ${pkg}@${pinned} → latest ${latest} (${c.by} ${c.level}(s) behind) — reviewOn ${held.reviewOn}`,
+        );
+        console.log(`      ${held.reason}`);
+        // Deliberately NOT a warning. A decision with a reason and a date is
+        // not the same fact as an unexamined stale pin, and printing them
+        // identically is what taught everyone to skip this output.
+        continue;
+      }
+      if (held) {
+        // The pin moved out from under the exemption. Report it rather than
+        // letting a new version inherit an argument made about an old one.
+        console.warn(
+          `STALE ${pkg}@${pinned} — hold-back entry names ${held.pinned}, which is no longer the pin. Re-justify or remove it.`,
+        );
+        hasWarning = true;
+        anyFailed = true;
+        continue;
+      }
       const tag = stale ? "STALE" : "WARN ";
       console.warn(
         `${tag} ${pkg}@${pinned} → latest ${latest} (${c.by} ${c.level}(s) behind)`,
