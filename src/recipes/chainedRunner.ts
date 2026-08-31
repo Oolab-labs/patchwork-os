@@ -9,12 +9,14 @@
 
 import { classifyTool } from "../riskTier.js";
 import type { AgentResult } from "./agentExecutor.js";
+import { normaliseApprovalVerdict } from "./approvalRequest.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
   buildDependencyGraph,
   executeWithDependencies,
 } from "./dependencyGraph.js";
 import {
+  approvalHaltFor,
   categoriseHaltReason,
   deriveHaltReasonFromError,
 } from "./haltCategory.js";
@@ -722,20 +724,28 @@ export async function executeChainedStep(
       (recipe as { requireApproval?: boolean }).requireApproval !== false
     ) {
       const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
-      const approved = await deps.requireApprovalFn({
-        toolId: approvalToolId,
-        tier: classifyTool(approvalToolId),
-        summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
-        params: step.agent ? undefined : (resolved as Record<string, unknown>),
-        ...(options.signal && { signal: options.signal }), // L1
-        // Join key onto this run's rows — the same id `runChainedRecipe`
-        // writes to the run log, threaded through the step context.
-        runTaskId: ctx.runTaskId ?? "",
-      });
-      if (!approved) {
+      const verdict = normaliseApprovalVerdict(
+        await deps.requireApprovalFn({
+          toolId: approvalToolId,
+          tier: classifyTool(approvalToolId),
+          summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
+          params: step.agent
+            ? undefined
+            : (resolved as Record<string, unknown>),
+          ...(options.signal && { signal: options.signal }), // L1
+          // Join key onto this run's rows — the same id `runChainedRecipe`
+          // writes to the run log, threaded through the step context.
+          runTaskId: ctx.runTaskId ?? "",
+        }),
+      );
+      if (!verdict.approved) {
+        // The sentence comes from the shared helper, not a literal here: this
+        // path has no `haltCategory` field to set, so its category is recovered
+        // downstream by matching the words. Two copies of the words is a
+        // category derived from a phrase only one copy still produces.
         return {
           success: false,
-          error: "Step rejected by approval gate — approval_rejected.",
+          error: approvalHaltFor(verdict.refusal).reason,
           resolvedParams: resolved,
         };
       }

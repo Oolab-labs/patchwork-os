@@ -44,6 +44,11 @@ import {
   formatWorkerManifestDrift,
 } from "./manifestDrift.js";
 import { parseWorker, type WorkerManifest } from "./worker.js";
+import {
+  probeWorkerRecipes,
+  type RecipeHealthProbe,
+  summariseRecipeHealth,
+} from "./workerRecipeHealth.js";
 
 const MANIFEST_RE = /\.worker\.ya?ml$/i;
 
@@ -98,30 +103,50 @@ export function scanWorkers(dir: string): WorkersScan {
   return { dir, loaded, broken };
 }
 
-/** Recipe names installed in `dir`, for the dangling-reference check. */
-export function installedRecipeNames(dir: string): Set<string> {
-  const names = new Set<string>();
-  if (!existsSync(dir)) return names;
+/**
+ * Declared recipe NAME → the file that declares it, for `dir`.
+ *
+ * A recipe's `name:` and its filename are allowed to differ, and a worker's
+ * `recipe:` names the former. Keeping the path is what lets the recipe-health
+ * probe open the right file instead of guessing `<name>.yaml` and reporting a
+ * recipe it simply could not find as one it could not check.
+ */
+export function installedRecipePaths(dir: string): Map<string, string> {
+  const byName = new Map<string, string>();
+  if (!existsSync(dir)) return byName;
   let entries: string[];
   try {
     entries = readdirSync(dir);
   } catch {
-    return names;
+    return byName;
   }
-  for (const f of entries) {
+  for (const f of entries.sort()) {
     if (!/\.ya?ml$/i.test(f)) continue;
+    const full = path.join(dir, f);
     try {
-      const parsed = parseYaml(readFileSync(path.join(dir, f), "utf-8")) as
+      const parsed = parseYaml(readFileSync(full, "utf-8")) as
         | { name?: unknown }
         | undefined;
-      if (typeof parsed?.name === "string") names.add(parsed.name);
+      // First declarant wins, and entries are sorted, so the mapping is stable
+      // rather than directory-order dependent.
+      if (typeof parsed?.name === "string" && !byName.has(parsed.name)) {
+        byName.set(parsed.name, full);
+      }
     } catch {
       // An unreadable recipe is the recipe subsystem's problem to report, not
       // this one's. Skipping it can only make the dangling check MORE likely to
       // fire, never less — it cannot hide a real finding.
     }
   }
-  return names;
+  return byName;
+}
+
+/** Recipe names installed in `dir`, for the dangling-reference check. */
+export function installedRecipeNames(dir: string): Set<string> {
+  // One walk, one parse, two readers. Two implementations of "what is
+  // installed" drift, and the drift shows up as a dangling-recipe error next to
+  // a recipe-health finding that says the same file is fine.
+  return new Set(installedRecipePaths(dir).keys());
 }
 
 export interface WorkersFinding {
@@ -133,13 +158,26 @@ export interface WorkersFinding {
 export interface ValidateResult {
   findings: WorkersFinding[];
   healthy: boolean;
-  counts: { loaded: number; broken: number };
+  counts: { loaded: number; broken: number; recipesProbed?: number };
+  /**
+   * Denominator line for the recipe-health pass. ABSENT when no probe ran —
+   * which is not the same statement as "every bound recipe is fine", and is
+   * printed as its own line rather than folded into silence.
+   */
+  recipeHealth?: string;
 }
 
 export function validateWorkers(opts: {
   workersDir: string;
   recipesDir: string;
   templatesDir?: string;
+  /**
+   * `recipes.disabled` from the patchwork config. Passed IN rather than read
+   * here so this stays a pure function of its inputs — a validator that reads
+   * the operator's config behind the caller's back cannot be tested against a
+   * state the machine is not in.
+   */
+  disabledRecipes?: ReadonlyArray<string>;
 }): ValidateResult {
   const scan = scanWorkers(opts.workersDir);
   const findings: WorkersFinding[] = [];
@@ -155,6 +193,7 @@ export function validateWorkers(opts: {
   }
 
   const recipes = installedRecipeNames(opts.recipesDir);
+  const disabled = new Set(opts.disabledRecipes ?? []);
   const claims = new Map<string, string[]>();
   for (const { worker } of scan.loaded) {
     if (!worker.recipe) {
@@ -170,6 +209,22 @@ export function validateWorkers(opts: {
         level: "error",
         code: "dangling-recipe",
         message: `${worker.id} names recipe "${worker.recipe}", which is not installed. The worker governs nothing.`,
+      });
+    }
+    if (disabled.has(worker.recipe)) {
+      // The completest way a perfect binding governs nothing: the scheduler,
+      // the event-trigger programs and the HTTP route all consult this list, so
+      // the recipe fires from no trigger at all. A WARNING and not an error —
+      // disabling a recipe is a deliberate act, and failing the check on an
+      // intended state is how a gate gets ignored. What is worth saying is the
+      // pairing: the worker is still installed and still claims to govern this.
+      findings.push({
+        level: "warning",
+        code: "disabled-recipe",
+        message:
+          `${worker.id} is bound to recipe "${worker.recipe}", which is DISABLED — ` +
+          "no trigger fires it, so the worker never runs. Re-enable the recipe " +
+          "or uninstall the worker; leaving both is a manifest that governs nothing.",
       });
     }
     claims.set(worker.recipe, [
@@ -230,6 +285,70 @@ export function validateWorkers(opts: {
   };
 }
 
+/**
+ * The default probe: `recipe doctor`'s static half, against the file that
+ * actually declares the name a worker is bound to.
+ *
+ * Dynamically imported. `commands/recipe.ts` pulls in the planner, the tool
+ * registry and the fixture loader, and `workers list` has no business paying
+ * for any of that.
+ */
+export function makeRecipeDoctorProbe(recipesDir: string): RecipeHealthProbe {
+  const byName = installedRecipePaths(recipesDir);
+  return async (recipeName: string) => {
+    const { runPreflight } = await import("../commands/recipe.js");
+    // Resolve through the declared name when we can. Falling back to the bare
+    // name lets `runPreflight` find a bundled template the live dir does not
+    // carry, rather than reporting it uncheckable.
+    const ref = byName.get(recipeName) ?? recipeName;
+    const result = await runPreflight(ref, {});
+    return {
+      ok: result.ok,
+      issues: result.issues.map((i) => ({
+        level: i.level,
+        code: i.code,
+        message: i.message,
+      })),
+    };
+  };
+}
+
+/**
+ * `validateWorkers` plus the question it never asked: can the recipe on the
+ * other end of a successful binding actually run?
+ *
+ * Separate from `validateWorkers` (which stays sync and dependency-free) rather
+ * than folded into it: the probe is async and drags in the recipe planner, and
+ * every existing caller of the structural check keeps working untouched.
+ */
+export async function validateWorkersWithRecipeHealth(opts: {
+  workersDir: string;
+  recipesDir: string;
+  templatesDir?: string;
+  disabledRecipes?: ReadonlyArray<string>;
+  /** Override for tests; defaults to `recipe doctor`'s static half. */
+  probe?: RecipeHealthProbe;
+}): Promise<ValidateResult> {
+  const base = validateWorkers(opts);
+  const scan = scanWorkers(opts.workersDir);
+  const bindings = scan.loaded.map(({ worker }) => ({
+    id: worker.id,
+    recipe: worker.recipe,
+  }));
+  const probed = new Set(
+    bindings.map((b) => b.recipe).filter((r): r is string => !!r),
+  ).size;
+  const probe = opts.probe ?? makeRecipeDoctorProbe(opts.recipesDir);
+  const health = await probeWorkerRecipes(bindings, { probe });
+  const findings = [...base.findings, ...health];
+  return {
+    findings,
+    healthy: !findings.some((f) => f.level === "error"),
+    counts: { ...base.counts, recipesProbed: probed },
+    recipeHealth: summariseRecipeHealth(health, { probed }),
+  };
+}
+
 export function formatWorkersList(scan: WorkersScan): string {
   const out: string[] = [];
   out.push(`Workers in ${scan.dir}`);
@@ -272,6 +391,10 @@ export function formatWorkersValidate(result: ValidateResult): string {
   out.push(
     `  ${result.counts.loaded} manifest(s) load, ${result.counts.broken} ignored`,
   );
+  // A second denominator, for the second question. "No problems" over manifests
+  // that were checked and recipes that were NOT is the exact reading this pass
+  // was added to end.
+  if (result.recipeHealth) out.push(`  ${result.recipeHealth}`);
   if (result.findings.length === 0) {
     out.push("");
     out.push(

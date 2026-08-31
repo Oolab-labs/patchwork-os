@@ -5437,7 +5437,7 @@ if (process.argv[2] === "workers") {
         if (sub === "list" || sub === "validate") {
           const {
             scanWorkers,
-            validateWorkers,
+            validateWorkersWithRecipeHealth,
             formatWorkersList,
             formatWorkersValidate,
             defaultWorkersDir,
@@ -5473,11 +5473,32 @@ if (process.argv[2] === "workers") {
           const tIdx = args.indexOf("--templates-dir");
           const templatesDir = tIdx !== -1 ? args[tIdx + 1] : undefined;
           const rIdx = args.indexOf("--recipes-dir");
-          const result = validateWorkers({
+          // Composes the structural check with `recipe doctor`'s static half,
+          // once per bound recipe. A manifest that binds perfectly to a recipe
+          // that cannot run reported "no problems found" before this.
+          // A worker bound to a DISABLED recipe never runs at all. The list
+          // is read here rather than inside the validator so that stays a pure
+          // function of its inputs.
+          let disabledRecipes: string[] = [];
+          try {
+            const { loadConfig } = await import("./patchworkConfig.js");
+            // The SAME reader the scheduler consults, not a second read of the
+            // same field. Two notions of "disabled" drift, and the drift here
+            // reports a worker as live that no trigger will ever fire.
+            const { getConfigDisabledNames } = await import(
+              "./recipes/disabledMarkers.js"
+            );
+            disabledRecipes = [...getConfigDisabledNames(loadConfig())];
+          } catch {
+            // No config / unreadable → nothing is known to be disabled. Fail
+            // soft: this can only drop a warning, never invent one.
+          }
+          const result = await validateWorkersWithRecipeHealth({
             workersDir: dir,
             recipesDir:
               rIdx !== -1 ? (args[rIdx + 1] as string) : defaultRecipesDir(),
             ...(templatesDir ? { templatesDir } : {}),
+            disabledRecipes,
           });
           process.stdout.write(
             json

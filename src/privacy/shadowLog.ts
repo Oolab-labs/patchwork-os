@@ -108,8 +108,61 @@ export const UNOBSERVED_PATHS: readonly string[] = [];
 export const COVERAGE_IS_ENUMERATED =
   "coverage is enumerated from known dispatch paths; it is not proof that no other path exists";
 
+/**
+ * Writer-stamped record level for this ledger.
+ *
+ * `rv: N` asserts: for every field registered as known from level <= N, that
+ * field is present, or its registered not-applicable condition held. The same
+ * protocol the gate ledger adopted in #1519 and the receipt ledger in #1522,
+ * for the same reason — a reader must be able to tell "no claim was made" from
+ * "a claim was made and honoured" from "a claim was made and broken".
+ *
+ * ## Field registry
+ *
+ * - `correlationId` (level 1) — present on the `recipe-agent-step` path, which
+ *   always runs inside `runYamlRecipe` / `runChainedRecipe` and therefore always
+ *   has a run id. Registered NOT-APPLICABLE on the `orchestrator-task` path:
+ *   `runClaudeTask` and the automation hooks are not recipe runs and have no row
+ *   in `runs.jsonl`, so stamping them with something run-shaped would assert a
+ *   run that never existed. Absence on the recipe path at `rv >= 1` is a WRITER
+ *   DEFECT; absence on the orchestrator path is a state.
+ *
+ * ## What absence of `rv` means, and why it is never repaired
+ *
+ * A row with no `rv` pre-dates this protocol. That is the sentinel, and it is
+ * unrepairable by construction: there is no backfill, and `parsed.rv ?? 0` on
+ * read would be a backfill performed invisibly on every load. Never default it.
+ *
+ * Do NOT read "no `rv`" as "old" — a stale bridge writing un-`rv`'d rows today
+ * is indistinguishable from a row written months ago (#1515).
+ */
+export const SHADOW_RECORD_VERSION = 1;
+
 export interface PrivacyShadowRow {
   at: number;
+  /**
+   * Writer-stamped record level — see `SHADOW_RECORD_VERSION`. Optional on the
+   * type because rows written before the protocol have none, and defaulting it
+   * on read would be an invisible backfill.
+   */
+  rv?: number;
+  /**
+   * The run that produced this observation — `taskId`, never `seq`.
+   *
+   * `seq` is a per-instance counter over a file several bridges write, and it
+   * collides: 255 distinct values across 272 rows of the live gate ledger. A
+   * join on it silently becomes many-to-one.
+   *
+   * `recipeName` says WHICH recipe to go and fix; this says which RUN, and
+   * without it an hourly recipe produces observations no reader can tell apart.
+   * It is also the key that makes this ledger joinable to
+   * `boundary_receipts.jsonl` — the two rows describe ONE dispatch, and "where
+   * do my live policy and my candidate policy disagree, on this run?" is a join
+   * between them that could not be expressed until both carried this.
+   *
+   * ABSENT on the `orchestrator-task` path by registration, not by omission.
+   */
+  correlationId?: string;
   /** Which dispatch path produced this. Absent on rows written before paths. */
   path?: ShadowPath;
   /** Whether the classification was declared or defaulted. */
@@ -180,7 +233,10 @@ export function recordPrivacyShadow(
     mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const full: PrivacyShadowRow = {
       at: (opts.now ?? Date.now)(),
+      // Stamped by the WRITER, after the caller's fields, so a caller cannot
+      // forge a level its row does not satisfy.
       ...row,
+      rv: SHADOW_RECORD_VERSION,
       reason: row.reason.slice(0, MAX_REASON),
     };
     appendFileSync(file, `${JSON.stringify(full)}\n`);

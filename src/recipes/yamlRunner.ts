@@ -67,6 +67,7 @@ import {
   type AgentResult,
   type AgentUsage,
 } from "./agentExecutor.js";
+import { normaliseApprovalVerdict } from "./approvalRequest.js";
 import { deriveBreakerKey, getCircuitBreaker } from "./circuitBreaker.js";
 import {
   expandFlatParallel,
@@ -74,7 +75,11 @@ import {
   unsupportedStepMessage,
 } from "./compoundSteps.js";
 import { FileRollbackLog } from "./fileRollback.js";
-import { categoriseHaltReason, type HaltCategory } from "./haltCategory.js";
+import {
+  approvalHaltFor,
+  categoriseHaltReason,
+  type HaltCategory,
+} from "./haltCategory.js";
 import {
   assertValidManualRunId,
   deriveScopeKey,
@@ -2249,20 +2254,27 @@ export async function runYamlRecipe(
         recipe.requireApproval !== false
       ) {
         const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
-        const approved = await deps.requireApprovalFn({
-          toolId: approvalToolId,
-          tier: classifyTool(approvalToolId),
-          summary: step.agent
-            ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
-            : `tool ${approvalToolId}`,
-          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
-          // The join key onto this run's rows in the run log. Same const the
-          // run-log writes above, never a second expression.
-          runTaskId,
-          ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
-        });
-        if (!approved) {
-          const reason = `Step rejected by approval gate — approval_rejected.`;
+        const verdict = normaliseApprovalVerdict(
+          await deps.requireApprovalFn({
+            toolId: approvalToolId,
+            tier: classifyTool(approvalToolId),
+            summary: step.agent
+              ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
+              : `tool ${approvalToolId}`,
+            params: step.agent
+              ? undefined
+              : resolveParamsForApproval(step, ctx),
+            // The join key onto this run's rows in the run log. Same const the
+            // run-log writes above, never a second expression.
+            runTaskId,
+            ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
+          }),
+        );
+        if (!verdict.approved) {
+          // Which refusal this was decides the sentence AND the category — an
+          // expiry names no person, and its hint must not send the operator to
+          // approve a queue entry the TTL already resolved.
+          const { reason, category } = approvalHaltFor(verdict.refusal);
           runError = runError ?? reason;
           haltAfterFailure = true;
           const rejId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
@@ -2272,7 +2284,7 @@ export async function runYamlRecipe(
             status: "error",
             error: reason,
             haltReason: reason,
-            haltCategory: "approval_rejected",
+            haltCategory: category,
             durationMs: 0,
           });
           stepsRun++;
@@ -2423,15 +2435,39 @@ export async function runYamlRecipe(
               : agentResult;
             runError = runError ?? reason;
             if (!failOpenAgent) haltAfterFailure = true;
+            // The MARKER, not the name of the pattern that matched it. The
+            // detector's capture was widened to hold the whole marker on the
+            // grounds that "that is where the reason lives"; the widening
+            // reached `error` and stopped there, so every operator-facing
+            // surface — `patchwork halts`, `recipe doctor`, the run-detail
+            // page, the dashboard's owner band, all of which read `haltReason`
+            // — kept only the bookkeeping half. Measured over seven days: 9
+            // halts, one identical contentless sentence, two entirely
+            // different causes underneath (an unreachable model endpoint, and
+            // the information boundary refusing a dispatch while naming its
+            // own one-line remedy).
+            const marker = agentSilentFail?.matched?.trim();
+            const haltReason = agentSilentFail
+              ? marker
+                ? `Agent step "${stepId}" returned no usable output: ${marker}`
+                : `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
+              : `Agent step "${stepId}" reported failure.`;
+            // Derived from the sentence that is actually stored, so a reader
+            // that trusts `haltCategory` and one that re-derives from
+            // `haltReason` cannot disagree — `summariseHalts` does both. A
+            // marker naming no known cause derives `unknown`, and the specific
+            // `agent_silent_fail` is kept rather than losing information to it.
+            const derived = categoriseHaltReason(haltReason);
             stepResults.push({
               id: stepId,
               tool: "agent",
               status: "error",
               error: reason,
-              haltReason: agentSilentFail
-                ? `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
-                : `Agent step "${stepId}" reported failure.`,
-              haltCategory: "agent_silent_fail",
+              haltReason,
+              haltCategory:
+                agentSilentFail && derived !== "unknown"
+                  ? derived
+                  : "agent_silent_fail",
               durationMs: Date.now() - stepStart,
             });
           } else {
@@ -3749,6 +3785,17 @@ function buildAgentExecutorDeps(
         // it, and it is absent for callers that build StepDeps without a scope,
         // which the report counts and names rather than dropping.
         ...(stepDeps.recipeName && { recipeName: stepDeps.recipeName }),
+        // The run this observation belongs to. Same source, same rule and the
+        // same sentence as `recordBoundaryDecisionFn` 26 lines below — never
+        // `seq`, which collides across concurrent bridges.
+        //
+        // The two ledgers describe ONE dispatch. `correlationId` reached the
+        // ENFORCING one and stopped there, which is the exact mirror of #1469
+        // reaching the OBSERVING one and stopping there, recorded in that
+        // function's own comment. Without this, "where do my live policy and my
+        // candidate policy disagree, on this run?" is a join that cannot be
+        // expressed.
+        ...(runTaskId && { correlationId: runTaskId }),
         decision: r.decision,
         reason: r.reason,
         destinationId: r.destinationId,

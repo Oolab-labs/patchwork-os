@@ -32,6 +32,19 @@ import { OutcomeStore } from "../workers/outcomeStore.js";
  * join key onto its run; a test that only exercises the decision still has to
  * name one.
  */
+/**
+ * The gate returns `boolean | ApprovalVerdict`. A bare `false` used to be the
+ * ONLY thing it could say, which is why the three tests below — REJECT, CANCEL
+ * and EXPIRE — all asserted the identical value while being named for three
+ * different events. They now pin the refusal each one actually produces.
+ */
+async function verdictOf(
+  p: Promise<boolean | { approved: boolean; refusal?: string }>,
+) {
+  const r = await p;
+  return typeof r === "boolean" ? { approved: r } : r;
+}
+
 const TEST_RUN = "yaml:test-recipe:1756000000000";
 
 /** Seed durable, dwell-separated successes so the worker earns autonomy on
@@ -187,7 +200,9 @@ describe("buildWorkerAutonomyGate", () => {
     await tick();
     expect(getApprovalQueue().list()).toHaveLength(1);
     getApprovalQueue().reject(firstCallId());
-    expect(await p).toBe(false);
+    const v = await verdictOf(p);
+    expect(v.approved).toBe(false);
+    expect(v.refusal).toBe("rejected");
   });
 
   it("fail-closed: a risky unearned step CANCEL → false (M4)", async () => {
@@ -200,7 +215,10 @@ describe("buildWorkerAutonomyGate", () => {
     });
     await tick();
     getApprovalQueue().cancel(firstCallId());
-    expect(await p).toBe(false);
+    const v = await verdictOf(p);
+    expect(v.approved).toBe(false);
+    // NOT "rejected": nobody decided anything about this step.
+    expect(v.refusal).toBe("cancelled");
   });
 
   it("fail-closed: a risky unearned step EXPIRE → false (M4)", async () => {
@@ -213,7 +231,10 @@ describe("buildWorkerAutonomyGate", () => {
     });
     await tick();
     getApprovalQueue().clear(); // resolves pending as "expired"
-    expect(await p).toBe(false);
+    const v = await verdictOf(p);
+    expect(v.approved).toBe(false);
+    // NOT "rejected": the TTL fired and no human ever saw it.
+    expect(v.refusal).toBe("expired");
   });
 
   it("a risky unearned step APPROVE → true (M4)", async () => {
@@ -226,7 +247,7 @@ describe("buildWorkerAutonomyGate", () => {
     });
     await tick();
     getApprovalQueue().approve(firstCallId());
-    expect(await p).toBe(true);
+    expect((await verdictOf(p)).approved).toBe(true);
   });
 
   it("aborting the run signal resolves a gated step false, not a TTL hang (L1)", async () => {
@@ -242,7 +263,9 @@ describe("buildWorkerAutonomyGate", () => {
     await tick();
     expect(getApprovalQueue().list()).toHaveLength(1);
     ac.abort(); // run cancelled → pending approval resolves "cancelled"
-    expect(await p).toBe(false);
+    const v = await verdictOf(p);
+    expect(v.approved).toBe(false);
+    expect(v.refusal).toBe("cancelled");
   });
 
   it("context-risk DE-RATES an EARNED action (live wiring, descending only)", async () => {
@@ -288,7 +311,7 @@ describe("buildWorkerAutonomyGate", () => {
     await tick();
     expect(getApprovalQueue().list()).toHaveLength(1);
     getApprovalQueue().reject(firstCallId());
-    expect(await p).toBe(false);
+    expect((await verdictOf(p)).approved).toBe(false);
   });
 
   it("a failing context-risk provider is fail-soft (no de-rate, no crash)", async () => {
@@ -472,7 +495,7 @@ describe("buildWorkerAutonomyGate", () => {
       await tick();
       expect(getApprovalQueue().list()).toHaveLength(1);
       getApprovalQueue().reject(firstCallId());
-      expect(await pending).toBe(false);
+      expect((await verdictOf(pending)).approved).toBe(false);
     });
 
     it("a grant NEVER covers an irreversible action", async () => {
@@ -490,7 +513,7 @@ describe("buildWorkerAutonomyGate", () => {
       await tick();
       expect(getApprovalQueue().list()).toHaveLength(1);
       getApprovalQueue().reject(firstCallId());
-      expect(await pending).toBe(false);
+      expect((await verdictOf(pending)).approved).toBe(false);
     });
 
     it("a grant that names another domain changes nothing", async () => {
@@ -507,7 +530,7 @@ describe("buildWorkerAutonomyGate", () => {
       await tick();
       expect(getApprovalQueue().list()).toHaveLength(1);
       getApprovalQueue().reject(firstCallId());
-      expect(await pending).toBe(false);
+      expect((await verdictOf(pending)).approved).toBe(false);
     });
   });
 
