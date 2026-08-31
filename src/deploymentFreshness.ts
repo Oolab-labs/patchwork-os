@@ -32,7 +32,12 @@
  * silently judged — the failure this file exists to prevent is a confident
  * statement about code nobody actually inspected.
  */
+
 import type { Stats } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import os from "node:os";
+import nodePath from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** A bridge lock file, reduced to what freshness needs. */
 export interface BridgeLock {
@@ -244,4 +249,64 @@ export function formatFreshness(
     L.push("  not a build. Times are compared instead.");
   }
   return L.join("\n");
+}
+
+/**
+ * Where the bridge lock files live. Honours `CLAUDE_CONFIG_DIR`.
+ *
+ * Extracted from the `doctor` handler so `patchwork sweep` counts bridges the
+ * same way `doctor` judges them. Two discoveries of "which bridges exist" would
+ * drift, and the drift is silent: the sweep would report a green gate over a set
+ * of locks the verb never looked at.
+ */
+export function bridgeLockDir(): string {
+  return nodePath.join(
+    process.env.CLAUDE_CONFIG_DIR || os.homedir() + nodePath.sep + ".claude",
+    "ide",
+  );
+}
+
+/** Every parseable `.lock` in `dir`. An unparseable one is skipped, not fixed. */
+export function discoverLocks(dir: string = bridgeLockDir()): BridgeLock[] {
+  const locks: BridgeLock[] = [];
+  try {
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".lock")) continue;
+      try {
+        const d = JSON.parse(readFileSync(nodePath.join(dir, f), "utf-8"));
+        if (typeof d?.pid === "number") locks.push({ ...d, file: f });
+      } catch {
+        // An unparseable lock is not this module's problem to solve.
+      }
+    }
+  } catch {
+    // No lock dir ⇒ no bridges ⇒ "nothing running", which is legitimate.
+  }
+  return locks;
+}
+
+/**
+ * mtime of the installed build, or undefined when none can be located.
+ *
+ * Falls back to this process's own `dist` when the global package is absent
+ * (running from a checkout) — the honest reference in that case.
+ */
+export function installedBuildTimeMs(): number | undefined {
+  for (const candidate of [
+    nodePath.join(
+      process.env.npm_config_prefix ?? "/opt/homebrew",
+      "lib/node_modules/patchwork-os/dist/index.js",
+    ),
+    // `fileURLToPath`, NOT `.pathname`. On Windows a file URL's pathname is
+    // `/D:/a/...` — a leading slash before the drive letter — which statSync
+    // cannot open, so this fallback never resolved there.
+    fileURLToPath(new URL("./index.js", import.meta.url)),
+  ]) {
+    try {
+      return statSync(candidate).mtimeMs;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return undefined;
 }

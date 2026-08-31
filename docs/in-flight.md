@@ -54,6 +54,15 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-28 `feat/weekly-sweep-deltas` — five read-only verbs each answer "what is true
+  now"; none answers "what moved", and read fresh a denominator that has not shifted in three
+  weeks looks identical to a gate that flipped yesterday. `patchwork sweep` composes them and
+  diffs against the previous snapshot. Only TWO readings are gates — the evidence ratios fall
+  by construction and an undeclared agent step is ADR-0021's documented default, so failing on
+  either would make the command permanently red. A first run is a BASELINE, never "no changes".
+  The snapshot holds counts only, reduced at the collection boundary: two inputs return operator
+  data, and a health check is the last place anyone looks for accumulated secrets. — #1552
+
 - 2026-08-28 `fix/pr-outcomes-swallows-the-real-error` — `gh repo view` ran with stderr
   ignored, so an expired credential, a missing gh and a missing remote all reported the same
   guess about the repository. A stale `GITHUB_TOKEN` produced `HTTP 401` and the operator was

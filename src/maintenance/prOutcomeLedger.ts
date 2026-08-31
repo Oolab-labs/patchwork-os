@@ -38,6 +38,8 @@
  */
 
 /** Schema version. A reader must be able to tell an old row from a new one. */
+import * as nodeFs from "node:fs";
+
 export const PR_OBSERVATION_RV = 1;
 
 export type PrState = "OPEN" | "MERGED" | "CLOSED";
@@ -335,4 +337,29 @@ export function resolveRepoSlug(
     return { error: `\`gh repo view\` returned an unusable value: "${slug}"` };
   }
   return { repo: slug };
+}
+
+/**
+ * Read the observation ledger. Missing file ⇒ empty, which is a true state on
+ * day one and not an error.
+ *
+ * Extracted from the `pr-outcomes show` handler so `patchwork sweep` reads the
+ * ledger through the same parser the verb uses — a second reader would drift,
+ * and a drifting row count is indistinguishable from a quiet week.
+ *
+ * A corrupt line is skipped, never repaired: rewriting an append-only evidence
+ * file to make it parse is how evidence quietly becomes fiction.
+ */
+export function readObservations(file: string): PrObservation[] {
+  if (!nodeFs.existsSync(file)) return [];
+  const out: PrObservation[] = [];
+  for (const line of nodeFs.readFileSync(file, "utf-8").split("\n")) {
+    if (line.trim() === "") continue;
+    try {
+      out.push(JSON.parse(line) as PrObservation);
+    } catch {
+      // skipped, never repaired
+    }
+  }
+  return out;
 }

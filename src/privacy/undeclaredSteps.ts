@@ -35,6 +35,10 @@
  * is quoted as a measurement and never pasted into an issue or a fixture.
  */
 
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { parse as parseYaml } from "yaml";
+
 /** A `{{ref}}` in a prompt, resolved back to whatever produced it. */
 export interface FeedingOutput {
   /** The `into:` key referenced by the prompt. */
@@ -223,4 +227,44 @@ export function formatUndeclared(r: UndeclaredReport): string {
   L.push("  looking like a gap.");
   L.push("");
   return `${L.join("\n")}\n`;
+}
+
+/**
+ * Scan a directory of recipe YAML and aggregate `undeclaredInRecipe` across it.
+ *
+ * Extracted from the `privacy undeclared` handler so `patchwork sweep` reads the
+ * same number the verb prints. Two implementations of "how many agent steps
+ * declare a data_policy" would drift, and the drift is silent: the sweep would
+ * report a delta of zero while the verb reported a regression, or vice versa,
+ * and neither would look wrong.
+ *
+ * Throws only when the directory cannot be read. A recipe that will not parse is
+ * REPORTED in `unreadable`, never skipped silently — a file present and ignored
+ * is the failure mode this whole family of verbs exists to surface.
+ */
+export function scanRecipeDir(dir: string): UndeclaredReport {
+  const entries = readdirSync(dir).sort();
+  let recipesScanned = 0;
+  let agentSteps = 0;
+  let declared = 0;
+  const undeclared: UndeclaredStep[] = [];
+  const unreadable: string[] = [];
+  for (const f of entries) {
+    if (!/\.ya?ml$/i.test(f)) continue;
+    recipesScanned++;
+    let parsed: unknown;
+    try {
+      parsed = parseYaml(readFileSync(path.join(dir, f), "utf-8"));
+    } catch {
+      unreadable.push(f);
+      continue;
+    }
+    const declaredName = (parsed as { name?: unknown } | undefined)?.name;
+    const name = typeof declaredName === "string" ? declaredName : f;
+    const r = undeclaredInRecipe(name, parsed);
+    agentSteps += r.agentSteps;
+    declared += r.declared;
+    undeclared.push(...r.steps);
+  }
+  return { recipesScanned, agentSteps, declared, undeclared, unreadable };
 }
