@@ -54,6 +54,18 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-31 `feat/gate-subpath-export` — `previewActions` exists so a screen showing
+  "may do now / needs approval / not permitted" is computed by the code that ENFORCES it;
+  that guarantee stopped at the package boundary. `exports` listed `.` and `./plugin` only,
+  and `.` is also `bin` — importing the package root RUNS THE CLI rather than yielding a
+  module — so an out-of-package consumer could not reach the gate and its only remaining
+  option was re-deriving the three buckets from ledger rows by hand. A second implementation
+  of the boundary arrived at by the export map being narrower than the guarantee, not by
+  anyone choosing one. Adds a curated `./gate` barrel; publishes nothing new (`files` already
+  carried `dist` wholesale). Tests assert the map entry AND reference identity — a barrel that
+  adapts is the drift it exists to prevent, and a wrapper with correct behaviour today passes
+  every behavioural test. — #1559
+
 - 2026-08-31 `fix/orchestrator-drops-local-accepts` — #1554 dropped
   `resolveDestination`'s `localDestinationAccepts` on both its call sites, so the same policy
   gave two answers: the recipe path says LOCAL_ONLY ("a local destination accepts it, set
