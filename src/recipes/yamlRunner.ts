@@ -553,12 +553,29 @@ export interface YamlRecipe {
   /** PR2b — per-recipe token budget (see `BudgetPolicy` in schema.ts). */
   budget?: import("./schema.js").BudgetPolicy;
   /**
-   * M3 — per-recipe opt-out of the flat-runner approval gate. The gate is
+   * **Disables WORKSPACE/TIER approval for this recipe. It does NOT disable
+   * Worker governance.**
+   *
+   * M3 — per-recipe opt-out of the flat-runner approval gate. That gate is
    * safe-by-default: it only ever engages for `manual`-triggered runs (so
    * automated cron/webhook runs never block mid-flight) and only when the
-   * bridge injects a `requireApprovalFn` (i.e. approvalGate != "off"). Set
-   * `requireApproval: false` to disable the gate for this recipe even on a
-   * manual run.
+   * bridge injects a `requireApprovalFn` (i.e. approvalGate != "off").
+   *
+   * ## Scope, and why it narrowed
+   *
+   * When worker autonomy arrived (#1027) this flag's behaviour was
+   * deliberately preserved — the flip's own notes list "respects
+   * requireApproval:false" as intended. That kept compatibility, but the flag
+   * had been defined against a gate that meant one thing and now sat in front
+   * of two: the workspace tier policy AND worker governance. Because the worker
+   * gate is injected AS `requireApprovalFn`, and `recordGateDecision` lives
+   * inside it, an opted-out worker recipe governed nothing and recorded nothing.
+   *
+   * The meaning is therefore narrowed to what it was always for: the workspace
+   * tier policy. A worker `gate` still queues and a `forbid` still refuses,
+   * whatever this says. The tier half is applied by the caller, which builds
+   * the worker gate with no tier fn; the runners refuse to let this flag
+   * suppress the worker gate itself.
    */
   requireApproval?: boolean;
 }
@@ -2248,10 +2265,19 @@ export async function runYamlRecipe(
       // on automated triggers (that's how workers run), and `requireApprovalFn`
       // is the worker-aware fn — reversible actions pass, risky-unearned ones
       // queue. Off → manual-only, byte-identical to pre-flip behaviour.
+      // `requireApproval: false` opts out of the WORKSPACE TIER policy only.
+      // It may never opt a recipe out of WORKER governance: `gateAutomatedRuns`
+      // is set exactly when `buildWorkerAutonomyGate` returned a fn, so it is
+      // the signal that the injected fn IS the worker gate. Honouring the flag
+      // there would let a recipe switch off the machinery that governs it by
+      // setting one boolean in its own file — and since `recordGateDecision`
+      // lives inside that fn, it would also stop the evidence being written.
+      // The tier half of the opt-out is applied by the caller, which builds the
+      // worker gate with no tier fn (see `fireYamlRecipe`).
       if (
         deps.requireApprovalFn &&
         (recipeTriggerKind === "manual" || deps.gateAutomatedRuns) &&
-        recipe.requireApproval !== false
+        (recipe.requireApproval !== false || deps.gateAutomatedRuns === true)
       ) {
         const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
         const verdict = normaliseApprovalVerdict(

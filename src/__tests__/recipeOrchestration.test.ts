@@ -38,6 +38,16 @@ function makeServer() {
 function makeRecipeOrchestrator(overrides: Record<string, unknown> = {}) {
   return {
     fire: vi.fn().mockResolvedValue({ ok: true, taskId: "t1", name: "foo" }),
+    // `fireYamlRecipe` parses the recipe through the orchestrator's OWN loader
+    // before composing the approval gate, because whether the workspace tier
+    // policy applies is the recipe's `requireApproval`. A mock without this
+    // makes every fire fail — which is correct behaviour, not a test bug: a
+    // recipe that cannot be loaded must not run.
+    loadRecipe: vi.fn().mockReturnValue({
+      name: "foo",
+      trigger: { type: "manual" },
+      steps: [],
+    }),
     isInFlight: vi.fn().mockReturnValue(false),
     listInFlight: vi.fn().mockReturnValue([]),
     ...overrides,
