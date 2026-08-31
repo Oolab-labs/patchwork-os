@@ -23,6 +23,10 @@ export type HaltCategory =
   | "network_error"
   | "missing_connector"
   | "approval_rejected"
+  /** The approval TTL fired with nobody having answered — NOT a rejection. */
+  | "approval_expired"
+  /** The run was cancelled while a step waited for approval. */
+  | "approval_cancelled"
   | "run_level"
   | "contract_failed"
   | "unsupported_step"
@@ -50,6 +54,8 @@ export const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   network_error: "network error",
   missing_connector: "missing connector",
   approval_rejected: "approval rejected",
+  approval_expired: "approval expired",
+  approval_cancelled: "approval cancelled",
   run_level: "run-level halt",
   contract_failed: "completion contract failed",
   unsupported_step: "unsupported step form",
@@ -88,6 +94,10 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "Recipe references a connector that isn't configured. Install/connect from /connections.",
   approval_rejected:
     "A step was rejected at the approval gate. Approve it from the dashboard, or set requireApproval: false on the recipe.",
+  approval_expired:
+    "A step waited for approval and nobody answered before the timeout. Not a rejection \u2014 no one saw it. An unattended run needs someone watching, requireApproval: false, or a longer approval timeout.",
+  approval_cancelled:
+    "The run was cancelled while a step waited for approval. Nothing was decided about the step \u2014 re-run it.",
   run_level:
     "Whole-recipe failure (no step ran). Check the recipe for circular deps / parse errors.",
   contract_failed:

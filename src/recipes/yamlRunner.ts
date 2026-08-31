@@ -67,6 +67,7 @@ import {
   type AgentResult,
   type AgentUsage,
 } from "./agentExecutor.js";
+import { normaliseApprovalVerdict } from "./approvalRequest.js";
 import { deriveBreakerKey, getCircuitBreaker } from "./circuitBreaker.js";
 import {
   expandFlatParallel,
@@ -74,7 +75,11 @@ import {
   unsupportedStepMessage,
 } from "./compoundSteps.js";
 import { FileRollbackLog } from "./fileRollback.js";
-import { categoriseHaltReason, type HaltCategory } from "./haltCategory.js";
+import {
+  approvalHaltFor,
+  categoriseHaltReason,
+  type HaltCategory,
+} from "./haltCategory.js";
 import {
   assertValidManualRunId,
   deriveScopeKey,
@@ -2249,20 +2254,27 @@ export async function runYamlRecipe(
         recipe.requireApproval !== false
       ) {
         const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
-        const approved = await deps.requireApprovalFn({
-          toolId: approvalToolId,
-          tier: classifyTool(approvalToolId),
-          summary: step.agent
-            ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
-            : `tool ${approvalToolId}`,
-          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
-          // The join key onto this run's rows in the run log. Same const the
-          // run-log writes above, never a second expression.
-          runTaskId,
-          ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
-        });
-        if (!approved) {
-          const reason = `Step rejected by approval gate — approval_rejected.`;
+        const verdict = normaliseApprovalVerdict(
+          await deps.requireApprovalFn({
+            toolId: approvalToolId,
+            tier: classifyTool(approvalToolId),
+            summary: step.agent
+              ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
+              : `tool ${approvalToolId}`,
+            params: step.agent
+              ? undefined
+              : resolveParamsForApproval(step, ctx),
+            // The join key onto this run's rows in the run log. Same const the
+            // run-log writes above, never a second expression.
+            runTaskId,
+            ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
+          }),
+        );
+        if (!verdict.approved) {
+          // Which refusal this was decides the sentence AND the category — an
+          // expiry names no person, and its hint must not send the operator to
+          // approve a queue entry the TTL already resolved.
+          const { reason, category } = approvalHaltFor(verdict.refusal);
           runError = runError ?? reason;
           haltAfterFailure = true;
           const rejId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
@@ -2272,7 +2284,7 @@ export async function runYamlRecipe(
             status: "error",
             error: reason,
             haltReason: reason,
-            haltCategory: "approval_rejected",
+            haltCategory: category,
             durationMs: 0,
           });
           stepsRun++;

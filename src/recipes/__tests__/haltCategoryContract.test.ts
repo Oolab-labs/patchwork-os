@@ -33,7 +33,16 @@ const repoRoot = path.resolve(
 );
 
 function unionMembers(file: string): string[] {
-  const src = readFileSync(path.join(repoRoot, file), "utf8");
+  // Comments are stripped BEFORE the union is matched. The terminator is a
+  // non-greedy `;`, so a single semicolon inside a member's doc comment ends
+  // the capture early and every member after it silently disappears from the
+  // comparison. Caught the first time one was written — but only because one
+  // side had it: had both files carried the same comment, this gate would have
+  // compared two truncated lists and reported agreement. A drift gate that can
+  // be shortened by prose is not a drift gate.
+  const src = readFileSync(path.join(repoRoot, file), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
   const m = /export type HaltCategory\s*=(.*?);/s.exec(src);
   if (!m) throw new Error(`no HaltCategory union found in ${file}`);
   return (m[1] as string)
@@ -109,6 +118,15 @@ describe("bridge and dashboard halt categories agree", () => {
 
   it("the unions hold exactly the same members", () => {
     expect([...dash].sort()).toEqual([...bridge].sort());
+  });
+
+  it("reads each union to its END (a truncated parse must not read as agreement)", () => {
+    // `unknown` is the last member of both unions by convention. If a future
+    // comment truncates the capture, this fails instead of the two shortened
+    // lists quietly matching.
+    expect(bridge).toContain("unknown");
+    expect(dash).toContain("unknown");
+    expect(bridge.length).toBeGreaterThan(15);
   });
 
   it("every bridge category has a label and a hint", () => {

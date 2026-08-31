@@ -57,6 +57,20 @@ export type HaltCategory =
    * from a tool failure — the run was deliberately stopped by an operator.
    */
   | "approval_rejected"
+  /**
+   * The approval TTL fired with nobody having answered. NOT a rejection: no
+   * person looked at this step. Its own category because the remedies do not
+   * overlap — a rejection is answered by discussing the step, an expiry by
+   * noticing that an unattended run queued something nobody was awake to see.
+   * The queue entry is already resolved, so "go and approve it" is advice that
+   * cannot be followed.
+   */
+  | "approval_expired"
+  /**
+   * The run was cancelled while a step waited for approval. Nobody decided
+   * anything about the step — the thing it belonged to went away.
+   */
+  | "approval_cancelled"
   /** Whole-recipe failure (e.g. circular dependencies) — has no step row. */
   | "run_level"
   /**
@@ -101,6 +115,8 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   network_error: "network error",
   missing_connector: "missing connector",
   approval_rejected: "approval rejected",
+  approval_expired: "approval expired",
+  approval_cancelled: "approval cancelled",
   run_level: "run-level halt",
   contract_failed: "completion contract failed",
   unsupported_step: "unsupported step form",
@@ -130,6 +146,12 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   missing_connector: "install/connect from /connections",
   approval_rejected:
     "approve the step from the dashboard, or set requireApproval: false",
+  // Deliberately does NOT say "approve it": the queue entry the TTL resolved
+  // no longer exists, so that is advice nobody can act on. This is the whole
+  // operator-facing cost of the conflation this category was split out of.
+  approval_expired:
+    "nobody answered before the approval timed out — an unattended run needs someone watching, `requireApproval: false`, or a longer approval timeout",
+  approval_cancelled: "the run was cancelled while waiting — re-run it",
   run_level: "check recipe for circular deps / parse errors",
   contract_failed:
     "the run finished but broke its `expect` postcondition — compare the assertion with the run output",
@@ -150,6 +172,13 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (/kill[- _]?switch/i.test(reason)) return "kill_switch";
   if (/budget[_ ]?exceeded|exceeded its token budget/i.test(reason))
     return "budget_exceeded";
+  // Both must precede the rejection matcher: its `rejected by .*approval`
+  // alternative is broad, and a mis-ordered expiry reading as a rejection is
+  // exactly the failure this split exists to end.
+  if (/approval[_ ]?expired|approval expired/i.test(reason))
+    return "approval_expired";
+  if (/approval[_ ]?cancelled|approval cancelled/i.test(reason))
+    return "approval_cancelled";
   if (/approval[_ ]?rejected|rejected by .*approval/i.test(reason))
     return "approval_rejected";
   if (/^expect_failed/i.test(reason)) return "expect_failed";
@@ -193,6 +222,42 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (/^Tool .* threw/i.test(reason)) return "tool_threw";
   if (/^Tool .* reported an error/i.test(reason)) return "tool_error";
   return "unknown";
+}
+
+/**
+ * The halt sentence + category for a refused approval, in ONE place.
+ *
+ * Both runners emitted this sentence as their own string literal, and the
+ * chained one recovers its category by matching the sentence with
+ * `categoriseHaltReason` — so a sentence written twice is a category derived
+ * from a phrase that only one of the two copies still matches. Same reason
+ * `agentTextFromTask` exists.
+ *
+ * An ABSENT refusal keeps the pre-existing sentence verbatim. A gate that
+ * returned a bare `false` said "not approved" and nothing more; rendering that
+ * as an expiry or a cancellation would invent a fact, and rendering it as
+ * anything but today's text would break every caller that already reads it.
+ */
+export function approvalHaltFor(
+  refusal?: import("./approvalRequest.js").ApprovalRefusal,
+): { reason: string; category: HaltCategory } {
+  if (refusal === "expired") {
+    return {
+      reason:
+        "Step approval expired before anyone answered — approval_expired.",
+      category: "approval_expired",
+    };
+  }
+  if (refusal === "cancelled") {
+    return {
+      reason: "Step approval cancelled with the run — approval_cancelled.",
+      category: "approval_cancelled",
+    };
+  }
+  return {
+    reason: "Step rejected by approval gate — approval_rejected.",
+    category: "approval_rejected",
+  };
 }
 
 export interface HaltSummary {

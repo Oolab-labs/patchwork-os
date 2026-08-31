@@ -109,7 +109,7 @@ export function agentTextFromTask(task: {
  * human approval and resolves true only on an explicit "approved" decision
  * (a reject / expire / cancel halts the run — fail-closed, ADR-0016 spirit).
  */
-async function makeRecipeApprovalFn(
+export async function makeRecipeApprovalFn(
   gate: "high" | "all",
   server?: Server,
 ): Promise<ApprovalFn> {
@@ -166,7 +166,14 @@ async function makeRecipeApprovalFn(
       { signal: input.signal },
     );
     const decision = await promise;
-    return decision === "approved";
+    // Carry WHICH refusal this was to the runner. The queue distinguishes
+    // rejected / expired / cancelled; collapsing them to a boolean here is
+    // what made an unattended cron run's 5-minute TTL expiry read as "a human
+    // turned it down" everywhere downstream, including the owner-facing
+    // sentence "You turned down its last request".
+    return decision === "approved"
+      ? { approved: true }
+      : { approved: false, refusal: decision };
   };
 }
 
@@ -428,6 +435,13 @@ export async function buildWorkerAutonomyGate(
       }
       // Unknown action → refuse without asking anyone. No human is recruited
       // into approving something this build does not understand.
+      //
+      // Deliberately a BARE `false`, i.e. no refusal named: this is neither a
+      // rejection, an expiry nor a cancellation, and inventing one of the three
+      // would be a worse lie than the generic sentence. A fourth category
+      // (`approval_forbidden`) is the honest answer and is NOT added here —
+      // the gate ledger holds 232 `allow` / 48 `gate` / 0 `forbid`, so it would
+      // label a branch that has never fired on any real run.
       if (outcome === "refuse") return false;
       // gate → queue for human approval; fail-closed on reject / expire / cancel
       const { promise } = queue.request(
@@ -444,7 +458,11 @@ export async function buildWorkerAutonomyGate(
         },
         { signal: input.signal }, // L1: cancel the wait when the run aborts
       );
-      return (await promise) === "approved";
+      // `decision` is already the worker-gate decision in this scope.
+      const queueDecision = await promise;
+      return queueDecision === "approved"
+        ? { approved: true }
+        : { approved: false, refusal: queueDecision };
     };
   } catch {
     // Any failure resolving worker trust → fall back to tier gate (never widen

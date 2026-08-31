@@ -86,6 +86,21 @@ export function ownerHaltPhrase(
         sentence: "You turned down its last request, so it stopped.",
         fix: "none",
       };
+    case "approval_expired":
+      // NOT `fix: "approve"`. The request it was waiting on has already been
+      // resolved by the timeout, so an approve button would point at nothing.
+      // This sentence is the reason the category exists: it used to render as
+      // "You turned down its last request" to an operator who was asleep.
+      return {
+        sentence:
+          "It asked for your go-ahead and nobody answered in time, so it stopped.",
+        fix: "none",
+      };
+    case "approval_cancelled":
+      return {
+        sentence: "It was stopped while it was still waiting for your go-ahead.",
+        fix: "none",
+      };
     case "step_timeout":
       return {
         sentence: "One step took too long and was stopped.",

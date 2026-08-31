@@ -39,5 +39,45 @@ export interface ApprovalRequestInput {
   signal?: AbortSignal;
 }
 
-/** Every approval gate: the tier gate, the worker-autonomy gate, and any test double. */
-export type ApprovalFn = (input: ApprovalRequestInput) => Promise<boolean>;
+/**
+ * Why a gate did not let a step through.
+ *
+ * These are `ApprovalDecision` (approvalQueue.ts) minus `"approved"`, and the
+ * queue has always distinguished them — a rejection is a person deciding, an
+ * expiry is a TTL firing with nobody there, a cancellation is the run itself
+ * going away. `ApprovalFn` returned a bare `boolean`, so all three arrived at
+ * the runner as one and were reported with a sentence that names a human
+ * decision. Measured before this was widened: 49 approved / 7 rejected / 27
+ * expired / 23 cancelled in the durable approval log, so most non-approvals
+ * were never rejections.
+ */
+export type ApprovalRefusal = "rejected" | "expired" | "cancelled";
+
+export interface ApprovalVerdict {
+  approved: boolean;
+  /**
+   * OMITTED when the gate does not know which refusal this was — absence, not
+   * a defaulted `"rejected"`. A gate that cannot say must not have a claim
+   * about a person invented for it; the runner keeps emitting the sentence it
+   * always did for that case.
+   */
+  refusal?: ApprovalRefusal;
+}
+
+/**
+ * Every approval gate: the tier gate, the worker-autonomy gate, and any test
+ * double. A bare `boolean` is still valid and still means exactly what it did
+ * — widening the return type rather than replacing it is what keeps every
+ * existing gate and double honest instead of forcing each to assert a refusal
+ * it does not know.
+ */
+export type ApprovalFn = (
+  input: ApprovalRequestInput,
+) => Promise<boolean | ApprovalVerdict>;
+
+/** Normalise either accepted form to the object form. */
+export function normaliseApprovalVerdict(
+  result: boolean | ApprovalVerdict,
+): ApprovalVerdict {
+  return typeof result === "boolean" ? { approved: result } : result;
+}

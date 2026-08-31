@@ -52,6 +52,12 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-08-31 `codex/worker-reliability-fixes` — worker reliability: the approval seam
+  collapsed four queue outcomes into a boolean, so an expiry nobody saw was reported as a
+  rejection a human made. Touches `approvalRequest`/`haltCategory`/both runners/the two
+  gate producers + the dashboard halt mirrors. Also widens `workers validate` to ask
+  whether an installed worker's recipe can actually RUN. — codex session
+
 ## Recently closed (informal log, prune periodically)
 
 - 2026-08-31 `docs/evidence-spine-adr` — the Evidence Spine existed ONLY as a CLAUDE.md
