@@ -89,7 +89,7 @@ steps:
 
       {{brief}}
   - tool: slack.post_message
-    channel: all-massappealdesigns
+    channel: your-channel-name
     text: |
       *Morning Brief — {{date}}*
 

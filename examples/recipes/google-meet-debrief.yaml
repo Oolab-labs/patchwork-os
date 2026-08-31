@@ -58,9 +58,9 @@ steps:
     params:
       meetings: "{{meetings}}"
       team: "{{team}}"
-      slackChannelSales: "C0AUZEY8Y0Y"
-      slackChannelMarketing: "C0AUZEY8Y0Y"
-      slackChannelEngineering: "C0AUZEY8Y0Y"
+      slackChannelSales: "C0000000SALES"
+      slackChannelMarketing: "C0000000MKTG"
+      slackChannelEngineering: "C0000000ENGR"
       issues: "{{issues}}"
     into: meeting
 

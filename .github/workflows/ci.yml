@@ -281,6 +281,17 @@ jobs:
       # accident, months later. Nothing was going to report it.
       - name: Audit real IP literals (gating)
         run: node scripts/audit-real-ips.mjs
+      # A real Slack channel id shipped three times in one example (labelled
+      # sales / marketing / engineering, all the same id) and a real workspace
+      # channel name sat in a shipped template. `templates/` is packed into npm
+      # wholesale, so both landed on every install as working configuration —
+      # published AND copied onto other people's machines. The private-identifier
+      # gate could not catch them: it matches an operator denylist that by design
+      # never enters the repo, so it cannot run here, and it only ever sees a
+      # staged diff. This one matches SHAPE, needs no secret, and therefore runs
+      # in CI.
+      - name: Audit real identifiers in shipped artifacts (gating)
+        run: node scripts/audit-shipped-identifiers.mjs
       # The README's hero block told a new user to run `patchwork connections
       # connect gmail`. There is no `connections` verb — the second command in
       # the 90-second start failed for everyone who followed it, and no gate
