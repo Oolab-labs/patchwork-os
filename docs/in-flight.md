@@ -50,6 +50,16 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-31 `feat/approval-log-correlation-id` — ADR-0025's named next stamp. `approval_log
+  .jsonl` carried no run reference on any of 215 live rows, so no run in the whole history
+  could be assembled into "who approved this, under what rule" — the question an outside party
+  asks first. The field that WAS there (`runSeq`) was supplied zero times in 105 request rows
+  and carried an explicit instruction never to populate it, `seq` being a colliding
+  per-instance counter; retired rather than filled. Stamps `rv` + `correlationId` (the run's
+  `taskId`) on both run-bearing paths. Absence stays a STATE here, not a writer defect —
+  unlike the gate ledger, two of four paths into the queue are client-session tool calls with
+  no run.
+
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)

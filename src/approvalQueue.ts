@@ -62,29 +62,25 @@ export interface PendingApproval {
   /** 256-bit hex token for phone-path approve/reject. Only present when push is configured. */
   approvalToken?: string;
   /**
-   * Phase 0β provenance — recipe run that originated this approval.
-   * Populated when the bridge can correlate the approval call to a
-   * recipe-step context (the `personalSignals` pipeline already
-   * sources from `recipe_run_log`, but that's read-only signal data;
-   * these two fields surface the link itself on the wire so the
-   * dashboard approval detail page can render an "originating run"
-   * chip without re-deriving it from filenames or sessionId.
+   * The run that originated this approval: `taskId` verbatim, as written to
+   * `runs.jsonl` — the same key `ApprovalRequestInput.runTaskId` and the
+   * Decision Record's `correlationId` already use (ADR-0025).
    *
-   * TODO(phase-0β-pop): population is deferred — the immediate goal
-   * is unblocking the dashboard schema. Computing the link without a
-   * deeper refactor requires sessionId→run mapping that today
-   * lives behind `personalSignals.source: "recipe_run_log"`. Wiring
-   * that explicitly into `handleApprovalRequest` is the follow-up.
+   * Replaces `runSeq`, which was declared here and supplied ZERO times in 105
+   * live request rows, and which this field's predecessor comment explicitly
+   * instructed never to populate: `seq` is a per-instance counter over a file
+   * several bridges write and it collides (255 distinct values across 272 rows
+   * of the live gate ledger), so an approval joined on it lands on an
+   * arbitrary one of the colliding runs.
    *
-   * WHEN THAT FOLLOW-UP HAPPENS, DO NOT POPULATE THIS FIELD. `seq` is a
-   * per-instance counter over a file several bridges write, and it
-   * collides — measured 255 distinct values across 272 rows of the live
-   * gate ledger. An approval joined on it lands on an arbitrary one of
-   * the colliding runs. Add a `runTaskId` alongside (or instead), the
-   * same key `ApprovalRequestInput` and the Decision Record's
-   * `correlationId` already use, and retire this one.
+   * OPTIONAL, and its absence is a STATE rather than a writer defect — the
+   * opposite of the same-named field on `WorkerGateDecisionRecord`. Four paths
+   * reach `request()`: the tier gate and the worker gate both carry a run, and
+   * two MCP client-session paths legitimately have none. A reader tells "no
+   * run existed" from "an older writer recorded none" by `rv` on the row, not
+   * by this field.
    */
-  runSeq?: number;
+  correlationId?: string;
   recipeName?: string;
   /**
    * `false` for an entry restored from the durable log on restart (ADR-0018):
@@ -342,7 +338,9 @@ export class ApprovalQueue {
         ...(req.sessionId !== undefined && { sessionId: req.sessionId }),
         ...(req.summary !== undefined && { summary: req.summary }),
         ...(req.recipeName !== undefined && { recipeName: req.recipeName }),
-        ...(req.runSeq !== undefined && { runSeq: req.runSeq }),
+        ...(req.correlationId !== undefined && {
+          correlationId: req.correlationId,
+        }),
         owned: false,
         resolve: () => {
           /* nobody is awaiting a restored entry — see class doc comment */
@@ -615,6 +613,7 @@ export class ApprovalQueue {
         summary: e.summary,
         riskSignals: e.riskSignals,
         personalSignals: e.personalSignals,
+        correlationId: e.correlationId,
         owned: e.owned,
         // approvalToken intentionally omitted from list — never expose to untrusted callers
       });

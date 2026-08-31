@@ -970,6 +970,13 @@ export function enqueueApprovalWithDispatch(
     summary?: string;
     sessionId?: string;
     personalSignals?: ReturnType<typeof computePersonalSignals>;
+    /**
+     * The run this approval belongs to (ADR-0025). Set by the recipe tier
+     * gate, which is the only caller of this helper that has one; the HTTP
+     * route and the CLI PreToolUse gate are client-session tool calls with no
+     * run, and omit it. Absence is a state here, not a gap.
+     */
+    correlationId?: string;
   },
   /**
    * Forwarded to `queue.request`. The recipe runner cancels its wait when the
@@ -992,6 +999,12 @@ export function enqueueApprovalWithDispatch(
       summary,
       sessionId,
       riskSignals,
+      // Read off `request`, not the destructure above: a field added to the
+      // type and missed in the rebuild is dropped silently, and this helper is
+      // the more common of the two run-bearing paths into the queue.
+      ...(request.correlationId !== undefined && {
+        correlationId: request.correlationId,
+      }),
       ...(request.personalSignals !== undefined && {
         personalSignals: request.personalSignals,
       }),

@@ -15,13 +15,19 @@
  * `RecipeRunLog`, the `worker.autonomy` flag ON, and a real (auto-approving)
  * `ApprovalQueue` singleton.
  *
- * Asserts the four links of the chain the live dogfood depends on:
+ * Asserts the five links of the chain the live dogfood depends on:
  *   A. the `github.create_issue` step GATES (compensable + unearned L4) while
  *      the reversible steps (git.log_since / agent / file.write) flow un-gated;
  *   B. on approval the gated step EXECUTES (connector called, step `success`);
  *   C. the run is PERSISTED to `runs.jsonl`;
  *   D. the trust replay ATTRIBUTES that run to the test-guardian worker and
- *      records evidence on the `issue` action-class (the dial moves).
+ *      records evidence on the `issue` action-class (the dial moves);
+ *   E. the APPROVAL the gate demanded is joinable back to that run — the
+ *      durable request row carries the run's `taskId` as `correlationId`
+ *      (ADR-0025). Asserted end-to-end rather than on the queue in isolation:
+ *      the run id has to survive the gate closure, `queue.request` and the
+ *      persistence writer, and a unit test on any one of those hops passes
+ *      while the ledger stays unjoinable.
  */
 
 import {
@@ -216,6 +222,13 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
       "issue class is cold (no prior evidence) before the run",
     ).toBeUndefined();
 
+    // The durable ADR-0018 log, so link E can assert on the FILE rather than on
+    // the in-memory entry the gate just created. Constructed BEFORE the gate:
+    // `buildWorkerAutonomyGate` calls `getApprovalQueue()` with no options, and
+    // the singleton keeps whichever options built it — so asking for a
+    // persistDir afterwards silently returns a queue that persists nothing.
+    const queue = getApprovalQueue({ persistDir: patchworkDir });
+
     // --- the real worker-autonomy gate (mirrors fireYamlRecipe wiring) -----
     // tierApprovalFn omitted (approvalGate off) → a worker `allow` means flow.
     const gate = await buildWorkerAutonomyGate(RECIPE_NAME, undefined, {
@@ -231,7 +244,6 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
     // Records which toolIds were actually QUEUED (i.e. gated). Reversible
     // steps never reach the queue.
     const queuedTools = new Set<string>();
-    const queue = getApprovalQueue();
     const unsub = queue.subscribe(() => {
       for (const pending of queue.list()) {
         queuedTools.add(pending.toolName);
@@ -335,6 +347,30 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
         (s) => s.tool === "github.create_issue" && s.status === "ok",
       ),
     ).toBe(true);
+
+    // --- E. the approval JOINS back to the run (ADR-0025) -----------------
+    // `approval_log.jsonl` carried no run reference at all until this: 0 of
+    // 215 rows on the reference deployment, so "who approved the thing that
+    // ran at 10:42" was unanswerable for every run ever recorded.
+    const approvalRows = readFileSync(
+      path.join(patchworkDir, "approval_log.jsonl"),
+      "utf8",
+    )
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    const gatedRequest = approvalRows.find(
+      (r) => r.kind === "request" && r.toolName === "github.create_issue",
+    );
+    expect(
+      gatedRequest,
+      "the gated step's approval was persisted",
+    ).toBeDefined();
+    expect(
+      gatedRequest?.correlationId,
+      "the approval names the run that needed it",
+    ).toBe(run?.taskId);
+    expect(gatedRequest?.rv).toBe(1);
 
     // --- D. trust replay + DURABLE-OUTCOME LABELLING ----------------------
     // A just-approved issue write is a non-reversible SUCCESS — it must NOT
