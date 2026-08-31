@@ -50,6 +50,15 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-31 `feat/gate-rule-id` — the Decision Record said WHY in prose and had no stable key
+  for WHICH RULE decided. A receipt citing a rule, an operator filtering on one, and any later
+  grouping all need something that survives rewording, so `reason` (prose, expected to change)
+  and `ruleId` (stable) become separate fields. Nine terminal branches, nine ids, required on
+  the decision so a new branch is a compile error until it names its rule. `rv` 1 → 2, where 2
+  means "this row carries a ruleId" — `correlationOf` does not skip unknown versions, so the
+  bump adds a guarantee without stranding a reader. Names a rule the ENGINE applied, never a
+  customer policy id: a curated pack is control-plane by ADR-0019.
+
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 

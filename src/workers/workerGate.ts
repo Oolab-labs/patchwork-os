@@ -165,6 +165,47 @@ export function resolveGateOutcome(
   };
 }
 
+/**
+ * WHICH RULE decided this action — a stable id for the branch of
+ * `decideWorkerAction` that fired, not a description of it.
+ *
+ * `reason` is prose for a human and is expected to be reworded; nothing may be
+ * keyed on it. This is the half a receipt cites, an operator filters on, and a
+ * later reader groups by, so it must survive rewording, translation and
+ * formatting. The two are deliberately separate fields rather than one string
+ * that tries to be both.
+ *
+ * It names a rule the ENGINE applied. It is NOT a customer's policy id: a
+ * curated policy pack is organisation-scoped and belongs in the control plane
+ * (ADR-0019), and one shipped from this MIT repository could not be withdrawn.
+ * The distinction is that every id below is derivable from this file alone.
+ *
+ * REQUIRED on `WorkerGateDecision`, not optional. Every terminal branch has
+ * exactly one, so an absent id could only mean a branch forgot to say — and an
+ * optional field is one that eventually is not passed (the same reasoning that
+ * made `ApprovalRequestInput.runTaskId` required). A new branch is a compile
+ * error until it names its rule.
+ */
+export type GateRuleId =
+  /** An explicit workspace `forbids` rule matched (ADR-0017). No approval unlocks it. */
+  | "forbid.workspace-policy"
+  /** Agent reasoning steps are not a gated action-class. */
+  | "allow.agent-step"
+  /** Reversible actions flow un-gated regardless of trust. */
+  | "allow.reversible"
+  /** Compensable class, earned autonomy at or above the compensable threshold. */
+  | "allow.earned-compensable"
+  /** Non-reversible class, earned full autonomy. */
+  | "allow.earned-autonomous"
+  /** Live context-risk was the BINDING constraint — the situation throttled it, not stale trust. */
+  | "gate.context-risk-throttle"
+  /** The action falls outside the worker's owned domain. */
+  | "gate.unowned-class"
+  /** The worker's declared autonomy ceiling sits below this class's threshold — always gated. */
+  | "gate.ceiling-below-threshold"
+  /** Owned and permitted in principle, but the trust is not yet earned. */
+  | "gate.unearned-trust";
+
 export interface WorkerGateDecision {
   action: WorkerGateAction;
   classKey: string;
@@ -186,6 +227,9 @@ export interface WorkerGateDecision {
   /** The descending ceiling imposed by live context-risk (4 = no de-rate).
    *  Present only when a contextRisk was supplied. Diagnostic / audit. */
   contextCeiling?: TrustLevel;
+  /** Stable id of the rule that decided this. See `GateRuleId`. */
+  ruleId: GateRuleId;
+  /** Human prose. Expected to be reworded — never key on it, use `ruleId`. */
   reason: string;
 }
 
@@ -325,6 +369,7 @@ export function decideWorkerAction(
     return {
       ...base,
       action: "forbid",
+      ruleId: "forbid.workspace-policy",
       reason: `forbidden by workspace policy (rule \`${forbidden.matchedBy}\`): ${forbidden.reason}`,
     };
   }
@@ -340,6 +385,7 @@ export function decideWorkerAction(
     return {
       ...base,
       action: "allow",
+      ruleId: "allow.agent-step",
       reason: "agent reasoning step — not a gated action-class",
     };
   }
@@ -349,6 +395,7 @@ export function decideWorkerAction(
     return {
       ...base,
       action: "allow",
+      ruleId: "allow.reversible",
       reason: `reversible (${ac.blastTier} blast) — undoable, flows un-gated`,
     };
   }
@@ -363,6 +410,7 @@ export function decideWorkerAction(
     return {
       ...base,
       action: "allow",
+      ruleId: "allow.earned-compensable",
       reason: `earned autonomy (L${effectiveLevel}) on compensable class — auto-allowed at L${COMPENSABLE_AUTONOMY_LEVEL}+`,
     };
   }
@@ -372,6 +420,7 @@ export function decideWorkerAction(
     return {
       ...base,
       action: "allow",
+      ruleId: "allow.earned-autonomous",
       reason: `earned autonomy (L4) on ${ac.reversibility} class`,
     };
   }
@@ -381,6 +430,7 @@ export function decideWorkerAction(
       ? COMPENSABLE_AUTONOMY_LEVEL
       : AUTONOMOUS_LEVEL;
   let reason: string;
+  let ruleId: GateRuleId;
   // Context-risk is the BINDING constraint when it dropped the effective level
   // below what earned trust + ceiling alone would have allowed. Attribute it so
   // the audit trail shows the situation throttled the action, not stale trust.
@@ -396,15 +446,19 @@ export function decideWorkerAction(
     const why = opts?.contextRisk?.reasons?.length
       ? ` (${opts.contextRisk.reasons.join(", ")})`
       : "";
+    ruleId = "gate.context-risk-throttle";
     reason = `${ac.reversibility} throttled by live context-risk (ceiling L${contextCeiling} < L${threshold})${why} — gated`;
   } else if (!owned) {
+    ruleId = "gate.unowned-class";
     reason = `${ac.reversibility} action outside the worker's owned domain — gated`;
   } else if (worker.autonomyCeiling < threshold) {
+    ruleId = "gate.ceiling-below-threshold";
     reason = `${ac.reversibility} class capped by autonomy ceiling (L${worker.autonomyCeiling} < L${threshold}) — always gated`;
   } else {
+    ruleId = "gate.unearned-trust";
     reason = `${ac.reversibility} + unearned (effective L${effectiveLevel} < L${threshold}) — gated for approval`;
   }
-  return { ...base, action: "gate", reason };
+  return { ...base, action: "gate", ruleId, reason };
 }
 
 /**
