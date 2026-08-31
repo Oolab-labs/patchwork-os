@@ -53,9 +53,17 @@ describe("the ./gate subpath export", () => {
     // `files` governs npm packaging and git exclusions have no effect on it.
     // An export naming a path outside `files` resolves locally and 404s for
     // every installer — the failure that only reproduces after publish.
+    const gate = pkg.exports["./gate"];
+    expect(gate).toBeDefined();
     expect(pkg.files).toContain("dist");
+
+    const target = (gate?.import ?? "").replace(/^\.\//, "");
+    // Guard the guard: an empty target would vacuously satisfy every negation
+    // below, so the loop would pass on a missing export entry.
+    expect(target).not.toBe("");
+
     for (const negated of pkg.files.filter((f) => f.startsWith("!"))) {
-      expect(pkg.exports["./gate"].import.slice(2)).not.toMatch(
+      expect(target).not.toMatch(
         new RegExp(`^${negated.slice(1).replace(/\*\*?/g, ".*")}$`),
       );
     }
