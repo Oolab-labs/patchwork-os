@@ -50,19 +50,21 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-08-31 `feat/evidence-relationship-coverage` — Stage 1 of turning `patchwork evidence`
-  from "which ledgers overlap?" into "can the claimed relationships be traversed?". The flat
-  "does this row carry a correlationId?" reading gives WRONG answers on live data three ways:
-  6 approval requests and 7 privacy-shadow rows legitimately have no run (client-session MCP
-  calls; orchestrator dispatches), and `runs.jsonl` is an event log whose 974 rows are 505
-  runs. So the unit is a relationship with an expectation attached, classified
-  connected/legacy/not-applicable/unresolved/defect, with integrity = connected / (connected
-  + defect + unresolved). Found 7 real unresolved receipts on first run.
-
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-08-31 `feat/evidence-relationship-coverage` — Stage 1 of `patchwork evidence` becoming
+  a coverage instrument. The flat "does this row carry a correlationId?" reading is WRONG on
+  live data three ways: 6 approval requests (MCP client sessions) and 7 privacy-shadow rows
+  (orchestrator dispatches) legitimately have no run, and `runs.jsonl` is an event log whose
+  974 rows are 505 runs. Unit becomes a relationship with an expectation attached —
+  connected / legacy / not-applicable / unresolved / defect — with integrity = connected /
+  (connected + defect + unresolved), so history and rows that never owed a link stay out of
+  the denominator. Approvals traverse in two hops (decision --callId--> request
+  --correlationId--> run); the archive is read alongside the live run log. Found 7 genuinely
+  unresolved receipts on its first run. Stage 2 (`--check`) deliberately deferred. — #1566
 
 - 2026-08-31 `fix/recipe-cannot-disable-worker-gate` — `requireApproval: false` (#995) was
   DELIBERATELY preserved when worker autonomy arrived (#1027 lists "respects
