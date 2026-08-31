@@ -50,6 +50,15 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-31 `feat/evidence-relationship-coverage` — Stage 1 of turning `patchwork evidence`
+  from "which ledgers overlap?" into "can the claimed relationships be traversed?". The flat
+  "does this row carry a correlationId?" reading gives WRONG answers on live data three ways:
+  6 approval requests and 7 privacy-shadow rows legitimately have no run (client-session MCP
+  calls; orchestrator dispatches), and `runs.jsonl` is an event log whose 974 rows are 505
+  runs. So the unit is a relationship with an expectation attached, classified
+  connected/legacy/not-applicable/unresolved/defect, with integrity = connected / (connected
+  + defect + unresolved). Found 7 real unresolved receipts on first run.
+
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 

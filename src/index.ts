@@ -5311,11 +5311,18 @@ if (process.argv[2] === "evidence") {
       const { evidenceCoverage, formatEvidenceCoverage } = await import(
         "./evidenceCoverage.js"
       );
+      const { evidenceRelationships, formatEvidenceRelationships } =
+        await import("./evidenceRelationships.js");
       const report = dir ? evidenceCoverage(dir) : evidenceCoverage();
+      // The raw per-ledger counts stay ABOVE the relationship view rather than
+      // being replaced by it. The percentage is the summary; the counts are the
+      // fact, and a reader who distrusts the first should be able to check it
+      // against the second without a second command.
+      const rel = dir ? evidenceRelationships(dir) : evidenceRelationships();
       process.stdout.write(
         args.includes("--json")
-          ? `${JSON.stringify(report, null, 2)}\n`
-          : formatEvidenceCoverage(report),
+          ? `${JSON.stringify({ ...report, relationships: rel }, null, 2)}\n`
+          : formatEvidenceCoverage(report) + formatEvidenceRelationships(rel),
       );
       // Always 0: this is a REPORT, not a gate. Zero joinable rows is a true
       // and expected state early on, and exiting non-zero for it would make a
