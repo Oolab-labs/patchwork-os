@@ -50,6 +50,16 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-08-31 `feat/evidence-field-roundtrip` — the evidence ledgers are copied field-by-field
+  by hand (deliberately: a spread would let unvetted caller content reach disk), so a field
+  can exist in the type, be stamped by its producer, and be dropped by a copy site nobody
+  updated. Four known instances before today — `workspaceId`, #1517's pair on the receipts
+  READ path, `correlationId` on approvals (dropped twice in one change), and `ruleId`, whose
+  copy site's own comment already documented the trap. Sentinels typed `Required<T>` so a new
+  field is a COMPILE error until the fixture represents it; driven through the real writers
+  and the real readers; exclusions listed with a reason each and asserted exhaustively so the
+  excluded set cannot grow by accident. Found a fifth on its first run.
+
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 

@@ -614,6 +614,11 @@ export class ApprovalQueue {
         riskSignals: e.riskSignals,
         personalSignals: e.personalSignals,
         correlationId: e.correlationId,
+        // Set by the worker gate on every queued approval so a consumer can
+        // tell a worker-gate approval from a plain client-session tool call.
+        // It reached disk and the restored entry but never this projection, so
+        // no reader has ever seen it. Found by the field round-trip guard.
+        recipeName: e.recipeName,
         owned: e.owned,
         // approvalToken intentionally omitted from list — never expose to untrusted callers
       });
