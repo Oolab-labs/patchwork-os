@@ -2435,15 +2435,39 @@ export async function runYamlRecipe(
               : agentResult;
             runError = runError ?? reason;
             if (!failOpenAgent) haltAfterFailure = true;
+            // The MARKER, not the name of the pattern that matched it. The
+            // detector's capture was widened to hold the whole marker on the
+            // grounds that "that is where the reason lives"; the widening
+            // reached `error` and stopped there, so every operator-facing
+            // surface — `patchwork halts`, `recipe doctor`, the run-detail
+            // page, the dashboard's owner band, all of which read `haltReason`
+            // — kept only the bookkeeping half. Measured over seven days: 9
+            // halts, one identical contentless sentence, two entirely
+            // different causes underneath (an unreachable model endpoint, and
+            // the information boundary refusing a dispatch while naming its
+            // own one-line remedy).
+            const marker = agentSilentFail?.matched?.trim();
+            const haltReason = agentSilentFail
+              ? marker
+                ? `Agent step "${stepId}" returned no usable output: ${marker}`
+                : `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
+              : `Agent step "${stepId}" reported failure.`;
+            // Derived from the sentence that is actually stored, so a reader
+            // that trusts `haltCategory` and one that re-derives from
+            // `haltReason` cannot disagree — `summariseHalts` does both. A
+            // marker naming no known cause derives `unknown`, and the specific
+            // `agent_silent_fail` is kept rather than losing information to it.
+            const derived = categoriseHaltReason(haltReason);
             stepResults.push({
               id: stepId,
               tool: "agent",
               status: "error",
               error: reason,
-              haltReason: agentSilentFail
-                ? `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
-                : `Agent step "${stepId}" reported failure.`,
-              haltCategory: "agent_silent_fail",
+              haltReason,
+              haltCategory:
+                agentSilentFail && derived !== "unknown"
+                  ? derived
+                  : "agent_silent_fail",
               durationMs: Date.now() - stepStart,
             });
           } else {

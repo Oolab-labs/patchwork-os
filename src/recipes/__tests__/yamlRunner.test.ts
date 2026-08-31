@@ -4186,7 +4186,7 @@ describe("executeAgent — AgentResult union normalization (PR2a)", () => {
 // view depends on.
 
 describe("haltReason population on error StepResults", () => {
-  it("agent silent-fail populates haltReason naming the silent-fail kind", async () => {
+  it("agent silent-fail populates haltReason naming the actual cause", async () => {
     const recipe = makeRecipe({
       steps: [
         {
@@ -4205,7 +4205,12 @@ describe("haltReason population on error StepResults", () => {
     const step = result.stepResults[0]!;
     expect(step.status).toBe("error");
     expect(step.haltReason).toBeDefined();
-    expect(step.haltReason).toMatch(/silent-fail/);
+    // Was `/silent-fail/` — the name of the pattern that matched, which every
+    // one of these halts carries and none of them is distinguished by. The
+    // marker itself is what the operator needs, and the sentence now carries
+    // it: this assertion is strictly stronger, not relaxed.
+    expect(step.haltReason).toMatch(/ANTHROPIC_API_KEY not set/);
+    expect(step.haltCategory).toBe("agent_silent_fail");
   });
 
   it("agent narration-only output populates haltReason mentioning narration", async () => {
