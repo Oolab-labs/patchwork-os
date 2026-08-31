@@ -52,14 +52,24 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- 2026-08-31 `codex/worker-reliability-fixes` — worker reliability: the approval seam
-  collapsed four queue outcomes into a boolean, so an expiry nobody saw was reported as a
-  rejection a human made. Touches `approvalRequest`/`haltCategory`/both runners/the two
-  gate producers + the dashboard halt mirrors. Also widens `workers validate` to ask
-  whether an installed worker's recipe can actually RUN. — codex session
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-08-31 `codex/worker-reliability-fixes` — five reliability fixes for the maintenance
+  workers, each one an existing subsystem answering a narrower question than the one an
+  operator has. The approval seam collapsed four queue outcomes into a boolean, so an
+  expiry nobody saw was reported as a rejection a human made — 49 approved / 7 rejected /
+  27 expired / 23 cancelled in the durable log, and two of four halts that week ran to the
+  300 000 ms TTL exactly. `workers validate` checked every way a manifest can fail to BIND
+  and never asked whether the recipe on the other end runs: 8 manifests, "no problems
+  found", one bound recipe failing `recipe doctor` with 8 errors and — found only once it
+  looked — FIVE of eight workers bound to DISABLED recipes, four of which have no run in
+  the log's whole 20-day span. The agent halt sentence kept the name of the pattern that
+  matched and dropped the marker that says what happened, so an unreachable model endpoint
+  and an ADR-0021 boundary refusal (remedy included in its own text) rendered identically.
+  And `privacy_shadow.jsonl` carried no run id while `boundary_receipts.jsonl`, written 26
+  lines away from the same dispatch, did — so "where do my live and candidate policies
+  disagree, on this run?" was a join that could not be expressed. — PR pending
 - 2026-08-31 `docs/evidence-spine-adr` — the Evidence Spine existed ONLY as a CLAUDE.md
   section, which records in its own text that both its load-bearing claims went stale or
   were wrong within two days. A third was found false the same week: "zero attribution rows
