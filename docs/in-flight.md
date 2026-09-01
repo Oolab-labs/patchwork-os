@@ -50,14 +50,19 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- **`feat/butler-home`** — Butler Home redesign against the view-model landed in
-  #1568. **Rewrites `dashboard/src/app/butler/page.tsx`** and replaces the
-  five-heading section-order test with outcome assertions (rationale:
-  `docs/butler-product-reset.md`). Renders ONLY evidence-backed claims — no
-  sixth source, no fabricated timeline. Do not edit that page in parallel.
+_Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-09-01 `feat/butler-home` — Butler Home against the #1568 view-model. Status line
+  first with `cannot-tell` as its own arm; per-source loading, so one dead endpoint no
+  longer discards four healthy ones; every empty state separates "there is nothing" from
+  "I could not check". Action evidence moved above memory. The five endpoint shapes are now
+  imported from the view-model rather than restated — the two copies had ALREADY diverged
+  (`StandingPermission.grantedBy`). Section-order test replaced by outcome assertions, its
+  screen-reader intent preserved. "What Butler has done" remains only the standing-permission
+  subset; no sixth source.
 
 - 2026-09-01 `feat/butler-view-model` — Butler Home view-model (#1568). Types + a pure
   mapping over the five surfaces the page already reads. Two findings rather than a
