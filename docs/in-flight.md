@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- **`feat/butler-home`** — Butler Home redesign against the view-model landed in
+  #1568. **Rewrites `dashboard/src/app/butler/page.tsx`** and replaces the
+  five-heading section-order test with outcome assertions (rationale:
+  `docs/butler-product-reset.md`). Renders ONLY evidence-backed claims — no
+  sixth source, no fabricated timeline. Do not edit that page in parallel.
 
 
 ## Recently closed (informal log, prune periodically)
