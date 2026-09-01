@@ -55,7 +55,8 @@ const observed = (seq: number, at: number): ButlerFact => ({
 const permission = (id: string, active: boolean): StandingPermission => ({
   id,
   grantedAt: 1_000,
-  scope: { domains: ["task"] },
+  grantedBy: null,
+  scope: { domains: ["tasks"] },
   active,
   ...(active ? {} : { revokedAt: 2_000 }),
 });

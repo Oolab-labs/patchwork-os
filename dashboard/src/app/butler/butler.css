@@ -302,3 +302,18 @@
     flex: 1 1 100%;
   }
 }
+
+/* The headline answer, before any section.
+ *
+ * Larger than body text and stated in words, because it carries the one thing
+ * a reader came for. It is NOT coloured to signal state: "nothing is waiting"
+ * and "I could not find out" must remain distinguishable in greyscale, to a
+ * screen reader, and printed — the same rule the rest of this page keeps.
+ */
+.butlerStatus {
+  font-size: 1.35em;
+  line-height: 1.4;
+  font-weight: 600;
+  margin: 0 0 1.4rem;
+  max-width: 34ch;
+}
