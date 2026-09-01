@@ -1188,6 +1188,12 @@ export async function resolveLocalGovernance(
     cfg = {};
   }
   const profile = resolveProfile(cfg);
+  // Publish it process-wide too: executeAgent (containment) and
+  // loadRecipeServers (plugin allowlist) read `activeProfile()`, not the
+  // runner deps. A local run that set only `deps.governance` would gate
+  // approvals as governed while containing agents as compat.
+  const { setActiveProfile } = await import("../governance/profile.js");
+  setActiveProfile(profile);
   if (profile.mode !== "governed") return {};
   if (provided?.requireApprovalFn !== undefined) return { governance: profile };
   const isTTY =

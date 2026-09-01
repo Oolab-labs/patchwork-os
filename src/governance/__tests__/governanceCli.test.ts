@@ -8,8 +8,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  explainRecipePolicy,
+  formatExplainReport,
+} from "../../commands/policyExplain.js";
 import { runProfileCommand } from "../../commands/profile.js";
-import { explainRecipePolicy, formatExplainReport } from "../../commands/policyExplain.js";
 import { clearConfigCache, loadConfig } from "../../patchworkConfig.js";
 import { formatGovernanceReport, governanceReport } from "../doctorReport.js";
 import { _resetActiveProfileForTesting } from "../profile.js";
@@ -42,7 +45,11 @@ function writeConfig(extra: Record<string, unknown>): void {
 describe("governanceReport", () => {
   it("compat install is NOT GOVERNED with the six default-off reasons", () => {
     writeConfig({});
-    const r = governanceReport({ config: loadConfig(configPath), recipesDir: path.join(home, "recipes"), workersDir: path.join(home, "workers") });
+    const r = governanceReport({
+      config: loadConfig(configPath),
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+    });
     expect(r.governed).toBe(false);
     expect(r.reasons.join("\n")).toMatch(/approval gate is off/);
     expect(r.reasons.join("\n")).toMatch(/bypass approval/);
@@ -52,24 +59,65 @@ describe("governanceReport", () => {
   });
   it("governed + a registered destination is GOVERNED; missing destination is the one remaining reason", () => {
     writeConfig({ profile: "governed" });
-    const noDest = governanceReport({ config: loadConfig(configPath), recipesDir: path.join(home, "recipes"), workersDir: path.join(home, "workers") });
+    const noDest = governanceReport({
+      config: loadConfig(configPath),
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+    });
     expect(noDest.governed).toBe(false);
     expect(noDest.reasons).toHaveLength(1);
     expect(noDest.reasons[0]).toMatch(/no model destination/);
     writeConfig({
       profile: "governed",
-      privacy: { destinations: { local: { type: "local", drivers: ["local"], classifications: ["public", "internal", "confidential", "restricted"] } } },
+      privacy: {
+        destinations: {
+          local: {
+            type: "local",
+            drivers: ["local"],
+            classifications: [
+              "public",
+              "internal",
+              "confidential",
+              "restricted",
+            ],
+          },
+        },
+      },
     });
-    const r = governanceReport({ config: loadConfig(configPath), recipesDir: path.join(home, "recipes"), workersDir: path.join(home, "workers") });
+    const r = governanceReport({
+      config: loadConfig(configPath),
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+    });
     expect(r.governed).toBe(true);
     expect(formatGovernanceReport(r)).toMatch(/STATUS: GOVERNED/);
-    expect(r.lines.find((l) => l.key === "killSwitch")?.value).toMatch(/fails closed/);
+    expect(r.lines.find((l) => l.key === "killSwitch")?.value).toMatch(
+      /fails closed/,
+    );
     expect(r.lines.find((l) => l.key === "automatedRuns")?.value).toBe("GATED");
   });
   it("a refused installed plugin spec makes the posture NOT GOVERNED", () => {
-    writeConfig({ profile: "governed", privacy: { destinations: { local: { type: "local", drivers: ["local"], classifications: ["restricted"] } } } });
-    writeFileSync(path.join(home, "recipes", "evil.yaml"), "name: evil\ntrigger: { type: manual }\nservers: ['./nope']\nsteps: []\n");
-    const r = governanceReport({ config: loadConfig(configPath), recipesDir: path.join(home, "recipes"), workersDir: path.join(home, "workers") });
+    writeConfig({
+      profile: "governed",
+      privacy: {
+        destinations: {
+          local: {
+            type: "local",
+            drivers: ["local"],
+            classifications: ["restricted"],
+          },
+        },
+      },
+    });
+    writeFileSync(
+      path.join(home, "recipes", "evil.yaml"),
+      "name: evil\ntrigger: { type: manual }\nservers: ['./nope']\nsteps: []\n",
+    );
+    const r = governanceReport({
+      config: loadConfig(configPath),
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+    });
     expect(r.governed).toBe(false);
     expect(r.reasons.join("\n")).toMatch(/not allowlisted/);
   });
@@ -113,13 +161,31 @@ steps:
   it("compat: cron never consults approval; governed: writes need a human, contained agent flows", async () => {
     writeFileSync(path.join(home, "recipes", "invoice-review.yaml"), recipe);
     writeConfig({ approvalGate: "high" });
-    const compat = await explainRecipePolicy("invoice-review", { recipesDir: path.join(home, "recipes"), workersDir: path.join(home, "workers"), config: loadConfig(configPath) });
-    expect(compat.steps.map((s) => s.result.final)).toEqual(["ALLOW", "ALLOW", "ALLOW", "ALLOW"]);
-    expect(compat.steps[2]?.result.stages.find((s) => s.stage === "trigger")?.verdict).toBe("SKIP");
+    const compat = await explainRecipePolicy("invoice-review", {
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+      config: loadConfig(configPath),
+    });
+    expect(compat.steps.map((s) => s.result.final)).toEqual([
+      "ALLOW",
+      "ALLOW",
+      "ALLOW",
+      "ALLOW",
+    ]);
+    expect(
+      compat.steps[2]?.result.stages.find((s) => s.stage === "trigger")
+        ?.verdict,
+    ).toBe("SKIP");
 
     writeConfig({ profile: "governed" });
-    const gov = await explainRecipePolicy("invoice-review", { recipesDir: path.join(home, "recipes"), workersDir: path.join(home, "workers"), config: loadConfig(configPath) });
-    const finals = Object.fromEntries(gov.steps.map((s) => [s.toolId, s.result.final]));
+    const gov = await explainRecipePolicy("invoice-review", {
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+      config: loadConfig(configPath),
+    });
+    const finals = Object.fromEntries(
+      gov.steps.map((s) => [s.toolId, s.result.final]),
+    );
     expect(finals["file.read"]).toBe("ALLOW");
     expect(finals.agent).toBe("ALLOW"); // contained
     expect(finals["file.write"]).toBe("ALLOW"); // reversible write flows
@@ -132,9 +198,19 @@ steps:
   it("tool filter restricts steps; unknown recipe throws", async () => {
     writeFileSync(path.join(home, "recipes", "invoice-review.yaml"), recipe);
     writeConfig({ profile: "governed" });
-    const only = await explainRecipePolicy("invoice-review", { recipesDir: path.join(home, "recipes"), workersDir: path.join(home, "workers"), config: loadConfig(configPath), tool: "http.post" });
+    const only = await explainRecipePolicy("invoice-review", {
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+      config: loadConfig(configPath),
+      tool: "http.post",
+    });
     expect(only.steps).toHaveLength(1);
-    await expect(explainRecipePolicy("nope", { recipesDir: path.join(home, "recipes"), config: loadConfig(configPath) })).rejects.toThrow(/not found/);
+    await expect(
+      explainRecipePolicy("nope", {
+        recipesDir: path.join(home, "recipes"),
+        config: loadConfig(configPath),
+      }),
+    ).rejects.toThrow(/not found/);
   });
 });
 
@@ -146,18 +222,64 @@ describe("recipe run --local under the governed profile", () => {
     writeConfig({ profile: "governed" });
     const noTty = await resolveLocalGovernance(undefined, { isTTY: false });
     expect(noTty.governance?.mode).toBe("governed");
-    const fn = noTty.requireApprovalFn as NonNullable<typeof noTty.requireApprovalFn>;
-    expect(await fn({ toolId: "http.post", tier: "medium", runTaskId: "t", effective: "ALLOW" })).toBe(true);
+    // the process-wide seam the executor and plugin loader read
+    expect((await import("../profile.js")).activeProfile().mode).toBe(
+      "governed",
+    );
+    const fn = noTty.requireApprovalFn as NonNullable<
+      typeof noTty.requireApprovalFn
+    >;
     expect(
-      await fn({ toolId: "http.post", tier: "medium", runTaskId: "t", effective: "HUMAN_APPROVAL_REQUIRED" }),
+      await fn({
+        toolId: "http.post",
+        tier: "medium",
+        runTaskId: "t",
+        effective: "ALLOW",
+      }),
+    ).toBe(true);
+    expect(
+      await fn({
+        toolId: "http.post",
+        tier: "medium",
+        runTaskId: "t",
+        effective: "HUMAN_APPROVAL_REQUIRED",
+      }),
     ).toMatchObject({ approved: false });
-    const yes = await resolveLocalGovernance(undefined, { isTTY: true, ask: async () => "y" });
-    const fnYes = yes.requireApprovalFn as NonNullable<typeof yes.requireApprovalFn>;
-    expect(await fnYes({ toolId: "http.post", tier: "medium", runTaskId: "t", effective: "HUMAN_APPROVAL_REQUIRED" })).toBe(true);
-    const no = await resolveLocalGovernance(undefined, { isTTY: true, ask: async () => "" });
-    const fnNo = no.requireApprovalFn as NonNullable<typeof no.requireApprovalFn>;
-    expect(await fnNo({ toolId: "http.post", tier: "medium", runTaskId: "t", effective: "HUMAN_APPROVAL_REQUIRED" })).toMatchObject({ approved: false });
+    const yes = await resolveLocalGovernance(undefined, {
+      isTTY: true,
+      ask: async () => "y",
+    });
+    const fnYes = yes.requireApprovalFn as NonNullable<
+      typeof yes.requireApprovalFn
+    >;
+    expect(
+      await fnYes({
+        toolId: "http.post",
+        tier: "medium",
+        runTaskId: "t",
+        effective: "HUMAN_APPROVAL_REQUIRED",
+      }),
+    ).toBe(true);
+    const no = await resolveLocalGovernance(undefined, {
+      isTTY: true,
+      ask: async () => "",
+    });
+    const fnNo = no.requireApprovalFn as NonNullable<
+      typeof no.requireApprovalFn
+    >;
+    expect(
+      await fnNo({
+        toolId: "http.post",
+        tier: "medium",
+        runTaskId: "t",
+        effective: "HUMAN_APPROVAL_REQUIRED",
+      }),
+    ).toMatchObject({ approved: false });
     // caller-supplied deps win
-    expect(await resolveLocalGovernance({ governance: (await import("../profile.js")).COMPAT_PROFILE })).toEqual({});
+    expect(
+      await resolveLocalGovernance({
+        governance: (await import("../profile.js")).COMPAT_PROFILE,
+      }),
+    ).toEqual({});
   });
 });
