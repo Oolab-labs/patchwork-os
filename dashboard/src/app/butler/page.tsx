@@ -136,6 +136,34 @@ async function getJson(path: string): Promise<Record<string, unknown>> {
   return (await res.json()) as Record<string, unknown>;
 }
 
+/**
+ * Tool ids in the reader's words.
+ *
+ * Small and explicit, NOT derived. A rule that split `vendor.verb_object` and
+ * reassembled it would read most ids acceptably and some as nonsense, and the
+ * nonsense would appear on the page that reports what Butler did to somebody's
+ * accounts. Every entry below was checked against a registered tool id; an
+ * unknown id falls back to ITSELF rather than to a guess, because a raw
+ * identifier is honest and an invented sentence is not.
+ *
+ * There are hundreds of tools and this covers the few a standing permission
+ * realistically exercises. It is meant to stay short.
+ */
+const TOOL_IN_WORDS: Record<string, string> = {
+  "todoist.create_task": "Added a task in Todoist",
+  "asana.create_task": "Added a task in Asana",
+  "asana.complete_task": "Completed a task in Asana",
+  "asana.add_task_comment": "Commented on a task in Asana",
+  "github.create_issue": "Opened an issue on GitHub",
+  "discord.send_message": "Sent a message on Discord",
+  "gmail.send": "Sent an email",
+  "airtable.create_record": "Added a record in Airtable",
+};
+
+function toolInWords(id: string): string {
+  return TOOL_IN_WORDS[id] ?? id;
+}
+
 /** The five surfaces Home reads. Named so a total blackout is countable. */
 const SOURCE_COUNT = 5;
 
@@ -589,7 +617,7 @@ export default function ButlerPage() {
               {did.map((e) => (
                 <li key={`${e.permissionId}-${e.at}`} className="butlerRow">
                   <p className="butlerRowText">
-                    {e.toolName}
+                    {toolInWords(e.toolName)}
                     {e.recipeName ? ` (${e.recipeName})` : ""}
                   </p>
                   {/* The receipt the standing permission owes the reader. */}
@@ -604,13 +632,17 @@ export default function ButlerPage() {
         </section>
       )}
 
+      {/* Memory and Permissions are the two reference areas. Side by side when
+          there is room, sequential in the DOM and stacked when there is not —
+          the reading order never changes. */}
+      <div className="butlerReference">
       {/* 3 ── What Butler knows ──────────────────────────────────────── */}
       <section className="butlerSection" aria-labelledby="butler-knows">
         <h2 id="butler-knows">What I know about you</h2>
         {/* The count is the summary; the list is the detail. Stated in words
             because "6" alone does not say which population it counts, and the
             two populations differ by whether Butler may act on them. */}
-        {home?.memory.established.state === "read" && (
+        {home?.memory.established.state === "read" && !memoryCompact && (
           <p className="butlerMeta">
             {home.memory.established.value === 0
               ? "Nothing I act on yet."
@@ -667,9 +699,61 @@ export default function ButlerPage() {
         )}
       </section>
 
-      {/* 4 ── Seen, not acted on ─────────────────────────────────────── */}
+      {/* 4 ── Standing permissions ───────────────────────────────────── */}
+      <section className="butlerSection" aria-labelledby="butler-allowed">
+        <h2 id="butler-allowed">What you have allowed</h2>
+        {permissions.length === 0 ? (
+          <p className="butlerEmpty">
+            {!ready
+              ? "Looking…"
+              : home?.permissions.active.state === "unavailable"
+                ? "I could not check what you have allowed, so I cannot say."
+                : permissionsCompact
+                  ? "Nothing yet — I ask you about everything."
+                  : "Nothing. I ask you about everything."}
+          </p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {permissions.map((p) => (
+              <li key={p.id} className="butlerRow">
+                <p className="butlerRowText">{permissionInWords(p)}</p>
+                {/* Live-or-not in words. A struck-through row or a grey tint
+                    would carry this in styling alone. */}
+                <p className="butlerMeta">
+                  {p.active
+                    ? `In force since ${whenInWords(p.grantedAt)}.`
+                    : `You took this back on ${whenInWords(p.revokedAt ?? p.grantedAt)}. I am keeping the record.`}
+                </p>
+                {p.active && (
+                  <div className="butlerActions">
+                    <button
+                      type="button"
+                      className="butlerButton"
+                      onClick={() => void revokePermission(p)}
+                    >
+                      Take this back
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {/* A promise about what Butler will NEVER do, not a description of the
+            list above it — so it is separated rather than reading as the last
+            line of an empty state. */}
+        <p className="butlerPromise">
+          I will never do something you cannot undo without asking you first,
+          whatever you have allowed here.
+        </p>
+      </section>
+
+      {/* 5 ── Seen, not acted on ─────────────────────────────────────── */}
       {showNoticed && (
-        <section className="butlerSection" aria-labelledby="butler-seen">
+        <section
+          className="butlerSection butlerSpan"
+          aria-labelledby="butler-seen"
+        >
           <h2 id="butler-seen">Things I noticed but have not used</h2>
           <p className="butlerMeta">
             I only guessed at these. I will not act on any of them unless you tell
@@ -712,51 +796,7 @@ export default function ButlerPage() {
         </section>
       )}
 
-      {/* 5 ── Standing permissions ───────────────────────────────────── */}
-      <section className="butlerSection" aria-labelledby="butler-allowed">
-        <h2 id="butler-allowed">What you have allowed</h2>
-        {permissions.length === 0 ? (
-          <p className="butlerEmpty">
-            {!ready
-              ? "Looking…"
-              : home?.permissions.active.state === "unavailable"
-                ? "I could not check what you have allowed, so I cannot say."
-                : permissionsCompact
-                  ? "Nothing yet — I ask you about everything."
-                  : "Nothing. I ask you about everything."}
-          </p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {permissions.map((p) => (
-              <li key={p.id} className="butlerRow">
-                <p className="butlerRowText">{permissionInWords(p)}</p>
-                {/* Live-or-not in words. A struck-through row or a grey tint
-                    would carry this in styling alone. */}
-                <p className="butlerMeta">
-                  {p.active
-                    ? `In force since ${whenInWords(p.grantedAt)}.`
-                    : `You took this back on ${whenInWords(p.revokedAt ?? p.grantedAt)}. I am keeping the record.`}
-                </p>
-                {p.active && (
-                  <div className="butlerActions">
-                    <button
-                      type="button"
-                      className="butlerButton"
-                      onClick={() => void revokePermission(p)}
-                    >
-                      Take this back
-                    </button>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="butlerMeta">
-          I will never do something you cannot undo without asking you first,
-          whatever you have allowed here.
-        </p>
-      </section>
+      </div>
 
       {/* Undo ─────────────────────────────────────────────────────────
           Last in DOM order because it is a consequence of the sections above,
