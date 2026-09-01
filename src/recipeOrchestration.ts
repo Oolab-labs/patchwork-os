@@ -1010,6 +1010,16 @@ export class RecipeOrchestration {
           "./governance/profile.js"
         );
         const replayProfile = replayActiveProfile();
+        // A replay cannot rebuild the worker gate (no live trust context),
+        // so under governed a worker-owned recipe is REFUSED rather than
+        // replayed with fewer gates than the live run had — a forbid must
+        // not be reachable by re-running yesterday's evidence.
+        if (replayProfile.mode === "governed" && workerId) {
+          return {
+            ok: false,
+            error: "replay_refused_worker_owned_under_governed",
+          };
+        }
         const replayGate: "off" | "high" | "all" =
           replayProfile.mode === "governed"
             ? replayProfile.approvalGate

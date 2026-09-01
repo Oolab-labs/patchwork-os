@@ -605,7 +605,7 @@ and inferred-tier writes queue, unregistered tools halt, a recipe's
   re-validated per hop with credentials dropped cross-origin. `http.post` and
   `sendHttpRequest` both use it.
 - **Known remaining bypasses are listed in the ADR.** Replay rebuilds the tier
-  gate but not the worker gate; the envelope does not reach `fan_out` items,
+  gate but not the worker gate (so a worker-owned recipe is REFUSED for replay under governed); the envelope does not reach `fan_out` items,
   nested child outputs or automation-hook prompts; `recipe test`/`record` are
   ungated; there is no prompt size cap.
 

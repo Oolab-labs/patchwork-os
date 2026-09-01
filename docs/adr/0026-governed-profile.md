@@ -126,7 +126,7 @@ The same order is what `policy explain` prints.
 
 ## Known remaining bypasses (recorded, not hidden)
 
-- The worker gate is not rebuilt on the replay path (tier gate only).
+- The worker gate is not rebuilt on the replay path (tier gate only); under governed a worker-owned recipe is therefore REFUSED for replay (`replay_refused_worker_owned_under_governed`) rather than replayed with fewer gates.
 - The untrusted envelope is applied to flat and chained agent prompts, not to
   `fan_out` per-item prompts, nested-recipe child outputs, agent output derived
   from connector data, judge `reviews:` blocks, or orchestrator automation-hook
