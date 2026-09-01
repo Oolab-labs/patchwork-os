@@ -59,9 +59,13 @@ export interface ButlerFact {
 export interface StandingPermission {
   id: string;
   grantedAt: number;
+  /** Who granted it, or null on a grant made before attribution existed. */
+  grantedBy: string | null;
   scope: { domains: string[] };
-  revokedAt?: number;
+  ceiling?: { magnitudeBand?: string; perDay?: number };
   expiresAt?: number;
+  revokedAt?: number;
+  note?: string;
   active: boolean;
 }
 

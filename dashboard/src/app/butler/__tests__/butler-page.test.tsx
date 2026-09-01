@@ -350,21 +350,85 @@ describe("honesty when the bridge is unreachable", () => {
 });
 
 describe("structure", () => {
-  it("is a single column with sections in reading order", async () => {
+  /**
+   * This replaced an assertion listing five literal headings in one fixed
+   * order. That test was not protecting the wording — its own comment said
+   * "DOM order IS reading order", so the guarantee is that a screen-reader or
+   * keyboard user meets an urgent decision before passive information. The
+   * five headings were how that intent got frozen, and freezing it made the
+   * information architecture unchangeable without failing a test that looked
+   * like an accessibility test.
+   *
+   * The intent survives, expressed as outcomes. See
+   * docs/butler-product-reset.md.
+   */
+  it("puts what needs a decision before anything passive", async () => {
     const { container } = render(<ButlerPage />);
     await screen.findByText("Push the release branch");
     const headings = Array.from(container.querySelectorAll("h2")).map((h) =>
       (h.textContent ?? "").trim(),
     );
-    // DOM order IS reading order — the plan's §4 ordering, which a screen
-    // reader and a keyboard user both follow literally.
-    expect(headings).toEqual([
-      "Something I need to ask you",
-      "What I know about you",
-      "Things I noticed but have not used",
-      "What I did without asking",
-      "What you have allowed",
-    ]);
+    const ask = headings.findIndex((h) => /need to ask you/i.test(h));
+    expect(ask).toBeGreaterThanOrEqual(0);
+    // Everything else is reference material a reader may skip.
+    for (const [i, h] of headings.entries()) {
+      if (i === ask) continue;
+      expect(i, `"${h}" precedes the decision`).toBeGreaterThan(ask);
+    }
+  });
+
+  it("states what needs a decision before the page is scrolled", async () => {
+    render(<ButlerPage />);
+    // The headline answers the question the reader came with, in words, and
+    // does not require reaching a section to find it.
+    const status = await screen.findByText(
+      /waiting for your decision|could not find out whether/i,
+    );
+    expect(status).toBeTruthy();
+  });
+
+  it("puts an unreadable source ahead of what it would undermine", async () => {
+    // A reader who has taken in three sections must not discover afterwards
+    // that a fourth was never consulted.
+    const { container } = render(<ButlerPage />);
+    await screen.findByText("Push the release branch");
+    const headings = Array.from(container.querySelectorAll("h2")).map((h) =>
+      (h.textContent ?? "").trim(),
+    );
+    const unchecked = headings.findIndex((h) => /could not check/i.test(h));
+    if (unchecked >= 0) {
+      const ask = headings.findIndex((h) => /need to ask you/i.test(h));
+      expect(unchecked).toBeLessThan(ask);
+    }
+  });
+
+  it("does not render one empty section per source when all is well", async () => {
+    // The all-clear used to cost as much attention as an urgent page: five
+    // headings, each with its own rendering of "nothing here".
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve(
+              String(url).includes("approvals")
+                ? []
+                : { facts: [], permissions: [], exercises: [] },
+            ),
+        }),
+      ),
+    );
+    const { container } = render(<ButlerPage />);
+    await screen.findByText(/Nothing is waiting for your decision/i);
+    // Nothing could not be checked, so no apology is on the page at all.
+    expect(
+      Array.from(container.querySelectorAll("h2")).filter((h) =>
+        /could not check/i.test(h.textContent ?? ""),
+      ),
+    ).toHaveLength(0);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("every section is labelled by its own heading", async () => {

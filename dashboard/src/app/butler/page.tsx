@@ -34,51 +34,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import "./butler.css";
+// The endpoint shapes live in `homeState.ts` and are imported, not restated.
+// Two declarations of the same payload is how a page and its model come to
+// disagree about what the server sends — silently, and in the direction
+// nobody tests.
+import {
+  type ButlerFact,
+  type ButlerHomeState,
+  type ButlerSources,
+  type PendingApproval as Pending,
+  type PermissionExercise,
+  type SourceState,
+  type StandingPermission,
+  mapButlerHome,
+} from "./homeState";
 
 // ─────────────────────────────────────────────────────────────── types
-
-interface ButlerFact {
-  seq: number;
-  subject: string;
-  predicate: string;
-  object: string;
-  recordedAt: number;
-  trust: number;
-  provenance: {
-    channel: string;
-    source?: string;
-    validated: boolean;
-  };
-}
-
-interface StandingPermission {
-  id: string;
-  grantedAt: number;
-  grantedBy: string | null;
-  scope: { domains: string[] };
-  ceiling?: { magnitudeBand?: string; perDay?: number };
-  expiresAt?: number;
-  revokedAt?: number;
-  note?: string;
-  active: boolean;
-}
-
-interface PermissionExercise {
-  permissionId: string;
-  at: number;
-  toolName: string;
-  classKey: string;
-  workerId?: string;
-  recipeName?: string;
-}
-
-interface Pending {
-  callId: string;
-  toolName: string;
-  tier: "low" | "medium" | "high";
-  requestedAt: number;
-  summary?: string;
-}
 
 /** An undo the user can still take. Kept until used — never expires. */
 interface UndoOffer {
@@ -165,6 +136,9 @@ async function getJson(path: string): Promise<Record<string, unknown>> {
   return (await res.json()) as Record<string, unknown>;
 }
 
+/** The five surfaces Home reads. Named so a total blackout is countable. */
+const SOURCE_COUNT = 5;
+
 // ─────────────────────────────────────────────────────────────── page
 
 export default function ButlerPage() {
@@ -175,6 +149,7 @@ export default function ButlerPage() {
   const [asks, setAsks] = useState<Pending[]>([]);
   const [announcement, setAnnounce] = useState("");
   const [undos, setUndos] = useState<UndoOffer[]>([]);
+  const [home, setHome] = useState<ButlerHomeState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -196,24 +171,77 @@ export default function ButlerPage() {
       // succeeded, the shape guards fell through to `[]`, and the page said
       // "Nothing yet." — confidently, about a bridge it never reached. Only a
       // network-level rejection ever reached the catch. Check the status.
-      const [f, q, p, e, a] = await Promise.all([
+      // Per source, NOT `Promise.all`. All-or-nothing discarded four healthy
+      // sources whenever one failed, collapsing five independent
+      // availabilities into a single boolean — safe, but it threw away
+      // everything Butler could still honestly say. `mapButlerHome` keeps each
+      // one's outcome separate; a failure can never arrive here as an empty
+      // list.
+      const [f, q, p, e, a] = await Promise.allSettled([
         getJson("/api/bridge/butler/facts"),
         getJson("/api/bridge/butler/quarantine"),
         getJson("/api/bridge/butler/permissions"),
         getJson("/api/bridge/butler/permissions/exercises"),
         getJson("/api/bridge/approvals"),
       ]);
-      setFacts(Array.isArray(f?.facts) ? f.facts : []);
-      setQuarantine(Array.isArray(q?.facts) ? q.facts : []);
-      setPermissions(Array.isArray(p?.permissions) ? p.permissions : []);
-      setExercises(Array.isArray(e?.exercises) ? e.exercises : []);
+      const listFrom = <T,>(
+        r: PromiseSettledResult<Record<string, unknown>>,
+        key: string,
+      ): SourceState<T[]> => {
+        if (r.status === "rejected") {
+          const m =
+            r.reason instanceof Error ? r.reason.message : String(r.reason);
+          return {
+            state: "unavailable",
+            reason: /^[A-Z].*[.?]$/.test(m)
+              ? m
+              : "I could not reach the bridge for this.",
+          };
+        }
+        const body = r.value;
+        // A bare array is the /approvals shape; everything else wraps.
+        const raw = key === "" ? body : (body as Record<string, unknown>)[key];
+        return { state: "read", value: (Array.isArray(raw) ? raw : []) as T[] };
+      };
+
+      const sources: ButlerSources = {
+        facts: listFrom(f, "facts"),
+        quarantine: listFrom(q, "facts"),
+        permissions: listFrom(p, "permissions"),
+        exercises: listFrom(e, "exercises"),
+        approvals: listFrom(a, ""),
+      };
+      const state = mapButlerHome(sources);
+      setHome(state);
+      // A TOTAL blackout is a page-level alert; a partial one is a note beside
+      // the sources it affects. Both were previously the same thing, because
+      // one failure took the whole page down. Keeping the alert for the total
+      // case preserves the guarantee that a dead bridge never renders as
+      // "Butler knows nothing about you" — the reader is interrupted only when
+      // there is genuinely nothing else on the page to read.
+      setLoadError(
+        state.unavailable.length === SOURCE_COUNT
+          ? (state.unavailable[0]?.reason ??
+              "I could not reach the bridge, so I cannot show you anything right now.")
+          : null,
+      );
+
+      setFacts(sources.facts.state === "read" ? sources.facts.value : []);
+      setQuarantine(
+        sources.quarantine.state === "read" ? sources.quarantine.value : [],
+      );
+      setPermissions(
+        sources.permissions.state === "read" ? sources.permissions.value : [],
+      );
+      setExercises(
+        sources.exercises.state === "read" ? sources.exercises.value : [],
+      );
       // GET /approvals returns a BARE ARRAY (src/approvalHttp.ts) — there is
       // no `pending` wrapper. Reading `.pending` off an array is undefined, so
       // this section rendered "Nothing right now." no matter how many
       // approvals were queued. The canonical /approvals page casts the body to
       // an array directly; this now agrees with the server and with it.
-      setAsks(Array.isArray(a) ? a : []);
-      setLoadError(null);
+      setAsks(sources.approvals.state === "read" ? sources.approvals.value : []);
     } catch (err) {
       // Say so. A page that silently renders "Butler knows nothing about you"
       // when the truth is "I could not reach the bridge" is worse than an
@@ -383,6 +411,22 @@ export default function ButlerPage() {
 
       <h1>Butler</h1>
 
+      {/* Status first, because it is the one thing a reader came for. The
+          three arms are not a ladder: "nothing is waiting for you" and "I could
+          not find out whether anything is waiting for you" differ by exactly
+          the thing the page is used to decide. */}
+      <p className="butlerStatus" role="status">
+        {!home
+          ? "Looking…"
+          : home.status.kind === "needs-you"
+            ? home.status.count === 1
+              ? "One thing is waiting for your decision."
+              : `${home.status.count} things are waiting for your decision.`
+            : home.status.kind === "caught-up"
+              ? "Nothing is waiting for your decision."
+              : "I could not find out whether anything is waiting for you."}
+      </p>
+
       {/* The reason is shown, not just the reassurance. The bridge answers 501
           when it cannot read the permission store, with an explicit comment
           that this must not read as "you have granted nothing" — a fixed
@@ -392,6 +436,27 @@ export default function ButlerPage() {
         <p className="butlerRowText" role="alert">
           {loadError} This is not the same as knowing nothing about you.
         </p>
+      )}
+
+      {/* What could not be checked, carried WHOLE and named source by source.
+          Placed before anything it might undermine: a reader who has already
+          read three sections should not discover afterwards that a fourth was
+          never consulted. Absent entirely when everything was read, so a
+          healthy page carries no apology. */}
+      {home && home.unavailable.length > 0 && !loadError && (
+        <section className="butlerSection" aria-labelledby="butler-unchecked">
+          <h2 id="butler-unchecked">What I could not check</h2>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {home.unavailable.map((u) => (
+              <li key={u.source} className="butlerRow">
+                <p className="butlerRowText">{u.reason}</p>
+                <p className="butlerMeta">
+                  This is not the same as there being nothing.
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* 1 ── The ask ────────────────────────────────────────────────── */}
@@ -428,17 +493,75 @@ export default function ButlerPage() {
           </div>
         ) : (
           <p className="butlerEmpty">
-            {ready ? "Nothing right now." : "Looking…"}
+            {!ready
+              ? "Looking…"
+              : home?.attention.state === "unavailable"
+                ? "I could not check this, so I cannot say."
+                : "Nothing right now."}
           </p>
         )}
       </section>
 
-      {/* 2 ── What Butler knows ──────────────────────────────────────── */}
+      {/* 2 ── What Butler has done ────────────────────────────────────────── */}
+      <section className="butlerSection" aria-labelledby="butler-did">
+        <h2 id="butler-did">What I did without asking</h2>
+        {/* The only evidence Butler has that it DID anything. A completed
+            errand, a refusal, an approval acted on — none of those are
+            recorded anywhere this page can read, so none of them are claimed
+            here. See docs/butler-product-reset.md. */}
+        {did.length === 0 ? (
+          <p className="butlerEmpty">
+            {!ready
+              ? "Looking…"
+              : home?.permissions.actionsWithoutAsking.state === "unavailable"
+                ? "I could not check this, so I cannot say what I have done."
+                : "Nothing — I have asked you about everything."}
+          </p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {did.map((e) => (
+              <li key={`${e.permissionId}-${e.at}`} className="butlerRow">
+                <p className="butlerRowText">
+                  {e.toolName}
+                  {e.recipeName ? ` (${e.recipeName})` : ""}
+                </p>
+                {/* The receipt the standing permission owes the reader. */}
+                <p className="butlerMeta">
+                  I did this without asking, because you allowed it.{" "}
+                  {whenInWords(e.at)}.
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* 3 ── What Butler knows ──────────────────────────────────────── */}
       <section className="butlerSection" aria-labelledby="butler-knows">
         <h2 id="butler-knows">What I know about you</h2>
+        {/* The count is the summary; the list is the detail. Stated in words
+            because "6" alone does not say which population it counts, and the
+            two populations differ by whether Butler may act on them. */}
+        {home?.memory.established.state === "read" && (
+          <p className="butlerMeta">
+            {home.memory.established.value === 0
+              ? "Nothing I act on yet."
+              : `${home.memory.established.value} ${
+                  home.memory.established.value === 1 ? "thing" : "things"
+                } I use.`}
+            {home.memory.awaitingConfirmation.state === "read" &&
+            home.memory.awaitingConfirmation.value > 0
+              ? ` ${home.memory.awaitingConfirmation.value} waiting for you to confirm.`
+              : ""}
+          </p>
+        )}
         {facts.length === 0 ? (
           <p className="butlerEmpty">
-            {ready ? "Nothing yet." : "Looking…"}
+            {!ready
+              ? "Looking…"
+              : home?.memory.established.state === "unavailable"
+                ? "I could not check this, so I cannot say what I know."
+                : "Nothing yet."}
           </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -474,7 +597,7 @@ export default function ButlerPage() {
         )}
       </section>
 
-      {/* 3 ── Seen, not acted on ─────────────────────────────────────── */}
+      {/* 4 ── Seen, not acted on ─────────────────────────────────────── */}
       <section className="butlerSection" aria-labelledby="butler-seen">
         <h2 id="butler-seen">Things I noticed but have not used</h2>
         <p className="butlerMeta">
@@ -482,7 +605,13 @@ export default function ButlerPage() {
           me they are right.
         </p>
         {quarantine.length === 0 ? (
-          <p className="butlerEmpty">{ready ? "Nothing here." : "Looking…"}</p>
+          <p className="butlerEmpty">
+            {!ready
+              ? "Looking…"
+              : home?.memory.awaitingConfirmation.state === "unavailable"
+                ? "I could not check this, so I cannot say."
+                : "Nothing here."}
+          </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {quarantine.map((f) => (
@@ -511,40 +640,16 @@ export default function ButlerPage() {
         )}
       </section>
 
-      {/* 4 ── What Butler did ────────────────────────────────────────── */}
-      <section className="butlerSection" aria-labelledby="butler-did">
-        <h2 id="butler-did">What I did without asking</h2>
-        {did.length === 0 ? (
-          <p className="butlerEmpty">
-            {ready ? "Nothing — I have asked you about everything." : "Looking…"}
-          </p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {did.map((e) => (
-              <li key={`${e.permissionId}-${e.at}`} className="butlerRow">
-                <p className="butlerRowText">
-                  {e.toolName}
-                  {e.recipeName ? ` (${e.recipeName})` : ""}
-                </p>
-                {/* The receipt the standing permission owes the reader. */}
-                <p className="butlerMeta">
-                  I did this without asking, because you allowed it.{" "}
-                  {whenInWords(e.at)}.
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       {/* 5 ── Standing permissions ───────────────────────────────────── */}
       <section className="butlerSection" aria-labelledby="butler-allowed">
         <h2 id="butler-allowed">What you have allowed</h2>
         {permissions.length === 0 ? (
           <p className="butlerEmpty">
-            {ready
-              ? "Nothing. I ask you about everything."
-              : "Looking…"}
+            {!ready
+              ? "Looking…"
+              : home?.permissions.active.state === "unavailable"
+                ? "I could not check what you have allowed, so I cannot say."
+                : "Nothing. I ask you about everything."}
           </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
