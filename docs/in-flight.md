@@ -50,7 +50,12 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- **`docs/butler-product-reset`** — Butler product reset: current-state freeze +
+  new information architecture. **Docs only**; touches no runtime, no
+  `dashboard/` code and no Butler machinery, deliberately, so the open evidence
+  observation window keeps producing undisturbed observations. Follow-on
+  branches (`feat/butler-view-model`, `feat/butler-home`, …) will touch
+  `dashboard/src/app/butler/` — coordinate here before starting one.
 
 
 ## Recently closed (informal log, prune periodically)
