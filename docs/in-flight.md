@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- **`feat/butler-memory`** — Butler Memory: facts in natural language, provenance
+  and age, confirm/correct, **Forget (reversible) vs Erase (not)**, and undo that
+  survives a reload. Touches `dashboard/src/app/butler/` and may add a small
+  predicate-phrasing module. No runtime change. Design freeze:
+  `docs/butler-product-reset.md`.
 
 
 ## Recently closed (informal log, prune periodically)
