@@ -38,12 +38,24 @@ export interface TemplateEvalError {
 
 export type TemplateError = TemplateCompileError | TemplateEvalError;
 
+/**
+ * Optional per-evaluation hooks. `wrap` is consulted for every `steps.X.data…`
+ * reference AFTER serialisation and may replace the rendered text — the
+ * untrusted-content envelope (src/governance/untrustedContent.ts) uses it at
+ * the agent-prompt boundary. `env` references and literal text never reach
+ * it. Returning `undefined` keeps the value as rendered.
+ */
+export interface TemplateEvaluateOptions {
+  wrap?: (stepId: string, value: string) => string | undefined;
+}
+
 // Pre-compiled template for performance
 export interface CompiledTemplate {
   readonly source: string;
   readonly hasTemplates: boolean;
   evaluate(
     context: TemplateContext,
+    opts?: TemplateEvaluateOptions,
   ): { value: string } | { error: TemplateError };
 }
 
@@ -103,7 +115,7 @@ export function compileTemplate(template: string): CompiledTemplate {
   return {
     source: template,
     hasTemplates: parts.some((p) => typeof p !== "string"),
-    evaluate: (context) => evaluateCompiled(parts, context),
+    evaluate: (context, opts) => evaluateCompiled(parts, context, opts),
   };
 }
 
@@ -136,6 +148,7 @@ function parseExpression(
 function evaluateCompiled(
   parts: (string | { path: string; type: "step" | "env" })[],
   context: TemplateContext,
+  opts?: TemplateEvaluateOptions,
 ): { value: string } | { error: TemplateError } {
   const values: string[] = [];
 
@@ -148,6 +161,16 @@ function evaluateCompiled(
     const result = evaluateExpression(part, context);
     if ("error" in result) {
       return result;
+    }
+    // Envelope hook: only step DATA (what a tool returned) is wrappable —
+    // `status` / `metadata` are runner-produced and carry no third-party text.
+    if (opts?.wrap && part.type === "step") {
+      const segs = part.path.split(".");
+      if (segs[2] === "data" && segs[1]) {
+        const wrapped = opts.wrap(segs[1], result.value);
+        values.push(wrapped === undefined ? result.value : wrapped);
+        continue;
+      }
     }
     values.push(result.value);
   }

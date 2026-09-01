@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { withFileLockSync } from "./fileLockSync.js";
+import { redactKnownSecrets } from "./governance/secretValues.js";
 import type { Logger } from "./logger.js";
 
 /**
@@ -137,9 +138,9 @@ export class DecisionTraceLog {
    * Returns the stored trace or throws on invalid input.
    */
   record(input: RecordDecisionInput): DecisionTrace {
-    const ref = input.ref.trim();
-    const problem = input.problem.trim();
-    const solution = input.solution.trim();
+    const ref = redactKnownSecrets(input.ref.trim());
+    const problem = redactKnownSecrets(input.problem.trim());
+    const solution = redactKnownSecrets(input.solution.trim());
     if (!ref) throw new Error("ref is required");
     if (!problem) throw new Error("problem is required");
     if (!solution) throw new Error("solution is required");

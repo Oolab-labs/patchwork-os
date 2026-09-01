@@ -27,6 +27,8 @@
  *     then no-ops and `authenticate()` becomes the sole auth path.
  */
 
+import { registerSecretValue } from "../governance/secretValues.js";
+
 export interface ConnectorStatus {
   id: string;
   status: "connected" | "disconnected";
@@ -141,6 +143,12 @@ export abstract class BaseConnector {
     const { getTokens } = await import("./tokenStorage.js");
     const stored = await getTokens(this.providerName);
     if (stored) {
+      registerSecretValue(stored.accessToken, `connector:${this.providerName}`);
+      if (stored.refreshToken)
+        registerSecretValue(
+          stored.refreshToken,
+          `connector:${this.providerName}`,
+        );
       this.auth = {
         token: stored.accessToken,
         refreshToken: stored.refreshToken,
@@ -298,6 +306,7 @@ export abstract class BaseConnector {
       return null;
     }
 
+    registerSecretValue(data.access_token, `connector:${this.providerName}`);
     const newAuth: AuthContext = {
       token: data.access_token,
       refreshToken:

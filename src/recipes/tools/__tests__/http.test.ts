@@ -4,6 +4,7 @@
  * The execute path calls undiciFetch (not globalThis.fetch); tests mock undici.
  */
 
+import dns from "node:dns/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeTool } from "../../toolRegistry.js";
 import type { RunContext } from "../../yamlRunner.js";
@@ -89,9 +90,52 @@ describe("http.post — execute", () => {
     vi.mocked(mockUndiciFetch).mockResolvedValue(
       makeMockResponse("echo:POST:hello") as any,
     );
+    // Keep the suite hermetic: the guard pre-resolves DNS, so pin every
+    // hostname to a public address unless a test overrides it.
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
   });
   afterEach(() => {
-    vi.clearAllMocks();
+    // mockReset (not clear) so an unconsumed `mockResolvedValueOnce` from a
+    // refused request cannot leak into the next test.
+    vi.mocked(mockUndiciFetch).mockReset();
+    vi.restoreAllMocks();
+  });
+
+  it("REGRESSION: refuses a public-looking hostname that DNS-resolves to a private address", async () => {
+    // Phase 0 step 9 finding: the lexical isPrivateHost check let
+    // "internal.example.test" → 10.0.0.1 straight through to fetch.
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "10.0.0.1",
+      family: 4,
+    } as never);
+    await expect(
+      executeTool(
+        "http.post",
+        makeCtx({ url: "https://internal.example.test/hook", body: "x" }),
+      ),
+    ).rejects.toThrow(/private/);
+    expect(mockUndiciFetch).not.toHaveBeenCalled();
+  });
+
+  it("REGRESSION: refuses a redirect from a public host to a private address", async () => {
+    vi.mocked(mockUndiciFetch)
+      .mockResolvedValueOnce({
+        status: 302,
+        ok: false,
+        headers: new Headers({ location: "http://169.254.169.254/latest/" }),
+        text: async () => "",
+      } as any)
+      .mockResolvedValueOnce(makeMockResponse("imds-secret") as any);
+    await expect(
+      executeTool(
+        "http.post",
+        makeCtx({ url: "https://public.example.test/hook", body: "x" }),
+      ),
+    ).rejects.toThrow(/private/);
+    expect(mockUndiciFetch).toHaveBeenCalledTimes(1);
   });
 
   it("POSTs body and returns {status, ok, body}", async () => {

@@ -19,6 +19,7 @@ import {
   computeStats,
   computeWindowedStats,
 } from "./fp/activityAnalytics.js";
+import { redactKnownSecrets } from "./governance/secretValues.js";
 import { writeFileAtomic } from "./writeFileAtomic.js";
 
 function escapeLabelValue(s: string): string {
@@ -211,7 +212,12 @@ export class ActivityLog {
       tool,
       durationMs,
       status,
-      errorMessage,
+      // A tool error frequently quotes the request that failed — URL, body,
+      // header — so a secret interpolated into it lands here in clear text.
+      errorMessage:
+        errorMessage === undefined
+          ? undefined
+          : redactKnownSecrets(errorMessage),
       sessionId,
     };
     this.entries.push(entry);

@@ -11,8 +11,13 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
-import { sanitizeEnv } from "../claude/envSanitizer.js";
+import {
+  allowlistEnv,
+  passEnvFromProviderOptions,
+  sanitizeEnv,
+} from "../claude/envSanitizer.js";
 import { splitLines } from "../claude/streamParser.js";
+import { containmentFromInput } from "../claude/subprocess.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
@@ -89,6 +94,42 @@ export const GEMINI_SHELL_DENY_PATTERNS = [
   "run_shell_command(pkill)",
 ];
 
+/**
+ * Gemini containment (Phase 0 step 6) — what the CLI CAN and CANNOT express.
+ *
+ * Gemini CLI has no per-tool ALLOW list and no argv deny flag; the only
+ * knobs are `--approval-mode` and the settings-file `tools.exclude` list
+ * (tool names, or `run_shell_command(<prefix>)`). So containment is COARSE:
+ *
+ *   - Contained, shell NOT widened: `--approval-mode plan` (read-only mode —
+ *     no edits, no shell) AND exclude `run_shell_command`, `write_file`,
+ *     `replace`, `save_memory` by name.
+ *   - Network NOT widened: exclude `web_fetch` and `google_web_search`.
+ *   - Shell widened: the operator's approvalMode (default yolo) is kept,
+ *     since no headless mode exists that permits shell without prompts
+ *     other than yolo; the shell deny-prefix list still applies.
+ *   - `allowedTools` from the containment is NOT enforceable here (no
+ *     allowlist primitive) — `policy explain` should describe Gemini
+ *     containment as "coarse: mode + exclusions, no allowlist".
+ *
+ * Provider credentials kept under the env allowlist: GEMINI_API_KEY and
+ * the GOOGLE_* auth vars.
+ */
+export const GEMINI_CONTAINED_NETWORK_EXCLUDES: readonly string[] =
+  Object.freeze(["web_fetch", "google_web_search"]);
+export const GEMINI_CONTAINED_SHELL_EXCLUDES: readonly string[] = Object.freeze(
+  ["run_shell_command", "write_file", "replace", "save_memory"],
+);
+export const GEMINI_PROVIDER_ENV_KEYS: readonly string[] = Object.freeze([
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GOOGLE_GENAI_API_KEY",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "GOOGLE_CLOUD_PROJECT",
+  "GOOGLE_CLOUD_LOCATION",
+  "GOOGLE_GENAI_USE_VERTEXAI",
+]);
+
 function scrubSecrets(text: string): string {
   return text
     .replace(/AIza[A-Za-z0-9_-]{35}/g, "[REDACTED_API_KEY]")
@@ -139,7 +180,11 @@ export class GeminiSubprocessDriver implements ProviderDriver {
     // gate, once inside _runLocked) opens a TOCTOU window: if the value
     // ever flips falsy→truthy between the two calls, the gate skips the
     // mutex but _runLocked writes settings.json without a lock.
-    const mcp = this.bridgeMcp?.();
+    // A containment decides MCP access; without one, the bridge endpoint
+    // closure alone decides (legacy).
+    const containment = containmentFromInput(input);
+    const mcp =
+      containment && !containment.mcpAccess ? undefined : this.bridgeMcp?.();
     // _runLocked ALWAYS mutates ~/.gemini/settings.json now — to inject the
     // destructive-command deny list (drivers-orch-6) even when no MCP is
     // injected — so EVERY run must hold the settings mutex, not just MCP runs.
@@ -163,8 +208,24 @@ export class GeminiSubprocessDriver implements ProviderDriver {
     mcp: { url: string; authToken: string } | undefined,
   ): Promise<ProviderTaskResult> {
     const opts = input.providerOptions ?? {};
+    const containment = containmentFromInput(input);
+    const contained = containment?.enforced === true;
+    const shellWidened =
+      contained && !(containment?.deniedTools ?? []).includes("Bash");
+    const networkWidened =
+      contained && !(containment?.deniedTools ?? []).includes("WebFetch");
     const approvalMode =
-      typeof opts.approvalMode === "string" ? opts.approvalMode : "yolo";
+      contained && !shellWidened
+        ? "plan"
+        : typeof opts.approvalMode === "string"
+          ? opts.approvalMode
+          : "yolo";
+    const containedExcludes: string[] = contained
+      ? [
+          ...(networkWidened ? [] : GEMINI_CONTAINED_NETWORK_EXCLUDES),
+          ...(shellWidened ? [] : GEMINI_CONTAINED_SHELL_EXCLUDES),
+        ]
+      : [];
 
     // Mutate ~/.gemini/settings.json before spawning so the subprocess (1) can
     // call bridge tools when MCP is injected and (2) ALWAYS runs with a
@@ -231,7 +292,11 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         settings.tools = {
           ...existingTools,
           exclude: Array.from(
-            new Set([...existingToolsExclude, ...GEMINI_SHELL_DENY_PATTERNS]),
+            new Set([
+              ...existingToolsExclude,
+              ...GEMINI_SHELL_DENY_PATTERNS,
+              ...containedExcludes,
+            ]),
           ),
         };
         const existingExcludeTools = Array.isArray(settings.excludeTools)
@@ -240,7 +305,11 @@ export class GeminiSubprocessDriver implements ProviderDriver {
             )
           : [];
         settings.excludeTools = Array.from(
-          new Set([...existingExcludeTools, ...GEMINI_SHELL_DENY_PATTERNS]),
+          new Set([
+            ...existingExcludeTools,
+            ...GEMINI_SHELL_DENY_PATTERNS,
+            ...containedExcludes,
+          ]),
         );
         mkdirSync(join(homedir(), ".gemini"), { recursive: true });
         writeFileSync(settingsFile, JSON.stringify(settings, null, 2), {
@@ -324,14 +393,19 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       // GEMINI_API_KEY plus the GOOGLE_* vars used for API-key / Vertex / ADC
       // auth. Every other provider's key (OPENAI/XAI/...) is stripped so a
       // prompt-injected Gemini step can't exfiltrate them.
-      const env = sanitizeEnv(process.env, {
-        preserve: [
-          "GEMINI_API_KEY",
-          "GOOGLE_API_KEY",
-          "GOOGLE_GENAI_API_KEY",
-          "GOOGLE_APPLICATION_CREDENTIALS",
-        ],
-      });
+      const env = containment?.envAllowlist
+        ? allowlistEnv(process.env, {
+            providerKeys: GEMINI_PROVIDER_ENV_KEYS,
+            passEnv: passEnvFromProviderOptions(opts),
+          })
+        : sanitizeEnv(process.env, {
+            preserve: [
+              "GEMINI_API_KEY",
+              "GOOGLE_API_KEY",
+              "GOOGLE_GENAI_API_KEY",
+              "GOOGLE_APPLICATION_CREDENTIALS",
+            ],
+          });
       // Also strip Claude-specific auth vars that must not reach the Gemini process.
       // CLAUDE_CODE_OAUTH_TOKEN is the user's Anthropic subscription token — any
       // shell command the Gemini agent runs (printenv, curl, etc.) can read it from

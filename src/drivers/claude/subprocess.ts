@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentContainment } from "../../governance/profile.js";
 import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
@@ -11,7 +12,11 @@ import type {
   ProviderTaskResult,
 } from "../types.js";
 import { toProviderTaskOutcome } from "../types.js";
-import { sanitizeEnv } from "./envSanitizer.js";
+import {
+  allowlistEnv,
+  passEnvFromProviderOptions,
+  sanitizeEnv,
+} from "./envSanitizer.js";
 import { parseStreamLine, splitLines } from "./streamParser.js";
 import { createSubprocessSettings } from "./subprocessSettings.js";
 
@@ -29,18 +34,29 @@ const OUTPUT_CAP = 50 * 1024; // 50KB
  * spawns the shim, the shim auto-discovers the running bridge from
  * `~/.claude/ide/*.lock`, and forwards JSON-RPC over stdin/stdout.
  *
- * The temp file is intentionally not deleted after the run — claude -p reads
- * it asynchronously during MCP init and unlinking too eagerly is racy. The
- * dir is created with `mkdtemp` under `os.tmpdir()` (per-run) so OS cleanup
- * handles it.
+ * The temp file is not deleted until the child CLOSES — claude -p reads it
+ * asynchronously during MCP init, so unlinking any earlier is racy. The dir
+ * is created with `mkdtemp` under `os.tmpdir()` (per-run); the caller
+ * removes it on child close (previously it was never removed at all).
  *
- * The `mcp` parameter is currently unused at write time (the shim discovers
- * bridge state itself) but kept in the signature so callers continue to gate
- * file creation on bridge availability.
+ * The bridge's port is derived from `mcp.url` and pinned onto the shim via
+ * `--port`, so the child attaches to the bridge that SPAWNED it rather than
+ * to whichever lock file is newest (the shim's default discovery). The
+ * bearer token is never written: the shim reads it from the lock file.
  */
-function writeMcpConfigFile(_mcp: { url: string; authToken: string }): string {
+function writeMcpConfigFile(mcp: { url: string; authToken: string }): {
+  path: string;
+  dir: string;
+} {
   const dir = mkdtempSync(join(tmpdir(), "patchwork-mcp-"));
   const path = join(dir, "mcp.json");
+  let port: string | undefined;
+  try {
+    const p = new URL(mcp.url).port;
+    if (/^\d+$/.test(p)) port = p;
+  } catch {
+    /* unparseable url — fall back to shim discovery */
+  }
   // claude -p spawns the stdio command itself via Node's child_process, which
   // can't resolve a bare `.cmd` shim on Windows (shell:false; only PATHEXT-
   // listed `.exe` files auto-resolve). Record the `.cmd` form on win32 so
@@ -50,13 +66,43 @@ function writeMcpConfigFile(_mcp: { url: string; authToken: string }): string {
       patchwork: {
         type: "stdio",
         command: ensureCmdShim("claude-ide-bridge"),
-        args: ["shim"],
+        args: port ? ["shim", "--port", port] : ["shim"],
       },
     },
   };
   writeFileSync(path, JSON.stringify(config), { mode: 0o600 });
-  return path;
+  return { path, dir };
 }
+
+/**
+ * Accept a containment either typed on the input or repackaged into the
+ * untyped providerOptions bag (the orchestrator hop). Shape-checked, never
+ * trusted blindly: a malformed object is ignored rather than half-applied.
+ */
+export function containmentFromInput(
+  input: Pick<ProviderTaskInput, "containment" | "providerOptions">,
+): AgentContainment | undefined {
+  const c = input.containment ?? input.providerOptions?.containment;
+  if (!c || typeof c !== "object") return undefined;
+  const o = c as Partial<AgentContainment>;
+  if (typeof o.enforced !== "boolean") return undefined;
+  const strs = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((t): t is string => typeof t === "string") : [];
+  return {
+    enforced: o.enforced,
+    allowedTools: strs(o.allowedTools),
+    deniedTools: strs(o.deniedTools),
+    envAllowlist: o.envAllowlist === true,
+    mcpAccess: o.mcpAccess === true,
+    widenings: strs(o.widenings),
+  };
+}
+
+/** Provider credentials the Claude CLI authenticates with. */
+export const CLAUDE_PROVIDER_ENV_KEYS: readonly string[] = Object.freeze([
+  "ANTHROPIC_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+]);
 
 /**
  * Scrub secrets from a string before storing or surfacing it.
@@ -81,6 +127,11 @@ export function scrubSecrets(text: string): string {
 export class SubprocessDriver implements ProviderDriver {
   readonly name = "subprocess";
   private readonly settings: ReturnType<typeof createSubprocessSettings>;
+  /** Contained-run settings files, keyed by their deny set. */
+  private readonly containedSettings = new Map<
+    string,
+    ReturnType<typeof createSubprocessSettings>
+  >();
 
   constructor(
     private readonly binary: string,
@@ -93,6 +144,18 @@ export class SubprocessDriver implements ProviderDriver {
     this.settings = createSubprocessSettings(log);
     // Best-effort initial write; per-run write in run() is the enforcement gate.
     this.settings.write();
+  }
+
+  private settingsFor(
+    deniedTools: readonly string[],
+  ): ReturnType<typeof createSubprocessSettings> {
+    const key = [...deniedTools].sort().join("\u0000");
+    let s = this.containedSettings.get(key);
+    if (!s) {
+      s = createSubprocessSettings(this.log, deniedTools);
+      this.containedSettings.set(key, s);
+    }
+    return s;
   }
 
   async run(input: ProviderTaskInput): Promise<ProviderTaskResult> {
@@ -113,7 +176,14 @@ export class SubprocessDriver implements ProviderDriver {
     // Re-write before each run — /tmp may be cleared on long-running servers.
     // M11: abort if write fails — spawning without the settings file would run
     // claude -p without the deny list, bypassing the command block entirely.
-    if (!this.settings.write()) {
+    // Phase 0 step 6: containment resolved by the caller (agentExecutor via
+    // `resolveAgentContainment`). Absent ⇒ legacy providerOptions keys below.
+    const containment = containmentFromInput(input);
+    const contained = containment?.enforced === true;
+    const settings = contained
+      ? this.settingsFor(containment?.deniedTools ?? [])
+      : this.settings;
+    if (!settings.write()) {
       throw new Error(
         "[SubprocessDriver] Failed to write settings file — cannot spawn claude -p without deny list",
       );
@@ -130,26 +200,37 @@ export class SubprocessDriver implements ProviderDriver {
       );
     }
 
-    const mcpAccess = opts.mcpAccess === true;
+    // With a containment present, ITS mcpAccess is the decision — a step
+    // cannot reach the bridge's tool surface by setting the legacy key alone.
+    const mcpAccess = containment
+      ? containment.mcpAccess
+      : opts.mcpAccess === true;
     const mcp = mcpAccess ? this.bridgeMcp?.() : undefined;
 
     // P0-5 opt-in tool sandbox. Filter argv-injection-confusable values up front
     // (leading `-` could be misread as a flag by the child's parser), then key
     // the sandbox branch off the FILTERED allowlist being non-empty.
+    const argvSafe = (list: unknown): string[] =>
+      (Array.isArray(list) ? (list as unknown[]) : []).filter(
+        (t): t is string =>
+          typeof t === "string" && t.length > 0 && !t.startsWith("-"),
+      );
     const sandbox = opts.sandbox === true;
-    const allowedTools = (
-      Array.isArray(opts.allowedTools) ? (opts.allowedTools as string[]) : []
-    ).filter(
-      (t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"),
+    const allowedTools = contained
+      ? argvSafe(containment?.allowedTools)
+      : argvSafe(opts.allowedTools);
+    // Deny is a union: the step's own list plus the containment's. A deny is
+    // never dropped by the presence of a containment.
+    const disallowedTools = Array.from(
+      new Set([
+        ...argvSafe(opts.disallowedTools),
+        ...(contained ? argvSafe(containment?.deniedTools) : []),
+      ]),
     );
-    const disallowedTools = (
-      Array.isArray(opts.disallowedTools)
-        ? (opts.disallowedTools as string[])
-        : []
-    ).filter(
-      (t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"),
-    );
-    const sandboxActive = sandbox && allowedTools.length > 0;
+    // Contained: permission mode is dontAsk even with an EMPTY allowlist
+    // (every tool call is then refused — the correct contained outcome).
+    // Legacy: the sandbox branch keys off a non-empty allowlist, as before.
+    const sandboxActive = contained || (sandbox && allowedTools.length > 0);
 
     const args = [
       "-p",
@@ -160,7 +241,7 @@ export class SubprocessDriver implements ProviderDriver {
       // second session to the same bridge via a duplicate user-level entry.
       "--strict-mcp-config",
       "--settings",
-      this.settings.path,
+      settings.path,
       "--output-format",
       "stream-json",
       "--verbose",
@@ -175,9 +256,11 @@ export class SubprocessDriver implements ProviderDriver {
         "[SubprocessDriver] WARN: mcpAccess requested but bridge MCP endpoint unavailable (port not bound or feature unwired); spawning without MCP",
       );
     }
+    let mcpTmpDir: string | undefined;
     if (mcp) {
-      const mcpConfigPath = writeMcpConfigFile(mcp);
-      args.push("--mcp-config", mcpConfigPath);
+      const written = writeMcpConfigFile(mcp);
+      mcpTmpDir = written.dir;
+      args.push("--mcp-config", written.path);
     }
     if (input.model && !input.model.startsWith("-")) {
       args.push("--model", input.model);
@@ -198,7 +281,9 @@ export class SubprocessDriver implements ProviderDriver {
       // permission rules are honored). --allowed-tools is variadic: push the
       // flag once followed by all (already argv-filtered) tool values.
       args.push("--permission-mode", "dontAsk");
-      args.push("--allowed-tools", ...allowedTools);
+      if (allowedTools.length > 0) {
+        args.push("--allowed-tools", ...allowedTools);
+      }
     } else {
       // Default (no sandbox): headless subprocesses can't respond to prompts.
       args.push("--dangerously-skip-permissions");
@@ -214,10 +299,18 @@ export class SubprocessDriver implements ProviderDriver {
       }
     }
 
-    const env = sanitizeEnv(process.env);
+    // Governed containment: ALLOWLIST the environment (only PATH/HOME/locale/
+    // proxy/etc., the Claude credential, and the recipe's declared passEnv).
+    // Otherwise the pre-profile denylist, unchanged.
+    const env = containment?.envAllowlist
+      ? allowlistEnv(process.env, {
+          providerKeys: CLAUDE_PROVIDER_ENV_KEYS,
+          passEnv: passEnvFromProviderOptions(opts),
+        })
+      : sanitizeEnv(process.env);
 
     this.log(
-      `[SubprocessDriver] spawning: ${effectiveBinary} -p <prompt> (workspace: ${input.workspace})`,
+      `[SubprocessDriver] spawning: ${effectiveBinary} -p <prompt> (workspace: ${input.workspace}${contained ? `, contained: allowed=[${allowedTools.join(",")}] denied=[${disallowedTools.join(",")}] widenings=[${(containment?.widenings ?? []).join(",")}]` : ""})`,
     );
 
     const child = spawn(effectiveBinary, args, {
@@ -237,6 +330,14 @@ export class SubprocessDriver implements ProviderDriver {
     input.signal.addEventListener("abort", onAbort, { once: true });
     child.once("close", () => {
       input.signal.removeEventListener("abort", onAbort);
+      // Safe to remove now: claude -p has finished reading the MCP config.
+      if (mcpTmpDir) {
+        try {
+          rmSync(mcpTmpDir, { recursive: true, force: true });
+        } catch {
+          /* best-effort */
+        }
+      }
     });
 
     let lineBuf = "";

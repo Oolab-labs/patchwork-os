@@ -9,7 +9,7 @@
  *   - Namespace isolation for connectors
  */
 
-import { assertWriteAllowed } from "../featureFlags.js";
+import { assertKillSwitchReleased } from "../governance/killSwitchPolicy.js";
 import { registerTierResolver } from "../riskTier.js";
 import { deriveIdempotencyKey } from "./idempotencyKey.js";
 import type { RunContext, StepDeps } from "./yamlRunner.js";
@@ -48,7 +48,7 @@ export interface ToolMetadata {
   riskDefault: "low" | "medium" | "high";
   /**
    * Whether this tool performs a write/mutation. Security-relevant on two
-   * axes: (1) gates the tool behind `assertWriteAllowed` in `executeTool`
+   * axes: (1) gates the tool behind `assertKillSwitchReleased` in `executeTool`
    * below, so it is refused outright when the global write kill-switch is
    * engaged (read-tier tools are never affected); (2) routes execution
    * through the idempotency ledger so a single write executes at most once
@@ -196,7 +196,10 @@ export async function executeTool(
 
   const run = async (): Promise<string | null> => {
     if (tool.isWrite) {
-      assertWriteAllowed(id);
+      // Profile-aware: under the governed profile an unreadable kill-switch
+      // state REFUSES; compat keeps the historical fail-open. Same
+      // `kill_switch_blocked` code as the old `assertWriteAllowed`.
+      assertKillSwitchReleased(id);
 
       // PR5a — idempotency dedup. Within a single recipe run, the same
       // write tool with the same params must execute exactly once. If a
@@ -268,7 +271,7 @@ export function registerPluginTools(
 
       // Honour the plugin tool's `annotations.destructiveHint` (PluginToolSchema
       // in src/plugin.ts). A destructive plugin tool must be treated as a write
-      // so it participates in the kill-switch gate (assertWriteAllowed) and the
+      // so it participates in the kill-switch gate (assertKillSwitchReleased) and the
       // idempotency dedup ledger in executeTool. Authors who omit the hint keep
       // the prior read-only behaviour — zero API change.
       const schema = t.schema as Record<string, unknown> | null;

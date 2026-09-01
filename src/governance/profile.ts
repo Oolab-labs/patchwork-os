@@ -102,12 +102,16 @@ export interface ProfileConfigInput {
  * guess). An explicit but unrecognised value is reported by `doctor`, not
  * silently promoted to governed.
  */
-export function resolveProfile(cfg: ProfileConfigInput | undefined): GovernanceProfile {
+export function resolveProfile(
+  cfg: ProfileConfigInput | undefined,
+): GovernanceProfile {
   const raw = cfg?.profile;
   const declared = raw === "governed" || raw === "compat";
   const mode: ProfileMode = raw === "governed" ? "governed" : "compat";
   const configuredGate =
-    cfg?.approvalGate === "high" || cfg?.approvalGate === "all" || cfg?.approvalGate === "off"
+    cfg?.approvalGate === "high" ||
+    cfg?.approvalGate === "all" ||
+    cfg?.approvalGate === "off"
       ? cfg.approvalGate
       : "off";
   if (mode === "compat") {
@@ -144,7 +148,9 @@ export function resolveProfile(cfg: ProfileConfigInput | undefined): GovernanceP
   };
 }
 
-export const COMPAT_PROFILE: GovernanceProfile = Object.freeze(resolveProfile(undefined));
+export const COMPAT_PROFILE: GovernanceProfile = Object.freeze(
+  resolveProfile(undefined),
+);
 export const GOVERNED_PROFILE: GovernanceProfile = Object.freeze(
   resolveProfile({ profile: "governed" }),
 );

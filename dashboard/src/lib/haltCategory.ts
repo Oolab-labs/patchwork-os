@@ -14,6 +14,10 @@ export type HaltCategory =
   | "tool_threw"
   | "tool_error"
   | "kill_switch"
+  /** Effective policy refused the step before dispatch (governed profile: plugin allowlist, recipe tool allowlist, worker forbid). */
+  | "policy_denied"
+  /** No tool is registered under the step's id; the governed profile refuses rather than skips. */
+  | "unresolved_tool"
   | "budget_exceeded"
   | "expect_failed"
   | "step_timeout"
@@ -45,6 +49,8 @@ export const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   tool_threw: "tool threw",
   tool_error: "tool error",
   kill_switch: "kill-switch blocked",
+  policy_denied: "policy refused",
+  unresolved_tool: "tool not registered",
   budget_exceeded: "budget exceeded",
   expect_failed: "expect failed",
   step_timeout: "step timeout",
@@ -76,6 +82,10 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "Tool returned an error response. Check the inner error in the trace.",
   kill_switch:
     "Write blocked by the kill-switch. Run `patchwork kill-switch release` to re-enable.",
+  policy_denied:
+    "The effective policy refused this step before it ran. Run `patchwork policy explain <recipe> <tool>` to see which stage refused.",
+  unresolved_tool:
+    "No tool is registered under this id. Run `recipe doctor`; install or allowlist the plugin that provides it.",
   budget_exceeded:
     "Run exceeded its tokensMax budget. Raise tokensMax in the recipe or shrink prompts.",
   expect_failed:

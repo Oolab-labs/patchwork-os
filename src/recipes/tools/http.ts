@@ -3,20 +3,29 @@
  *
  * Built-in step type for POSTing JSON / text bodies to a URL without
  * spawning an agent. Designed for fire-and-forget notifications
- * (ntfy.sh, generic webhooks). Includes a lexical SSRF guard that
- * blocks private/loopback hosts unless the recipe explicitly opts in.
+ * (ntfy.sh, generic webhooks). Outbound safety — private-range refusal,
+ * DNS pre-resolution + pinning, per-hop redirect re-validation — is the
+ * shared `safeFetch` in src/ssrfGuard.ts, the same implementation behind
+ * the bridge's `sendHttpRequest`. Private/loopback hosts are refused unless
+ * the recipe explicitly opts in with `allowPrivate: true`.
  */
 
+import dns from "node:dns/promises";
 import { Agent, fetch as undiciFetch } from "undici";
 import {
   assertWriteAllowed,
   FLAG_BLOCK_RECIPE_ALLOW_PRIVATE,
   isEnabled,
 } from "../../featureFlags.js";
-// Canonical SSRF guard — single source of truth (handles CGNAT 100.64/10,
-// 6to4 2002::/16, hex/octal IPv4, ::ffff:0: translated forms — none of which
-// the previous local copy covered).
-import { isPrivateHost } from "../../ssrfGuard.js";
+// Canonical SSRF guard — single source of truth. `isPrivateHost` is
+// re-exported below for the lexical unit tests; execution goes through
+// `safeFetch`, which ALSO resolves DNS and re-validates every redirect hop
+// (the lexical check alone let a private-resolving public name through).
+import {
+  isPrivateHost,
+  OutboundHttpError,
+  safeFetch,
+} from "../../ssrfGuard.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
 
 // Custom dispatcher pinning DNS resolution to IPv4. Node's Happy-Eyeballs
@@ -123,11 +132,6 @@ registerTool({
     // a private/loopback host.
     const bypassDisabled = isEnabled(FLAG_BLOCK_RECIPE_ALLOW_PRIVATE);
     const allowPrivate = !bypassDisabled && params.allowPrivate === true;
-    if (!allowPrivate && isPrivateHost(parsed.hostname)) {
-      throw new Error(
-        `http.post: refusing to reach private/loopback host "${parsed.hostname}" — set allowPrivate: true to override`,
-      );
-    }
 
     const method = ((params.method as string) ?? "POST").toUpperCase();
     if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
@@ -158,16 +162,45 @@ registerTool({
     // Use undici.fetch directly (not global fetch) so we can pass the custom
     // dispatcher with Happy-Eyeballs tuning. Global fetch's type doesn't
     // expose `dispatcher`, but they're the same implementation underneath.
-    let res: Awaited<ReturnType<typeof undiciFetch>>;
+    // The connection is pinned to the address resolved here (IPv4 to match
+    // the dispatcher), so undici never re-resolves the name.
+    let res: Response;
     try {
-      res = await undiciFetch(url, {
-        method,
-        body,
-        headers,
-        signal: ctrl.signal,
-        dispatcher: httpAgent,
-      });
+      const result = await safeFetch(
+        parsed,
+        {
+          method,
+          body,
+          headers,
+          signal: ctrl.signal,
+          dispatcher: httpAgent,
+        },
+        {
+          allowPrivate,
+          resolveDns: async (hostname) =>
+            (await dns.lookup(hostname, { family: 4 })).address,
+          // undici's Response type lags the DOM lib (no `bytes()`); same
+          // object at runtime.
+          fetchImpl: (u, i) =>
+            undiciFetch(
+              u,
+              i as Parameters<typeof undiciFetch>[1],
+            ) as unknown as Promise<Response>,
+        },
+      );
+      res = result.response;
     } catch (err) {
+      if (err instanceof OutboundHttpError) {
+        const hint =
+          (err.code === "private_host" ||
+            err.code === "private_host_after_dns") &&
+          !bypassDisabled
+            ? " — set allowPrivate: true to override"
+            : "";
+        throw new Error(
+          `http.post: refusing to reach private/loopback host: ${err.message}${hint}`,
+        );
+      }
       throw new Error(
         `http.post: request failed: ${(err as Error).message ?? String(err)}`,
       );

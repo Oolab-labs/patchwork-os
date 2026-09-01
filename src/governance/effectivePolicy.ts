@@ -21,8 +21,8 @@
  * stage is final unless a later stage refuses.
  */
 
-import type { RiskTier } from "../riskTier.js";
 import type { BoundaryDecision } from "../privacy/dataPolicy.js";
+import type { RiskTier } from "../riskTier.js";
 import type { WorkerGateAction } from "../workers/workerGate.js";
 import type { GovernanceProfile } from "./profile.js";
 
@@ -50,6 +50,13 @@ export interface ToolFacts {
   tierDeclared: boolean;
   /** False when nothing is registered under this id. */
   registered: boolean;
+  /**
+   * From `classifyActionClass(id)` (workers/actionClass.ts): the same
+   * reversibility the worker gate uses. Governed gates every NON-reversible
+   * write regardless of tier; reversible writes (file.write, rollback-able)
+   * flow below the tier threshold, as the threat model intends.
+   */
+  reversibility?: "reversible" | "compensable" | "irreversible";
   /** True for `agent:` steps (tool id "agent"). */
   isAgentStep?: boolean;
   /** For agent steps: whether containment is enforced for this step. */
@@ -85,6 +92,12 @@ export interface EffectivePolicyInput {
   killSwitch: { engaged: boolean; reason: string };
   /** Per-recipe tool allowlist, when declared (`tools:` on the recipe). */
   recipeToolAllowlist?: string[];
+  /**
+   * What the orchestrator actually injected into the runner. When absent the
+   * calculation derives it from the profile (the `explain` path); the runner
+   * passes the real values so the two cannot disagree about what is wired.
+   */
+  gate?: { approvalFnInjected: boolean; workerGateInjected: boolean };
 }
 
 export type StageVerdict = "ALLOW" | "APPROVAL" | "REFUSE" | "SKIP" | "N/A";
@@ -126,10 +139,18 @@ export function shouldConsultApproval(args: {
   /** An approval fn was injected at all (approvalGate != off, or worker). */
   approvalFnInjected: boolean;
 }): { consult: boolean; reason: string } {
-  const { profile, trigger, recipeRequireApproval, workerGateInjected, approvalFnInjected } =
-    args;
+  const {
+    profile,
+    trigger,
+    recipeRequireApproval,
+    workerGateInjected,
+    approvalFnInjected,
+  } = args;
   if (!approvalFnInjected) {
-    return { consult: false, reason: "no approval gate configured (approvalGate: off)" };
+    return {
+      consult: false,
+      reason: "no approval gate configured (approvalGate: off)",
+    };
   }
   const automated = trigger !== "manual";
   const gateAutomated = profile.gateAutomatedRuns || workerGateInjected;
@@ -141,16 +162,28 @@ export function shouldConsultApproval(args: {
   }
   if (recipeRequireApproval === false) {
     if (workerGateInjected) {
-      return { consult: true, reason: "recipe requireApproval:false cannot opt out of worker governance" };
+      return {
+        consult: true,
+        reason:
+          "recipe requireApproval:false cannot opt out of worker governance",
+      };
     }
     if (!profile.recipeOptOutHonoured) {
-      return { consult: true, reason: "recipe requireApproval:false ignored under governed profile" };
+      return {
+        consult: true,
+        reason: "recipe requireApproval:false ignored under governed profile",
+      };
     }
-    return { consult: false, reason: "recipe opted out (requireApproval: false)" };
+    return {
+      consult: false,
+      reason: "recipe opted out (requireApproval: false)",
+    };
   }
   return {
     consult: true,
-    reason: automated ? `trigger ${trigger} gated like a manual run` : "manual run",
+    reason: automated
+      ? `trigger ${trigger} gated like a manual run`
+      : "manual run",
   };
 }
 
@@ -181,8 +214,24 @@ export function tierVerdict(
       ? { verdict: "APPROVAL", reason: "approval gate: all" }
       : { verdict: "ALLOW", reason: "agent step tier medium < high" };
   }
-  if (gate === "all") return { verdict: "APPROVAL", reason: "approval gate: all" };
-  if (tool.tier === "high") return { verdict: "APPROVAL", reason: "tool tier high" };
+  if (gate === "all")
+    return { verdict: "APPROVAL", reason: "approval gate: all" };
+  if (tool.tier === "high")
+    return { verdict: "APPROVAL", reason: "tool tier high" };
+  // Governed: every NON-reversible write asks, whatever its tier. The
+  // reversibility comes from the same action classifier the worker gate
+  // uses, so "reversible" here means rollback-able (file.write), not "low".
+  if (
+    profile.unknownWriteTools === "gate" &&
+    tool.isWrite === true &&
+    tool.reversibility !== undefined &&
+    tool.reversibility !== "reversible"
+  ) {
+    return {
+      verdict: "APPROVAL",
+      reason: `${tool.reversibility} write gated under governed profile (${tool.tier} tier)`,
+    };
+  }
   if (
     profile.unknownWriteTools === "gate" &&
     tool.isWrite !== false &&
@@ -198,16 +247,26 @@ export function tierVerdict(
   return { verdict: "ALLOW", reason: `tool tier ${tool.tier} below threshold` };
 }
 
-export function computeEffectivePolicy(input: EffectivePolicyInput): EffectivePolicy {
+export function computeEffectivePolicy(
+  input: EffectivePolicyInput,
+): EffectivePolicy {
   const { profile, tool } = input;
   const stages: PolicyStage[] = [];
 
   // 1. Kill switch — absolute.
   if (input.killSwitch.engaged) {
-    stages.push({ stage: "kill_switch", verdict: "REFUSE", reason: input.killSwitch.reason });
+    stages.push({
+      stage: "kill_switch",
+      verdict: "REFUSE",
+      reason: input.killSwitch.reason,
+    });
     return { final: "REFUSED", stages, consultsApproval: false };
   }
-  stages.push({ stage: "kill_switch", verdict: "ALLOW", reason: input.killSwitch.reason });
+  stages.push({
+    stage: "kill_switch",
+    verdict: "ALLOW",
+    reason: input.killSwitch.reason,
+  });
 
   // 2. Registration.
   if (!tool.registered && !tool.isAgentStep) {
@@ -219,14 +278,21 @@ export function computeEffectivePolicy(input: EffectivePolicyInput): EffectivePo
       });
       return { final: "REFUSED", stages, consultsApproval: false };
     }
+    // Compat: the runner still consults the approval fn for the step (the
+    // old predicate never looked at registration) and only SKIPS at dispatch
+    // when nothing answers to the id. Record that, and keep going.
     stages.push({
       stage: "tool_registration",
       verdict: "SKIP",
-      reason: `tool ${tool.id} is not registered — step skipped (compat forward-compat rule)`,
+      reason: `tool ${tool.id} is not registered — dispatch will skip it (compat forward-compat rule)`,
     });
-    return { final: "ALLOW", stages, consultsApproval: false };
+  } else {
+    stages.push({
+      stage: "tool_registration",
+      verdict: "ALLOW",
+      reason: tool.isAgentStep ? "agent step" : "tool registered",
+    });
   }
-  stages.push({ stage: "tool_registration", verdict: "ALLOW", reason: "tool registered" });
 
   // 3. Recipe tool allowlist.
   if (input.recipeToolAllowlist && !tool.isAgentStep) {
@@ -238,9 +304,17 @@ export function computeEffectivePolicy(input: EffectivePolicyInput): EffectivePo
       });
       return { final: "REFUSED", stages, consultsApproval: false };
     }
-    stages.push({ stage: "recipe_tool_allowlist", verdict: "ALLOW", reason: "tool declared" });
+    stages.push({
+      stage: "recipe_tool_allowlist",
+      verdict: "ALLOW",
+      reason: "tool declared",
+    });
   } else {
-    stages.push({ stage: "recipe_tool_allowlist", verdict: "N/A", reason: "no allowlist declared" });
+    stages.push({
+      stage: "recipe_tool_allowlist",
+      verdict: "N/A",
+      reason: "no allowlist declared",
+    });
   }
 
   // 4. Worker authority (forbid is final; gate → approval unless standing).
@@ -274,7 +348,11 @@ export function computeEffectivePolicy(input: EffectivePolicyInput): EffectivePo
           verdict: "APPROVAL",
           reason: `worker ${w.id} has not earned this action (${w.ruleId ?? "trust below threshold"})`,
         });
-        stages.push({ stage: "standing_permission", verdict: "N/A", reason: "none" });
+        stages.push({
+          stage: "standing_permission",
+          verdict: "N/A",
+          reason: "none",
+        });
       }
     } else {
       stages.push({
@@ -284,20 +362,31 @@ export function computeEffectivePolicy(input: EffectivePolicyInput): EffectivePo
       });
     }
   } else {
-    stages.push({ stage: "worker_authority", verdict: "N/A", reason: "no worker owns this recipe" });
+    stages.push({
+      stage: "worker_authority",
+      verdict: "N/A",
+      reason: "no worker owns this recipe",
+    });
   }
 
   // 5. Tool tier.
   const tier = tierVerdict(profile, tool);
-  stages.push({ stage: "tool_tier", verdict: tier.verdict, reason: tier.reason });
+  stages.push({
+    stage: "tool_tier",
+    verdict: tier.verdict,
+    reason: tier.reason,
+  });
 
   // 6. Trigger — does the approval fn get consulted at all?
   const consult = shouldConsultApproval({
     profile,
     trigger: input.trigger,
     recipeRequireApproval: input.recipe.requireApproval,
-    workerGateInjected: input.worker !== undefined,
-    approvalFnInjected: profile.approvalGate !== "off" || input.worker !== undefined,
+    workerGateInjected:
+      input.gate?.workerGateInjected ?? input.worker !== undefined,
+    approvalFnInjected:
+      input.gate?.approvalFnInjected ??
+      (profile.approvalGate !== "off" || input.worker !== undefined),
   });
   stages.push({
     stage: "trigger",
@@ -326,12 +415,15 @@ export function computeEffectivePolicy(input: EffectivePolicyInput): EffectivePo
     stages.push({
       stage: "privacy",
       verdict: "N/A",
-      reason: tool.isAgentStep ? "no destination registered" : "not a model dispatch",
+      reason: tool.isAgentStep
+        ? "no destination registered"
+        : "not a model dispatch",
     });
   }
 
   // Final composition.
-  const wantsApproval = consult.consult && (tier.verdict === "APPROVAL" || workerWantsApproval);
+  const wantsApproval =
+    consult.consult && (tier.verdict === "APPROVAL" || workerWantsApproval);
   return {
     final: wantsApproval ? "HUMAN_APPROVAL_REQUIRED" : "ALLOW",
     stages,
@@ -346,10 +438,16 @@ export function formatEffectivePolicy(
 ): string {
   const lines: string[] = [];
   lines.push(`RECIPE: ${input.recipe.name}`);
-  lines.push(`PROFILE: ${input.profile.mode.toUpperCase()}${input.profile.declared ? "" : " (defaulted — no profile: key)"}`);
+  lines.push(
+    `PROFILE: ${input.profile.mode.toUpperCase()}${input.profile.declared ? "" : " (defaulted — no profile: key)"}`,
+  );
   lines.push(`TRIGGER: ${String(input.trigger).toUpperCase()}`);
-  lines.push(`TOOL: ${input.tool.id}${input.tool.isAgentStep ? " (agent step)" : ""}`);
-  lines.push(`TOOL RISK: ${input.tool.tier.toUpperCase()}${input.tool.tierDeclared ? "" : " (inferred from name)"}${input.tool.isWrite ? " · WRITE" : ""}`);
+  lines.push(
+    `TOOL: ${input.tool.id}${input.tool.isAgentStep ? " (agent step)" : ""}`,
+  );
+  lines.push(
+    `TOOL RISK: ${input.tool.tier.toUpperCase()}${input.tool.tierDeclared ? "" : " (inferred from name)"}${input.tool.isWrite ? " · WRITE" : ""}`,
+  );
   if (input.worker) lines.push(`WORKER: ${input.worker.id}`);
   lines.push("");
   for (const s of result.stages) {

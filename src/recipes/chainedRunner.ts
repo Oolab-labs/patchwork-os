@@ -7,8 +7,21 @@
  *   - Dry-run mode
  */
 
+import { computeEffectivePolicy } from "../governance/effectivePolicy.js";
+import { readKillSwitch } from "../governance/killSwitchPolicy.js";
+import {
+  activeProfile,
+  COMPAT_PROFILE,
+  resolveAgentContainment,
+} from "../governance/profile.js";
+import { toolFactsFor } from "../governance/toolFacts.js";
+import {
+  isConnectorSource,
+  wrapUntrusted,
+} from "../governance/untrustedContent.js";
 import { classifyTool } from "../riskTier.js";
 import type { AgentResult } from "./agentExecutor.js";
+import { stepSandboxRequest } from "./agentExecutor.js";
 import { normaliseApprovalVerdict } from "./approvalRequest.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
@@ -42,7 +55,11 @@ import {
   detectSilentFail,
   redactSecretsForPrompt,
 } from "./stepObservation.js";
-import type { TemplateContext, TemplateError } from "./templateEngine.js";
+import type {
+  TemplateContext,
+  TemplateError,
+  TemplateEvaluateOptions,
+} from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 import { evaluateWhen } from "./whenGuard.js";
 // TYPE-ONLY on purpose. `yamlRunner` imports this module dynamically to break
@@ -73,8 +90,10 @@ export interface ChainedStep {
     mcpAccess?: boolean;
     /** Tool allowlist enforced via --allowed-tools when `sandbox` is true. */
     tools?: string[];
-    /** Opt-in tool sandbox — drop --dangerously-skip-permissions, enforce allowlist. */
-    sandbox?: boolean;
+    /** Opt-in tool sandbox — drop --dangerously-skip-permissions, enforce allowlist. Object form = explicit governed widening. */
+    sandbox?:
+      | boolean
+      | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
     /** Deny rules via --disallowed-tools in any mode. */
     disallowedTools?: string[];
   };
@@ -256,9 +275,12 @@ export type AgentExecutor = (
   driver?: string,
   opts?: {
     mcpAccess?: boolean;
-    sandbox?: boolean;
+    sandbox?:
+      | boolean
+      | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
     allowedTools?: string[];
     disallowedTools?: string[];
+    containment?: import("../governance/profile.js").AgentContainment;
   },
 ) => Promise<string | AgentResult>;
 
@@ -312,6 +334,8 @@ export interface ExecutionDeps {
    * gate with no tier fn) and nothing else.
    */
   gateAutomatedRuns?: boolean;
+  /** See `RunnerDeps.governance` (yamlRunner.ts). */
+  governance?: import("../governance/profile.js").GovernanceProfile;
 }
 
 function nestedRecipeRef(step: ChainedStep): string | undefined {
@@ -320,6 +344,27 @@ function nestedRecipeRef(step: ChainedStep): string | undefined {
     : typeof step.chain === "string"
       ? step.chain
       : undefined;
+}
+
+/**
+ * Phase 0 step 10 — untrusted-content envelope, chained side. Provenance is a
+ * SIDE map keyed by the run's registry (never a field on `StepOutput`, so
+ * `{{steps.X.*}}` shapes and the registry snapshot do not change): step id →
+ * the connector tool that produced its data. Written at the single
+ * `registry.set` site; read only when an agent prompt is rendered.
+ */
+const untrustedProvenanceByRegistry = new WeakMap<
+  OutputRegistry,
+  Map<string, string>
+>();
+
+function untrustedProvenanceFor(registry: OutputRegistry): Map<string, string> {
+  let m = untrustedProvenanceByRegistry.get(registry);
+  if (!m) {
+    m = new Map();
+    untrustedProvenanceByRegistry.set(registry, m);
+  }
+  return m;
 }
 
 /** Build template context from registry and env */
@@ -335,6 +380,8 @@ export function resolveStepTemplates(
   step: ChainedStep,
   context: TemplateContext,
   secretKeys?: ReadonlySet<string>,
+  /** Agent-prompt-only render hook (untrusted envelope). Tool params never see it. */
+  promptOptions?: TemplateEvaluateOptions,
 ): {
   resolved: Record<string, unknown>;
   conditionResult: boolean;
@@ -428,7 +475,7 @@ export function resolveStepTemplates(
             ),
           }
         : context;
-    const result = compiled.evaluate(promptContext);
+    const result = compiled.evaluate(promptContext, promptOptions);
     if ("error" in result) {
       errors.push(result.error);
     } else {
@@ -581,10 +628,24 @@ export async function executeChainedStep(
   );
 
   // Resolve templates
+  // Untrusted envelope (Phase 0 step 10): agent prompts only. Tool params,
+  // `when:` guards and `expect` evaluate against the raw registry value.
+  const envelopeActive = (deps.governance ?? activeProfile()).untrustedEnvelope;
+  const promptOptions: TemplateEvaluateOptions | undefined = envelopeActive
+    ? {
+        wrap: (stepId, value) => {
+          const source = untrustedProvenanceFor(registry).get(stepId);
+          return source === undefined
+            ? undefined
+            : wrapUntrusted(value, source);
+        },
+      }
+    : undefined;
   const { resolved, conditionResult, errors } = resolveStepTemplates(
     step,
     templateContext,
     secretKeys,
+    promptOptions,
   );
 
   if (errors.length > 0) {
@@ -729,20 +790,73 @@ export async function executeChainedStep(
     // result is an explicit human rejection → halt the step (and, via the
     // dependency graph, its dependents). Only agent/tool steps are gated;
     // nested-recipe steps are gated through their own inner steps.
-    if (
-      deps.requireApprovalFn &&
-      depth === 0 &&
-      (step.agent || step.tool) &&
-      // Same invariant as the flat runner: the opt-out covers the tier policy,
-      // never worker governance.
-      ((recipe as { requireApproval?: boolean }).requireApproval !== false ||
-        deps.gateAutomatedRuns === true)
-    ) {
+    // Phase 0: the predicate is `computeEffectivePolicy` — the same function
+    // `patchwork policy explain` prints. A top-level chained run is the
+    // interactive case (see the comment above), so it is evaluated as a
+    // "manual" trigger; under compat that reproduces the old predicate.
+    const governance = deps.governance ?? COMPAT_PROFILE;
+    const effective =
+      depth === 0 && (step.agent || step.tool)
+        ? computeEffectivePolicy({
+            profile: governance,
+            recipe: {
+              name: recipe.name,
+              ...((recipe as { requireApproval?: boolean }).requireApproval !==
+                undefined && {
+                requireApproval: (recipe as { requireApproval?: boolean })
+                  .requireApproval,
+              }),
+            },
+            trigger: "manual",
+            tool: toolFactsFor(
+              step.agent ? "agent" : (step.tool ?? "unknown"),
+              step.agent
+                ? {
+                    containment: resolveAgentContainment(
+                      governance,
+                      stepSandboxRequest({
+                        ...(step.agent.sandbox !== undefined && {
+                          sandbox: step.agent.sandbox,
+                        }),
+                        ...(step.agent.tools !== undefined && {
+                          allowedTools: step.agent.tools,
+                        }),
+                        ...(step.agent.disallowedTools !== undefined && {
+                          disallowedTools: step.agent.disallowedTools,
+                        }),
+                        ...(step.agent.mcpAccess !== undefined && {
+                          mcpAccess: step.agent.mcpAccess,
+                        }),
+                      }),
+                    ),
+                  }
+                : undefined,
+            ),
+            killSwitch: readKillSwitch(governance),
+            gate: {
+              approvalFnInjected: deps.requireApprovalFn !== undefined,
+              workerGateInjected: deps.gateAutomatedRuns === true,
+            },
+          })
+        : undefined;
+    if (effective?.final === "REFUSED") {
+      const refusing = effective.stages.find((s) => s.verdict === "REFUSE");
+      return {
+        success: false,
+        error:
+          refusing?.stage === "kill_switch"
+            ? `kill_switch_blocked: step refused before dispatch — ${refusing.reason}`
+            : `policy refused step: ${refusing?.reason ?? "refused"}`,
+        resolvedParams: resolved,
+      };
+    }
+    if (deps.requireApprovalFn && effective?.consultsApproval) {
       const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
       const verdict = normaliseApprovalVerdict(
         await deps.requireApprovalFn({
           toolId: approvalToolId,
           tier: classifyTool(approvalToolId),
+          effective: effective.final,
           summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
           params: step.agent
             ? undefined
@@ -1276,8 +1390,12 @@ export async function runChainedRecipe(
     try {
       const { loadRecipeServers } = await import("./yamlRunner.js");
       await loadRecipeServers(recipe.servers);
-    } catch {
-      // Non-fatal — if yamlRunner import fails, proceed without plugins
+    } catch (err) {
+      // A plugin-policy refusal (governed profile, spec not allowlisted)
+      // must halt the run — a recipe that silently proceeds without the
+      // plugin it named is the fail-open this check exists to close.
+      if (err instanceof Error && err.name === "PluginPolicyError") throw err;
+      // Otherwise non-fatal — if yamlRunner import fails, proceed without plugins
     }
   }
 
@@ -1624,6 +1742,14 @@ export async function runChainedRecipe(
             : "error",
       data: result.data,
     });
+    // Untrusted envelope provenance (side map, never on StepOutput).
+    if (
+      typeof step.tool === "string" &&
+      (deps.governance ?? activeProfile()).untrustedEnvelope &&
+      isConnectorSource(step.tool)
+    ) {
+      untrustedProvenanceFor(registry).set(stepId, step.tool);
+    }
 
     // VD-2: capture per-step inputs/outputs/registry snapshot for the
     // dashboard's diff hover + replay. Only at depth 0 (nested steps are

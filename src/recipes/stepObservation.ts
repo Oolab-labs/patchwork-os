@@ -39,6 +39,11 @@
 //      with `status:ok` and that string written to disk.
 // ---------------------------------------------------------------------------
 
+import {
+  isSensitiveKeyName,
+  redactKnownSecretsDeep,
+} from "../governance/secretValues.js";
+
 export interface SilentFailMatch {
   reason: string;
   /** Slice of the result that triggered the match (for the error msg). */
@@ -186,21 +191,10 @@ const MAX_BYTES = 8 * 1024;
  * reached the run log, the dashboard and the approval payload in clear text.
  * Enumerating spellings is what failed; normalising once is the fix.
  */
-const SENSITIVE_KEY_PATTERNS = [
-  "authorization",
-  "xapikey",
-  "apikey",
-  "password",
-  "passwd",
-  "secret",
-  "token",
-  "cookie",
-  "session",
-  "privatekey",
-  "clientsecret",
-  "refreshtoken",
-  "accesstoken",
-];
+// The list lives in `src/governance/secretValues.ts` so the VALUE registry
+// (which registers connector tokens / config keys under these same names)
+// and this KEY walker cannot drift apart. Re-exported here for callers.
+export { SENSITIVE_KEY_PATTERNS } from "../governance/secretValues.js";
 
 export const REDACTED = "[REDACTED]";
 const TRUNCATED = "[truncated]";
@@ -230,11 +224,7 @@ export function redactSecretsForPrompt<T extends Record<string, string>>(
 function isSensitiveKey(key: string): boolean {
   // Strip separators so one pattern covers every spelling a caller might use.
   // `api_key`, `api-key`, `apiKey` and `API_KEY` all normalise to `apikey`.
-  const normalised = key.toLowerCase().replace(/[-_\s.]/g, "");
-  for (const pattern of SENSITIVE_KEY_PATTERNS) {
-    if (normalised.includes(pattern)) return true;
-  }
-  return false;
+  return isSensitiveKeyName(key);
 }
 
 /**
@@ -278,7 +268,10 @@ export function captureForRunlog(value: unknown): unknown | undefined {
   if (value === undefined) return undefined;
   let redacted: unknown;
   try {
-    redacted = redactSensitive(value);
+    // Key-based first (cheap, structural), then VALUE-based: a secret that
+    // was interpolated into a URL, a JSON body string or an error message
+    // has no sensitive key left to match, and only the registry can see it.
+    redacted = redactKnownSecretsDeep(redactSensitive(value));
   } catch {
     return { error: "[capture-redact-failed]" };
   }

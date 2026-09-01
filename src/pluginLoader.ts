@@ -17,6 +17,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Config } from "./config.js";
+import {
+  PLUGIN_INTEGRITY_MISMATCH,
+  PluginPolicyError,
+  verifyPluginIntegrity,
+} from "./governance/pluginPolicy.js";
 import type { Logger } from "./logger.js";
 import { parseJsonSanitized } from "./sanitizeParsedJson.js";
 import { TOOL_CATEGORIES } from "./tools/index.js";
@@ -198,10 +203,20 @@ export interface LoadedPlugin {
  *
  * Collision-detection across plugins still applies.
  */
+export interface PluginLoadOpts {
+  /**
+   * `sha256-<base64>` expected over the entrypoint file (from the operator's
+   * `plugins.allow` entry). Verified after the entrypoint's real path is
+   * resolved and before it is imported; mismatch refuses the plugin.
+   */
+  integrity?: string;
+}
+
 export async function loadPluginsFull(
   pluginSpecs: string[],
   config: Config,
   logger: Logger,
+  opts: PluginLoadOpts = {},
 ): Promise<LoadedPlugin[]> {
   if (pluginSpecs.length === 0) return [];
 
@@ -239,6 +254,8 @@ export async function loadPluginsFull(
       config,
       logger,
       registeredNames,
+      false,
+      opts,
     );
     if (loaded !== null) {
       loadedPlugins.push(loaded);
@@ -278,6 +295,7 @@ export async function loadOnePluginFull(
   logger: Logger,
   existingNames: Set<string> = new Set(),
   isHotReload = false,
+  opts: PluginLoadOpts = {},
 ): Promise<LoadedPlugin | null> {
   // 1. Resolve directory
   let pluginDir: string;
@@ -371,6 +389,19 @@ export async function loadOnePluginFull(
       `Plugin "${manifest.name}" — entrypoint path "${manifest.entrypoint}" escapes plugin directory (resolved to ${realEntrypoint})`,
     );
     return null;
+  }
+
+  // Integrity (governed allowlist entries may pin the entrypoint bytes).
+  // Checked against the REAL path — the bytes that will actually run.
+  if (opts.integrity !== undefined) {
+    const integrity = verifyPluginIntegrity(realEntrypoint, opts.integrity);
+    if (!integrity.ok) {
+      throw new PluginPolicyError(
+        PLUGIN_INTEGRITY_MISMATCH,
+        `Plugin "${manifest.name}" — integrity check ${integrity.status}: ${integrity.reason}`,
+        [spec],
+      );
+    }
   }
 
   let mod: unknown;

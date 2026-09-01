@@ -355,6 +355,10 @@ export async function runPatchworkInit(
     configAction = "merged";
   } else {
     const fresh: PatchworkConfig = {
+      // Phase 0: a NEW install starts governed. An existing config.json is
+      // never given a profile by init (see the `existing` branch above) —
+      // opting an existing install in is `patchwork profile governed`.
+      profile: "governed",
       model: ollamaDetected ? "local" : "claude",
       recipesDir,
       ...(geminiCliDetected ? { driver: "gemini" } : {}),
@@ -370,6 +374,15 @@ export async function runPatchworkInit(
       existsSync(configPath) && parsed.force ? "overwritten" : "created";
   }
   log(`  ✓ config ${configAction}: ${configPath}\n`);
+  if (configAction !== "merged") {
+    log(
+      "  ✓ governed profile ON — approval gate high, automated runs gated, agent steps contained, plugins allowlisted (`patchwork doctor` shows the full posture)\n",
+    );
+  } else if (existing && existing.profile !== "governed") {
+    log(
+      "  · profile unchanged (existing install). Opt in with `patchwork profile governed`; `patchwork doctor` shows what is currently enforced.\n",
+    );
+  }
 
   // Register the Patchwork PreToolUse hook in Claude Code's settings.json
   // so CC actually routes tool calls through the bridge's approval queue.

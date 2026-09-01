@@ -1167,6 +1167,63 @@ export interface WatchedRecipeRunResult {
   summary?: RecipeExecutionSummary;
 }
 
+/**
+ * Resolve the governance deps for a bridge-less (`--local`) run. Exported for
+ * tests. Returns `{}` under compat or when the caller already supplied them.
+ */
+export async function resolveLocalGovernance(
+  provided: Partial<RunnerDeps> | undefined,
+  io: {
+    isTTY?: boolean;
+    ask?: (question: string) => Promise<string>;
+  } = {},
+): Promise<Partial<RunnerDeps>> {
+  if (provided?.governance !== undefined) return {};
+  const { loadConfig } = await import("../patchworkConfig.js");
+  const { resolveProfile } = await import("../governance/profile.js");
+  let cfg: { profile?: unknown; approvalGate?: unknown } = {};
+  try {
+    cfg = loadConfig() as typeof cfg;
+  } catch {
+    cfg = {};
+  }
+  const profile = resolveProfile(cfg);
+  if (profile.mode !== "governed") return {};
+  if (provided?.requireApprovalFn !== undefined) return { governance: profile };
+  const isTTY =
+    io.isTTY ?? (process.stdin.isTTY === true && process.stdout.isTTY === true);
+  const ask =
+    io.ask ??
+    (async (question: string): Promise<string> => {
+      const readline = await import("node:readline/promises");
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      try {
+        return await rl.question(question);
+      } finally {
+        rl.close();
+      }
+    });
+  const requireApprovalFn: RunnerDeps["requireApprovalFn"] = async (input) => {
+    if (input.effective === "ALLOW") return true;
+    if (!isTTY) {
+      process.stderr.write(
+        `[recipe run] step "${input.summary ?? input.toolId}" needs human approval under the governed profile and there is no terminal to ask on — refused. Run from a terminal, or run through the bridge so the approval reaches the dashboard.\n`,
+      );
+      return { approved: false, refusal: "rejected" };
+    }
+    const answer = await ask(
+      `[recipe run] approve ${input.summary ?? input.toolId} (${input.tier} tier)? [y/N] `,
+    );
+    return /^y(es)?$/i.test(answer.trim())
+      ? true
+      : { approved: false, refusal: "rejected" };
+  };
+  return { governance: profile, requireApprovalFn };
+}
+
 export async function runRecipe(
   recipeRef: string,
   options: RunRecipeOptions = {},
@@ -1189,11 +1246,19 @@ export async function runRecipe(
   const recipeToRun: YamlRecipe = selection
     ? { ...recipe, steps: [selection.step] }
     : recipe;
+  // Phase 0: a local run is governed by the SAME profile as a bridge run.
+  // Under governed, a step the effective policy says needs a human is put to
+  // the operator on the terminal; with no TTY it is refused (fail closed)
+  // rather than executed. Under compat nothing is injected — byte-identical
+  // to before. Tests that pass their own `deps.requireApprovalFn` /
+  // `deps.governance` keep them.
+  const localGovernance = await resolveLocalGovernance(options.deps);
   const runnerDeps: RunnerDeps = {
     ...options.deps,
     workdir: options.workdir ?? options.deps?.workdir ?? process.cwd(),
     ...(options.manualRunId && { manualRunId: options.manualRunId }),
     ...(options.ledgerDir && { ledgerDir: options.ledgerDir }),
+    ...localGovernance,
   };
   if (options.dryRun) {
     throw new Error("runRecipeDryPlan must be used for dry-run execution");

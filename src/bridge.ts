@@ -33,6 +33,7 @@ import {
   watchFlags,
 } from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
+import { registerBridgeToken } from "./governance/secretValues.js";
 import { createApproverResolver } from "./identity/approverFromSession.js";
 import {
   __setSessionSecretFallback,
@@ -265,6 +266,8 @@ export class Bridge {
     const configDir =
       process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
     this.authToken = config.fixedToken ?? loadOrCreateBridgeToken(configDir);
+    // Phase 0: the bearer is a known secret for value-based redaction.
+    registerBridgeToken(this.authToken);
     // The Host allowlist (Server's allowedHosts) is built from corsOrigins —
     // but an OAuth-mode deployment's own issuer hostname is the bridge's own
     // public domain, and operators reliably forget to also pass it via
@@ -1911,7 +1914,39 @@ export class Bridge {
     });
     this.server.managedSettingsPath =
       this.config.managedSettingsPath ?? undefined;
-    this.server.approvalGate = this.config.approvalGate ?? "off";
+    // Governance profile — resolved ONCE here from config.json and published
+    // process-wide. Governed raises the approval gate to at least "high" and
+    // turns on worker authority + policy enforcement (in memory, never
+    // persisted — the profile is the source of truth, not the flag file).
+    {
+      const { resolveProfile, setActiveProfile } = await import(
+        "./governance/profile.js"
+      );
+      let pwCfg: { profile?: unknown; approvalGate?: unknown } = {};
+      try {
+        pwCfg = loadPatchworkConfig() as typeof pwCfg;
+      } catch {
+        /* no config.json ⇒ compat */
+      }
+      const profile = resolveProfile({
+        profile: pwCfg.profile,
+        approvalGate: this.config.approvalGate ?? pwCfg.approvalGate,
+      });
+      setActiveProfile(profile);
+      if (profile.mode === "governed") {
+        const { FLAG_ENFORCE_POLICY, FLAG_WORKER_AUTONOMY, setFlag } =
+          await import("./featureFlags.js");
+        setFlag(FLAG_WORKER_AUTONOMY, true);
+        setFlag(FLAG_ENFORCE_POLICY, true);
+        this.logger.info(
+          `[patchwork] governed profile active: approval gate ${profile.approvalGate}, automated triggers gated, worker authority + policy enforced, agent containment enforced, plugin allowlist required`,
+        );
+      }
+      this.server.approvalGate =
+        profile.mode === "governed"
+          ? profile.approvalGate
+          : (this.config.approvalGate ?? "off");
+    }
     this.server.approvalTimeouts = this.config.approvalTimeouts ?? undefined;
     this.server.approvalWebhookUrl =
       this.config.approvalWebhookUrl ?? undefined;

@@ -86,6 +86,20 @@ export function ownerHaltPhrase(
         sentence: "You turned down its last request, so it stopped.",
         fix: "none",
       };
+    case "policy_denied":
+      return {
+        sentence:
+          "Your policy doesn't allow this step, so it stopped before doing anything.",
+        fix: "open-trace",
+        fixLabel: "See why",
+      };
+    case "unresolved_tool":
+      return {
+        sentence:
+          "One of its steps uses a tool that isn't installed or allowed here.",
+        fix: "open-trace",
+        fixLabel: "See which step",
+      };
     case "approval_expired":
       // NOT `fix: "approve"`. The request it was waiting on has already been
       // resolved by the timeout, so an approve button would point at nothing.

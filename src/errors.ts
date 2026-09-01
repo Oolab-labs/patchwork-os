@@ -31,6 +31,7 @@ export const ToolErrorCodes = {
   AMBIGUOUS_TASK_ID: "ambiguous_task_id",
   DRIVER_NOT_CONFIGURED: "driver_not_configured",
   COOLDOWN_ACTIVE: "cooldown_active",
+  KILL_SWITCH_BLOCKED: "kill_switch_blocked",
 } as const;
 
 export type ToolErrorCode =

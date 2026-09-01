@@ -46,7 +46,10 @@ export function readKillSwitch(
   }
 }
 
-export function killSwitchMessage(r: KillSwitchReading, operation: string): string {
+export function killSwitchMessage(
+  r: KillSwitchReading,
+  operation: string,
+): string {
   return r.reason === "unreadable_fail_closed"
     ? `kill_switch_blocked: ${operation} refused — kill-switch state unreadable and the governed profile fails closed`
     : `kill_switch_blocked: ${operation} refused — write kill switch engaged. Release with \`patchwork kill-switch release\`.`;
@@ -66,6 +69,8 @@ export function assertKillSwitchReleased(
 }
 
 /** Test seam: replace the underlying reader (e.g. with one that throws). */
-export function _setKillSwitchReaderForTesting(fn: (() => boolean) | null): void {
+export function _setKillSwitchReaderForTesting(
+  fn: (() => boolean) | null,
+): void {
   reader = fn ?? isWriteKillSwitchActive;
 }

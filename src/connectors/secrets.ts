@@ -35,6 +35,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { registerSecretValue } from "../governance/secretValues.js";
 import { patchworkPath } from "../patchworkHome.js";
 
 /** Absolute path the helper reads from. */
@@ -88,10 +89,17 @@ export function readSecret(name: string): string {
   const fromFile = load();
   if (fromFile && Object.hasOwn(fromFile, name)) {
     const v = fromFile[name];
-    if (typeof v === "string" && v !== "") return v;
+    if (typeof v === "string" && v !== "") {
+      registerSecretValue(v, "secrets-file");
+      return v;
+    }
     // Empty string in the file → still try env (treat the file value as unset).
   }
-  return process.env[name] ?? "";
+  const fromEnv = process.env[name] ?? "";
+  // Anything a connector asks for by name IS a credential — register the
+  // value (never the name) so it is redacted wherever it reappears.
+  if (fromEnv) registerSecretValue(fromEnv, "env");
+  return fromEnv;
 }
 
 /**

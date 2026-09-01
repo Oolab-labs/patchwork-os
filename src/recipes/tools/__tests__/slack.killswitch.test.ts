@@ -62,7 +62,7 @@ describe("recipe tool slack.post_message — kill-switch re-check before network
 
     await expect(
       executeTool("slack.post_message", dummyContext),
-    ).rejects.toThrow(/Write operation blocked by kill switch/);
+    ).rejects.toThrow(/kill switch/i);
 
     expect(postMessage).not.toHaveBeenCalled();
   });

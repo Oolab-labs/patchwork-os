@@ -5,8 +5,9 @@
  * describe the same tool the same way.
  */
 
-import { classifyTool } from "../riskTier.js";
 import { getTool } from "../recipes/toolRegistry.js";
+import { classifyTool } from "../riskTier.js";
+import { classifyActionClass } from "../workers/actionClass.js";
 import type { ToolFacts } from "./effectivePolicy.js";
 import type { AgentContainment } from "./profile.js";
 
@@ -46,5 +47,6 @@ export function toolFactsFor(
     tierDeclared: !(reg as { fromPlugin?: boolean }).fromPlugin,
     isWrite: reg.isWrite,
     registered: true,
+    reversibility: classifyActionClass(toolId, {}).reversibility,
   };
 }
