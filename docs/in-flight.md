@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- **`feat/butler-view-model`** (#1568) — Butler Home view-model: types + pure
+  mapping over the five existing `/butler/*` and `/approvals` surfaces. Touches
+  only `dashboard/src/app/butler/homeState.ts` and its test; no UI, no routes,
+  no runtime. `feat/butler-home` follows and WILL touch `page.tsx` — coordinate
+  here first. Design freeze: `docs/butler-product-reset.md`.
 
 
 ## Recently closed (informal log, prune periodically)
