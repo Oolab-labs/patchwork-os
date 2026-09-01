@@ -411,3 +411,26 @@ describe("theme", () => {
     expect(CSS).toMatch(/:root\[data-theme="dark"\] \.butler/);
   });
 });
+
+describe("headings take Butler's own palette, not the shell's", () => {
+  /**
+   * A regression for a bug the whole suite was blind to.
+   *
+   * `.butler h1/h2` declared no colour and INHERITED — and inheritance loses to
+   * any direct rule, so the dashboard shell's `h1, h2 { color: … }` won. In
+   * dark theme the shell's near-white happened to match Butler's foreground and
+   * nothing looked wrong. In light theme the headings computed to
+   * rgb(246,247,248) on a white page: "Butler" and every section heading,
+   * invisible, on the page a first-time user lands on.
+   *
+   * Every contrast assertion in this file passed throughout, because they check
+   * the ratios of Butler's OWN tokens and those were always correct. What was
+   * wrong was which palette reached the element — which a stylesheet-parsing
+   * test cannot see unless it asks whether the rule exists at all.
+   */
+  it("declares a colour for headings rather than inheriting one", () => {
+    const block = blockFor(".butler h1,\n.butler h2,\n.butler h3");
+    expect(block, "no heading colour rule found").toBeTruthy();
+    expect(block).toMatch(/color:\s*var\(--lp-fg\)/);
+  });
+});

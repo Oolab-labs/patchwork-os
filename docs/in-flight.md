@@ -55,6 +55,15 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-01 `feat/butler-home-visual` — Butler Home presentation. Headline hierarchy,
+  Memory/Permissions as a pair on wide screens, tool ids in words from a verified map with
+  the raw id as the honest fallback, and the two duplicate-empty-message defects. Found by
+  rendering rather than by any test: **light-theme headings were near-white on white** —
+  they inherited, and inheritance loses to the shell's `h1, h2` rule, so dark theme
+  matched by coincidence. Every contrast assertion passed throughout because Butler's own
+  tokens were always correct; what was wrong was which palette reached the element. Fact
+  phrasing left for `feat/butler-memory`.
+
 - 2026-09-01 `feat/butler-home` — Butler Home against the #1568 view-model. Status line
   first with `cannot-tell` as its own arm; per-source loading, so one dead endpoint no
   longer discards four healthy ones; every empty state separates "there is nothing" from

@@ -317,3 +317,97 @@
   margin: 0 0 1.4rem;
   max-width: 34ch;
 }
+
+/* ── Home as a front door rather than a document ───────────────────────────
+ *
+ * The page was capped at 46rem and gave every section the same weight, which
+ * is what made it read as a policy document however honest its words were.
+ * Two changes, and neither of them is colour:
+ *
+ *   - the HEADLINE is unmistakably first, by size and by the space around it;
+ *   - the two reference areas sit side by side when there is room, so they
+ *     read as somewhere to look things up rather than as more of the report.
+ *
+ * PROSE stays at a comfortable measure regardless of how wide the page gets.
+ * Widening the container is not permission to widen a line of text: ~66
+ * characters is the readable limit, and a governance page whose sentences run
+ * the width of a monitor is harder to read, not more spacious.
+ */
+.butler {
+  max-width: 72rem;
+}
+
+/* Every block of prose keeps its measure even in a wide column. */
+.butlerRowText,
+.butlerMeta,
+.butlerEmpty,
+.butlerPromise {
+  max-width: 62ch;
+}
+
+.butlerStatus {
+  font-size: 1.75em;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0.15em 0 2.2rem;
+  max-width: 22ch;
+}
+
+/* The promise is not the last line of the list above it. */
+.butlerPromise {
+  margin-top: 1.5rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid currentColor;
+  opacity: 0.85;
+  font-size: 0.95em;
+}
+
+/* Memory and Permissions: a pair when there is room, sequential always. */
+.butlerReference {
+  display: grid;
+  gap: 0 2.5rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 62rem) {
+  .butlerReference {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  /* Anything that is not one of the pair runs the full width. */
+  .butlerReference > .butlerSpan {
+    grid-column: 1 / -1;
+  }
+}
+
+/* A wider PAGE is not a wider control.
+ *
+ * The decision card and its two buttons are the most important thing on the
+ * page, and stretching them to the full width made them harder to use, not
+ * more prominent — a button the width of a monitor reads as a banner. The
+ * top-level sections keep a comfortable column; only the reference pair below
+ * uses the extra width, which is what it is for.
+ */
+.butler > .butlerSection {
+  max-width: 48rem;
+}
+
+/* Headings take Butler's OWN foreground, explicitly.
+ *
+ * They set no colour and inherited — and inheritance loses to any direct rule,
+ * so a shell rule for `h1, h2` won instead. In dark theme its near-white
+ * happened to match and nothing looked wrong; in light theme the headings
+ * computed to rgb(246,247,248) on a white page and were invisible. "Butler",
+ * "Something I need to ask you" and every other heading, unreadable, on the
+ * page a first-time user lands on.
+ *
+ * Found by rendering the light theme and reading the computed colour, not by
+ * any test: the accessibility suite checks this page's own palette, and its own
+ * palette was always right. What was wrong was which palette applied.
+ */
+.butler h1,
+.butler h2,
+.butler h3 {
+  color: var(--lp-fg);
+}
