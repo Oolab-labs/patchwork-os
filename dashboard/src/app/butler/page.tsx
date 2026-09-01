@@ -38,6 +38,7 @@ import "./butler.css";
 // Two declarations of the same payload is how a page and its model come to
 // disagree about what the server sends — silently, and in the direction
 // nobody tests.
+import { ageInWords, factInWords } from "./factWords";
 import {
   type ButlerFact,
   type ButlerHomeState,
@@ -52,12 +53,79 @@ import {
 // ─────────────────────────────────────────────────────────────── types
 
 /** An undo the user can still take. Kept until used — never expires. */
+/**
+ * An offer to put something back, in a form that survives a reload.
+ *
+ * It used to hold a CLOSURE, which cannot be serialised — so refreshing the
+ * page destroyed every outstanding offer. That is the wrong failure for the one
+ * control a reader reaches for after a mistake, and reloading is exactly what
+ * somebody does when a page surprises them.
+ *
+ * Both undos are a POST to a fixed path with no body, so the action is fully
+ * described by that path. `did` carries the reader's own words back to them.
+ *
+ * It is kept in this browser's own storage for this origin only. The wording
+ * can name a remembered fact — but that fact is already on the screen it came
+ * from, so no new disclosure is created — and the offer is dropped the moment
+ * it is used or found to be stale.
+ */
 interface UndoOffer {
   id: string;
   /** What was done, in the words shown back to the user. */
   did: string;
-  /** Put it back. */
-  undo: () => Promise<void>;
+  /** The POST that reverses it. */
+  path: string;
+  /** What to say once it is reversed. */
+  said: string;
+}
+
+const UNDO_STORE_KEY = "patchwork.butler.undo.v1";
+
+/**
+ * How many offers are kept.
+ *
+ * An offer is never dropped on a TIMER — that principle stands, and a
+ * disappearing undo is the way this product would fail a reader who needs
+ * longer to decide. But an offer that is never dropped at all grows without
+ * bound in a store with a hard size limit, and once that limit is hit NOTHING
+ * more can be persisted, including the offer for whatever was just deleted.
+ *
+ * A cap on COUNT is not a timeout: the newest offers, the ones a reader is
+ * most likely to want, are the ones kept.
+ */
+const MAX_UNDO_OFFERS = 20;
+
+/** Never throws: storage is unavailable in a private window and on some OSes. */
+function readStoredUndos(): UndoOffer[] {
+  try {
+    const raw = window.localStorage.getItem(UNDO_STORE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (o): o is UndoOffer =>
+        typeof o === "object" &&
+        o !== null &&
+        typeof (o as UndoOffer).id === "string" &&
+        typeof (o as UndoOffer).did === "string" &&
+        typeof (o as UndoOffer).path === "string" &&
+        typeof (o as UndoOffer).said === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredUndos(offers: UndoOffer[]): void {
+  try {
+    window.localStorage.setItem(
+      UNDO_STORE_KEY,
+      JSON.stringify(offers.slice(0, MAX_UNDO_OFFERS)),
+    );
+  } catch {
+    // An undo that cannot be persisted is still offered for this page view.
+    // Losing the persistence is worse than losing the offer.
+  }
 }
 
 // ─────────────────────────────────────────────────────────── plain words
@@ -84,9 +152,16 @@ function sourceInWords(f: ButlerFact): string {
 
 /** A fact as a sentence. `subject`/`predicate` are machine keys; a person
  *  should not have to parse `household.spouse` / `diet.avoid`. */
-function factInWords(f: ButlerFact): string {
-  const subject = f.subject === "user" ? "You" : humanise(f.subject);
-  return `${subject} — ${humanise(f.predicate)}: ${f.object || "(nothing)"}`;
+/**
+ * One line naming a fact, for an announcement or an undo offer.
+ *
+ * The row itself renders the term and value separately; this is the flattened
+ * form for a sentence a screen reader speaks. It uses the same words, so what
+ * is announced matches what is on screen.
+ */
+function describeFact(f: ButlerFact): string {
+  const w = factInWords(f);
+  return w.about ? `${w.about}: ${w.term} — ${w.value}` : `${w.term} — ${w.value}`;
 }
 
 function humanise(key: string): string {
@@ -194,16 +269,47 @@ export default function ButlerPage() {
   const [undos, setUndos] = useState<UndoOffer[]>([]);
   const [home, setHome] = useState<ButlerHomeState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /**
+   * The instant the page describes, read ONCE at load rather than during
+   * render. A render-time `Date.now()` differs between the server pass and the
+   * client one — a hydration mismatch — and makes "3 days ago" impossible to
+   * assert. Zero means not yet read, and the age is simply not claimed.
+   */
+  const [now, setNow] = useState(0);
+  /** The fact being corrected, and the text typed so far. */
+  const [editing, setEditing] = useState<{ seq: number; text: string } | null>(
+    null,
+  );
+  /** The fact whose permanent erasure is awaiting a second, explicit yes. */
+  const [erasing, setErasing] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
 
   const announce = useCallback((msg: string) => setAnnounce(msg), []);
 
-  const offerUndo = useCallback((did: string, undo: () => Promise<void>) => {
-    setUndos((prev) => [
+  const offerUndo = useCallback((did: string, path: string, said: string) => {
+    setUndos((prev) => {
       // Newest first, and never dropped on a timer — see the header comment.
-      { id: `${Date.now()}-${Math.random()}`, did, undo },
-      ...prev,
-    ]);
+      const next = [
+        { id: `${Date.now()}-${Math.random()}`, did, path, said },
+        ...prev,
+      ].slice(0, MAX_UNDO_OFFERS);
+      writeStoredUndos(next);
+      return next;
+    });
+  }, []);
+
+  const forgetUndo = useCallback((id: string) => {
+    setUndos((prev) => {
+      const next = prev.filter((x) => x.id !== id);
+      writeStoredUndos(next);
+      return next;
+    });
+  }, []);
+
+  // Offers made before a reload are still offers.
+  useEffect(() => {
+    const stored = readStoredUndos();
+    if (stored.length > 0) setUndos(stored);
   }, []);
 
   const load = useCallback(async () => {
@@ -267,6 +373,7 @@ export default function ButlerPage() {
         exercises: listFrom(e, "exercises"),
         approvals: listFrom(a, ""),
       };
+      setNow(Date.now());
       const state = mapButlerHome(sources);
       setHome(state);
       // A TOTAL blackout is a page-level alert; a partial one is a note beside
@@ -384,7 +491,7 @@ export default function ButlerPage() {
         const res = await del(`/api/bridge/butler/facts/${f.seq}`);
         const body = (await res.json()) as { tombstone?: { seq?: number } };
         const tombSeq = body?.tombstone?.seq;
-        announce(`Removed: ${factInWords(f)}`);
+        announce(`Removed: ${describeFact(f)}`);
         // Put it back AS IT WAS. This used to re-POST a plain fact, and the
         // create route stamps channel "user_chat" unconditionally — so undoing
         // the removal of something Butler had merely READ somewhere returned it
@@ -392,10 +499,11 @@ export default function ButlerPage() {
         // being used. The undo was a trust escalator. The restore route copies
         // the original row's provenance instead.
         if (tombSeq !== undefined) {
-          offerUndo(`Removed "${factInWords(f)}"`, async () => {
-            await post(`/api/bridge/butler/facts/${tombSeq}/restore`);
-            announce(`Put back: ${factInWords(f)}`);
-          });
+          offerUndo(
+            `Removed "${describeFact(f)}"`,
+            `/api/bridge/butler/facts/${tombSeq}/restore`,
+            `Put back: ${describeFact(f)}`,
+          );
         }
         await load();
       } catch {
@@ -409,7 +517,7 @@ export default function ButlerPage() {
     async (f: ButlerFact) => {
       try {
         await post(`/api/bridge/butler/facts/${f.seq}/confirm`);
-        announce(`Confirmed: ${factInWords(f)}`);
+        announce(`Confirmed: ${describeFact(f)}`);
       } catch {
         announce("I could not confirm that. Nothing has changed.");
       }
@@ -421,12 +529,99 @@ export default function ButlerPage() {
     async (f: ButlerFact) => {
       try {
         await post(`/api/bridge/butler/quarantine/${f.seq}/promote`);
-        announce(`I will remember: ${factInWords(f)}`);
+        announce(`I will remember: ${describeFact(f)}`);
       } catch {
         announce("I could not save that. Nothing has changed.");
       }
     },
     [announce, post],
+  );
+
+  /**
+   * Put something back.
+   *
+   * A persisted offer can outlive what it reverses — the same tombstone
+   * restored in another tab, or a bridge that no longer has it. That is not an
+   * error to hide: the offer is withdrawn and the reader is told the reason,
+   * rather than left pressing a button that silently does nothing.
+   */
+  const runUndo = useCallback(
+    async (u: UndoOffer) => {
+      try {
+        await post(u.path);
+        announce(u.said);
+        forgetUndo(u.id);
+        await load();
+      } catch {
+        announce(
+          "I could not put that back — it may already have been put back somewhere else. I have removed the offer.",
+        );
+        forgetUndo(u.id);
+        await load();
+      }
+    },
+    [announce, forgetUndo, load, post],
+  );
+
+  /**
+   * Correct a belief by appending a new value.
+   *
+   * PATCH, not delete-then-create: the store is append-only and the correction
+   * keeps the original row's provenance. Re-creating would stamp `user_chat`,
+   * which would quietly promote something Butler had merely READ into
+   * something you said — the same trust escalation the restore route exists to
+   * avoid.
+   */
+  const correctFact = useCallback(
+    async (f: ButlerFact, object: string) => {
+      const next = object.trim();
+      if (next === "" || next === f.object) {
+        setEditing(null);
+        return;
+      }
+      try {
+        const res = await fetch(apiPath(`/api/bridge/butler/facts/${f.seq}`), {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ object: next }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        setEditing(null);
+        announce(`Changed to: ${next}`);
+        await load();
+      } catch {
+        announce("I could not change that. Nothing has changed.");
+      }
+    },
+    [announce, load],
+  );
+
+  /**
+   * Destroy the content of a belief for good.
+   *
+   * A DIFFERENT operation from forgetting, not a stronger one. `forget` writes
+   * a tombstone and leaves the original row, which is exactly what lets an undo
+   * put the belief back as it was. Erasing blanks the subject, predicate and
+   * object and keeps a content-free husk recording that an erasure happened.
+   *
+   * So NO undo is offered here, and none can be. The confirmation says so
+   * before it happens, which is the only place that warning is any use.
+   */
+  const eraseFact = useCallback(
+    async (f: ButlerFact) => {
+      try {
+        const res = await del(
+          `/api/bridge/butler/facts/${f.seq}?erase=true`,
+        );
+        if (!res.ok) throw new Error(String(res.status));
+        setErasing(null);
+        announce("Erased for good. There is no undo for this one.");
+        await load();
+      } catch {
+        announce("I could not erase that. Nothing has changed.");
+      }
+    },
+    [announce, del, load],
   );
 
   const revokePermission = useCallback(
@@ -439,10 +634,11 @@ export default function ButlerPage() {
         // `expiresAt` and the magnitude band — turning a capped, expiring
         // permission into an uncapped permanent one, and orphaning every
         // "done without asking" record attached to the old id.
-        offerUndo(`Took back "${permissionInWords(p)}"`, async () => {
-          await post(`/api/bridge/butler/permissions/${p.id}/restore`);
-          announce("Allowed again.");
-        });
+        offerUndo(
+          `Took back "${permissionInWords(p)}"`,
+          `/api/bridge/butler/permissions/${p.id}/restore`,
+          "Allowed again.",
+        );
         await load();
       } catch {
         announce("I could not take that back. Nothing has changed.");
@@ -635,7 +831,13 @@ export default function ButlerPage() {
       {/* Memory and Permissions are the two reference areas. Side by side when
           there is room, sequential in the DOM and stacked when there is not —
           the reading order never changes. */}
-      <div className="butlerReference">
+      <div
+        className={
+          memoryCompact && permissionsCompact
+            ? "butlerReference butlerReferencePaired"
+            : "butlerReference"
+        }
+      >
       {/* 3 ── What Butler knows ──────────────────────────────────────── */}
       <section className="butlerSection" aria-labelledby="butler-knows">
         <h2 id="butler-knows">What I know about you</h2>
@@ -669,11 +871,29 @@ export default function ButlerPage() {
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {facts.map((f) => (
               <li key={f.seq} className="butlerRow">
-                <p className="butlerRowText">{factInWords(f)}</p>
+                <p className="butlerRowText">
+                  {factInWords(f).about ? (
+                    <span className="butlerAbout">
+                      {factInWords(f).about}:{" "}
+                    </span>
+                  ) : null}
+                  {/* The separator is REAL text, not a CSS `::after`.
+                      Generated content is announced inconsistently, and
+                      without it the row reads as one run-on word — the
+                      accessible name became "Tasks default listpersonal". */}
+                  <span className="butlerTerm">{factInWords(f).term}</span>
+                  {" — "}
+                  <span className="butlerValue">{factInWords(f).value}</span>
+                </p>
                 {/* Source in WORDS, always visible — never a coloured dot and
                     never behind a tooltip. */}
                 <p className="butlerMeta">
-                  {sourceInWords(f)} Recorded {whenInWords(f.recordedAt)}.
+                  {/* Age answers "is this still true?"; the date answers "which
+                      day was that?". Usually only one of them is the question,
+                      so both are shown rather than one chosen. */}
+                  {sourceInWords(f)} Recorded{" "}
+                  {now > 0 ? `${ageInWords(f.recordedAt, now)}, on ` : ""}
+                  {whenInWords(f.recordedAt)}.
                 </p>
                 <div className="butlerActions">
                   {!f.provenance.validated && (
@@ -688,11 +908,88 @@ export default function ButlerPage() {
                   <button
                     type="button"
                     className="butlerButton"
+                    onClick={() =>
+                      setEditing({ seq: f.seq, text: f.object })
+                    }
+                  >
+                    Change this
+                  </button>
+                  <button
+                    type="button"
+                    className="butlerButton"
                     onClick={() => void removeFact(f)}
                   >
                     Forget this about me
                   </button>
+                  <button
+                    type="button"
+                    className="butlerButton"
+                    onClick={() => setErasing(f.seq)}
+                  >
+                    Erase this for good
+                  </button>
                 </div>
+
+                {editing?.seq === f.seq && (
+                  <div className="butlerPanel">
+                    <label className="butlerLabel" htmlFor={`edit-${f.seq}`}>
+                      What should {factInWords(f).term.toLowerCase()} be?
+                    </label>
+                    <input
+                      id={`edit-${f.seq}`}
+                      className="butlerInput"
+                      value={editing.text}
+                      onChange={(e) =>
+                        setEditing({ seq: f.seq, text: e.target.value })
+                      }
+                    />
+                    <div className="butlerActions">
+                      <button
+                        type="button"
+                        className="butlerButton butlerButtonPrimary"
+                        onClick={() => void correctFact(f, editing.text)}
+                      >
+                        Save this change
+                      </button>
+                      <button
+                        type="button"
+                        className="butlerButton"
+                        onClick={() => setEditing(null)}
+                      >
+                        Leave it as it was
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {erasing === f.seq && (
+                  /* The warning belongs BEFORE the act, which is the only
+                     place it can change anyone's mind. Forgetting is
+                     reversible and erasing is not, and the two buttons sit
+                     next to each other. */
+                  <div className="butlerPanel butlerPanelWarn">
+                    <p className="butlerRowText">
+                      This erases it for good. There is no undo, and I will
+                      keep only a note that something was erased.
+                    </p>
+                    <div className="butlerActions">
+                      <button
+                        type="button"
+                        className="butlerButton"
+                        onClick={() => void eraseFact(f)}
+                      >
+                        Yes, erase it for good
+                      </button>
+                      <button
+                        type="button"
+                        className="butlerButton butlerButtonPrimary"
+                        onClick={() => setErasing(null)}
+                      >
+                        Keep it
+                      </button>
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -771,7 +1068,20 @@ export default function ButlerPage() {
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {quarantine.map((f) => (
                 <li key={f.seq} className="butlerRow">
-                  <p className="butlerRowText">{factInWords(f)}</p>
+                  <p className="butlerRowText">
+                  {factInWords(f).about ? (
+                    <span className="butlerAbout">
+                      {factInWords(f).about}:{" "}
+                    </span>
+                  ) : null}
+                  {/* The separator is REAL text, not a CSS `::after`.
+                      Generated content is announced inconsistently, and
+                      without it the row reads as one run-on word — the
+                      accessible name became "Tasks default listpersonal". */}
+                  <span className="butlerTerm">{factInWords(f).term}</span>
+                  {" — "}
+                  <span className="butlerValue">{factInWords(f).value}</span>
+                </p>
                   <p className="butlerMeta">{sourceInWords(f)}</p>
                   <div className="butlerActions">
                     <button
@@ -812,11 +1122,7 @@ export default function ButlerPage() {
                   <button
                     type="button"
                     className="butlerButton"
-                    onClick={() => {
-                      void u.undo().then(() =>
-                        setUndos((prev) => prev.filter((x) => x.id !== u.id)),
-                      );
-                    }}
+                    onClick={() => void runUndo(u)}
                   >
                     Undo that
                   </button>
