@@ -50,7 +50,11 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- **`feat/butler-home-visual`** — Butler Home presentation only: visual hierarchy,
+  layout and two rendering defects found in the post-merge rendered pass. Touches
+  `dashboard/src/app/butler/{page.tsx,butler.css}` and its tests. **No data-model
+  change**, and fact phrasing (`You — predicate: object`) is deliberately LEFT for
+  `feat/butler-memory` — that is product semantics, not styling.
 
 
 ## Recently closed (informal log, prune periodically)
