@@ -55,6 +55,18 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-01 `docs/butler-product-reset` — Butler design freeze (#1567). Butler's substrate
+  is built (fact store with provenance tiers, quarantine, standing permissions with exercise
+  history, deterministic outcome grading); its screen is five equal-weight sections rendering
+  `subject — predicate: object`, and Simple mode redirects `/` to `/butler`, so it is a
+  non-technical user's front door rather than a settings page. New IA: Home → Memory →
+  Permissions → Activity, one job each. Records two distinctions a redesign would blur —
+  forget is reversible and erasure is not (erasure blanks the content and keeps a
+  content-free husk), and connector-derived facts are capped below the belief-origination
+  threshold. Replaces the frozen five-heading test with outcome assertions while keeping its
+  actual intent (DOM order is reading order). Follow-on branches will touch
+  `dashboard/src/app/butler/` — coordinate before starting one.
+
 - 2026-08-31 `feat/evidence-relationship-coverage` — Stage 1 of `patchwork evidence` becoming
   a coverage instrument. The flat "does this row carry a correlationId?" reading is WRONG on
   live data three ways: 6 approval requests (MCP client sessions) and 7 privacy-shadow rows
