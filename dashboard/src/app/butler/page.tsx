@@ -139,6 +139,21 @@ async function getJson(path: string): Promise<Record<string, unknown>> {
 /** The five surfaces Home reads. Named so a total blackout is countable. */
 const SOURCE_COUNT = 5;
 
+/**
+ * Which part of Butler a failed source belongs to, in the reader's words.
+ *
+ * Named rather than left implicit: "I could not check" beside nothing tells a
+ * reader that something is missing but not WHAT, so they cannot judge which of
+ * the sentences above them to trust.
+ */
+const SOURCE_IN_WORDS: Record<string, string> = {
+  facts: "What I know about you",
+  quarantine: "Things I noticed",
+  permissions: "What you have allowed",
+  exercises: "What I have done",
+  approvals: "Anything waiting for your decision",
+};
+
 // ─────────────────────────────────────────────────────────────── page
 
 export default function ButlerPage() {
@@ -201,7 +216,20 @@ export default function ButlerPage() {
         const body = r.value;
         // A bare array is the /approvals shape; everything else wraps.
         const raw = key === "" ? body : (body as Record<string, unknown>)[key];
-        return { state: "read", value: (Array.isArray(raw) ? raw : []) as T[] };
+        if (!Array.isArray(raw)) {
+          // A 200 whose shape drifted is NOT an empty result. Falling through
+          // to `[]` here would defeat the whole invariant one layer before the
+          // view-model gets to protect it — and it is the same failure the 502
+          // taught this file, wearing a success code: the response parsed, so
+          // nothing threw, and the page would say "nothing pending" about a
+          // payload it did not understand.
+          return {
+            state: "unavailable",
+            reason:
+              "I asked, but I could not make sense of the answer, so I cannot say.",
+          };
+        }
+        return { state: "read", value: raw as T[] };
       };
 
       const sources: ButlerSources = {
@@ -400,6 +428,19 @@ export default function ButlerPage() {
     [exercises],
   );
 
+  // A section earns its heading when it has something to show, when it could
+  // not be checked, or while the answer is still unknown. Otherwise the
+  // headline has already said it.
+  const unread = (k: "facts" | "quarantine" | "permissions" | "exercises") =>
+    home !== null && home.unavailable.some((u) => u.source === k);
+  const showAsk =
+    !ready || ask !== undefined || home?.attention.state === "unavailable";
+  const showDone = !ready || did.length > 0 || unread("exercises");
+  const showNoticed = !ready || quarantine.length > 0 || unread("quarantine");
+  const memoryCompact = ready && facts.length === 0 && !unread("facts");
+  const permissionsCompact =
+    ready && permissions.length === 0 && !unread("permissions");
+
   return (
     <main className="butler">
       {/* One polite live region for the whole page. Assertive would interrupt
@@ -415,7 +456,12 @@ export default function ButlerPage() {
           three arms are not a ladder: "nothing is waiting for you" and "I could
           not find out whether anything is waiting for you" differ by exactly
           the thing the page is used to decide. */}
-      <p className="butlerStatus" role="status">
+      {/* Deliberately NOT a live region. `role="status"` carries implicit
+          polite semantics, so this headline would have become a SECOND
+          announcer beside `butlerAnnounce` — approving something would be read
+          out twice, once as the confirmation and once as the changed headline.
+          The page keeps exactly one announcer, on purpose. */}
+      <p className="butlerStatus">
         {!home
           ? "Looking…"
           : home.status.kind === "needs-you"
@@ -449,7 +495,9 @@ export default function ButlerPage() {
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {home.unavailable.map((u) => (
               <li key={u.source} className="butlerRow">
-                <p className="butlerRowText">{u.reason}</p>
+                <p className="butlerRowText">
+                  {SOURCE_IN_WORDS[u.source]}: {u.reason}
+                </p>
                 <p className="butlerMeta">
                   This is not the same as there being nothing.
                 </p>
@@ -459,82 +507,102 @@ export default function ButlerPage() {
         </section>
       )}
 
+      {/* Sections a calm page does not render at all.
+
+          The reset document's second complaint: with nothing pending, Butler
+          was five different renderings of "nothing here", and an empty section
+          cost a reader as much attention as an urgent one. A heading that only
+          ever says "Nothing right now." is not reassurance, it is a thing to
+          read before you can conclude there was nothing to read. The headline
+          above already answers it.
+
+          They come back the moment there is something to show — or something
+          that could not be checked, which is not the same as calm. */}
       {/* 1 ── The ask ────────────────────────────────────────────────── */}
-      <section className="butlerSection" aria-labelledby="butler-ask">
-        <h2 id="butler-ask">Something I need to ask you</h2>
-        {ask ? (
-          <div className="butlerRow">
-            <p className="butlerRowText">{ask.summary ?? ask.toolName}</p>
-            {/* "and not ask again about this one" was a promise nothing kept:
-                there is no suppression store, so rejecting removes the queue
-                entry and the next run asks again. Saying what actually
-                happens is worth more than a reassurance that turns out to be
-                false the first time the recipe runs on a schedule. */}
-            <p className="butlerMeta">
-              If you say yes, I will do this now. If you say no, I will leave it
-              alone this time.
-            </p>
-            <div className="butlerActions">
-              <button
-                type="button"
-                className="butlerButton butlerButtonPrimary butlerButtonFull"
-                onClick={() => void answerAsk(ask, "approve")}
-              >
-                Yes, go ahead
-              </button>
-              <button
-                type="button"
-                className="butlerButton butlerButtonFull"
-                onClick={() => void answerAsk(ask, "reject")}
-              >
-                No, leave it alone
-              </button>
+      {showAsk && (
+        <section className="butlerSection" aria-labelledby="butler-ask">
+          <h2 id="butler-ask">Something I need to ask you</h2>
+          {ask ? (
+            <div className="butlerRow">
+              <p className="butlerRowText">{ask.summary ?? ask.toolName}</p>
+              {/* "and not ask again about this one" was a promise nothing kept:
+                  there is no suppression store, so rejecting removes the queue
+                  entry and the next run asks again. Saying what actually
+                  happens is worth more than a reassurance that turns out to be
+                  false the first time the recipe runs on a schedule. */}
+              <p className="butlerMeta">
+                If you say yes, I will do this now. If you say no, I will leave it
+                alone this time.
+              </p>
+              <div className="butlerActions">
+                <button
+                  type="button"
+                  className="butlerButton butlerButtonPrimary butlerButtonFull"
+                  onClick={() => void answerAsk(ask, "approve")}
+                >
+                  Yes, go ahead
+                </button>
+                <button
+                  type="button"
+                  className="butlerButton butlerButtonFull"
+                  onClick={() => void answerAsk(ask, "reject")}
+                >
+                  No, leave it alone
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <p className="butlerEmpty">
-            {!ready
-              ? "Looking…"
-              : home?.attention.state === "unavailable"
-                ? "I could not check this, so I cannot say."
-                : "Nothing right now."}
-          </p>
-        )}
-      </section>
+          ) : (
+            <p className="butlerEmpty">
+              {!ready
+                ? "Looking…"
+                : home?.attention.state === "unavailable"
+                  ? "I could not check this, so I cannot say."
+                  : "Nothing right now."}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* 2 ── What Butler has done ────────────────────────────────────────── */}
-      <section className="butlerSection" aria-labelledby="butler-did">
-        <h2 id="butler-did">What I did without asking</h2>
-        {/* The only evidence Butler has that it DID anything. A completed
-            errand, a refusal, an approval acted on — none of those are
-            recorded anywhere this page can read, so none of them are claimed
-            here. See docs/butler-product-reset.md. */}
-        {did.length === 0 ? (
-          <p className="butlerEmpty">
-            {!ready
-              ? "Looking…"
-              : home?.permissions.actionsWithoutAsking.state === "unavailable"
-                ? "I could not check this, so I cannot say what I have done."
-                : "Nothing — I have asked you about everything."}
+      {showDone && (
+        <section className="butlerSection" aria-labelledby="butler-did">
+          <h2 id="butler-did">
+            Things I did because you&rsquo;d already said I could
+          </h2>
+          <p className="butlerMeta">
+            This only covers permissions you gave me in advance.
           </p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {did.map((e) => (
-              <li key={`${e.permissionId}-${e.at}`} className="butlerRow">
-                <p className="butlerRowText">
-                  {e.toolName}
-                  {e.recipeName ? ` (${e.recipeName})` : ""}
-                </p>
-                {/* The receipt the standing permission owes the reader. */}
-                <p className="butlerMeta">
-                  I did this without asking, because you allowed it.{" "}
-                  {whenInWords(e.at)}.
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          {/* The only evidence Butler has that it DID anything. A completed
+              errand, a refusal, an approval acted on — none of those are
+              recorded anywhere this page can read, so none of them are claimed
+              here. See docs/butler-product-reset.md. */}
+          {did.length === 0 ? (
+            <p className="butlerEmpty">
+              {!ready
+                ? "Looking…"
+                : home?.permissions.actionsWithoutAsking.state === "unavailable"
+                  ? "I could not check this, so I cannot say what I have done."
+                  : "No actions are recorded here yet."}
+            </p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {did.map((e) => (
+                <li key={`${e.permissionId}-${e.at}`} className="butlerRow">
+                  <p className="butlerRowText">
+                    {e.toolName}
+                    {e.recipeName ? ` (${e.recipeName})` : ""}
+                  </p>
+                  {/* The receipt the standing permission owes the reader. */}
+                  <p className="butlerMeta">
+                    I did this without asking, because you allowed it.{" "}
+                    {whenInWords(e.at)}.
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* 3 ── What Butler knows ──────────────────────────────────────── */}
       <section className="butlerSection" aria-labelledby="butler-knows">
@@ -561,7 +629,9 @@ export default function ButlerPage() {
               ? "Looking…"
               : home?.memory.established.state === "unavailable"
                 ? "I could not check this, so I cannot say what I know."
-                : "Nothing yet."}
+                : memoryCompact
+                  ? "Nothing yet. Tell me something and I will remember it."
+                  : "Nothing yet."}
           </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -598,47 +668,49 @@ export default function ButlerPage() {
       </section>
 
       {/* 4 ── Seen, not acted on ─────────────────────────────────────── */}
-      <section className="butlerSection" aria-labelledby="butler-seen">
-        <h2 id="butler-seen">Things I noticed but have not used</h2>
-        <p className="butlerMeta">
-          I only guessed at these. I will not act on any of them unless you tell
-          me they are right.
-        </p>
-        {quarantine.length === 0 ? (
-          <p className="butlerEmpty">
-            {!ready
-              ? "Looking…"
-              : home?.memory.awaitingConfirmation.state === "unavailable"
-                ? "I could not check this, so I cannot say."
-                : "Nothing here."}
+      {showNoticed && (
+        <section className="butlerSection" aria-labelledby="butler-seen">
+          <h2 id="butler-seen">Things I noticed but have not used</h2>
+          <p className="butlerMeta">
+            I only guessed at these. I will not act on any of them unless you tell
+            me they are right.
           </p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {quarantine.map((f) => (
-              <li key={f.seq} className="butlerRow">
-                <p className="butlerRowText">{factInWords(f)}</p>
-                <p className="butlerMeta">{sourceInWords(f)}</p>
-                <div className="butlerActions">
-                  <button
-                    type="button"
-                    className="butlerButton butlerButtonPrimary"
-                    onClick={() => void promoteFact(f)}
-                  >
-                    Yes, remember this about me
-                  </button>
-                  <button
-                    type="button"
-                    className="butlerButton"
-                    onClick={() => void removeFact(f)}
-                  >
-                    No, forget you saw it
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          {quarantine.length === 0 ? (
+            <p className="butlerEmpty">
+              {!ready
+                ? "Looking…"
+                : home?.memory.awaitingConfirmation.state === "unavailable"
+                  ? "I could not check this, so I cannot say."
+                  : "Nothing here."}
+            </p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {quarantine.map((f) => (
+                <li key={f.seq} className="butlerRow">
+                  <p className="butlerRowText">{factInWords(f)}</p>
+                  <p className="butlerMeta">{sourceInWords(f)}</p>
+                  <div className="butlerActions">
+                    <button
+                      type="button"
+                      className="butlerButton butlerButtonPrimary"
+                      onClick={() => void promoteFact(f)}
+                    >
+                      Yes, remember this about me
+                    </button>
+                    <button
+                      type="button"
+                      className="butlerButton"
+                      onClick={() => void removeFact(f)}
+                    >
+                      No, forget you saw it
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* 5 ── Standing permissions ───────────────────────────────────── */}
       <section className="butlerSection" aria-labelledby="butler-allowed">
@@ -649,7 +721,9 @@ export default function ButlerPage() {
               ? "Looking…"
               : home?.permissions.active.state === "unavailable"
                 ? "I could not check what you have allowed, so I cannot say."
-                : "Nothing. I ask you about everything."}
+                : permissionsCompact
+                  ? "Nothing yet — I ask you about everything."
+                  : "Nothing. I ask you about everything."}
           </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>

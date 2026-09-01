@@ -56,7 +56,7 @@ const permission = (id: string, active: boolean): StandingPermission => ({
   id,
   grantedAt: 1_000,
   grantedBy: null,
-  scope: { domains: ["task"] },
+  scope: { domains: ["tasks"] },
   active,
   ...(active ? {} : { revokedAt: 2_000 }),
 });

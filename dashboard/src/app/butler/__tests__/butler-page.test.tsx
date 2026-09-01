@@ -349,6 +349,72 @@ describe("honesty when the bridge is unreachable", () => {
   });
 });
 
+/** Every source healthy and empty — the genuine all-clear. */
+function stubAllEmpty() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve(
+            String(url).includes("approvals")
+              ? []
+              : { facts: [], permissions: [], exercises: [] },
+          ),
+      }),
+    ),
+  );
+}
+
+/** One named endpoint fails; the rest answer normally and emptily. */
+function stubWithFailure(fragment: string, status: number) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      if (String(url).includes(fragment)) {
+        return Promise.resolve({
+          ok: false,
+          status,
+          json: () => Promise.resolve({ error: "no" }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve(
+            String(url).includes("approvals")
+              ? []
+              : { facts: [], permissions: [], exercises: [] },
+          ),
+      });
+    }),
+  );
+}
+
+/** A 200 whose body parses but is not the shape the client expects. */
+function stubMalformed(fragment: string, body: unknown) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve(
+            String(url).includes(fragment)
+              ? body
+              : String(url).includes("approvals")
+                ? []
+                : { facts: [], permissions: [], exercises: [] },
+          ),
+      }),
+    ),
+  );
+}
+
 describe("structure", () => {
   /**
    * This replaced an assertion listing five literal headings in one fixed
@@ -390,45 +456,72 @@ describe("structure", () => {
   it("puts an unreadable source ahead of what it would undermine", async () => {
     // A reader who has taken in three sections must not discover afterwards
     // that a fourth was never consulted.
+    //
+    // The first version of this test never made a source fail and wrapped its
+    // assertion in `if (unchecked >= 0)`, so it passed by the heading being
+    // ABSENT — a guard that could not fail. One endpoint genuinely fails here.
+    stubWithFailure("permissions", 501);
     const { container } = render(<ButlerPage />);
-    await screen.findByText("Push the release branch");
-    const headings = Array.from(container.querySelectorAll("h2")).map((h) =>
-      (h.textContent ?? "").trim(),
-    );
-    const unchecked = headings.findIndex((h) => /could not check/i.test(h));
-    if (unchecked >= 0) {
-      const ask = headings.findIndex((h) => /need to ask you/i.test(h));
-      expect(unchecked).toBeLessThan(ask);
-    }
+    const headings = () =>
+      Array.from(container.querySelectorAll("h2")).map((h) =>
+        (h.textContent ?? "").trim(),
+      );
+    await screen.findAllByText(/could not make sense|cannot check/i);
+
+    const hs = headings();
+    const unchecked = hs.findIndex((h) => /could not check/i.test(h));
+    expect(unchecked, "the unavailable section must be rendered").toBeGreaterThanOrEqual(0);
+    const allowed = hs.findIndex((h) => /you have allowed/i.test(h));
+    expect(allowed).toBeGreaterThanOrEqual(0);
+    expect(unchecked).toBeLessThan(allowed);
+  });
+
+  it("names which part of Butler could not be checked", async () => {
+    // "I could not check" beside nothing tells a reader something is missing
+    // but not WHAT, so they cannot judge which sentences above to trust.
+    stubWithFailure("permissions", 501);
+    render(<ButlerPage />);
+    const row = await screen.findByText(/What you have allowed:/i);
+    expect(row).toBeTruthy();
   });
 
   it("does not render one empty section per source when all is well", async () => {
     // The all-clear used to cost as much attention as an urgent page: five
     // headings, each with its own rendering of "nothing here".
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string) =>
-        Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () =>
-            Promise.resolve(
-              String(url).includes("approvals")
-                ? []
-                : { facts: [], permissions: [], exercises: [] },
-            ),
-        }),
-      ),
-    );
+    //
+    // An earlier version of THIS test asserted only that no apology and no
+    // alert appeared, and passed while all five empty sections were still on
+    // the page — a test named for a guarantee it never checked. It now counts
+    // the headings.
+    stubAllEmpty();
     const { container } = render(<ButlerPage />);
     await screen.findByText(/Nothing is waiting for your decision/i);
-    // Nothing could not be checked, so no apology is on the page at all.
+
+    const headings = Array.from(container.querySelectorAll("h2")).map((h) =>
+      (h.textContent ?? "").trim(),
+    );
+    // Sections whose only content would be "nothing here" are gone entirely.
+    expect(headings.join(" | ")).not.toMatch(/need to ask you/i);
+    expect(headings.join(" | ")).not.toMatch(/already said I could/i);
+    expect(headings.join(" | ")).not.toMatch(/noticed/i);
+    // What survives is the reference material a reader may still want.
+    expect(headings.length).toBeLessThanOrEqual(2);
+
     expect(
-      Array.from(container.querySelectorAll("h2")).filter((h) =>
-        /could not check/i.test(h.textContent ?? ""),
-      ),
+      headings.filter((h) => /could not check/i.test(h)),
     ).toHaveLength(0);
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("brings a section back the moment it has something to show", async () => {
+    // Compression must not become suppression: the sections above are absent
+    // because they are empty, not because they were removed.
+    const { container } = render(<ButlerPage />); // default stub has an ask
+    await screen.findByText("Push the release branch");
+    const headings = Array.from(container.querySelectorAll("h2")).map((h) =>
+      (h.textContent ?? "").trim(),
+    );
+    expect(headings.join(" | ")).toMatch(/need to ask you/i);
   });
 
   it("every section is labelled by its own heading", async () => {
@@ -438,5 +531,56 @@ describe("structure", () => {
       expect(id).toBeTruthy();
       expect(container.querySelector(`#${id}`)).toBeTruthy();
     }
+  });
+});
+
+describe("a wrong shape is not an empty result", () => {
+  it("refuses a 200 whose wrapped array is missing", async () => {
+    // The 502 lesson wearing a success code: the response parsed, nothing
+    // threw, and the page would have said "nothing allowed" about a payload it
+    // did not understand.
+    stubMalformed("permissions", { permissions: { oops: true } });
+    render(<ButlerPage />);
+    // Both the named unavailable row and the affected section say so, which
+    // is the point: a reader meets it wherever they entered the page.
+    expect(
+      (await screen.findAllByText(/could not make sense of the answer/i)).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("refuses a bare /approvals body that is not an array", async () => {
+    // /approvals returns a BARE array. A wrapper appearing here would be a
+    // server change, not an empty queue.
+    stubMalformed("approvals", { pending: [] });
+    render(<ButlerPage />);
+    expect(
+      await screen.findByText(
+        /could not find out whether anything is waiting/i,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not report zero pending when the shape drifted", async () => {
+    stubMalformed("approvals", { pending: [] });
+    render(<ButlerPage />);
+    await screen.findByText(/could not find out whether anything is waiting/i);
+    expect(screen.queryByText(/Nothing is waiting for your decision/i)).toBeNull();
+  });
+});
+
+describe("still exactly one announcer", () => {
+  it("counts implicit live regions, not only aria-live ones", async () => {
+    // `role="status"` carries implicit polite live semantics, so a visible
+    // headline marked that way becomes a SECOND announcer — approving
+    // something would be read out twice. A query for [aria-live="polite"]
+    // alone cannot see it, which is how it was nearly shipped.
+    const { container } = render(<ButlerPage />);
+    await screen.findByText("Push the release branch");
+    const explicit = container.querySelectorAll('[aria-live="polite"]');
+    const implicit = container.querySelectorAll(
+      '[role="status"], [role="log"], [role="alert"]',
+    );
+    const all = new Set<Element>([...explicit, ...implicit]);
+    expect(all.size).toBe(1);
   });
 });
