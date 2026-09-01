@@ -45,7 +45,15 @@ export interface ButlerFact {
   object: string;
   recordedAt: number;
   trust: number;
-  provenance: { channel: string; source?: string; validated: boolean };
+  provenance: {
+    /** `user_chat` · `user_confirmed` · `recipe_agent` · `connector` · `import`. */
+    channel: string;
+    /** Connector slug when `channel === "connector"`. */
+    source?: string;
+    /** The channel's trust ceiling AS STORED, not recomputed. */
+    tier: number;
+    validated: boolean;
+  };
 }
 
 export interface StandingPermission {
@@ -175,12 +183,17 @@ export interface PermissionSummary {
    */
   active: SourceState<number>;
   /**
-   * Times a permission was actually used.
+   * Times Butler acted under a standing permission — ALL TIME, not a window.
+   *
+   * Not `recentExercises`: `/butler/permissions/exercises` returns the whole
+   * log, and a name promising recency would have a renderer write "3 recent
+   * actions" over a count spanning months. The endpoint would have to grow a
+   * window before that sentence became true.
    *
    * Distinct from `active` on purpose: holding a permission and having acted on
    * it are different facts, and only the second is something Butler did.
    */
-  recentExercises: SourceState<number>;
+  actionsWithoutAsking: SourceState<number>;
 }
 
 export interface ButlerHomeState {
@@ -329,7 +342,7 @@ export function mapButlerHome(sources: ButlerSources): ButlerHomeState {
               value: sources.permissions.value.filter((p) => p.active).length,
             }
           : { state: "unavailable", reason: sources.permissions.reason },
-      recentExercises: countOf(sources.exercises),
+      actionsWithoutAsking: countOf(sources.exercises),
     },
     unavailable,
   };

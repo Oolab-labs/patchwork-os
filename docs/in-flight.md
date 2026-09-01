@@ -50,14 +50,21 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- **`feat/butler-view-model`** (#1568) — Butler Home view-model: types + pure
-  mapping over the five existing `/butler/*` and `/approvals` surfaces. Touches
-  only `dashboard/src/app/butler/homeState.ts` and its test; no UI, no routes,
-  no runtime. `feat/butler-home` follows and WILL touch `page.tsx` — coordinate
-  here first. Design freeze: `docs/butler-product-reset.md`.
+_Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-09-01 `feat/butler-view-model` — Butler Home view-model (#1568). Types + a pure
+  mapping over the five surfaces the page already reads. Two findings rather than a
+  refactor: `page.tsx` loads all five with `Promise.all`, so one unreadable source discards
+  four healthy ones and five independent availabilities collapse to one boolean; and the
+  five sources cannot support an activity TIMELINE at all — only permission exercises are
+  evidence of Butler doing something, facts/quarantine are knowledge events, and nothing
+  records a completed errand, a refusal, or an approval granted and then acted on. So the
+  model defines three claim kinds, not a feed, and a partial timeline is `unavailable`
+  rather than a shorter one. Closing invariant: a genuine all-clear and a total blackout
+  share no user-facing state. `feat/butler-home` follows and WILL touch `page.tsx`.
 
 - 2026-09-01 `docs/butler-product-reset` — Butler design freeze (#1567). Butler's substrate
   is built (fact store with provenance tiers, quarantine, standing permissions with exercise

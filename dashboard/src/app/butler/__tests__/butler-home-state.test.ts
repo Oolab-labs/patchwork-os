@@ -26,14 +26,30 @@ import {
  * waiting to happen rather than hypotheticals.
  */
 
+/**
+ * A fact as the store actually writes one.
+ *
+ * `trust` is a FRACTION on 0..1, not a tier index — `user_chat` sits at 1.0 and
+ * `connector` at 0.3, strictly below the 0.6 origination threshold. An earlier
+ * draft of this fixture used `trust: 3`, a value the store cannot produce, and
+ * a fixture carrying an impossible value teaches every later test built on it
+ * the wrong shape.
+ */
 const fact = (seq: number, at: number): ButlerFact => ({
   seq,
   subject: "user",
-  predicate: "prefers.tea",
-  object: "strong",
+  predicate: "tasks.default_list",
+  object: "personal",
   recordedAt: at,
-  trust: 3,
-  provenance: { channel: "user", validated: true },
+  trust: 1,
+  provenance: { channel: "user_chat", tier: 1, validated: true },
+});
+
+/** What quarantine holds: connector-derived, capped below origination. */
+const observed = (seq: number, at: number): ButlerFact => ({
+  ...fact(seq, at),
+  trust: 0.3,
+  provenance: { channel: "connector", source: "gmail", tier: 0.3, validated: false },
 });
 
 const permission = (id: string, active: boolean): StandingPermission => ({
@@ -47,13 +63,13 @@ const permission = (id: string, active: boolean): StandingPermission => ({
 const exercise = (at: number): PermissionExercise => ({
   permissionId: "perm-1",
   at,
-  toolName: "tasks.create",
+  toolName: "todoist.create_task",
   classKey: "task:compensable:low",
 });
 
 const approval = (callId: string): PendingApproval => ({
   callId,
-  toolName: "tasks.create",
+  toolName: "todoist.create_task",
   tier: "low",
   requestedAt: 5_000,
   summary: "Add an item to your list",
@@ -119,7 +135,7 @@ describe("established memory vs low-trust observation", () => {
     const s = mapButlerHome({
       ...allClear(),
       facts: read([fact(1, 10), fact(2, 20)]),
-      quarantine: read([fact(3, 30)]),
+      quarantine: read([observed(3, 30)]),
     });
     expect(s.memory.established).toEqual({ state: "read", value: 2 });
     expect(s.memory.awaitingConfirmation).toEqual({ state: "read", value: 1 });
@@ -184,7 +200,7 @@ describe("did something without asking vs merely has permission to", () => {
       {
         kind: "acted-without-asking",
         at: 99,
-        toolName: "tasks.create",
+        toolName: "todoist.create_task",
         permissionId: "perm-1",
       },
     ]);
@@ -198,7 +214,7 @@ describe("did something without asking vs merely has permission to", () => {
       exercises: read([exercise(1), exercise(2), exercise(3), exercise(4)]),
     });
     expect(s.permissions.active).toEqual({ state: "read", value: 1 });
-    expect(s.permissions.recentExercises).toEqual({ state: "read", value: 4 });
+    expect(s.permissions.actionsWithoutAsking).toEqual({ state: "read", value: 4 });
   });
 });
 
@@ -207,7 +223,7 @@ describe("activity claims only what these sources support", () => {
     const s = mapButlerHome({
       ...allClear(),
       facts: read([fact(1, 100)]),
-      quarantine: read([fact(2, 300)]),
+      quarantine: read([observed(2, 300)]),
       exercises: read([exercise(200)]),
     });
     if (s.activity.state !== "read") throw new Error("expected read");
