@@ -43,11 +43,24 @@ Mature multi-user Butler isolation as a Butler concern.
 
 ### Two details the redesign must not blur
 
-**Forget and erase are different operations, and only one is reversible.**
-`forget` writes a tombstone; the original row is never removed, which is exactly
-what makes `restore` able to put the belief back *as it was*. `?erase=true` is
-the GDPR path and destroys the row. A Memory screen offering one button for both
-would offer an undo it cannot always honour.
+**Forget is reversible; erasure is not.** `forget` writes a tombstone and leaves
+the original content intact, which is exactly what makes `restore` able to put
+the belief back *as it was*. Erasure (`?erase=true`) irreversibly destroys the
+stored personal content — `subject`, `predicate` and `object` are blanked —
+while retaining a content-free husk carrying `erased` and `erasedAt`, so the
+record that an erasure occurred survives the content it destroyed.
+
+The distinction is a UI requirement, not a footnote:
+
+```text
+Forget this            Erase permanently
+→ reversible           → personal content destroyed
+→ Undo available       → no Undo
+                       → the confirmation must say so BEFORE it happens
+```
+
+A Memory screen with one destructive button would offer an undo it cannot always
+honour.
 
 **Connector-derived information is capped below the threshold at which Butler
 may originate a belief.** That ceiling is structural, not UI copy. Any summary
@@ -158,10 +171,21 @@ Stop before semantic memory, automatic connector learning, or persona theatrics.
 
 ### Ordering constraint against the open observation window
 
-Steps 1–5 are documentation and `dashboard/` only and cannot disturb it. **Step 6
-can**: a real interaction contract means runtime changes, gate decisions and
-possibly approvals. Hold it until the window closes on its own events — a
-governed worker run, a restart, and a natural `runs.jsonl` rotation.
+The distinction that matters here is between **changing runtime code** and
+**causing live runtime activity**. Only the first is a code-review question; the
+second is what the window is measuring.
+
+- **Steps 1–4** are docs and `dashboard/` work and do not alter runtime
+  behaviour.
+- **Step 5** may also be implemented without changing the runtime, but it ends in
+  "one connector and one real governed errand" — so its live acceptance must
+  either run in an isolated test environment or wait. Accepting it against the
+  live install would manufacture exactly the governed-run and approval evidence
+  this project has said not to manufacture.
+- **Step 6** changes the runtime interaction contract and waits entirely.
+
+The window closes on its own events: a governed worker run, a restart, and a
+natural `runs.jsonl` rotation.
 
 ## The bar
 
