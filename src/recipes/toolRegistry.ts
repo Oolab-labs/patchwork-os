@@ -76,6 +76,8 @@ export interface ToolContext {
 export type ToolExecute = (context: ToolContext) => Promise<string | null>;
 
 export interface RegisteredTool extends ToolMetadata {
+  /** Set by `registerPluginTools`: tier is a capped default, not a declaration. */
+  fromPlugin?: boolean;
   execute: ToolExecute;
 }
 
@@ -285,6 +287,9 @@ export function registerPluginTools(
         outputSchema: {},
         riskDefault: isWrite ? "medium" : "low",
         isWrite,
+        // Marker for governance: a plugin tool's tier is a capped DEFAULT,
+        // not a declaration, so the governed profile gates its writes.
+        fromPlugin: true,
         execute,
       });
       registered++;

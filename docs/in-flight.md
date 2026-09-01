@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-01 `feat/governed-profile` — Phase 0 governed runtime: `profile: governed` config + `src/governance/*` (profile resolver, effective policy, kill-switch policy), `patchwork policy explain`, `patchwork doctor` governance section, automated-trigger gating, universal kill switch, subprocess containment, recipe `servers:` allowlist, value-based secret redaction, unified SSRF guard, untrusted-content envelope, adversarial acceptance suite. Touches recipeOrchestration, both runners, transport, drivers, pluginLoader, stepObservation, http tool. — Claude Code (phase0 worktree)
+
 
 ## Recently closed (informal log, prune periodically)
 

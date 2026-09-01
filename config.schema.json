@@ -38,6 +38,26 @@
       "additionalProperties": false
     },
     "recipesDir": { "type": "string" },
+    "profile": { "type": "string", "enum": ["governed", "compat"] },
+    "plugins": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "spec": { "type": "string" },
+              "version": { "type": "string" },
+              "integrity": { "type": "string" }
+            },
+            "required": ["spec"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "approvalGate": { "type": "string", "enum": ["off", "high", "all"] },
     "approvalTimeouts": {
       "type": "object",
