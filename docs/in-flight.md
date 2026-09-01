@@ -55,6 +55,17 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-01 `feat/butler-memory` — Butler Memory. Facts read as a labelled value
+  (`Tasks default list — personal`) rather than `subject — predicate: object`; **no
+  sentence templates**, because predicates are operator-authored and unbounded and a
+  structural rule produces "Your diet.avoid is nuts". Age beside the date. Correct via
+  PATCH (append, keeps provenance — re-creating would stamp `user_chat` and promote a
+  merely-READ belief). **Erase is a different operation from Forget, not a stronger one**:
+  it blanks the content and keeps a husk, so no undo is offered and the warning says so
+  BEFORE it happens. Undo now survives a reload — the offer held a closure, which a
+  refresh destroyed, and refreshing is what somebody does when a page surprises them;
+  capped at 20, and a stale offer is withdrawn with its reason.
+
 - 2026-09-01 `feat/butler-home-visual` — Butler Home presentation. Headline hierarchy,
   Memory/Permissions as a pair on wide screens, tool ids in words from a verified map with
   the raw id as the honest fallback, and the two duplicate-empty-message defects. Found by
