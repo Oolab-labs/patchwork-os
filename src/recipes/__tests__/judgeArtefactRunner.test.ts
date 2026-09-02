@@ -15,7 +15,7 @@
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetActiveProfileForTesting,
   resolveProfile,
@@ -136,21 +136,20 @@ describe("secret redaction is not bypassed by the artefact path", () => {
     } as unknown as YamlRecipe;
   }
 
+  afterEach(() => vi.unstubAllEnvs());
+
   it("compat: the secret never reaches the judge prompt", async () => {
     setActiveProfile(resolveProfile({ profile: "compat" }));
-    process.env.TEST_JUDGE_SECRET = SECRET;
-    try {
-      const { deps, prompts } = capturing("unused");
-      await runYamlRecipe(secretRecipe(), deps);
-      // Not vacuous: the judge prompt must actually have been built, with an
-      // artefact block in it. Without this the loop below passes on an empty
-      // array — a test that cannot fail.
-      const p = judgePrompt(prompts);
-      expect(p).toContain("<artefact>");
-      for (const q of prompts) expect(q).not.toContain(SECRET);
-    } finally {
-      process.env.TEST_JUDGE_SECRET = undefined;
-    }
+    vi.stubEnv("TEST_JUDGE_SECRET", SECRET);
+    const { deps, prompts } = capturing("unused");
+    await runYamlRecipe(secretRecipe(), deps);
+    // Not vacuous: the judge prompt must actually have been built, with an
+    // artefact block in it. Without this the loop below passes on an empty
+    // array — a test that cannot fail, which is what it was when first
+    // written (the `context:` shape was wrong and no judge step ran).
+    const p = judgePrompt(prompts);
+    expect(p).toContain("<artefact>");
+    for (const q of prompts) expect(q).not.toContain(SECRET);
   });
 });
 
