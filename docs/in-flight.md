@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `feat/chain-outcome-log` — ADR-0027 slice: route `outcome-log.jsonl` through `appendChained`, introduce `OUTCOME_LOG_RV = 1`, skip marker rows ahead of the unkeyable accounting. Touches `src/workers/outcomeStore.ts` and its tests only. — Claude Code (chain-outcome-log worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
