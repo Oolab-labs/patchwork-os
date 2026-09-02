@@ -33,14 +33,24 @@
  * mark every historical pull request as human-authored — the same
  * never-backfill rule `workerGateDecisionLog` states in its own header.
  *
- * Rows carry `rv: 1` so a later schema change is distinguishable from an old
+ * Rows carry `rv` so a later schema change is distinguishable from an old
  * row, for the same reason the gate ledger does.
  */
 
-/** Schema version. A reader must be able to tell an old row from a new one. */
 import * as nodeFs from "node:fs";
+import { appendChained, isChainMarker } from "../ledgerChain.js";
 
-export const PR_OBSERVATION_RV = 1;
+/**
+ * Record level (ADR-0025's `rv` protocol; ADR-0027 for this ledger).
+ *
+ * 1: rows appended directly, with no integrity fields.
+ * 2: every row is written through `appendChained` and carries `iseq` and
+ * `prev`, stamped by the writer from the file's tail under the lock. At
+ * `rv >= 2` their absence is a WRITER DEFECT. Rows at `rv: 1` predate the
+ * chain; they are never re-stamped, and the `chain-start` marker commits to
+ * them as a block. Never default it on read.
+ */
+export const PR_OBSERVATION_RV = 2;
 
 export type PrState = "OPEN" | "MERGED" | "CLOSED";
 
@@ -356,10 +366,40 @@ export function readObservations(file: string): PrObservation[] {
   for (const line of nodeFs.readFileSync(file, "utf-8").split("\n")) {
     if (line.trim() === "") continue;
     try {
-      out.push(JSON.parse(line) as PrObservation);
+      const parsed: unknown = JSON.parse(line);
+      // ADR-0027 marker rows share the file with the data and are metadata,
+      // never an observation. Skipped by KIND before anything counts them:
+      // this reader casts whatever it parsed, so a marker that reached
+      // `summarise` or `dedupeAgainst` would appear as a phantom pull request
+      // ("undefined#undefined") in rows, distinctPrs, rosterlessRows, byState
+      // and the weekly sweep — a fabricated row in an evidence file.
+      if (isChainMarker(parsed)) continue;
+      out.push(parsed as PrObservation);
     } catch {
       // skipped, never repaired
     }
   }
   return out;
+}
+
+/**
+ * Append one observation through the ADR-0027 chain primitive.
+ *
+ * Deliberately NOT never-throwing, unlike the mid-flight run-step ledger. A
+ * failed append is counted in the `.write_failed` sidecar by the primitive and
+ * sealed into the next row that lands; the error then propagates so
+ * `pr-outcomes collect` exits 1 loudly, the same way it already does on a
+ * failed GitHub query. A collector that reported success having recorded
+ * nothing would leave a gap indistinguishable from a quiet week.
+ *
+ * No rotation: this ledger is the history, and history that trims itself is
+ * not history.
+ */
+export function appendObservation(file: string, obs: PrObservation): void {
+  appendChained(
+    file,
+    // Stamped AFTER the caller's fields so a caller cannot claim a level.
+    { ...obs, rv: PR_OBSERVATION_RV } as unknown as Record<string, unknown>,
+    { mode: 0o600 },
+  );
 }

@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   dedupeAgainst,
   formatLedgerSummary,
+  PR_OBSERVATION_RV,
   type PrObservation,
   type RawGhPr,
   summarise,
@@ -35,7 +36,7 @@ describe("toObservation", () => {
   it("keeps the raw fields a later pass will need", () => {
     const o = toObservation(raw(), { repo: "o/r", observedAt: AT });
     expect(o).toMatchObject({
-      rv: 1,
+      rv: PR_OBSERVATION_RV,
       repo: "o/r",
       number: 1543,
       state: "MERGED",

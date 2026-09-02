@@ -5056,7 +5056,6 @@ if (process.argv[2] === "pr-outcomes") {
     process.exit(0);
   }
   (async () => {
-    const { appendFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const { patchworkPath } = await import("./patchworkHome.js");
     const { execFileSync } = await import("node:child_process");
@@ -5066,6 +5065,7 @@ if (process.argv[2] === "pr-outcomes") {
       readObservations,
       summarise,
       formatLedgerSummary,
+      appendObservation,
     } = await import("./maintenance/prOutcomeLedger.js");
     type Obs = import("./maintenance/prOutcomeLedger.js").PrObservation;
 
@@ -5191,8 +5191,10 @@ if (process.argv[2] === "pr-outcomes") {
         existing,
         incoming,
       );
-      for (const o of toAppend)
-        appendFileSync(file, `${JSON.stringify(o)}\n`, { mode: 0o600 });
+      // Through the ledger's own writer (ADR-0027): locked, chained, and a
+      // failed append counted then sealed. It throws rather than swallowing,
+      // so a collection that recorded nothing exits 1 loudly below.
+      for (const o of toAppend) appendObservation(file, o);
       process.stdout.write(
         `[pr-outcomes] ${repo}: ${incoming.length} pull request(s) queried\n` +
           `  ${toAppend.length} appended (${firstSighting} seen for the first time)\n` +
