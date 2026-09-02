@@ -61,10 +61,16 @@ afterEach(() => {
 });
 
 function rowsOf(file: string): Array<Record<string, unknown>> {
-  return readFileSync(path.join(dir, file), "utf8")
-    .split("\n")
-    .filter((l) => l.trim())
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  return (
+    readFileSync(path.join(dir, file), "utf8")
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      // ADR-0027 marker rows (`chain-start`, `rotation`) live in the same file
+      // and carry `kind` and no data fields. They are not rows of the record
+      // type and are skipped here the way every production loader skips them.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+  );
 }
 
 /**
@@ -224,6 +230,9 @@ describe("boundary receipt — every field survives the READ", () => {
     seq: 1,
     at: 1756600000000,
     rv: 1,
+    // ADR-0027 integrity fields — carried through the reader verbatim.
+    iseq: 1,
+    prev: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     correlationId: "yaml:sentinel:1756600000002",
     decision: "DENY",
     classification: "personal",

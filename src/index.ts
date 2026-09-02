@@ -5298,7 +5298,11 @@ if (process.argv[2] === "evidence") {
   const args = process.argv.slice(3);
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
-      "Usage: patchwork evidence [--dir <path>] [--json]\n\n" +
+      "Usage: patchwork evidence [verify] [--dir <path>] [--json]\n\n" +
+        "  verify        is every spine ledger internally intact? (ADR-0027) Checks the\n" +
+        "                per-row hash chain, the legacy-prefix commitment, the head sidecar\n" +
+        "                and unsealed write failures. Exits 1 on any break — the only form\n" +
+        "                of this verb that gates.\n\n" +
         "How much of the evidence spine can actually be joined: per ledger, how many\n" +
         "rows carry a run id (correlationId) out of how many rows, and how many runs\n" +
         "appear in more than one ledger.\n\n" +
@@ -5314,6 +5318,22 @@ if (process.argv[2] === "evidence") {
     try {
       const dirIdx = args.indexOf("--dir");
       const dir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
+      if (args[0] === "verify") {
+        // ADR-0027. Unlike the bare verb this one GATES: exit 1 on any chain
+        // break, legacy mismatch, shortened file or unsealed write failure,
+        // with `ok: false` in the JSON so a cron job can act on it. Still
+        // prints positions and counts only, never a value.
+        const { verifyEvidenceChains, formatEvidenceVerify } = await import(
+          "./evidenceVerify.js"
+        );
+        const r = dir ? verifyEvidenceChains(dir) : verifyEvidenceChains();
+        process.stdout.write(
+          args.includes("--json")
+            ? `${JSON.stringify(r, null, 2)}\n`
+            : formatEvidenceVerify(r),
+        );
+        process.exit(r.ok ? 0 : 1);
+      }
       const { evidenceCoverage, formatEvidenceCoverage } = await import(
         "./evidenceCoverage.js"
       );

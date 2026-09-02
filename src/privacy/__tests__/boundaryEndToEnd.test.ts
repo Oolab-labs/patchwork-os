@@ -94,10 +94,14 @@ function runWith(dataPolicy: unknown, claudeFn: ReturnType<typeof vi.fn>) {
 
 function receipts(): Array<Record<string, unknown>> {
   try {
-    return readFileSync(path.join(home, "boundary_receipts.jsonl"), "utf-8")
-      .split("\n")
-      .filter(Boolean)
-      .map((l) => JSON.parse(l));
+    return (
+      readFileSync(path.join(home, "boundary_receipts.jsonl"), "utf-8")
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+        // ADR-0027 marker rows share the file and are not data rows.
+        .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+    );
   } catch {
     return [];
   }
