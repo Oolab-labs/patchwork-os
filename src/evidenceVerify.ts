@@ -41,6 +41,7 @@ export interface EvidenceVerification {
 export const VERIFIED_LEDGERS: ReadonlyArray<{ key: string; file: string }> = [
   ...SPINE_LEDGERS,
   { key: "butler outcome shadow", file: "butler_outcome_shadow.jsonl" },
+  { key: "run steps", file: "run_steps.jsonl" },
 ];
 
 export function verifyEvidenceChains(
