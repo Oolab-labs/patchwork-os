@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `feat/chain-run-steps` — ADR-0027 wave 2, PR 2 of 3: chain `run_steps.jsonl` through `appendChained` (never-throwing writer kept; the 2 MB halving trim becomes ADR-0027 rotation with an explicit marker), new writer-owned `rv: 1`, `loadStepEvidence` skips markers by kind, ledger enters `VERIFIED_LEDGERS` only. Touches src/runStepLedger.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-run-steps worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
