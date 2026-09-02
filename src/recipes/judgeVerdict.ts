@@ -32,6 +32,7 @@
  * yamlRunner.ts; this parser is unchanged and still never gates.
  */
 
+import { redactKnownSecrets } from "../governance/secretValues.js";
 import { wrapUntrusted } from "../governance/untrustedContent.js";
 
 export type JudgeVerdictKind = "approve" | "request_changes" | "unparseable";
@@ -102,6 +103,10 @@ export interface JudgeArtefactOptions {
  * interpolated raw: the judge's own prompt went through `renderAgentPrompt`
  * (envelope, provenance, secret redaction) while the thing it was asked to
  * review went through none of it, because this block reads `ctx` directly.
+ *
+ * Order, and each step is load-bearing:
+ *   serialise → secret-VALUE redaction (always) → artefact-tag neutralisation
+ *   (always) → untrusted envelope (governed only) → `<artefact>` container.
  */
 export function buildJudgeArtefactBlock(
   artefact: unknown,
@@ -126,6 +131,17 @@ export function buildJudgeArtefactBlock(
       body = "[unserialisable artefact]";
     }
   }
+  // VALUE-based redaction, and it belongs HERE rather than at the call site.
+  // The first-pass artefact comes from `ctx` and is redacted by KEY before it
+  // arrives; the re-judge artefact is the revised draft, passed explicitly, so
+  // it never touches that map. A model that echoes a secret back — quoting a
+  // value it was shown, or an error string carrying a token — put it straight
+  // into the judge prompt. `registerEnvBlock` already registers declared env
+  // values at run start for exactly this case.
+  //
+  // In the builder, so it covers every caller including future ones, rather
+  // than as another runner branch that the next caller can forget.
+  body = redactKnownSecrets(body);
   body = neutraliseArtefactClosingTag(body);
   if (opts?.envelope !== undefined) {
     // `wrapUntrusted` neutralises its OWN closing tag, so an artefact cannot

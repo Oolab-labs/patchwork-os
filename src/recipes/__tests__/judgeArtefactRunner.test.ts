@@ -215,3 +215,74 @@ describe("the RE-JUDGE inside the refine loop gets the same treatment", () => {
     expect(reJudge).toContain(`<${UNTRUSTED_TAG}`);
   });
 });
+
+describe("secret VALUES cannot ride the re-judge path", () => {
+  const SECRET = "sk-live-REVISED-LEAK-0002";
+
+  /**
+   * The first-pass artefact comes from `ctx` and is redacted by key. The
+   * RE-JUDGE artefact is `pendingRevised` — passed explicitly, so it never
+   * touches the key-based map. If a revision echoes a secret back (a model
+   * quoting a value it was shown, an error string carrying a token), it went
+   * into the judge prompt in clear text.
+   *
+   * `registerEnvBlock` already registers declared env values at run start for
+   * exactly this case, so the fix is value-based redaction in the builder —
+   * covering every caller, not just this one branch.
+   */
+  it("a revised draft that echoes a registered secret is redacted", async () => {
+    setActiveProfile(resolveProfile({ profile: "compat" }));
+    vi.stubEnv("TEST_REVISED_SECRET", SECRET);
+    const prompts: string[] = [];
+    const deps: RunnerDeps = {
+      now: () => new Date("2026-09-02T08:00:00Z"),
+      logDir,
+      claudeFn: async (prompt: string) => {
+        prompts.push(prompt);
+        // The REVISION itself carries the secret back out.
+        if (prompt.includes("<revision-request>")) return `REVISED ${SECRET}`;
+        if (prompt.includes("<artefact>")) {
+          return prompt.includes("REVISED")
+            ? APPROVE
+            : '{"verdict":"request_changes","fixList":["tighten it"]}';
+        }
+        return "DRAFT v1";
+      },
+    };
+    const r = {
+      name: "judge-revised-secret",
+      trigger: { type: "manual" },
+      context: [{ type: "env", keys: ["TEST_REVISED_SECRET"] }],
+      steps: [
+        {
+          agent: {
+            prompt: "write the thing",
+            model: "claude-haiku-4-5-20251001",
+            driver: "anthropic",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 1,
+            on_exhausted: "proceed",
+            prompt: "review the draft",
+            model: "claude-haiku-4-5-20251001",
+            driver: "anthropic",
+          },
+        },
+      ],
+    } as unknown as YamlRecipe;
+
+    await runYamlRecipe(r, deps);
+
+    // Not vacuous: a re-judge prompt carrying the revised draft must exist.
+    const reJudge = prompts.find(
+      (p) => p.includes("<artefact>") && p.includes("REVISED"),
+    );
+    expect(reJudge).toBeDefined();
+    expect(reJudge).not.toContain(SECRET);
+  });
+});
