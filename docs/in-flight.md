@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `fix/judge-artefact-envelope` — provenance gap 3: the judge's reviewed `<artefact>` gets secret redaction and closing-tag containment in BOTH profiles, plus the untrusted envelope under governed; both the first-pass and re-judge call sites. Touches src/recipes/judgeVerdict.ts, src/recipes/yamlRunner.ts and two new tests. — Claude Code (judge-artefact worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
