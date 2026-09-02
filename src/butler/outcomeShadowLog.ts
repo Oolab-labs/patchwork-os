@@ -30,8 +30,9 @@
  * measured before/after on the real log, exactly as #1319 required.
  */
 
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { appendChained, isChainMarker } from "../ledgerChain.js";
 
 import { patchworkHome } from "../patchworkHome.js";
 import type { OutcomeDisposition } from "../workers/outcomeStore.js";
@@ -43,6 +44,17 @@ import type { GradedOutcome } from "./errandOutcomeGrader.js";
  * up by accident.
  */
 export const SHADOW_LOG_BASENAME = "butler_outcome_shadow.jsonl";
+
+/**
+ * Record level (ADR-0025's `rv` protocol; ADR-0027 for this ledger).
+ *
+ * 1: every row is written through `appendChained` and carries `iseq` and
+ * `prev`, stamped by the writer from the file's tail under the lock. At
+ * `rv >= 1` their absence is a WRITER DEFECT. Rows with no `rv` predate the
+ * chain; they are never re-stamped, and the `chain-start` marker commits to
+ * them as a block. Never default it on read.
+ */
+export const SHADOW_OUTCOME_RV = 1;
 
 export function shadowLogPath(override?: string): string {
   return path.join(override ?? patchworkHome(), SHADOW_LOG_BASENAME);
@@ -68,6 +80,11 @@ export interface ShadowOutcomeRow {
    * withholding rule and risk deriving it differently.
    */
   wouldCountAsEvidence: boolean;
+  /** Writer-stamped record level. Absent on rows that predate the chain. */
+  rv?: number;
+  /** ADR-0027 integrity position and previous-line hash (rv >= 1). */
+  iseq?: number;
+  prev?: string;
 }
 
 /** `unknown` is withheld by the fold; the other two are evidence. */
@@ -86,9 +103,19 @@ export function appendShadowOutcome(
   const full: ShadowOutcomeRow = {
     ...row,
     wouldCountAsEvidence: wouldCountAsEvidence(row.disposition),
+    // Stamped AFTER the caller's fields so a caller cannot claim a level.
+    rv: SHADOW_OUTCOME_RV,
   };
   try {
-    appendFileSync(shadowLogPath(opts.dir), `${JSON.stringify(full)}\n`);
+    // ADR-0027: locked, chained append. The old bare `appendFileSync` had no
+    // lock (two bridges could tear a row) and a failed append left the same
+    // bytes as a quiet day. The primitive counts the failure in the
+    // `.write_failed` sidecar and rethrows; the swallow below is unchanged.
+    appendChained(
+      shadowLogPath(opts.dir),
+      full as unknown as Record<string, unknown>,
+      { mode: 0o600 },
+    );
   } catch {
     // Swallowed on purpose. See above: an unwritable shadow ledger must not
     // turn into an errand failure.
@@ -126,6 +153,9 @@ export function firstSeenByRef(
     } catch {
       continue;
     }
+    // ADR-0027 marker rows are metadata, never an observation — skipped by
+    // KIND, so a marker that happened to carry a ref could not sneak in.
+    if (isChainMarker(row)) continue;
     if (typeof row.ref !== "string" || typeof row.gradedAt !== "number") {
       continue;
     }
@@ -271,6 +301,9 @@ export function parseShadowRows(text: string): ShadowOutcomeRow[] {
     } catch {
       continue;
     }
+    // ADR-0027 marker rows are metadata, never a graded row — by KIND, so a
+    // future marker shape carrying a ref and a disposition is still excluded.
+    if (isChainMarker(row)) continue;
     if (
       row.disposition !== "confirmed" &&
       row.disposition !== "junk" &&

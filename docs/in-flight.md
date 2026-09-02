@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-02 `feat/chain-butler-outcome-shadow` — ADR-0027 wave 2, PR 1 of 3: chain `butler_outcome_shadow.jsonl` (real path; no rename) through `appendChained`, new writer-owned `rv: 1`, readers skip marker rows explicitly, verifier gets its own ledger list (spine + this file) so `patchwork evidence` denominators do not change. Touches src/butler/outcomeShadowLog.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-butler-shadow worktree) PR #1578
+
 - 2026-09-02 `fix/evidence-skip-markers` — `patchwork evidence` and its relationships view counted ADR-0027 marker rows as data (one phantom row per chained ledger in every denominator, and a phantom LEGACY gate decision). Shared `isChainMarker` predicate in ledgerChain.ts, both readers skip it, failing-first test. Touches evidenceCoverage, evidenceRelationships, ledgerChain. — Claude Code (phase1-ledgers worktree) PR #1577
 - 2026-09-02 `feat/chain-privacy-shadow` — ADR-0027 follow-on, one ledger: route `privacy_shadow.jsonl` through `appendChained` (rv 1 → 2, markers skipped by the summariser, line-by-line test readers filter marker rows). Touches src/privacy/shadowLog.ts and its tests only. — Claude Code (chain-privacy-shadow worktree) PR #1574
 - 2026-09-02 `feat/chain-outcome-log` — ADR-0027 slice: route `outcome-log.jsonl` through `appendChained`, introduce `OUTCOME_LOG_RV = 1`, skip marker rows ahead of the unkeyable accounting. Touches `src/workers/outcomeStore.ts` and its tests only. — Claude Code (chain-outcome-log worktree) PR #1575

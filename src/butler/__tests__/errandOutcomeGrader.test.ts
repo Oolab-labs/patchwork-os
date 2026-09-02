@@ -234,7 +234,9 @@ describe("shadow ledger", () => {
     const rows = readFileSync(shadowLogPath(dir), "utf-8")
       .trim()
       .split("\n")
-      .map((l) => JSON.parse(l));
+      .map((l) => JSON.parse(l))
+      // ADR-0027 marker rows (`chain-start`, `rotation`) are not graded rows.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation");
     expect(rows).toHaveLength(1);
     expect(rows[0].wouldCountAsEvidence).toBe(true);
   });
@@ -249,7 +251,13 @@ describe("shadow ledger", () => {
       },
       { dir },
     );
-    const row = JSON.parse(readFileSync(shadowLogPath(dir), "utf-8").trim());
+    const row = readFileSync(shadowLogPath(dir), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l))
+      // ADR-0027 marker rows (`chain-start`, `rotation`) are not graded rows.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+      .at(-1);
     expect(row.wouldCountAsEvidence).toBe(false);
   });
 
@@ -317,7 +325,15 @@ describe("SHADOW means shadow — the trust fold must not read this file", () =>
       .split("\n")
       .filter(Boolean)
       .filter((f) => !f.includes("__tests__"));
-    expect(hits).toEqual(["src/butler/outcomeShadowLog.ts"]);
+    // `evidenceVerify.ts` names the file so `patchwork evidence verify` can
+    // walk its hash chain (ADR-0027). It reads BYTES for integrity, never a
+    // disposition, and nothing it returns reaches the trust fold — which is
+    // the property this guard protects. Any third entry here needs the same
+    // justification written down.
+    expect(hits.sort()).toEqual([
+      "src/butler/outcomeShadowLog.ts",
+      "src/evidenceVerify.ts",
+    ]);
   });
 
   it("only the ingester and the CLI reach the shadow ledger's module", () => {

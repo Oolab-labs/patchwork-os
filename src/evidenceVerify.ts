@@ -2,7 +2,7 @@
  * `patchwork evidence verify` — is the evidence spine internally intact?
  *
  * The offline reader ADR-0027 pairs with `appendChained`. Walks every ledger
- * on `SPINE_LEDGERS` through `verifyLedgerChain` and reduces to one verdict.
+ * on `VERIFIED_LEDGERS` through `verifyLedgerChain` and reduces to one verdict.
  *
  * Unlike `patchwork evidence`, this one GATES: `ok: false` and exit 1 on any
  * break, on a legacy-prefix mismatch, on a head sidecar that says the file
@@ -31,11 +31,23 @@ export interface EvidenceVerification {
   ledgers: LedgerVerification[];
 }
 
+/**
+ * What `evidence verify` walks: the spine PLUS chained ledgers that are not
+ * on it. Kept SEPARATE from `SPINE_LEDGERS` on purpose — that list is the
+ * correlation/coverage set behind `patchwork evidence`'s denominators, and a
+ * ledger that carries no run id has no business in a "rows carry a run id"
+ * count. Wave 2 of ADR-0027 appends here, one ledger per PR.
+ */
+export const VERIFIED_LEDGERS: ReadonlyArray<{ key: string; file: string }> = [
+  ...SPINE_LEDGERS,
+  { key: "butler outcome shadow", file: "butler_outcome_shadow.jsonl" },
+];
+
 export function verifyEvidenceChains(
   dir = patchworkHome(),
 ): EvidenceVerification {
   const ledgers: LedgerVerification[] = [];
-  for (const { key, file } of SPINE_LEDGERS) {
+  for (const { key, file } of VERIFIED_LEDGERS) {
     const v = verifyLedgerChain(path.join(dir, file));
     ledgers.push({ ...v, key, file });
   }
