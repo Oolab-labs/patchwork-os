@@ -258,7 +258,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | balanced-match | 4.0.4 | MIT |
 | brace-expansion | 5.0.9 | MIT |
 | fast-deep-equal | 3.1.3 | MIT |
-| fast-uri | 3.1.5 | BSD-3-Clause |
+| fast-uri | 3.1.7 | BSD-3-Clause |
 | ipaddr.js | 2.3.0 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
 | minimatch | 10.2.4 | BlueOak-1.0.0 |
