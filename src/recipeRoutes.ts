@@ -1427,7 +1427,7 @@ export function tryHandleRecipeRoute(
           //
           // Classified on the source's own typed signal, never on message
           // text. Everything else escaping `upsert` comes from the
-          // `appendFileSync` to outcome-log.jsonl, and answering a disk fault
+          // `appendChained` to outcome-log.jsonl, and answering a disk fault
           // with 400 + the raw message was wrong twice over: it told the
           // operator their input was malformed when the WRITE failed (a 500
           // says "retry", a 400 says "stop, you are wrong"), and it echoed a
