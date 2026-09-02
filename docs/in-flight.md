@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `fix/fanout-item-prompts` — provenance gap 1: fan_out agent-item prompts get secret redaction (both profiles) and the existing root provenance envelope (governed) via a renderer injected by yamlRunner; nothing transitive. Touches src/recipes/yamlRunner.ts, src/recipes/tools/fanOut.ts and a new test. — Claude Code (fanout-provenance worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
