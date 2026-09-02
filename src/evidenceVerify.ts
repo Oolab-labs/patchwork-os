@@ -42,6 +42,7 @@ export const VERIFIED_LEDGERS: ReadonlyArray<{ key: string; file: string }> = [
   ...SPINE_LEDGERS,
   { key: "butler outcome shadow", file: "butler_outcome_shadow.jsonl" },
   { key: "run steps", file: "run_steps.jsonl" },
+  { key: "pr outcomes", file: "pr_outcomes.jsonl" },
 ];
 
 export function verifyEvidenceChains(
