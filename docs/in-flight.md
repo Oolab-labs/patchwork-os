@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `fix/evidence-skip-markers` — `patchwork evidence` and its relationships view counted ADR-0027 marker rows as data (one phantom row per chained ledger in every denominator, and a phantom LEGACY gate decision). Shared `isChainMarker` predicate in ledgerChain.ts, both readers skip it, failing-first test. Touches evidenceCoverage, evidenceRelationships, ledgerChain. — Claude Code (phase1-ledgers worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
