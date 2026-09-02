@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `feat/chain-butler-outcome-shadow` — ADR-0027 wave 2, PR 1 of 3: chain `butler_outcome_shadow.jsonl` (real path; no rename) through `appendChained`, new writer-owned `rv: 1`, readers skip marker rows explicitly, verifier gets its own ledger list (spine + this file) so `patchwork evidence` denominators do not change. Touches src/butler/outcomeShadowLog.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-butler-shadow worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
