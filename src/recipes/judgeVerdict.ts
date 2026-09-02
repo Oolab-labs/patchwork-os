@@ -32,6 +32,8 @@
  * yamlRunner.ts; this parser is unchanged and still never gates.
  */
 
+import { wrapUntrusted } from "../governance/untrustedContent.js";
+
 export type JudgeVerdictKind = "approve" | "request_changes" | "unparseable";
 
 export interface JudgeVerdict {
@@ -62,11 +64,49 @@ Rules:
 Output nothing except that JSON object.`;
 
 /**
+ * Neutralise any sequence that could close the artefact container early.
+ *
+ * Deliberately local rather than a shared sanitiser: the runtime envelope's
+ * equivalent is private to `governance/untrustedContent.ts`, and generalising
+ * it would turn a contained fix into a sanitisation refactor. Same technique —
+ * a zero-width space after the closing-tag PREFIX, matched case-insensitively,
+ * so `</ArTeFaCt>` is caught too. The text stays readable to a model and a
+ * human while no longer parsing as the delimiter.
+ *
+ * Applied in BOTH profiles. The `<artefact>` container exists in compat as
+ * well, so making its delimiter unforgeable is correctness of the container,
+ * not a governed-profile feature — and ordinary output is untouched, because
+ * only content capable of BREAKING the container changes.
+ */
+function neutraliseArtefactClosingTag(text: string): string {
+  return text.replace(/<\/artefact/gi, (m) => `${m}\u200B`);
+}
+
+export interface JudgeArtefactOptions {
+  /**
+   * Present ⇒ mark the artefact as untrusted data from `source`. The caller
+   * supplies this only under the governed profile; the envelope is the actual
+   * profile distinction, matching how the agent-render path gates its own
+   * provenance envelope.
+   */
+  envelope?: { source: string };
+}
+
+/**
  * Build the artefact-injection block for a judge step that has a
  * `reviews: <stepId>` reference. Returns an empty string when no
  * artefact is available; the judge then sees the prompt as-is.
+ *
+ * The artefact is the OUTPUT OF AN EARLIER STEP, so it is frequently
+ * connector-derived — an email body, a PR description, a page. It used to be
+ * interpolated raw: the judge's own prompt went through `renderAgentPrompt`
+ * (envelope, provenance, secret redaction) while the thing it was asked to
+ * review went through none of it, because this block reads `ctx` directly.
  */
-export function buildJudgeArtefactBlock(artefact: unknown): string {
+export function buildJudgeArtefactBlock(
+  artefact: unknown,
+  opts?: JudgeArtefactOptions,
+): string {
   if (artefact === undefined || artefact === null) return "";
   let body: string;
   if (typeof artefact === "string") {
@@ -85,6 +125,12 @@ export function buildJudgeArtefactBlock(artefact: unknown): string {
       // of the prompt builder — augment-only invariant.
       body = "[unserialisable artefact]";
     }
+  }
+  body = neutraliseArtefactClosingTag(body);
+  if (opts?.envelope !== undefined) {
+    // `wrapUntrusted` neutralises its OWN closing tag, so an artefact cannot
+    // forge its way out of either container.
+    body = wrapUntrusted(body, opts.envelope.source);
   }
   return `\n\n<artefact>\n${body}\n</artefact>`;
 }

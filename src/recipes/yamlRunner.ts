@@ -1453,6 +1453,39 @@ export async function runYamlRecipe(
     taskId: runTaskId,
   };
 
+  /**
+   * The artefact a judge step reviews, prepared the way `renderAgentPrompt`
+   * prepares everything else it sends to a model.
+   *
+   * This block reads `ctx` DIRECTLY, so it bypassed the render path and with
+   * it three protections at once: secret redaction, closing-tag containment
+   * and the untrusted envelope. Redaction and containment apply in BOTH
+   * profiles — they are existing guarantees of the runner and of the
+   * `<artefact>` container, not governed features. The envelope is the actual
+   * profile distinction, gated here exactly as the render path gates its own.
+   */
+  const judgeArtefactBlock = (reviewsKey: string, value?: unknown): string => {
+    const redacted = redactSecretsForPrompt(ctx, secretKeys);
+    const artefact =
+      value !== undefined
+        ? value
+        : (redacted as Record<string, unknown>)[reviewsKey];
+    return buildJudgeArtefactBlock(
+      artefact,
+      envelopeActive
+        ? {
+            envelope: {
+              // Name the tool when provenance knows it; otherwise the step
+              // whose output this is. Either way the judge is told the
+              // artefact is data from somewhere, not an instruction.
+              source:
+                untrustedProvenance.get(reviewsKey) ?? `step:${reviewsKey}`,
+            },
+          }
+        : undefined,
+    );
+  };
+
   // Merge the recipe's declared allowWrites with any caller-supplied
   // entries (mirrors runPreflight's merge in src/commands/recipe.ts) so
   // executeStep's runtime write-ack check sees the same allowlist preflight
@@ -2076,7 +2109,12 @@ export async function runYamlRecipe(
       // accepted value).
       const reJudgePrompt =
         renderAgentPrompt(agentCfg.prompt) +
-        buildJudgeArtefactBlock(pendingRevised) +
+        // Same treatment as the first pass. The revised draft is passed
+        // explicitly (it is staged, not yet in ctx), but it is still a model
+        // output built from the same upstream material — a fix applied to the
+        // first-pass site only would leave the refine loop unprotected while
+        // every unit test passed.
+        judgeArtefactBlock(agentCfg.reviews ?? "", pendingRevised) +
         JUDGE_PROMPT_SUFFIX;
       const judged = await runAgentText(
         reJudgePrompt,
@@ -2508,7 +2546,7 @@ export async function runYamlRecipe(
         let renderedPrompt = renderAgentPrompt(agentCfg.prompt);
         if (isJudge) {
           if (agentCfg.reviews) {
-            renderedPrompt += buildJudgeArtefactBlock(ctx[agentCfg.reviews]);
+            renderedPrompt += judgeArtefactBlock(agentCfg.reviews);
           }
           renderedPrompt += JUDGE_PROMPT_SUFFIX;
         }
