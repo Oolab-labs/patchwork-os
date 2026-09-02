@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `feat/chain-privacy-shadow` — ADR-0027 follow-on, one ledger: route `privacy_shadow.jsonl` through `appendChained` (rv 1 → 2, markers skipped by the summariser, line-by-line test readers filter marker rows). Touches src/privacy/shadowLog.ts and its tests only. — Claude Code (chain-privacy-shadow worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
