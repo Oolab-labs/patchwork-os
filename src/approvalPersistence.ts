@@ -1,8 +1,8 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { ApprovalDecision, PendingApproval } from "./approvalQueue.js";
-import { withFileLockSync } from "./fileLockSync.js";
 import type { ActorSnapshot } from "./identity/approverFromSession.js";
+import { appendChained } from "./ledgerChain.js";
 import type { Logger } from "./logger.js";
 import { patchworkHome } from "./patchworkHome.js";
 
@@ -52,15 +52,37 @@ import { patchworkHome } from "./patchworkHome.js";
  */
 
 /**
- * Row-schema version stamped on every `request` event this build writes
- * (ADR-0025). Bump only when a field's MEANING changes, never for an additive
- * one: a reader skips a row from a version it does not know rather than
- * guessing, so a gratuitous bump silently drops rows from every existing
- * reader.
+ * Row-schema version stamped on every event this build writes (ADR-0025).
+ * Bump only when a field's MEANING changes, never for an additive one: a
+ * reader skips a row from a version it does not know rather than guessing, so
+ * a gratuitous bump silently drops rows from every existing reader.
+ *
+ *   1 — a `request` row carries `correlationId` when it belonged to a run.
  */
-export const APPROVAL_LOG_RV = 1;
+/**
+ * 2 (ADR-0027): every row — request, decision AND attribution — carries `iseq`
+ * and `prev`, stamped by `appendChained` from the file's tail under the lock.
+ * At `rv >= 2` their absence is a WRITER DEFECT. Rows at `rv 1` (and the
+ * decision/attribution rows written alongside them, which carried no `rv` at
+ * all) predate the chain and are never re-stamped; the `chain-start` marker
+ * commits to them as a block.
+ */
+export const APPROVAL_LOG_RV = 2;
 
-export interface ApprovalRequestEvent {
+/**
+ * ADR-0027 integrity fields, present on every row from `rv >= 2`. Written by
+ * the append primitive, never by a caller: `iseq` is the per-ledger integrity
+ * sequence read from the file's tail, `prev` the SHA-256 of the previous line's
+ * exact bytes. A position in the chain, not a fact about the approval — so the
+ * restore path returns them on the event and does NOT project them onto the
+ * live `PendingApproval`.
+ */
+export interface ChainedRowFields {
+  iseq?: number;
+  prev?: string;
+}
+
+export interface ApprovalRequestEvent extends ChainedRowFields {
   kind: "request";
   callId: string;
   toolName: string;
@@ -97,11 +119,13 @@ export interface ApprovalRequestEvent {
   correlationId?: string;
 }
 
-export interface ApprovalDecisionEvent {
+export interface ApprovalDecisionEvent extends ChainedRowFields {
   kind: "decision";
   callId: string;
   decision: ApprovalDecision;
   decidedAt: number;
+  /** Stamped from `rv >= 2`; a decision row at rv 1 carried no version. */
+  rv?: number;
 }
 
 /**
@@ -110,12 +134,14 @@ export interface ApprovalDecisionEvent {
  * Never written for a shared-secret (v1) session, an expired timer, or the
  * phone path's single-use token — none of those name a person.
  */
-export interface ApprovalAttributionEvent {
+export interface ApprovalAttributionEvent extends ChainedRowFields {
   kind: "attribution";
   callId: string;
   /** id + kind + display name AS IT WAS, never a roster reference. */
   actor: ActorSnapshot;
   attributedAt: number;
+  /** Stamped from `rv >= 2`; an attribution row at rv 1 carried no version. */
+  rv?: number;
 }
 
 export type ApprovalLogEvent =
@@ -205,6 +231,7 @@ export class ApprovalPersistence {
       callId,
       decision,
       decidedAt,
+      rv: APPROVAL_LOG_RV,
     };
     this.append(event);
   }
@@ -224,15 +251,22 @@ export class ApprovalPersistence {
       callId,
       actor,
       attributedAt,
+      rv: APPROVAL_LOG_RV,
     };
     this.append(event);
   }
 
   private append(event: ApprovalLogEvent): void {
     try {
-      mkdirSync(path.dirname(this.file), { recursive: true });
-      withFileLockSync(this.file, () => {
-        appendFileSync(this.file, `${JSON.stringify(event)}\n`, "utf8");
+      // ADR-0027: one locked, chained append. The primitive takes the same
+      // `${file}.lock` sentinel the old `withFileLockSync` wrapper did, so the
+      // wrapper is gone rather than nested (nesting it would wait on itself).
+      // No rotation: this is the governance ledger, and it does not shed rows
+      // (`approvalHttp` says why). Fail-soft contract unchanged — a failed
+      // append is counted in the `.write_failed` sidecar by the primitive and
+      // swallowed here after a warning, never surfaced to a live approval.
+      appendChained(this.file, event as unknown as Record<string, unknown>, {
+        mode: 0o600,
       });
     } catch (err) {
       this.logger?.warn?.(

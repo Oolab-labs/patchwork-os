@@ -21,10 +21,16 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 function logLines(): unknown[] {
   const file = path.join(dir, "approval_log.jsonl");
-  return readFileSync(file, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
+  return (
+    readFileSync(file, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      // ADR-0027 marker rows (`chain-start`, `rotation`) live in the same
+      // file and carry `kind` and no data fields; skipped the way every
+      // production loader skips them.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+  );
 }
 
 describe("ApprovalQueue — no persistDir (default)", () => {
@@ -124,14 +130,19 @@ describe("ApprovalQueue — durable persistence", () => {
   });
 
   it("a still-live restored entry auto-expires on its own remaining timer", async () => {
-    const q1 = new ApprovalQueue({ persistDir: dir, ttlMs: { high: 30 } });
+    // The TTL must comfortably exceed the cost of ONE durable append: since
+    // ADR-0027 that append is a lock, a tail read and an atomic head-sidecar
+    // rename, which on a Windows CI runner can take longer than the 30 ms this
+    // test used to allow — the entry then arrived at restore already expired
+    // and the "still-live" branch was never exercised.
+    const q1 = new ApprovalQueue({ persistDir: dir, ttlMs: { high: 500 } });
     q1.request({ toolName: "gitPush", params: {}, tier: "high" });
 
     const q2 = new ApprovalQueue({ persistDir: dir });
     expect(q2.list()).toHaveLength(1);
     expect(q2.list()[0]?.owned).toBe(false);
 
-    await new Promise((r) => setTimeout(r, 60));
+    await new Promise((r) => setTimeout(r, 650));
     expect(q2.list()).toHaveLength(0);
 
     const lines = logLines() as Array<{ kind: string; decision?: string }>;

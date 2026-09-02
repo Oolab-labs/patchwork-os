@@ -68,6 +68,7 @@ vi.mock("../../connectors/github.js", () => ({
     (listIssuesMock as (...a: unknown[]) => unknown)(...args),
 }));
 
+import { APPROVAL_LOG_RV } from "../../approvalPersistence.js";
 import {
   getApprovalQueue,
   resetApprovalQueueForTests,
@@ -358,7 +359,11 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
     )
       .split("\n")
       .filter((l) => l.trim())
-      .map((l) => JSON.parse(l) as Record<string, unknown>);
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      // ADR-0027 marker rows (`chain-start`, `rotation`) live in the same
+      // file and carry `kind` and no data fields; skipped the way every
+      // production loader skips them.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation");
     const gatedRequest = approvalRows.find(
       (r) => r.kind === "request" && r.toolName === "github.create_issue",
     );
@@ -370,7 +375,7 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
       gatedRequest?.correlationId,
       "the approval names the run that needed it",
     ).toBe(run?.taskId);
-    expect(gatedRequest?.rv).toBe(1);
+    expect(gatedRequest?.rv).toBe(APPROVAL_LOG_RV);
 
     // --- D. trust replay + DURABLE-OUTCOME LABELLING ----------------------
     // A just-approved issue write is a non-reversible SUCCESS — it must NOT
