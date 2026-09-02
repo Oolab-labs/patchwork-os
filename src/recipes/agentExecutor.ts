@@ -14,6 +14,7 @@ import {
   resolveAgentContainment,
   type StepSandboxRequest,
 } from "../governance/profile.js";
+import { governedRecipeSystemPrompt } from "../governance/recipeSystemPrompt.js";
 import {
   type BoundaryDecision,
   type BoundaryOutcome,
@@ -121,7 +122,17 @@ export interface AgentExecutorDeps {
     redactCategories?: string[];
     enforcing: boolean;
   }) => void;
-  anthropicFn: (prompt: string, model: string) => Promise<AgentResult>;
+  /**
+   * `systemPrompt` is supplied by `executeAgent` under the governed profile
+   * ONLY. Under compat it is omitted entirely, so the call keeps the exact
+   * 2-arg shape it always had — which is what lets the pre-existing
+   * exact-args assertions go on proving the old contract.
+   */
+  anthropicFn: (
+    prompt: string,
+    model: string,
+    systemPrompt?: string,
+  ) => Promise<AgentResult>;
   /** Handles openai, grok, gemini, gemini-api, codex — passes driver name through. */
   providerDriverFn: (
     driver: "openai" | "grok" | "gemini" | "gemini-api" | "codex",
@@ -130,6 +141,13 @@ export interface AgentExecutorDeps {
     /** Opaque per-call driver options (e.g. responseFormat for constrained
      * decoding). Forwarded to driver.run; drivers ignore keys they don't use. */
     providerOptions?: Record<string, unknown>,
+    /**
+     * Governed-only, and deliberately AFTER the already-optional
+     * `providerOptions`. A governed call with no options must therefore pass
+     * `undefined` in the 4th position explicitly, or the governance string
+     * lands where provider options are read.
+     */
+    systemPrompt?: string,
   ) => Promise<AgentResult>;
   claudeCliFn: (
     prompt: string,
@@ -143,9 +161,21 @@ export interface AgentExecutorDeps {
       /** Resolved containment — the runner MUST forward it to the driver as
        * `ProviderTaskInput.containment` (or `providerOptions.containment`). */
       containment?: AgentContainment;
+      /**
+       * Governed-only. The subprocess implementation keeps its own
+       * profile-gated fallback for callers that do not come through
+       * `executeAgent`, so this being absent means "decide for yourself", not
+       * "send nothing".
+       */
+      systemPrompt?: string;
     },
   ) => Promise<AgentResult>;
-  localFn: (prompt: string, model: string) => Promise<AgentResult>;
+  /** Governed-only trailing `systemPrompt`; see `anthropicFn`. */
+  localFn: (
+    prompt: string,
+    model: string,
+    systemPrompt?: string,
+  ) => Promise<AgentResult>;
   /** Returns true when the `claude` CLI is available on PATH. */
   probeClaudeCli: () => boolean;
   /** Reads ~/.patchwork/config; returns {} when absent. */
@@ -720,11 +750,21 @@ export async function executeAgent(
   // inside `resolveEffectiveDriver`, so there is exactly one place that decides
   // which driver serves a call — the condition for the boundary and the receipt
   // being able to name it truthfully.
+  // Governance decides the mandatory recipe instruction ONCE, here, and the
+  // transports only receive it. No driver reads `activeProfile()` — a second
+  // place deciding this is how the two would drift, and the drift is silent
+  // and permissive. Under compat this is undefined and every call below keeps
+  // the exact shape and arity it had before.
+  const governedPrompt = governedRecipeSystemPrompt();
+
   if (resolvedDriver === "anthropic") {
+    const anthropicModel = model ?? DEFAULT_MODEL;
     return stamp(
       "anthropic",
-      model ?? DEFAULT_MODEL,
-      deps.anthropicFn(prompt, model ?? DEFAULT_MODEL),
+      anthropicModel,
+      governedPrompt === undefined
+        ? deps.anthropicFn(prompt, anthropicModel)
+        : deps.anthropicFn(prompt, anthropicModel, governedPrompt),
     );
   }
   if (
@@ -753,18 +793,41 @@ export async function executeAgent(
       model,
       // Only pass the 4th arg when set so the common (unconstrained) call keeps
       // its 3-arg shape — backward-compatible with callers/mocks.
-      effectiveProviderOptions
-        ? deps.providerDriverFn(
+      governedPrompt !== undefined
+        ? // `systemPrompt` sits AFTER the optional `providerOptions`, so an
+          // options-less governed call passes `undefined` in that slot
+          // explicitly rather than shifting the prompt into it.
+          deps.providerDriverFn(
             resolvedDriver,
             prompt,
             model,
             effectiveProviderOptions,
+            governedPrompt,
           )
-        : deps.providerDriverFn(resolvedDriver, prompt, model),
+        : effectiveProviderOptions
+          ? deps.providerDriverFn(
+              resolvedDriver,
+              prompt,
+              model,
+              effectiveProviderOptions,
+            )
+          : deps.providerDriverFn(resolvedDriver, prompt, model),
     );
   }
   if (resolvedDriver === "subprocess") {
-    return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
+    // The subprocess implementation used to be the one path that decided
+    // governance for itself. It now RECEIVES the executor's decision, and
+    // keeps its own fallback only for callers that never reach this seam.
+    return stamp(
+      "subprocess",
+      model,
+      deps.claudeCliFn(
+        prompt,
+        governedPrompt === undefined
+          ? cliOpts
+          : { ...(cliOpts ?? {}), systemPrompt: governedPrompt },
+      ),
+    );
   }
   if (resolvedDriver === "local") {
     // Resolve through the shared resolver, NOT `model ?? DEFAULT_MODEL`.
@@ -774,7 +837,13 @@ export async function executeAgent(
     // asked for while a config default answered, so an invalid run and a
     // valid one looked identical.
     const localModel = resolveLocalModel(model, deps.loadPatchworkConfig());
-    return stamp("local", localModel, deps.localFn(prompt, localModel));
+    return stamp(
+      "local",
+      localModel,
+      governedPrompt === undefined
+        ? deps.localFn(prompt, localModel)
+        : deps.localFn(prompt, localModel, governedPrompt),
+    );
   }
   // Unrecognised driver. Reached at the same point as before: the boundary has
   // already run and written its receipt (fail-closed to strictest remote for an
