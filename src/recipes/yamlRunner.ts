@@ -4526,12 +4526,20 @@ export async function defaultClaudeFn(
         // Governed-only. Absent under compat, so the request body is
         // byte-identical to what it was.
         //
-        // NOTE, deliberately not changed here: the user-content prefix below
-        // names `<untrusted_data>`, a tag this codebase does not emit (the
-        // envelope is `<untrusted>`, governance/untrustedContent.ts). So this
-        // transport has been instructing the model about a delimiter it will
-        // never see. Left alone because rewording it is a behaviour change of
-        // its own, not part of carrying the governed prompt across transports.
+        // NOTE: the user-content prefix below explains the older AUTHOR-LEVEL
+        // `<untrusted_data>` convention, which is real and in use — the
+        // recipe-generation prompt REQUIRES it of generated recipes
+        // (recipeOrchestration.ts:1990, with worked examples at :2021 and
+        // :2092) and four shipped recipe files carry it. The governed RUNTIME
+        // provenance envelope is a different thing: `<untrusted source="…">`,
+        // applied by `wrapUntrusted` to interpolated connector values.
+        //
+        // The two may coexist in one prompt — an author's outer
+        // `<untrusted_data>` block whose interpolated values each acquire the
+        // runtime envelope. Whether the author-level convention should
+        // converge on the runtime one is a separate compatibility decision:
+        // removing or renaming this sentence could weaken compat-mode recipes
+        // that rely on the hand-authored tags. Not a defect; an open question.
         ...(opts?.systemPrompt !== undefined && { system: opts.systemPrompt }),
         messages: [
           {
