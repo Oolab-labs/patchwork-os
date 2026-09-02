@@ -163,24 +163,44 @@ const WEBHOOK_TIMEOUT_MS = 10_000;
 
 /** Production `Backend`: routes side effects to the real orchestrator, logger, and network. */
 /**
- * The system prompt an automation-hook task runs with under `governed`.
+ * The system prompt an automation-hook task runs with.
  *
  * A hook prompt already delimits every user-controlled value (`untrustedBlock`
- * in `automationUtils.ts`); this is the half that tells the model what those
- * delimiters mean. Without it the same third-party text a recipe agent step
- * gets explained — a commit message, a diagnostic, a file path — reached a
- * hook task delimited but unexplained, while `governedSystemPrompt` in
+ * in `automationUtils.ts`); this supplies the half that tells the model what
+ * those delimiters mean. Without it the same third-party text a recipe agent
+ * step gets explained — a commit message, a diagnostic, a file path — reached
+ * a hook task delimited but unexplained, while `governedSystemPrompt` in
  * `recipeOrchestration.ts` did the equivalent job for recipe dispatch.
  *
+ * COMPOSES; it does not fall back. `parsePolicy` gives EVERY hook a
+ * `systemPrompt` — the operator's `automationSystemPrompt` when set, its own
+ * default otherwise — so a rule written as "supply one when there is none"
+ * would fire exactly never in production while passing any fixture that omits
+ * the field. That is how the first version of this escaped review. The
+ * guarantee is that caller content is PRESERVED and cannot SUPPRESS the
+ * governed instruction; the operator's text comes first because the governed
+ * sentence is an addition to their instruction, not a replacement of it.
+ *
  * Resolved in the BACKEND, not the interpreter: reading the active profile is
- * a side effect, and the interpreter is the pure half of this seam. Under
- * `compat` it returns undefined, so an install that has not opted in enqueues
- * exactly the bytes it did before.
+ * a side effect, and the interpreter is the pure half of that seam.
+ *
+ * Under `compat` the value passes through byte-for-byte (undefined included),
+ * so an install that has not opted in enqueues exactly what it did before.
+ *
+ * One consequence, stated rather than hidden: `automationSystemPrompt` is
+ * capped at 4096 characters when the policy LOADS, and this appends to the
+ * loaded value. An operator sitting at that cap therefore dispatches a system
+ * prompt longer than 4096 characters under `governed`. Nothing on this path
+ * validates it (the cap guards the operator's field, not the composed
+ * result), and truncating either half would be worse: cutting governance text
+ * defeats the point, and cutting operator text silently changes their
+ * instruction.
  */
-function governedHookSystemPrompt(): string | undefined {
-  return activeProfile().untrustedEnvelope
-    ? UNTRUSTED_DELIMITED_SYSTEM_INSTRUCTION
-    : undefined;
+function effectiveHookSystemPrompt(existing?: string): string | undefined {
+  if (!activeProfile().untrustedEnvelope) return existing;
+  return existing !== undefined && existing.length > 0
+    ? `${existing}\n\n${UNTRUSTED_DELIMITED_SYSTEM_INSTRUCTION}`
+    : UNTRUSTED_DELIMITED_SYSTEM_INSTRUCTION;
 }
 
 export class VsCodeBackend implements Backend {
@@ -201,7 +221,7 @@ export class VsCodeBackend implements Backend {
       triggerSource: opts.triggerSource,
       model: opts.model,
       effort: opts.effort,
-      systemPrompt: opts.systemPrompt ?? governedHookSystemPrompt(),
+      systemPrompt: effectiveHookSystemPrompt(opts.systemPrompt),
     });
     return taskId;
   }
