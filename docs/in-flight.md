@@ -52,12 +52,11 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- 2026-09-02 `feat/chain-pr-outcomes` — ADR-0027 wave 2, PR 3 of 3: chain `pr_outcomes.jsonl` through `appendChained` (`PR_OBSERVATION_RV` 1 → 2), `readObservations` skips marker rows by kind so a marker cannot become a phantom pull request, ledger enters `VERIFIED_LEDGERS` only. Touches src/maintenance/prOutcomeLedger.ts, src/index.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-pr-outcomes worktree)
-
 
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-02 `feat/chain-pr-outcomes` — ADR-0027 wave 2, PR 3 of 3: chain `pr_outcomes.jsonl` through `appendChained` (`PR_OBSERVATION_RV` 1 → 2), `readObservations` skips marker rows by kind so a marker cannot become a phantom pull request, ledger enters `VERIFIED_LEDGERS` only. Touches src/maintenance/prOutcomeLedger.ts, src/index.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-pr-outcomes worktree) PR #1580
 - 2026-09-02 `feat/chain-run-steps` — ADR-0027 wave 2, PR 2 of 3: chain `run_steps.jsonl` through `appendChained` (never-throwing writer kept; the 2 MB halving trim becomes ADR-0027 rotation with an explicit marker), new writer-owned `rv: 1`, `loadStepEvidence` skips markers by kind, ledger enters `VERIFIED_LEDGERS` only. Touches src/runStepLedger.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-run-steps worktree) PR #1579
 
 - 2026-09-02 `feat/chain-butler-outcome-shadow` — ADR-0027 wave 2, PR 1 of 3: chain `butler_outcome_shadow.jsonl` (real path; no rename) through `appendChained`, new writer-owned `rv: 1`, readers skip marker rows explicitly, verifier gets its own ledger list (spine + this file) so `patchwork evidence` denominators do not change. Touches src/butler/outcomeShadowLog.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-butler-shadow worktree) PR #1578
