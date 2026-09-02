@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `fix/governed-hook-prompts` — provenance gap 1: an automation-hook task under the governed profile now carries a system prompt naming its `--- BEGIN … (untrusted) ---` blocks as data. Keeps the nonce envelope (stronger than the tag form); compat unchanged. Touches src/governance/untrustedContent.ts, src/fp/interpreterContext.ts and a new test. — Claude Code (governed-hook-prompts worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
