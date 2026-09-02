@@ -989,6 +989,27 @@ export type StepDeps = Required<
    * Optional on purpose: a required field would force every call site to
    * supply something, and the tempting something is a no-budget executor.
    */
+  /**
+   * Render an LLM-facing prompt for ONE item of a `fan_out` agent iteration.
+   *
+   * `fan_out` builds its own per-item context and, before this existed, called
+   * the bare `render` — a second LLM-facing render path that bypassed what
+   * `renderAgentPrompt` does for every other agent step: secret redaction and
+   * the untrusted `wrap` hook.
+   *
+   * Injected rather than reimplemented, because `secretKeys`,
+   * `untrustedProvenance` and `envelopeActive` are closure locals of
+   * `runYamlRecipe`. The tool passes what IT owns — the template, the
+   * per-iteration context, the loop-variable name and its own step — and knows
+   * nothing about profiles, secret keys or provenance. A second copy of that
+   * knowledge is the drift the transport work removed.
+   */
+  renderAgentItemPrompt?: (
+    template: string,
+    iterCtx: RunContext,
+    loopVar: string,
+    step: unknown,
+  ) => string;
   runNestedAgent?: (input: {
     prompt: string;
     driver?: string;
@@ -1409,6 +1430,58 @@ export async function runYamlRecipe(
           }
         : undefined,
     );
+
+  /**
+   * The provenance source a fan_out loop variable inherits, if any.
+   *
+   * STRUCTURAL, not transitive. When `items` is written as exactly
+   * `{{someKey}}` (or `{{someKey.path}}`) and `someKey` already carries
+   * connector provenance, each item IS one member of that already-known
+   * connector result, so the loop variable inherits that source for this
+   * render. Read from the RAW step, because `params.items` has already been
+   * substituted by the time the tool runs and the reference is gone.
+   *
+   * Anything else returns undefined and NO envelope is applied: a computed
+   * expression, a literal list, or a key with no provenance entry (an
+   * `agent_output`, say). Inventing a source for those would make the later
+   * propagation work unmeasurable — the whole point of leaving them bare is
+   * that they stay visible as the population that still needs solving.
+   */
+  const fanOutItemsSource = (step: unknown): string | undefined => {
+    const raw = (step as { items?: unknown } | null)?.items;
+    if (typeof raw !== "string") return undefined;
+    const m = raw.trim().match(/^\{\{\s*([A-Za-z0-9_$]+)(?:\.[^}]*)?\s*\}\}$/);
+    const root = m?.[1];
+    return root === undefined ? undefined : untrustedProvenance.get(root);
+  };
+
+  const renderAgentItemPrompt = (
+    template: string,
+    iterCtx: RunContext,
+    loopVar: string,
+    step: unknown,
+  ): string => {
+    const inherited = fanOutItemsSource(step);
+    return render(
+      template,
+      redactSecretsForPrompt(iterCtx, secretKeys),
+      envelopeActive
+        ? {
+            wrap: (root, value) => {
+              // A key with its own provenance wins; otherwise the loop
+              // variable may inherit the items root's source. No other key
+              // gains anything.
+              const source =
+                untrustedProvenance.get(root) ??
+                (root === loopVar ? inherited : undefined);
+              return source === undefined
+                ? undefined
+                : wrapUntrusted(value, source);
+            },
+          }
+        : undefined,
+    );
+  };
 
   const recipeStartedAt = now.getTime();
   /**
@@ -1966,6 +2039,7 @@ export async function runYamlRecipe(
     }
     return { text: stripped, ok: true };
   };
+  stepDeps.renderAgentItemPrompt = renderAgentItemPrompt;
   stepDeps.runNestedAgent = runNestedAgent;
 
   /**
