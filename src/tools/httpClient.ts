@@ -1,6 +1,5 @@
-import dns from "node:dns/promises";
 import fs from "node:fs/promises";
-import { isPrivateHost } from "../ssrfGuard.js";
+import { OutboundHttpError, safeFetch } from "../ssrfGuard.js";
 import {
   error,
   optionalBool,
@@ -112,52 +111,11 @@ export function createSendHttpRequestTool(options?: {
           `URL must use http:// or https://, got "${parsedUrl.protocol}"`,
         );
       }
-      // Strip credentials from the URL — they must not be sent in the request URL.
-      parsedUrl.username = "";
-      parsedUrl.password = "";
-      if (!allowPrivateHttp && isPrivateHost(parsedUrl.hostname)) {
-        return error(
-          `Requests to private/loopback addresses are not allowed ("${parsedUrl.hostname}"). Only public hosts are permitted. Use --allow-private-http to enable.`,
-        );
-      }
-
-      // DNS pre-resolution SSRF guard: resolve the hostname and re-check the
-      // resulting IP against the private-range blocklist. This catches hostnames
-      // like "internal.corp.example.com" that resolve to RFC-1918 addresses and
-      // would bypass the purely-lexical isPrivateHost check above.
-      //
-      // After validation, we pin the connection to the resolved IP by rewriting
-      // the request URL's hostname. This closes the TOCTOU window between
-      // dns.lookup() and the actual fetch — without pinning, an attacker can
-      // serve a public IP on the first DNS response and a private IP on the
-      // second. We preserve the original hostname in a Host header so virtual
-      // hosting and SNI still work. DNS failures fall through to fetch naturally.
-      let resolvedIp: string | null = null;
-      try {
-        const { address } = await dns.lookup(parsedUrl.hostname);
-        if (!allowPrivateHttp && isPrivateHost(address)) {
-          return error(
-            `Hostname "${parsedUrl.hostname}" resolves to a private address (${address}) — request blocked`,
-          );
-        }
-        resolvedIp = address;
-      } catch {
-        // DNS lookup failed — let fetch report the error with its own message
-      }
-
-      // Build the initial URL: if we successfully resolved an IP, use it as the
-      // hostname so Node's fetch does not re-resolve (closes the TOCTOU window).
-      // IPv6 addresses require bracket wrapping in URLs.
-      // Use parsedUrl (credentials already stripped) not the raw urlStr.
-      const cleanUrlStr = parsedUrl.toString();
-      let initialUrl = cleanUrlStr;
-      if (resolvedIp !== null) {
-        const pinnedUrl = new URL(cleanUrlStr);
-        pinnedUrl.hostname = resolvedIp.includes(":")
-          ? `[${resolvedIp}]`
-          : resolvedIp;
-        initialUrl = pinnedUrl.toString();
-      }
+      // Everything else about the URL — userinfo stripping, the private-range
+      // check, DNS pre-resolution + re-check, IP pinning with the real name in
+      // the Host header, and per-hop redirect re-validation — lives in the
+      // shared `safeFetch` (src/ssrfGuard.ts), the ONE implementation also
+      // behind the recipe `http.post` tool. Do not re-inline any of it here.
 
       // Validate and collect headers
       const rawHeaders = args.headers;
@@ -179,16 +137,10 @@ export function createSendHttpRequestTool(options?: {
             );
           }
           // Normalize header key to lowercase so user-supplied "Host" and "host"
-          // are treated as the same key and our override below reliably overwrites it.
+          // are treated as the same key; `safeFetch` sets `host` AFTER these so
+          // a caller-supplied Host cannot un-pin the connection.
           headers[k.toLowerCase()] = v;
         }
-      }
-      // Override host AFTER user headers so a caller-supplied host cannot
-      // bypass IP-pinning SSRF protection. Virtual hosting / SNI still works
-      // because we use the original hostname (before IP substitution).
-      // Written as lowercase "host" to match the normalized user headers above.
-      if (resolvedIp !== null) {
-        headers.host = parsedUrl.hostname;
       }
 
       const MAX_BODY_BYTES = 1024 * 1024; // 1 MB, matches schema docs
@@ -241,137 +193,20 @@ export function createSendHttpRequestTool(options?: {
 
       const start = Date.now();
       try {
-        // Per-hop method/body. On a 301/302 redirect of a POST/PUT/PATCH these
-        // are downgraded to GET with no body (RFC 7231 §6.4.2-3, browser/fetch
-        // behavior) so the original request body — which may contain credentials
-        // — is NOT resent to the (possibly cross-origin) redirect target.
-        // 307/308 preserve method and body (tools-core-4).
-        let currentMethod = method;
-        let currentBody = requestBody;
-        let currentUrl = initialUrl;
-        // Track the un-pinned URL in parallel so relative redirects resolve
-        // against the real hostname (not the pinned IP), and so Host header
-        // derivation uses the real name rather than the resolved IP address.
-        let currentDisplayUrl = cleanUrlStr;
-        // Origin of the original request. Credential headers (Authorization,
-        // Cookie, etc.) must NOT be forwarded to a redirect destination on a
-        // different origin — any redirecting intermediary could otherwise
-        // harvest them (audit 2026-06-09 tools-http-1, mirrors browser fetch).
-        const originalOrigin = new URL(cleanUrlStr).origin;
-        let redirectCount = 0;
-        let resp: Response;
-
-        // Manual redirect loop so we can cap hops and re-validate each location
-        while (true) {
-          resp = await fetch(currentUrl, {
-            method: currentMethod,
+        const { response: resp, redirects: redirectCount } = await safeFetch(
+          parsedUrl,
+          {
+            method,
             headers,
-            body: currentBody,
+            body: requestBody,
             signal: controller.signal,
-            redirect: "manual", // always manual — we control the loop
-          });
-
-          const isRedirect = resp.status >= 300 && resp.status < 400;
-          if (!followRedirects || !isRedirect) break;
-
-          const location = resp.headers.get("location");
-          if (!location) break;
-
-          if (redirectCount >= MAX_REDIRECTS) {
-            cleanup();
-            return error(`Too many redirects (>${MAX_REDIRECTS})`);
-          }
-
-          // Resolve relative redirect URL against the un-pinned display URL so
-          // the hostname is the real name, not a resolved IP from a prior hop.
-          let nextDisplayUrl: URL;
-          try {
-            nextDisplayUrl = new URL(location, currentDisplayUrl);
-          } catch {
-            cleanup();
-            return error(`Invalid redirect location: "${location}"`);
-          }
-          if (!["http:", "https:"].includes(nextDisplayUrl.protocol)) {
-            cleanup();
-            return error(
-              `Redirect to non-http(s) protocol blocked: "${nextDisplayUrl.protocol}"`,
-            );
-          }
-          if (!allowPrivateHttp && isPrivateHost(nextDisplayUrl.hostname)) {
-            cleanup();
-            return error(
-              `Redirect to private/loopback address blocked ("${nextDisplayUrl.hostname}")`,
-            );
-          }
-
-          // Always set Host from the un-pinned display URL so a DNS failure
-          // doesn't leave the previous hop's Host header on the new request.
-          headers.host = nextDisplayUrl.hostname;
-
-          // Downgrade method/body per RFC 7231 + browser/fetch behavior:
-          //   301/302 of POST/PUT/PATCH  → GET, no body (treated as 303)
-          //   303                         → GET, no body (any method)
-          //   307/308                     → preserve method + body
-          // This prevents resending the original request body (incl. any
-          // credentials) to a redirect target, especially cross-origin.
-          if (
-            resp.status === 303 ||
-            ((resp.status === 301 || resp.status === 302) &&
-              currentMethod !== "GET" &&
-              currentMethod !== "HEAD")
-          ) {
-            currentMethod = "GET";
-            currentBody = undefined;
-            // Body-related request headers are now meaningless — drop them so
-            // the GET hop doesn't advertise a Content-Type/Length for no body.
-            delete headers["content-type"];
-            delete headers["content-length"];
-          }
-
-          // Cross-origin hop → strip caller-supplied credential headers so a
-          // redirecting intermediary can't harvest them (audit tools-http-1).
-          // Header keys were lowercased when collected above.
-          if (nextDisplayUrl.origin !== originalOrigin) {
-            for (const h of [
-              "authorization",
-              "cookie",
-              "x-api-key",
-              "proxy-authorization",
-            ]) {
-              delete headers[h];
-            }
-          }
-
-          // Strip any userinfo (user:password@) from the URL sent to fetch —
-          // credentials must not be forwarded across redirect hops to new origins.
-          nextDisplayUrl.username = "";
-          nextDisplayUrl.password = "";
-
-          // Pin the redirect hop to its resolved IP to close the TOCTOU window.
-          // DNS failures fall through — fetch will report the error naturally.
-          const nextUrl = new URL(nextDisplayUrl.toString());
-          try {
-            const { address: redirectIp } = await dns.lookup(
-              nextDisplayUrl.hostname,
-            );
-            if (!allowPrivateHttp && isPrivateHost(redirectIp)) {
-              cleanup();
-              return error(
-                `Redirect hostname "${nextDisplayUrl.hostname}" resolves to a private address (${redirectIp}) — blocked`,
-              );
-            }
-            // Mutate nextUrl in-place to pin to the resolved IP
-            nextUrl.hostname = redirectIp.includes(":")
-              ? `[${redirectIp}]`
-              : redirectIp;
-          } catch {
-            // DNS failed — use un-pinned URL; fetch will fail naturally
-          }
-
-          currentDisplayUrl = nextDisplayUrl.toString();
-          currentUrl = nextUrl.toString();
-          redirectCount++;
-        }
+          },
+          {
+            allowPrivate: allowPrivateHttp,
+            followRedirects,
+            maxRedirects: MAX_REDIRECTS,
+          },
+        );
 
         cleanup();
 
@@ -442,6 +277,10 @@ export function createSendHttpRequestTool(options?: {
         });
       } catch (err: unknown) {
         cleanup();
+        // A refusal by the outbound guard (private target, private after
+        // DNS, bad redirect, too many hops) is a tool error, not a transport
+        // failure — surface its message verbatim.
+        if (err instanceof OutboundHttpError) return error(err.message);
         if (
           err instanceof Error &&
           (err.name === "AbortError" || err.name === "TimeoutError")

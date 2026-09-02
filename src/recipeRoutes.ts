@@ -46,8 +46,16 @@ import {
   refillBucket,
   type TokenBucketState,
 } from "./fp/tokenBucket.js";
+import {
+  PLUGIN_NOT_ALLOWLISTED,
+  pluginSpecsOfYaml,
+  policyInputFromConfig,
+  refusedPluginSpecs,
+} from "./governance/pluginPolicy.js";
+import { activeProfile } from "./governance/profile.js";
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
+import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import { patchworkPath } from "./patchworkHome.js";
 import { summariseBoundaryReceipts } from "./privacy/boundaryReceipts.js";
 import { cancelRun } from "./recipes/runRegistry.js";
@@ -296,6 +304,39 @@ export function validateRecipeVars(vars: unknown): VarsValidationError | null {
 // Coordination note: A-PR1 also touches `recipeRoutes.ts` for `vars`
 // validation; the helper APIs here are exclusively A-PR2's.
 // ---------------------------------------------------------------------
+
+/**
+ * Plugin policy at the write boundary (install + dashboard save). Under the
+ * governed profile a recipe naming a `servers:` spec not in
+ * `config.plugins.allow` is refused BEFORE anything reaches disk; under compat
+ * this returns [] and nothing changes. The runtime re-validates on load, so
+ * this is a courtesy to the operator rather than the last line of defence.
+ */
+function refusedRecipePlugins(yamlText: string): string[] {
+  const specs = pluginSpecsOfYaml(yamlText);
+  if (specs.length === 0) return [];
+  const policy = policyInputFromConfig(activeProfile(), loadPatchworkConfig());
+  return refusedPluginSpecs(specs, policy).map((v) => v.spec);
+}
+
+function respondPluginNotAllowlisted(
+  res: ServerResponse,
+  specs: string[],
+): void {
+  res.writeHead(400, { "Content-Type": "application/json" });
+  res.end(
+    JSON.stringify({
+      ok: false,
+      error: PLUGIN_NOT_ALLOWLISTED,
+      code: PLUGIN_NOT_ALLOWLISTED,
+      specs,
+      message:
+        `Recipe plugin${specs.length === 1 ? "" : "s"} ${specs.map((x) => `"${x}"`).join(", ")} ` +
+        "not allowlisted under the governed profile. Add to config.json plugins.allow.",
+    }),
+  );
+}
+
 export const RECIPE_ROUTE_BODY_CAPS = {
   /** /recipes/install — `{ source: string }` body. */
   install: 4 * 1024,
@@ -2198,6 +2239,13 @@ export function tryHandleRecipeRoute(
           );
           return;
         }
+        {
+          const refusedPlugins = refusedRecipePlugins(body.content);
+          if (refusedPlugins.length > 0) {
+            respondPluginNotAllowlisted(res, refusedPlugins);
+            return;
+          }
+        }
         const result = deps.saveRecipeContentFn(name, body.content);
         // Editing recipe YAML can change cron schedule, webhook path,
         // or trigger type entirely — re-prime the scheduler so the new
@@ -2908,6 +2956,16 @@ export function tryHandleRecipeRoute(
                 continue;
               }
               const yamlText = Buffer.from(recipeBuf).toString("utf-8");
+              {
+                const refusedPlugins = refusedRecipePlugins(yamlText);
+                if (refusedPlugins.length > 0) {
+                  failures.push({
+                    name: r,
+                    error: `${PLUGIN_NOT_ALLOWLISTED}: ${refusedPlugins.join(", ")}`,
+                  });
+                  continue;
+                }
+              }
               // #605: same race-fix as /recipes/install — embed pid +
               // randomBytes so concurrent bundle installs of the same
               // recipe inside one millisecond don't collide.
@@ -3338,6 +3396,14 @@ export function tryHandleRecipeRoute(
         const yamlText = Buffer.concat(
           chunks.map((c) => Buffer.from(c)),
         ).toString("utf-8");
+
+        {
+          const refusedPlugins = refusedRecipePlugins(yamlText);
+          if (refusedPlugins.length > 0) {
+            respondPluginNotAllowlisted(res, refusedPlugins);
+            return;
+          }
+        }
 
         // #605: temp path must be unique per process+request. Previous
         // form was `Date.now()-${recipeName}` — two concurrent installs

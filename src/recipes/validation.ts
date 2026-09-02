@@ -2,6 +2,14 @@ import type { ValidateFunction } from "ajv";
 import cron from "node-cron";
 import { createAjv2020, type ErrorObject } from "../ajv2020.js";
 import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
+import {
+  evaluatePluginSpec,
+  GOVERNED_PLUGIN_POLICY_PROFILE,
+  type PluginPolicyInput,
+  policyInputFromConfig,
+} from "../governance/pluginPolicy.js";
+import { activeProfile } from "../governance/profile.js";
+import { loadConfig as loadPatchworkConfig } from "../patchworkConfig.js";
 import { unsupportedKeysOf, unsupportedStepMessage } from "./compoundSteps.js";
 import {
   misplacedDataPolicy,
@@ -121,7 +129,19 @@ export interface LintResult {
   errors: number;
 }
 
-export function validateRecipeDefinition(recipe: unknown): LintResult {
+export interface LintOptions {
+  /**
+   * Plugin policy the `plugin-not-allowlisted` rule evaluates against.
+   * Defaults to the active profile + `config.plugins.allow`; tests and
+   * `policy explain` may pass an explicit one.
+   */
+  pluginPolicy?: PluginPolicyInput;
+}
+
+export function validateRecipeDefinition(
+  recipe: unknown,
+  opts: LintOptions = {},
+): LintResult {
   const issues: LintIssue[] = [];
   const normalizedRecipe = normalizeRecipeForValidation(recipe);
 
@@ -129,6 +149,15 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
     issues.push({ level: "error", message: "Recipe must be a YAML object" });
   } else {
     const r = normalizedRecipe as Record<string, unknown>;
+
+    // `servers:` names code that is imported into the bridge process. Under
+    // the governed profile a spec outside `config.plugins.allow` is refused
+    // at install, save AND runtime, so lint reports it as an ERROR; under
+    // compat the same check is a WARNING saying what governed would do, so
+    // an operator preparing to switch profiles can see the refusal coming.
+    if (Array.isArray(r.servers)) {
+      lintPluginPolicy(r.servers, opts.pluginPolicy, issues);
+    }
 
     // Root-level `vars:` is silently dropped at runtime — the runner reads
     // only `trigger.vars` / `trigger.inputs` (PR#259 trap). Warn so the
@@ -674,6 +703,46 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
     warnings,
     errors,
   };
+}
+
+function lintPluginPolicy(
+  servers: unknown[],
+  explicit: PluginPolicyInput | undefined,
+  issues: LintIssue[],
+): void {
+  let policy: PluginPolicyInput;
+  if (explicit) policy = explicit;
+  else {
+    let allow: PluginPolicyInput["allow"];
+    try {
+      allow = loadPatchworkConfig().plugins?.allow;
+    } catch {
+      allow = undefined;
+    }
+    policy = policyInputFromConfig(activeProfile(), { plugins: { allow } });
+  }
+  const governed = policy.profile.pluginPolicy === "allowlist";
+  servers.forEach((spec, i) => {
+    if (typeof spec !== "string") return;
+    // Under compat the live verdict is always "allowed"; evaluate against
+    // the governed posture so the warning describes the real consequence.
+    const verdict = governed
+      ? evaluatePluginSpec(spec, policy)
+      : evaluatePluginSpec(spec, {
+          profile: GOVERNED_PLUGIN_POLICY_PROFILE,
+          allow: policy.allow,
+        });
+    if (verdict.allowed) return;
+    issues.push({
+      level: governed ? "error" : "warning",
+      message: governed
+        ? `plugin "${spec}" is not allowlisted under the governed profile (${verdict.reason}). ` +
+          "Add it to config.json plugins.allow, or the recipe will be refused at install, save and run."
+        : `plugin "${spec}" would be refused under the governed profile (${verdict.reason}).`,
+      code: "plugin-not-allowlisted",
+      path: `servers.${i}`,
+    });
+  });
 }
 
 /**

@@ -1732,7 +1732,7 @@ describe("runYamlRecipe — agent step with driver: claude-code", () => {
     });
     await runYamlRecipe(recipe, { ...noop(), claudeCodeFn }, {});
     expect(claudeCodeFn).toHaveBeenCalledTimes(1);
-    expect(seen[0]!.opts).toEqual({
+    expect(seen[0]!.opts).toMatchObject({
       sandbox: true,
       allowedTools: ["getDiagnostics"],
       disallowedTools: ["runCommand"],
@@ -1756,7 +1756,7 @@ describe("runYamlRecipe — agent step with driver: claude-code", () => {
       disallowedTools: ["gitPush"],
     });
     expect(claudeCodeFn).toHaveBeenCalledTimes(1);
-    expect(seen[0]!.opts).toEqual({
+    expect(seen[0]!.opts).toMatchObject({
       mcpAccess: true,
       sandbox: true,
       allowedTools: ["getGitStatus"],

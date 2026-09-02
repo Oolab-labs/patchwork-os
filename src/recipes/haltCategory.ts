@@ -20,6 +20,10 @@ export type HaltCategory =
   | "tool_error"
   /** Write blocked by the global kill-switch (#422). Distinct from a real tool failure. */
   | "kill_switch"
+  /** Effective policy refused the step before dispatch (governed profile: plugin allowlist, recipe tool allowlist, worker forbid). */
+  | "policy_denied"
+  /** No tool is registered under the step's id; the governed profile refuses rather than skips. */
+  | "unresolved_tool"
   /** Recipe's `tokensMax` budget breached (PR2b). */
   | "budget_exceeded"
   /** Per-step `expect` assertion failed (slice 2). */
@@ -106,6 +110,8 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   tool_threw: "tool threw",
   tool_error: "tool error",
   kill_switch: "kill-switch blocked",
+  policy_denied: "policy refused",
+  unresolved_tool: "tool not registered",
   budget_exceeded: "budget exceeded",
   expect_failed: "expect failed",
   step_timeout: "step timeout",
@@ -135,6 +141,10 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   tool_threw: "check inner error in trace",
   tool_error: "check inner error in trace",
   kill_switch: "run `patchwork kill-switch release`",
+  policy_denied:
+    "run `patchwork policy explain <recipe> <tool>` to see which stage refused",
+  unresolved_tool:
+    "run `recipe doctor`; install or allowlist the plugin that provides the tool",
   budget_exceeded: "raise tokensMax / usdMax or shrink prompts",
   expect_failed: "inspect assertion vs actual output",
   step_timeout: "bump timeout_ms or speed up step",

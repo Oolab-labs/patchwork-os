@@ -560,6 +560,55 @@ All LSP tools available in both slim and full mode (full is the default since v2
 | Links / file refs in doc? | `getDocumentLinks` |
 | Code lens counts? | `getCodeLens` |
 
+## Governed Profile (ADR-0026)
+
+`config.json` `profile: "governed" | "compat"` — **[ADR-0026](docs/adr/0026-governed-profile.md)**.
+Absent ⇒ `compat`, byte-identical to before. `patchwork init` writes `governed`
+for a NEW config only; `patchwork profile governed|compat` changes an existing
+one (restart the bridge). The profile resolves to EXISTING primitives
+(`src/governance/profile.ts`): approval gate floor `high`, automated triggers
+gated like manual, `FLAG_WORKER_AUTONOMY` + `FLAG_ENFORCE_POLICY` on, agent
+steps contained by default (Read/Glob/Grep/LS; WebFetch/WebSearch/Bash denied;
+env allowlist; no bridge MCP), recipe `servers:` allowlisted via
+`config.plugins.allow`, kill switch fails CLOSED when unreadable, non-reversible
+and inferred-tier writes queue, unregistered tools halt, a recipe's
+`requireApproval: false` is ignored, connector output is wrapped in an
+`<untrusted>` envelope in agent prompts.
+
+- **One calculation.** `computeEffectivePolicy` (`src/governance/effectivePolicy.ts`)
+  is called by BOTH runners at the per-step consult and by `patchwork policy
+  explain <recipe> [tool]`. `effectivePolicy.test.ts` runs the real flat runner
+  over a (profile × trigger × tool × opt-out) matrix and asserts the runner's
+  consult/verdict equals the calculation's. Do not add a rule to one without
+  the other — the test is what stops the explanation lying.
+- **`patchwork doctor`** prints a governance section from runtime-effective
+  state and ends `STATUS: GOVERNED` / `NOT GOVERNED` with reasons.
+  `--require-governed` folds it into the exit code; without it the existing
+  `doctor && echo deployed` contract is unchanged. `patchwork profile show` is
+  the same report.
+- **Kill switch is read through `readKillSwitch()` / `assertKillSwitchReleased()`**
+  (`src/governance/killSwitchPolicy.ts`) at every chokepoint: recipe entry,
+  webhook entry, `executeTool`, MCP `tools/call` for write-capable tools, and
+  the orchestrator's pending→running transition. Never wrap
+  `isWriteKillSwitchActive` in your own `try {} catch {}` — that is how four
+  sites were fail-open with a comment saying "same as every other site".
+- **Secrets are redacted by VALUE** (`src/governance/secretValues.ts`): env
+  blocks, connector tokens, the bridge bearer and the secure store register
+  their values in a memory-only registry; `captureForRunlog`, the approval
+  queue, activity log, decision traces and the logger substitute
+  `[REDACTED:<source>]` for the value and its URL-encoded / base64 /
+  JSON-escaped forms. Orchestrator task prompts persist as sha256 + preview +
+  AES-GCM ciphertext, never cleartext.
+- **Outbound HTTP** has ONE guard (`validateOutboundUrl` / `safeFetch` in
+  `src/ssrfGuard.ts`): lexical private-range refusal incl. unusual IPv4
+  notations and IPv4-mapped IPv6, DNS resolve-once + pin, manual redirects
+  re-validated per hop with credentials dropped cross-origin. `http.post` and
+  `sendHttpRequest` both use it.
+- **Known remaining bypasses are listed in the ADR.** Replay rebuilds the tier
+  gate but not the worker gate (so a worker-owned recipe is REFUSED for replay under governed); the envelope does not reach `fan_out` items,
+  nested child outputs or automation-hook prompts; `recipe test`/`record` are
+  ungated; there is no prompt size cap.
+
 ## Workers / Autonomy Gate
 
 The `src/workers/` subsystem implements a trust-ramp-aware autonomy gate for recipe-bound workers.

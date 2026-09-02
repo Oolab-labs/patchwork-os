@@ -47,7 +47,10 @@ describe("schemaGenerator — agent step sandbox fields (P0-5)", () => {
       | undefined;
     const agentProps = agentStep?.properties?.agent?.properties;
     expect(agentProps).toBeDefined();
-    expect(agentProps?.sandbox).toMatchObject({ type: "boolean" });
+    // Phase 0: boolean OR the governed widening object form.
+    expect(agentProps?.sandbox).toMatchObject({
+      oneOf: [{ type: "boolean" }, { type: "object" }],
+    });
     expect(agentProps?.tools).toMatchObject({
       type: "array",
       items: { type: "string" },

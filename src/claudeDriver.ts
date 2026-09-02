@@ -21,6 +21,9 @@ import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { allowlistEnv } from "./drivers/claude/envSanitizer.js";
+import { CLAUDE_PROVIDER_ENV_KEYS } from "./drivers/claude/subprocess.js";
+import type { AgentContainment } from "./governance/profile.js";
 
 export interface ClaudeTaskInput {
   prompt: string;
@@ -43,6 +46,15 @@ export interface ClaudeTaskInput {
   systemPrompt?: string;
   /** If true, spawn the ant binary instead of claude. */
   useAnt?: boolean;
+  /**
+   * Resolved agent containment (Phase 0 step 6). When `enforced`, the spawn
+   * drops `--dangerously-skip-permissions` for `--permission-mode dontAsk`
+   * plus the allow/deny lists, and allowlists the environment. Absent ⇒
+   * legacy behaviour.
+   */
+  containment?: AgentContainment;
+  /** Env keys the recipe declared it needs; only honoured when contained. */
+  passEnv?: string[];
 }
 
 /**
@@ -280,9 +292,23 @@ export class SubprocessDriver implements IClaudeDriver {
     if (input.fallbackModel) args.push("--fallback-model", input.fallbackModel);
     if (input.maxBudgetUsd !== undefined)
       args.push("--max-budget-usd", String(input.maxBudgetUsd));
-    // Always skip permissions: all bridge-spawned subprocesses run headless (stdin: 'ignore',
-    // detached: true) so permission prompts can never be answered interactively.
-    args.push("--dangerously-skip-permissions");
+    const contained = input.containment?.enforced === true;
+    const argvSafe = (list: readonly string[] | undefined): string[] =>
+      (list ?? []).filter((t) => t.length > 0 && !t.startsWith("-"));
+    if (contained) {
+      // Contained: --dangerously-skip-permissions VOIDS --allowed-tools, so
+      // run in dontAsk mode (headless-safe: a prompt is a refusal) and
+      // enforce the containment's allow/deny lists.
+      args.push("--permission-mode", "dontAsk");
+      const allowed = argvSafe(input.containment?.allowedTools);
+      if (allowed.length > 0) args.push("--allowed-tools", ...allowed);
+      const denied = argvSafe(input.containment?.deniedTools);
+      if (denied.length > 0) args.push("--disallowed-tools", ...denied);
+    } else {
+      // Always skip permissions: all bridge-spawned subprocesses run headless (stdin: 'ignore',
+      // detached: true) so permission prompts can never be answered interactively.
+      args.push("--dangerously-skip-permissions");
+    }
     // workspace is set as cwd in spawn() — claude -p has no --workspace flag
     for (const f of input.contextFiles ?? []) {
       if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {
@@ -292,7 +318,12 @@ export class SubprocessDriver implements IClaudeDriver {
 
     // CRITICAL: strip vars that would cause the subprocess to attach to or authenticate
     // as the parent Claude Code session, which causes hangs when cwd contains a .claude/ dir.
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const env: NodeJS.ProcessEnv = input.containment?.envAllowlist
+      ? allowlistEnv(process.env, {
+          providerKeys: CLAUDE_PROVIDER_ENV_KEYS,
+          passEnv: input.passEnv,
+        })
+      : { ...process.env };
     // Strip all Claude Code and MCP session vars — any of these can cause the subprocess to
     // attach to, re-authenticate against, or behave as a nested agent of the parent session.
     for (const key of Object.keys(env)) {

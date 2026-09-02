@@ -10,6 +10,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { truncateUtf8Bytes } from "./drivers/outputCap.js";
+import { readKillSwitch } from "./governance/killSwitchPolicy.js";
 import { loadConfig } from "./patchworkConfig.js";
 import { patchworkPath } from "./patchworkHome.js";
 import { getConfigDisabledNames } from "./recipes/disabledMarkers.js";
@@ -109,6 +110,20 @@ export function agentTextFromTask(task: {
  * human approval and resolves true only on an explicit "approved" decision
  * (a reject / expire / cancel halts the run — fail-closed, ADR-0016 spirit).
  */
+/**
+ * Phase 0 step 10: under the governed profile the spawned agent's system
+ * prompt says that `<untrusted>` blocks are data, not instructions. Under
+ * compat nothing is added, so the orchestrator hop stays byte-identical.
+ */
+async function governedSystemPrompt(): Promise<{ systemPrompt?: string }> {
+  const { activeProfile } = await import("./governance/profile.js");
+  if (!activeProfile().untrustedEnvelope) return {};
+  const { RECIPE_SYSTEM_PROMPT_GOVERNED } = await import(
+    "./recipes/yamlRunner.js"
+  );
+  return { systemPrompt: RECIPE_SYSTEM_PROMPT_GOVERNED };
+}
+
 export async function makeRecipeApprovalFn(
   gate: "high" | "all",
   server?: Server,
@@ -117,8 +132,17 @@ export async function makeRecipeApprovalFn(
   const { enqueueApprovalWithDispatch } = await import("./approvalHttp.js");
   const queue = getApprovalQueue();
   return async (input) => {
+    // The runner's effective-policy verdict wins when present — it already
+    // folded the tier threshold, the governed rules for inferred-tier writes
+    // and agent-step containment into one calculation (effectivePolicy.ts).
+    if (input.effective === "ALLOW") return true;
     // Below-threshold steps don't need sign-off.
-    if (gate === "high" && input.tier !== "high") return true;
+    if (
+      input.effective === undefined &&
+      gate === "high" &&
+      input.tier !== "high"
+    )
+      return true;
     // Goes through `enqueueApprovalWithDispatch`, NOT `queue.request`. The
     // second queues silently; only the first fans out to the configured
     // channels (webhook, Web Push, ntfy).
@@ -947,6 +971,7 @@ export class RecipeOrchestration {
           callOpts?: {
             mcpAccess?: boolean;
             sandbox?: boolean;
+            containment?: import("./governance/profile.js").AgentContainment;
             allowedTools?: string[];
             disallowedTools?: string[];
           },
@@ -956,11 +981,15 @@ export class RecipeOrchestration {
             prompt,
             triggerSource: `replay:${seq}:agent`,
             timeoutMs: 1_800_000,
+            ...(await governedSystemPrompt()),
             ...(callOpts?.mcpAccess !== undefined && {
               mcpAccess: callOpts.mcpAccess,
             }),
             ...(callOpts?.sandbox !== undefined && {
               sandbox: callOpts.sandbox,
+            }),
+            ...(callOpts?.containment !== undefined && {
+              containment: callOpts.containment,
             }),
             ...(callOpts?.allowedTools !== undefined && {
               allowedTools: callOpts.allowedTools,
@@ -977,10 +1006,38 @@ export class RecipeOrchestration {
         // let a restricted worker's recipe call tools outside its
         // allowedTools list during replay even though a live run couldn't.
         const workerId = await resolveWorkerIdForRecipe(recipeName);
+        const { activeProfile: replayActiveProfile } = await import(
+          "./governance/profile.js"
+        );
+        const replayProfile = replayActiveProfile();
+        // A replay cannot rebuild the worker gate (no live trust context),
+        // so under governed a worker-owned recipe is REFUSED rather than
+        // replayed with fewer gates than the live run had — a forbid must
+        // not be reachable by re-running yesterday's evidence.
+        if (replayProfile.mode === "governed" && workerId) {
+          return {
+            ok: false,
+            error: "replay_refused_worker_owned_under_governed",
+          };
+        }
+        const replayGate: "off" | "high" | "all" =
+          replayProfile.mode === "governed"
+            ? replayProfile.approvalGate
+            : (this.deps.server?.approvalGate ?? "off");
+        const replayApprovalFn =
+          replayGate === "off"
+            ? undefined
+            : await makeRecipeApprovalFn(replayGate, this.deps.server);
         const runnerDeps = {
           workdir: this.deps.workdir,
           claudeCodeFn,
           ...(workerId && { workerId }),
+          // Phase 0: a replay executes every step the original run did not
+          // capture, so it is governed like a manual run — same profile,
+          // same tier gate. (The worker gate is NOT rebuilt here: replay
+          // has no live trust context. Recorded as a known gap.)
+          governance: replayProfile,
+          ...(replayApprovalFn && { requireApprovalFn: replayApprovalFn }),
         };
 
         // Flat (manual/cron/webhook) recipes: runYamlRecipe + per-step
@@ -1058,13 +1115,10 @@ export class RecipeOrchestration {
     ) => {
       // #605: same kill-switch gate as runRecipeFn — webhook trigger
       // is just another path into recipe execution.
-      try {
-        const { isWriteKillSwitchActive } = await import("./featureFlags.js");
-        if (isWriteKillSwitchActive()) {
-          return { ok: false, error: "kill_switch_blocked" };
-        }
-      } catch {
-        /* featureFlags module unavailable — fail open. */
+      // Profile-dependent failure mode: compat fails open on an unreadable
+      // flags state (as this site always did); governed refuses.
+      if (readKillSwitch().engaged) {
+        return { ok: false, error: "kill_switch_blocked" };
       }
       if (!this.deps.getOrchestrator()) {
         return {
@@ -1158,17 +1212,11 @@ export class RecipeOrchestration {
       // surface the bridge exposes (Claude subprocess + tool calls);
       // the kill switch was designed for exactly this case but the
       // recipe entry point never consulted it.
-      try {
-        const { isWriteKillSwitchActive } = await import("./featureFlags.js");
-        if (isWriteKillSwitchActive()) {
-          return {
-            ok: false,
-            error: "kill_switch_blocked",
-          };
-        }
-      } catch {
-        /* featureFlags module unavailable — fail open, same as
-           every other site that imports it dynamically. */
+      if (readKillSwitch().engaged) {
+        return {
+          ok: false,
+          error: "kill_switch_blocked",
+        };
       }
       if (!this.deps.getOrchestrator()) {
         return {
@@ -1646,6 +1694,7 @@ export class RecipeOrchestration {
       callOpts?: {
         mcpAccess?: boolean;
         sandbox?: boolean;
+        containment?: import("./governance/profile.js").AgentContainment;
         allowedTools?: string[];
         disallowedTools?: string[];
       },
@@ -1654,10 +1703,14 @@ export class RecipeOrchestration {
         prompt,
         triggerSource: `${opts.triggerSourceSuffix}:agent`,
         timeoutMs: 1_800_000,
+        ...(await governedSystemPrompt()),
         ...(callOpts?.mcpAccess !== undefined && {
           mcpAccess: callOpts.mcpAccess,
         }),
         ...(callOpts?.sandbox !== undefined && { sandbox: callOpts.sandbox }),
+        ...(callOpts?.containment !== undefined && {
+          containment: callOpts.containment,
+        }),
         ...(callOpts?.allowedTools !== undefined && {
           allowedTools: callOpts.allowedTools,
         }),
@@ -1672,7 +1725,18 @@ export class RecipeOrchestration {
     // consults it for `manual`-triggered runs (safe-by-default: automated
     // cron/webhook runs never block mid-flight), so this injection does not
     // need to inspect the trigger type here.
-    const approvalGate = this.deps.server?.approvalGate ?? "off";
+    // Governance profile (src/governance/profile.ts). Governed raises the
+    // gate to at least "high", gates automated triggers, and ignores a
+    // recipe's own opt-out; compat is byte-identical to before.
+    const { activeProfile } = await import("./governance/profile.js");
+    const profile = activeProfile();
+    const configuredGate = this.deps.server?.approvalGate ?? "off";
+    const approvalGate: "off" | "high" | "all" =
+      profile.mode === "governed"
+        ? configuredGate === "all"
+          ? "all"
+          : "high"
+        : configuredGate;
     // Parse the recipe HERE, through the orchestrator's own resolved loader —
     // the identical path `fire()` uses — because whether the workspace tier
     // policy applies is the recipe's own `requireApproval`, and the gate is
@@ -1703,7 +1767,7 @@ export class RecipeOrchestration {
     // still refuses. The runner enforces the other half: the flag cannot
     // suppress the worker gate itself.
     const tierApprovalFn =
-      approvalGate === "off" || tierOptOut
+      approvalGate === "off" || (tierOptOut && profile.recipeOptOutHonoured)
         ? undefined
         : await makeRecipeApprovalFn(approvalGate, this.deps.server);
     // worker.autonomy flip (flag-gated, default off). When a worker owns this
@@ -1741,6 +1805,11 @@ export class RecipeOrchestration {
       },
     );
     const requireApprovalFn = workerApprovalFn ?? tierApprovalFn;
+    // `gateAutomatedRuns` is the WORKER-gate signal the runner reads (a worker
+    // fn is injected, so the recipe's opt-out must not apply). The governed
+    // profile's own automated-trigger gating travels on `governance` and is
+    // evaluated by `shouldConsultApproval`, not by widening this flag — the
+    // two facts mean different things and the runner distinguishes them.
     const gateAutomatedRuns = workerApprovalFn != null;
     // Agent-step bypass guard: when a worker owns this recipe, its agent steps
     // inherit a `--disallowed-tools` list covering everything the worker can't
@@ -1756,6 +1825,7 @@ export class RecipeOrchestration {
     const workerId = await resolveWorkerIdForRecipe(opts.name);
     const runnerDeps = {
       workdir: this.deps.workdir,
+      governance: profile,
       claudeCodeFn,
       // Bug 2026-06-24: forward the bridge ActivityLog into runnerDeps so
       // buildChainedDeps → resolveStepDeps carries it onto StepDeps and the

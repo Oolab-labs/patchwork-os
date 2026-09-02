@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
+import { registerSecretValues } from "../governance/secretValues.js";
 import { patchworkHome } from "../patchworkHome.js";
 
 const SERVICE_NAME = "patchwork-os";
@@ -119,6 +120,36 @@ export function storeSecretJsonSync(provider: string, value: unknown): void {
 }
 
 export function getSecretJsonSync<T>(provider: string): T | null {
+  // Every credential this process loads passes through here, so this is the
+  // one place to hand the VALUES to the redaction registry. The label is the
+  // storage-key name (a provider id such as `gmail` or `apiKey.openai`),
+  // never the value; the registry itself is memory-only.
+  return registerLoaded(loadSecretJsonSync<T>(provider), provider);
+}
+
+function registerLoaded<T>(value: T | null, provider: string): T | null {
+  if (value !== null && typeof value === "object") {
+    registerSecretValues(value, `store:${provider}`);
+  }
+  return value;
+}
+
+/**
+ * Encrypt / decrypt an arbitrary string under the same AES-256-GCM master key
+ * the file backend uses. Exposed so the orchestrator can persist a task
+ * prompt across a restart without writing it in clear text (see
+ * `claudeOrchestrator.ts` `_buildTasksPayload`). `decryptSecretString`
+ * returns null on any failure — a wrong key, a torn write, a foreign file.
+ */
+export function encryptSecretString(text: string): string {
+  return encrypt(text);
+}
+
+export function decryptSecretString(encryptedData: string): string | null {
+  return decrypt(encryptedData);
+}
+
+function loadSecretJsonSync<T>(provider: string): T | null {
   const key = storageKey(provider);
   const backend = resolveBackend();
 

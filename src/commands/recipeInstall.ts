@@ -25,6 +25,14 @@ import {
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
+import {
+  pluginNotAllowlistedError,
+  pluginSpecsOfYaml,
+  policyInputFromConfig,
+  refusedPluginSpecs,
+} from "../governance/pluginPolicy.js";
+import { activeProfile } from "../governance/profile.js";
+import { loadConfig } from "../patchworkConfig.js";
 import { patchworkPath } from "../patchworkHome.js";
 import {
   disabledMarkerPath,
@@ -553,6 +561,25 @@ export async function runRecipeInstall(
         `No recipe files found in source "${rawSource}". ` +
           `Expected .yaml/.yml files or a recipe.json manifest.`,
       );
+    }
+
+    // Plugin policy: under the governed profile a recipe naming a `servers:`
+    // spec outside `config.plugins.allow` is refused BEFORE it reaches the
+    // recipes directory. Same verdict function the runtime applies on load.
+    {
+      const refused = new Set<string>();
+      const policy = policyInputFromConfig(activeProfile(), loadConfig());
+      for (const file of filesToCopy) {
+        if (!/\.ya?ml$/i.test(file)) continue;
+        const specs = pluginSpecsOfYaml(
+          readFileSync(path.join(tmpDir, file), "utf-8"),
+        );
+        for (const v of refusedPluginSpecs(specs, policy)) refused.add(v.spec);
+      }
+      if (refused.size > 0)
+        throw pluginNotAllowlistedError(
+          [...refused].map((spec) => ({ spec, allowed: false, reason: "" })),
+        );
     }
 
     const installName = determineInstallName(manifest, source);

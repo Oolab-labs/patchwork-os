@@ -7,7 +7,11 @@
  * #252). Test bodies are unchanged — the only edit is the import path.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  _resetSecretValuesForTesting,
+  registerSecretValue,
+} from "../../governance/secretValues.js";
 import { captureForRunlog, detectSilentFail } from "../stepObservation.js";
 
 describe("detectSilentFail — pass-through", () => {
@@ -382,5 +386,31 @@ describe("captureForRunlog — separator variants of a secret key", () => {
     // existing, deliberate behaviour); the first must not.
     const out = JSON.stringify(captureForRunlog({ monkey: "banana" }));
     expect(out).toContain("banana");
+  });
+});
+
+describe("captureForRunlog — value-based redaction composes after key-based", () => {
+  afterEach(() => _resetSecretValuesForTesting());
+
+  it("a registered secret under a NON-sensitive key is still redacted", () => {
+    const secret = "sk-live-0123456789abcdefABCDEF";
+    registerSecretValue(secret, "env");
+    const captured = captureForRunlog({
+      url: `https://example.test/?key=${secret}`,
+      body: `{"auth":"${secret}"}`,
+      note: "unrelated",
+    }) as Record<string, string>;
+    expect(JSON.stringify(captured)).not.toContain(secret);
+    expect(captured.url).toContain("[REDACTED:env]");
+    expect(captured.note).toBe("unrelated");
+  });
+
+  it("key-based redaction is unchanged when the registry is empty", () => {
+    const captured = captureForRunlog({
+      password: "hunter2hunter2",
+      plain: "kept",
+    }) as Record<string, string>;
+    expect(captured.password).toBe("[REDACTED]");
+    expect(captured.plain).toBe("kept");
   });
 });

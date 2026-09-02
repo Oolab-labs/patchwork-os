@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -13,7 +13,16 @@ function getConfigDir(): string {
   return process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
 }
 
+import {
+  decryptSecretString,
+  encryptSecretString,
+} from "./connectors/tokenStorage.js";
 import type { IClaudeDriver } from "./drivers/types.js";
+import {
+  killSwitchMessage,
+  readKillSwitch,
+} from "./governance/killSwitchPolicy.js";
+import { redactKnownSecrets } from "./governance/secretValues.js";
 import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import { sharedBoundaryReceiptLog } from "./privacy/boundaryReceiptLog.js";
 import {
@@ -88,6 +97,8 @@ export interface ClaudeTask {
   allowedTools?: string[];
   /** Deny rules via --disallowed-tools (any mode). */
   disallowedTools?: string[];
+  /** Resolved governed containment (Phase 0 step 6); forwarded to the driver. */
+  containment?: import("./governance/profile.js").AgentContainment;
   /** Set when status === "cancelled": what triggered the cancel. */
   cancelReason?: CancelReason;
   /** Last ~2KB of subprocess stderr — populated on timeout and other aborts. */
@@ -143,13 +154,64 @@ export type EnqueueOpts = {
   sandbox?: boolean;
   allowedTools?: string[];
   disallowedTools?: string[];
+  containment?: import("./governance/profile.js").AgentContainment;
 };
+
+/** Encrypt a prompt for the tasks file; undefined when the key layer is unavailable. */
+function encryptPromptForPersistence(prompt: string): string | undefined {
+  try {
+    return encryptSecretString(prompt);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Recover a persisted task's prompt. `recovered` is true only when the FULL
+ * prompt is available — decrypted, or a legacy clear-text row. A preview is
+ * enough to show history, never enough to run.
+ */
+function restorePrompt(t: PersistedTask): {
+  prompt: string;
+  recovered: boolean;
+} {
+  if (typeof t.promptEncrypted === "string") {
+    let plain: string | null = null;
+    try {
+      plain = decryptSecretString(t.promptEncrypted);
+    } catch {
+      plain = null;
+    }
+    if (plain !== null) return { prompt: plain, recovered: true };
+  }
+  if (typeof t.prompt === "string")
+    return { prompt: t.prompt, recovered: true };
+  return {
+    prompt: typeof t.promptPreview === "string" ? t.promptPreview : "",
+    recovered: false,
+  };
+}
 
 /** Shape of a task entry in the v1 tasks file. */
 interface PersistedTask {
   id: string;
   sessionId: string;
-  prompt: string;
+  /**
+   * LEGACY (files written before secret handling): the prompt in clear text.
+   * Read on restore, never written. New files carry the three fields below.
+   */
+  prompt?: string;
+  /** sha256 of the full prompt — lets a reader match a task to a prompt it holds. */
+  promptSha256?: string;
+  /** First 200 chars of the prompt AFTER value-based redaction. Display only. */
+  promptPreview?: string;
+  /**
+   * The full prompt, AES-256-GCM under the connector-token master key
+   * (`encryptSecretString`). Present when the key layer is available; a
+   * pending task whose prompt cannot be recovered on restore is demoted to
+   * `interrupted` rather than re-run against a truncated preview.
+   */
+  promptEncrypted?: string;
   contextFiles: string[];
   status: string;
   output?: string;
@@ -181,6 +243,7 @@ interface PersistedTask {
   sandbox?: boolean;
   allowedTools?: string[];
   disallowedTools?: string[];
+  containment?: import("./governance/profile.js").AgentContainment;
   isAutomationTask?: boolean;
 }
 
@@ -505,6 +568,7 @@ export class ClaudeOrchestrator {
       ...(opts.disallowedTools !== undefined && {
         disallowedTools: opts.disallowedTools,
       }),
+      ...(opts.containment !== undefined && { containment: opts.containment }),
     };
 
     this.tasks.set(id, task);
@@ -660,8 +724,36 @@ export class ClaudeOrchestrator {
       }
       this.queue.shift();
       skipped = 0;
+      // Kill switch — checked at the pending→running transition, so a job
+      // queued BEFORE the switch was engaged is refused when its turn comes,
+      // and a task already running is never killed. Governed profile:
+      // unreadable state refuses (see killSwitchPolicy).
+      const ks = readKillSwitch();
+      if (ks.engaged) {
+        this._refuseTask(id, killSwitchMessage(ks, "subprocess task"));
+        continue;
+      }
       this._runTask(id);
     }
+  }
+
+  /** Land a pending task in `error` without ever starting it. */
+  private _refuseTask(id: string, errorMessage: string): void {
+    const task = this.tasks.get(id);
+    if (!task) return;
+    task.status = "error";
+    task.errorMessage = errorMessage;
+    task.doneAt = Date.now();
+    this.taskCallbacks.delete(id);
+    this.log(`[orchestrator] task ${id.slice(0, 8)} refused: ${errorMessage}`);
+    this.notifyDone?.(id, task.status);
+    this._fireCompletion(id);
+    void Promise.resolve(this.checkpoint?.save()).catch((err) => {
+      this.log(
+        `[orchestrator] checkpoint save failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+    this._pruneHistory();
   }
 
   private async _runTask(id: string): Promise<void> {
@@ -747,7 +839,13 @@ export class ClaudeOrchestrator {
           sandbox: task.sandbox,
           allowedTools: task.allowedTools,
           disallowedTools: task.disallowedTools,
+          containment: task.containment,
         },
+        // Phase 0: containment travels typed as well as in the bag, so a
+        // driver that reads only ProviderTaskInput.containment still sees it.
+        ...(task.containment !== undefined && {
+          containment: task.containment,
+        }),
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);
@@ -849,14 +947,25 @@ export class ClaudeOrchestrator {
   private _buildTasksPayload(): PersistedTask[] {
     const result: PersistedTask[] = [];
     for (const t of this.tasks.values()) {
+      // Never the prompt in clear text: `~/.claude/ide/tasks-<port>.json`
+      // used to hold every prompt and output verbatim, which is where an
+      // interpolated API key or a pasted credential ended up persisting past
+      // the process that was handed it.
+      const promptEncrypted = encryptPromptForPersistence(t.prompt);
       result.push({
         id: t.id,
         sessionId: t.sessionId,
-        prompt: t.prompt,
+        promptSha256: createHash("sha256").update(t.prompt).digest("hex"),
+        promptPreview: redactKnownSecrets(t.prompt).slice(0, 200),
+        ...(promptEncrypted !== undefined && { promptEncrypted }),
         contextFiles: t.contextFiles,
         status: (t.status === "running" ? "interrupted" : t.status) as string,
-        output: t.output,
-        errorMessage: t.errorMessage,
+        output:
+          t.output === undefined ? undefined : redactKnownSecrets(t.output),
+        errorMessage:
+          t.errorMessage === undefined
+            ? undefined
+            : redactKnownSecrets(t.errorMessage),
         createdAt: t.createdAt,
         startedAt: t.startedAt,
         doneAt: t.doneAt,
@@ -872,7 +981,9 @@ export class ClaudeOrchestrator {
           startupTimeoutMs: t.startupTimeoutMs,
         }),
         ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
-        ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
+        ...(t.stderrTail !== undefined && {
+          stderrTail: redactKnownSecrets(t.stderrTail),
+        }),
         ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
         ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
         ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
@@ -992,7 +1103,7 @@ export class ClaudeOrchestrator {
         if (typeof t.id !== "string") continue;
         if (this.tasks.has(t.id)) continue;
 
-        const prompt: string = typeof t.prompt === "string" ? t.prompt : "";
+        const { prompt, recovered: promptRecovered } = restorePrompt(t);
         // Only restore context files that are workspace-confined regular files.
         // The previous check used `abs.startsWith(\`${normalizedWorkspace}/\`)`
         // — hardcoded POSIX separator silently dropped every contextFile on
@@ -1016,6 +1127,14 @@ export class ClaudeOrchestrator {
           : [];
 
         if (reenqueuePending && t.status === "pending") {
+          if (!promptRecovered) {
+            // Only a preview survived (no master key, foreign file, torn
+            // write). Re-running a truncated prompt would be a different
+            // task wearing this one's id — surface it as interrupted instead.
+            this._restoreTerminalTask(t, prompt, contextFiles, "interrupted");
+            overflow++;
+            continue;
+          }
           if (
             this.queue.length + this.running.size <
             ClaudeOrchestrator.MAX_QUEUE

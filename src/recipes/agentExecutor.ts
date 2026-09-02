@@ -9,6 +9,12 @@
  */
 
 import {
+  type AgentContainment,
+  activeProfile,
+  resolveAgentContainment,
+  type StepSandboxRequest,
+} from "../governance/profile.js";
+import {
   type BoundaryDecision,
   type BoundaryOutcome,
   type Classification,
@@ -56,6 +62,13 @@ export interface AgentResult {
    * absent on results from callers that bypass `executeAgent`.
    */
   servedBy?: { driver: string; model?: string };
+  /**
+   * The containment `executeAgent` resolved for this call (Phase 0 step 6),
+   * so the runner can log it on the step receipt. Additive: absent on
+   * results from callers that bypass `executeAgent`, and absent on the
+   * anthropic / local API paths, which spawn nothing to contain.
+   */
+  containment?: AgentContainment;
 }
 
 export interface AgentExecutorDeps {
@@ -122,9 +135,14 @@ export interface AgentExecutorDeps {
     prompt: string,
     opts?: {
       mcpAccess?: boolean;
-      sandbox?: boolean;
+      sandbox?:
+        | boolean
+        | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
       allowedTools?: string[];
       disallowedTools?: string[];
+      /** Resolved containment — the runner MUST forward it to the driver as
+       * `ProviderTaskInput.containment` (or `providerOptions.containment`). */
+      containment?: AgentContainment;
     },
   ) => Promise<AgentResult>;
   localFn: (prompt: string, model: string) => Promise<AgentResult>;
@@ -139,6 +157,46 @@ export interface AgentExecutorDeps {
   };
 }
 
+/** Object form of an agent step's `sandbox:` — explicit widenings. */
+export interface AgentSandboxRequest {
+  network?: boolean;
+  shell?: boolean;
+  mcpAccess?: boolean;
+}
+
+/**
+ * Pure: the step's declared fields → the request `resolveAgentContainment`
+ * consumes. Exported so the runner (which cannot import the executor's
+ * internals) and `policy explain` derive the SAME request from a step.
+ */
+export function stepSandboxRequest(input: {
+  sandbox?: boolean | AgentSandboxRequest;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  mcpAccess?: boolean;
+}): StepSandboxRequest {
+  const obj =
+    typeof input.sandbox === "object" && input.sandbox !== null
+      ? input.sandbox
+      : undefined;
+  return {
+    // Object form counts as an opt-in sandbox on the compat path too.
+    sandbox: input.sandbox === true || obj !== undefined,
+    ...(input.allowedTools !== undefined && {
+      allowedTools: input.allowedTools,
+    }),
+    ...(input.disallowedTools !== undefined && {
+      disallowedTools: input.disallowedTools,
+    }),
+    ...(obj?.network !== undefined && { network: obj.network }),
+    ...(obj?.shell !== undefined && { shell: obj.shell }),
+    // mcpAccess: the object form wins when it says so; else the legacy field.
+    ...((obj?.mcpAccess ?? input.mcpAccess) !== undefined && {
+      mcpAccess: obj?.mcpAccess ?? input.mcpAccess,
+    }),
+  };
+}
+
 export interface AgentExecutorInput {
   prompt: string;
   driver?: string;
@@ -150,8 +208,14 @@ export interface AgentExecutorInput {
    * Ignored by API drivers — they reach the bridge through other means.
    */
   mcpAccess?: boolean;
-  /** Opt-in tool sandbox — enforced argv on the subprocess path only. */
-  sandbox?: boolean;
+  /**
+   * Opt-in tool sandbox — enforced argv on the subprocess path only. The
+   * object form is a governed-profile widening request (network / shell /
+   * mcpAccess); see `resolveAgentContainment` in src/governance/profile.ts.
+   */
+  sandbox?:
+    | boolean
+    | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
   /** Tool allowlist enforced via --allowed-tools when sandbox is true. */
   allowedTools?: string[];
   /** Deny rules via --disallowed-tools (any mode). */
@@ -598,16 +662,31 @@ export async function executeAgent(
     });
   }
 
+  // ── AGENT CONTAINMENT (Phase 0 step 6) ──────────────────────────────────
+  // One resolution, from the ACTIVE profile and the step's declared fields.
+  // Under compat with no `sandbox:` this is `{ enforced: false }` and the
+  // legacy keys below carry today's behaviour unchanged; it is forwarded to
+  // the driver only when enforced, so an unconstrained call keeps its shape.
+  const containment = resolveAgentContainment(
+    activeProfile(),
+    stepSandboxRequest({ sandbox, allowedTools, disallowedTools, mcpAccess }),
+  );
+  const legacySandbox: boolean | undefined =
+    sandbox === undefined
+      ? undefined
+      : sandbox === true || typeof sandbox === "object";
   const cliOpts =
     mcpAccess !== undefined ||
-    sandbox !== undefined ||
+    legacySandbox !== undefined ||
     allowedTools !== undefined ||
-    disallowedTools !== undefined
+    disallowedTools !== undefined ||
+    containment.enforced
       ? {
           ...(mcpAccess !== undefined && { mcpAccess }),
-          ...(sandbox !== undefined && { sandbox }),
+          ...(legacySandbox !== undefined && { sandbox: legacySandbox }),
           ...(allowedTools !== undefined && { allowedTools }),
           ...(disallowedTools !== undefined && { disallowedTools }),
+          ...(containment.enforced && { containment }),
         }
       : undefined;
 
@@ -622,9 +701,13 @@ export async function executeAgent(
     p: Promise<AgentResult>,
   ): Promise<AgentResult> => {
     const r = await p;
-    if (r.servedBy) return r;
+    const withContainment =
+      containment.enforced && r.containment === undefined
+        ? { ...r, containment }
+        : r;
+    if (withContainment.servedBy) return withContainment;
     return {
-      ...r,
+      ...withContainment,
       servedBy: {
         driver: resolvedDriver,
         ...(resolvedModel !== undefined ? { model: resolvedModel } : {}),
@@ -653,10 +736,18 @@ export async function executeAgent(
   ) {
     // A worker-mandated sandbox on the codex driver overrides — never merges
     // with — the step's own providerOptions. See CODEX_WORKER_SANDBOX_LOCKDOWN.
-    const effectiveProviderOptions =
+    const baseProviderOptions =
       resolvedDriver === "codex" && enforceSandbox
         ? CODEX_WORKER_SANDBOX_LOCKDOWN
         : providerOptions;
+    // Gemini / Codex subprocess drivers read the containment from the
+    // providerOptions bag (`containmentFromInput`). Only attached when
+    // enforced so the common call keeps its 3-arg shape.
+    const effectiveProviderOptions =
+      containment.enforced &&
+      (resolvedDriver === "gemini" || resolvedDriver === "codex")
+        ? { ...(baseProviderOptions ?? {}), containment }
+        : baseProviderOptions;
     return stamp(
       resolvedDriver,
       model,

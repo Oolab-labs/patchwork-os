@@ -5,6 +5,10 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { ApprovalPersistence } from "./approvalPersistence.js";
+import {
+  redactKnownSecrets,
+  redactKnownSecretsDeep,
+} from "./governance/secretValues.js";
 import type { ActorSnapshot } from "./identity/approverFromSession.js";
 import type { Logger } from "./logger.js";
 import type { RiskTier } from "./riskTier.js";
@@ -405,6 +409,20 @@ export class ApprovalQueue {
     // queued, return its existing promise instead of allocating a fresh
     // callId + push notification. Prevents a buggy/malicious agent that
     // spams the same call N times from generating N prompts.
+    // Value-based secret redaction at the ONE point where the record is
+    // built: everything downstream — the live entry, `list()`, the dashboard
+    // modal, push/webhook payloads and the durable `approval_log.jsonl` —
+    // reads from this entry. The tool still executes with the CALLER's
+    // params; the queue never hands `entry.params` back for execution.
+    // The dedup hash is taken over the redacted params so a restored
+    // (persisted, therefore redacted) entry and a live re-request agree.
+    input = {
+      ...input,
+      params: redactKnownSecretsDeep(input.params) as Record<string, unknown>,
+      ...(input.summary !== undefined && {
+        summary: redactKnownSecrets(input.summary),
+      }),
+    };
     const inflightKey = createHash("sha256")
       .update(input.sessionId ?? "")
       .update("\0")

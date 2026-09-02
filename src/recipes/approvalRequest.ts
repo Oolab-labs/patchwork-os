@@ -37,6 +37,14 @@ export interface ApprovalRequestInput {
    * full approval TTL (L1).
    */
   signal?: AbortSignal;
+  /**
+   * The runner's effective-policy verdict for this step
+   * (src/governance/effectivePolicy.ts). When present, the tier gate defers
+   * to it: `HUMAN_APPROVAL_REQUIRED` queues regardless of the tier threshold
+   * and `ALLOW` passes. Absent ⇒ the fn applies its own threshold (compat
+   * callers and test doubles).
+   */
+  effective?: import("../governance/effectivePolicy.js").FinalVerdict;
 }
 
 /**

@@ -47,6 +47,24 @@ export interface PatchworkConfig {
     webhookUrl?: string;
   };
   recipesDir?: string;
+  /**
+   * Governance profile (src/governance/profile.ts). `governed` resolves every
+   * opt-in control to a conservative default; absent or `compat` is
+   * byte-identical to pre-profile behaviour. `patchwork init` writes
+   * `governed` for a NEW install; an existing install is never changed by an
+   * upgrade — opt in with `patchwork profile governed`.
+   */
+  profile?: "governed" | "compat";
+  /**
+   * Operator-controlled allowlist for recipe `servers:` plugins. Under the
+   * governed profile a plugin spec not listed here is refused at install,
+   * dashboard save, lint AND runtime load. `spec` is the exact string a
+   * recipe may name (path or package); `integrity` is an optional
+   * `sha256-<base64>` over the entrypoint file, checked at load when present.
+   */
+  plugins?: {
+    allow?: Array<{ spec: string; version?: string; integrity?: string }>;
+  };
   /** Approval gate level — mirrors CLI --approval-gate. Persisted so dashboard changes survive restart. */
   approvalGate?: "off" | "high" | "all";
   /**
