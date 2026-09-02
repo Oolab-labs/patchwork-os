@@ -166,9 +166,18 @@ describe("computeEffectivePolicy — pure", () => {
     );
   });
   it("governed: a non-reversible write asks even at medium tier; a reversible one flows", () => {
-    expect(tierVerdict(GOVERNED_PROFILE, toolFactsFor("http.post")).verdict).toBe("APPROVAL");
-    expect(tierVerdict(GOVERNED_PROFILE, toolFactsFor("file.write")).verdict).toBe("ALLOW");
-    expect(tierVerdict(resolveProfile({ approvalGate: "high" }), toolFactsFor("http.post")).verdict).toBe("ALLOW");
+    expect(
+      tierVerdict(GOVERNED_PROFILE, toolFactsFor("http.post")).verdict,
+    ).toBe("APPROVAL");
+    expect(
+      tierVerdict(GOVERNED_PROFILE, toolFactsFor("file.write")).verdict,
+    ).toBe("ALLOW");
+    expect(
+      tierVerdict(
+        resolveProfile({ approvalGate: "high" }),
+        toolFactsFor("http.post"),
+      ).verdict,
+    ).toBe("ALLOW");
   });
   it("governed: a write tool with an inferred tier needs approval", () => {
     const plugin = {
