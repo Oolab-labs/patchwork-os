@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `feat/chain-approval-log` — ADR-0027 slice: route `approval_log.jsonl` through `appendChained` (rv 1 → 2, markers ignored by restore, writer-level chain test). One ledger only. — Claude Code (chain-approval-log worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
