@@ -4,6 +4,8 @@
  */
 import * as dns from "node:dns/promises";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import { activeProfile } from "../governance/profile.js";
+import { UNTRUSTED_DELIMITED_SYSTEM_INSTRUCTION } from "../governance/untrustedContent.js";
 import { isLoopbackHost, isPrivateNonLoopbackHost } from "../ssrfGuard.js";
 import type { AutomationState } from "./automationState.js";
 
@@ -160,6 +162,27 @@ export interface InterpreterResult {
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
 /** Production `Backend`: routes side effects to the real orchestrator, logger, and network. */
+/**
+ * The system prompt an automation-hook task runs with under `governed`.
+ *
+ * A hook prompt already delimits every user-controlled value (`untrustedBlock`
+ * in `automationUtils.ts`); this is the half that tells the model what those
+ * delimiters mean. Without it the same third-party text a recipe agent step
+ * gets explained — a commit message, a diagnostic, a file path — reached a
+ * hook task delimited but unexplained, while `governedSystemPrompt` in
+ * `recipeOrchestration.ts` did the equivalent job for recipe dispatch.
+ *
+ * Resolved in the BACKEND, not the interpreter: reading the active profile is
+ * a side effect, and the interpreter is the pure half of this seam. Under
+ * `compat` it returns undefined, so an install that has not opted in enqueues
+ * exactly the bytes it did before.
+ */
+function governedHookSystemPrompt(): string | undefined {
+  return activeProfile().untrustedEnvelope
+    ? UNTRUSTED_DELIMITED_SYSTEM_INSTRUCTION
+    : undefined;
+}
+
 export class VsCodeBackend implements Backend {
   constructor(
     private readonly orchestrator: ClaudeOrchestrator,
@@ -178,7 +201,7 @@ export class VsCodeBackend implements Backend {
       triggerSource: opts.triggerSource,
       model: opts.model,
       effort: opts.effort,
-      systemPrompt: opts.systemPrompt,
+      systemPrompt: opts.systemPrompt ?? governedHookSystemPrompt(),
     });
     return taskId;
   }
