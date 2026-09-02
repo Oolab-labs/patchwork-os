@@ -1,12 +1,6 @@
-import {
-  appendFileSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { appendChained, isChainMarker } from "./ledgerChain.js";
 import type { Logger } from "./logger.js";
 import type { RunStepResult } from "./runLog.js";
 import { AGENT_STEP_TOOL, classifyActionClass } from "./workers/actionClass.js";
@@ -32,11 +26,34 @@ export interface RunStepLedgerRow {
   recipeName: string;
   at: number;
   step: RunStepResult;
+  /** Writer-stamped record level. Absent on rows that predate the chain. */
+  rv?: number;
+  /** ADR-0027 integrity position and previous-line hash (rv >= 1). */
+  iseq?: number;
+  prev?: string;
 }
+
+/**
+ * Record level (ADR-0025's `rv` protocol; ADR-0027 for this ledger).
+ *
+ * 1: every row is written through `appendChained` and carries `iseq` and
+ * `prev`, stamped by the writer from the file's tail under the lock. At
+ * `rv >= 1` their absence is a WRITER DEFECT. Rows with no `rv` predate the
+ * chain; they are never re-stamped, and the `chain-start` marker commits to
+ * them as a block. Never default it on read.
+ */
+export const RUN_STEP_LEDGER_RV = 1;
 
 /** Cap on `run_steps.jsonl`. Rows only matter until their run reaches a
  *  terminal record, so this is a crash-window buffer, not history. */
 const MAX_LEDGER_BYTES = 2 * 1024 * 1024;
+/**
+ * Low-water target after rotation. Half the cap keeps the old "newest half
+ * survives" bound while letting the primitive trim to a byte target rather
+ * than a line ratio; a target at the cap would rotate on every append once
+ * the file is full (the gate ledger measured 826 rotations in one fill).
+ */
+const ROTATE_TARGET_BYTES = MAX_LEDGER_BYTES / 2;
 
 /**
  * Is this step worth persisting mid-flight?
@@ -61,17 +78,44 @@ export function stepLedgerPath(dir: string): string {
 }
 
 /** Append one evidence row. Never throws — losing a mid-flight row must not
- *  take down the run that produced it. */
+ *  take down the run that produced it.
+ *
+ *  ADR-0027: one locked, chained append. The hand-rolled "drop half the file
+ *  at 2 MB" trim is gone; rotation is the primitive's, writes an explicit
+ *  `rotation` marker, and the chain re-anchors across it. A failed append is
+ *  counted in the `.write_failed` sidecar and sealed into the next row, so a
+ *  ledger that stopped writing is distinguishable from a quiet run.
+ *
+ *  `opts.maxBytes` is a TEST SEAM (like the gate ledger's `maxPersistBytes`):
+ *  a test that must observe rotation should not write two real megabytes. */
 export function appendStepEvidence(
   dir: string,
   row: RunStepLedgerRow,
   logger?: Logger,
+  opts: { maxBytes?: number } = {},
 ): void {
   const file = stepLedgerPath(dir);
+  const maxBytes = opts.maxBytes ?? MAX_LEDGER_BYTES;
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    trimIfOversized(file);
-    appendFileSync(file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
+    appendChained(
+      file,
+      // Stamped AFTER the caller's fields so a caller cannot claim a level.
+      { ...row, rv: RUN_STEP_LEDGER_RV } as unknown as Record<string, unknown>,
+      {
+        mode: 0o600,
+        maxBytes,
+        rotateTarget:
+          opts.maxBytes !== undefined
+            ? Math.floor(maxBytes / 2)
+            : ROTATE_TARGET_BYTES,
+        onRotate: ({ dropped, before }) => {
+          logger?.warn?.(
+            `[runsteps] rotate dropped ${dropped} of ${before} row(s) (oldest first) to get under ${maxBytes} bytes`,
+          );
+        },
+      },
+    );
   } catch (err) {
     logger?.warn?.(
       `[runsteps] append failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -101,6 +145,9 @@ export function loadStepEvidence(
     if (!line) continue;
     try {
       const parsed = JSON.parse(line) as RunStepLedgerRow;
+      // ADR-0027 marker rows are metadata, never step evidence — skipped by
+      // KIND, so a marker that happened to carry a taskId could not sneak in.
+      if (isChainMarker(parsed)) continue;
       if (!parsed?.taskId || !parsed.step?.id) continue;
       let steps = byTask.get(parsed.taskId);
       if (!steps) {
@@ -117,22 +164,4 @@ export function loadStepEvidence(
   for (const [taskId, steps] of byTask)
     out.set(taskId, Array.from(steps.values()));
   return out;
-}
-
-/** Keep the newest half when the buffer exceeds its cap. */
-function trimIfOversized(file: string): void {
-  let size: number;
-  try {
-    size = statSync(file).size;
-  } catch {
-    return;
-  }
-  if (size <= MAX_LEDGER_BYTES) return;
-  const lines = readFileSync(file, "utf-8").split("\n").filter(Boolean);
-  const keep = lines.slice(Math.floor(lines.length / 2));
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, keep.length > 0 ? `${keep.join("\n")}\n` : "", {
-    mode: 0o600,
-  });
-  renameSync(tmp, file);
 }

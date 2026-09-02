@@ -428,6 +428,15 @@ export function appendChained(
         let prevHash = tail.prevHash;
         let iseq = tail.nextIseq;
         if (tail.unchained) {
+          // A legacy file whose last line has no newline would otherwise get
+          // the marker glued onto it — one unparseable line, and a prefix the
+          // verifier can never reconstruct. Terminate the line first; the
+          // commitment below covers the terminated bytes, and the legacy row's
+          // own content is byte-identical.
+          if (text.length > 0 && !text.endsWith("\n")) {
+            appendFileSync(file, "\n", { mode });
+            text += "\n";
+          }
           const marker: ChainStartMarker = {
             kind: "chain-start",
             at: now(),
@@ -506,7 +515,8 @@ export function verifyLedgerChain(file: string): ChainVerification {
   };
   if (v.absent) return v;
 
-  const text = readFileSync(file, "utf-8");
+  const bytes = readFileSync(file);
+  const text = bytes.toString("utf-8");
   const lines = splitLines(text);
 
   // Every iseq in the file, so "the expected one exists later" (reordered) can
@@ -574,10 +584,13 @@ export function verifyLedgerChain(file: string): ChainVerification {
       } else if (v.legacyRows === 0 && (p.legacyRows as number) === 0) {
         v.legacyPrefix = "none";
       } else {
-        const prefix = text.slice(0, legacyBytes);
+        // BYTES, not a string slice: `legacyBytes` is a byte count and a
+        // string index is a UTF-16 code-unit count. They agree only on pure
+        // ASCII, and real ledgers carry em dashes and accents in `reason`.
+        const prefix = bytes.subarray(0, legacyBytes).toString("utf-8");
         v.legacyPrefix =
           hashLine(prefix) === p.legacyHash &&
-          Buffer.byteLength(prefix, "utf8") === p.legacyBytes &&
+          legacyBytes === p.legacyBytes &&
           v.legacyRows === p.legacyRows
             ? "verified"
             : "mismatch";

@@ -181,10 +181,11 @@ describe("readers treat marker rows as metadata, never as graded outcomes", () =
 
 describe("verifier and coverage lists", () => {
   it("the verifier covers the spine PLUS this ledger", () => {
-    expect(VERIFIED_LEDGERS.map((l) => l.file)).toEqual([
-      ...SPINE_LEDGERS.map((l) => l.file),
-      SHADOW_LOG_BASENAME,
-    ]);
+    const files = VERIFIED_LEDGERS.map((l) => l.file);
+    expect(files.slice(0, SPINE_LEDGERS.length)).toEqual(
+      SPINE_LEDGERS.map((l) => l.file),
+    );
+    expect(files).toContain(SHADOW_LOG_BASENAME);
     grade("todoist.create_task:1", "confirmed", 2000);
     const r = verifyEvidenceChains(dir);
     expect(r.ledgers.find((l) => l.file === SHADOW_LOG_BASENAME)).toMatchObject(

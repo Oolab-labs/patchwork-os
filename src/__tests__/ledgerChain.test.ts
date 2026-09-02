@@ -105,6 +105,34 @@ describe("legacy prefix: byte-identical, committed to, never backfilled", () => 
     expect(v.legacyPrefix).toBe("mismatch");
   });
 
+  it("verifies a legacy prefix containing non-ASCII bytes (byte length is not string length)", () => {
+    // Real ledgers carry em dashes and accented text in `reason` fields. A
+    // prefix reconstructed by STRING index against a BYTE length lands on the
+    // wrong boundary and hashes differently — every chained real ledger would
+    // read as tampered on its first verify.
+    const utf8 =
+      '{"seq":1,"reason":"gated — café ✓"}\n{"seq":2,"reason":"naïve"}\n';
+    writeFileSync(file, utf8);
+    appendChained(file, { seq: 3 });
+    expect(readFileSync(file, "utf-8").startsWith(utf8)).toBe(true);
+    const v = verifyLedgerChain(file);
+    expect(v.legacyPrefix).toBe("verified");
+    expect(v.ok).toBe(true);
+  });
+
+  it("a legacy file with no trailing newline gets its last line terminated, not merged into the marker", () => {
+    const unterminated = '{"seq":1,"x":"old"}\n{"seq":2,"x":"last"}';
+    writeFileSync(file, unterminated);
+    appendChained(file, { seq: 3 });
+    const r = rows();
+    expect(r[1]).toEqual({ seq: 2, x: "last" }); // still its own parseable line
+    expect(r[2]?.kind).toBe("chain-start");
+    const v = verifyLedgerChain(file);
+    expect(v.legacyRows).toBe(2);
+    expect(v.legacyPrefix).toBe("verified");
+    expect(v.ok).toBe(true);
+  });
+
   it("a legacy prefix that was never chained is reported as such, not as broken", () => {
     writeFileSync(file, legacy);
     const v = verifyLedgerChain(file);
