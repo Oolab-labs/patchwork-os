@@ -154,6 +154,17 @@ export interface ChainVerification {
   head: "ok" | "missing" | "truncated" | "mismatch" | "stale" | "n/a";
 }
 
+/**
+ * Is this parsed row one of the two ADR-0027 marker shapes? Shared by every
+ * reader that must not count a marker as data — one predicate, so the set of
+ * marker kinds cannot drift between readers.
+ */
+export function isChainMarker(row: unknown): boolean {
+  if (row === null || typeof row !== "object") return false;
+  const k = (row as { kind?: unknown }).kind;
+  return k === "chain-start" || k === "rotation";
+}
+
 export function hashLine(line: string): string {
   return createHash(CHAIN_HASH_ALGORITHM).update(line, "utf8").digest("hex");
 }
