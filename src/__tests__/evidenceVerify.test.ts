@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SPINE_LEDGERS } from "../evidenceCoverage.js";
 import {
   formatEvidenceVerify,
+  VERIFIED_LEDGERS,
   verifyEvidenceChains,
 } from "../evidenceVerify.js";
 import { appendChained, recordWriteFailure } from "../ledgerChain.js";
@@ -27,9 +28,12 @@ const ledger = (name: string) => path.join(dir, name);
 describe("verifyEvidenceChains", () => {
   it("covers every spine ledger and reports absent ones as absent and ok", () => {
     const r = verifyEvidenceChains(dir);
+    // The verifier's list is the spine PLUS non-spine chained ledgers; the
+    // spine itself is the coverage/correlation set and must not grow here.
     expect(r.ledgers.map((l) => l.file)).toEqual(
-      SPINE_LEDGERS.map((l) => l.file),
+      VERIFIED_LEDGERS.map((l) => l.file),
     );
+    expect(r.ledgers.length).toBeGreaterThan(SPINE_LEDGERS.length);
     expect(r.ledgers.every((l) => l.absent)).toBe(true);
     expect(r.ok).toBe(true);
   });

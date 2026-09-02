@@ -46,10 +46,14 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 function rows(): Record<string, unknown>[] {
   const text = readFileSync(path.join(dir, SHADOW_LOG_BASENAME), "utf-8");
-  return text
-    .split("\n")
-    .filter((l) => l.trim())
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  return (
+    text
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      // ADR-0027 marker rows (`chain-start`, `rotation`) are not graded rows.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+  );
 }
 
 describe("grading a batch", () => {
