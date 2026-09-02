@@ -52,13 +52,12 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- 2026-09-02 `feat/chain-privacy-shadow` — ADR-0027 follow-on, one ledger: route `privacy_shadow.jsonl` through `appendChained` (rv 1 → 2, markers skipped by the summariser, line-by-line test readers filter marker rows). Touches src/privacy/shadowLog.ts and its tests only. — Claude Code (chain-privacy-shadow worktree)
-
 
 
 ## Recently closed (informal log, prune periodically)
 
 - 2026-09-02 `fix/evidence-skip-markers` — `patchwork evidence` and its relationships view counted ADR-0027 marker rows as data (one phantom row per chained ledger in every denominator, and a phantom LEGACY gate decision). Shared `isChainMarker` predicate in ledgerChain.ts, both readers skip it, failing-first test. Touches evidenceCoverage, evidenceRelationships, ledgerChain. — Claude Code (phase1-ledgers worktree) PR #1577
+- 2026-09-02 `feat/chain-privacy-shadow` — ADR-0027 follow-on, one ledger: route `privacy_shadow.jsonl` through `appendChained` (rv 1 → 2, markers skipped by the summariser, line-by-line test readers filter marker rows). Touches src/privacy/shadowLog.ts and its tests only. — Claude Code (chain-privacy-shadow worktree) PR #1574
 
 - 2026-09-02 `feat/tamper-evident-ledgers` — Phase 1 slice 1: tamper-evident ledgers. ADR for the integrity wire format (per-ledger integrity seq + prevHash behind `rv`, rotation marker, legacy prefix committed by the first chain marker, never backfilled), one shared append primitive (lock → tail read → chain → rotation → append), proven on `boundary_receipts.jsonl` (unlocked writer) and `worker_gate_decisions.jsonl` (rotation), `patchwork evidence verify`, write_failed counter. Touches boundaryReceiptLog, workerGateDecisionLog, evidenceCoverage, index.ts. — Claude Code (phase1-ledgers worktree) PR #1573
 
