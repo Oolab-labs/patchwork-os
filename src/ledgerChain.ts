@@ -231,21 +231,37 @@ function isFiniteNumber(v: unknown): v is number {
 function atomicWrite(file: string, text: string, mode: number): void {
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, text, { mode });
-  try {
-    renameSync(tmp, file);
-  } catch (err) {
-    if (
-      process.platform === "win32" &&
-      (err as NodeJS.ErrnoException).code === "EEXIST"
-    ) {
-      try {
-        unlinkSync(file);
-      } catch {
-        /* best-effort */
-      }
+  // Windows: a rename onto an existing target can fail TRANSIENTLY with
+  // EPERM / EBUSY while an indexer or scanner holds the old file, and with
+  // EEXIST on some filesystems. Retry briefly, then fall back to unlink +
+  // rename for EEXIST (the gate ledger's original path). POSIX never enters
+  // the loop: rename there is atomic and replaces.
+  const attempts = process.platform === "win32" ? 20 : 1;
+  for (let n = 1; ; n++) {
+    try {
       renameSync(tmp, file);
-    } else {
-      throw err;
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const transient =
+        process.platform === "win32" &&
+        (code === "EPERM" || code === "EBUSY" || code === "EEXIST");
+      if (!transient || n >= attempts) {
+        if (process.platform === "win32" && code === "EEXIST") {
+          try {
+            unlinkSync(file);
+          } catch {
+            /* best-effort */
+          }
+          renameSync(tmp, file);
+          return;
+        }
+        throw err;
+      }
+      const spinUntil = process.hrtime.bigint() + 10_000_000n; // 10ms
+      while (process.hrtime.bigint() < spinUntil) {
+        /* yield */
+      }
     }
   }
 }
