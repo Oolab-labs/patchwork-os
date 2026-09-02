@@ -56,6 +56,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-02 `fix/governed-hook-prompts` — provenance gap 1: an automation-hook task under the governed profile now carries a system prompt naming its `--- BEGIN … (untrusted) ---` blocks as data. Keeps the nonce envelope (stronger than the tag form); compat unchanged. Touches src/governance/untrustedContent.ts, src/fp/interpreterContext.ts and a new test. — Claude Code (governed-hook-prompts worktree) PR #1582
 - 2026-09-02 `feat/chain-pr-outcomes` — ADR-0027 wave 2, PR 3 of 3: chain `pr_outcomes.jsonl` through `appendChained` (`PR_OBSERVATION_RV` 1 → 2), `readObservations` skips marker rows by kind so a marker cannot become a phantom pull request, ledger enters `VERIFIED_LEDGERS` only. Touches src/maintenance/prOutcomeLedger.ts, src/index.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-pr-outcomes worktree) PR #1580
 - 2026-09-02 `feat/chain-run-steps` — ADR-0027 wave 2, PR 2 of 3: chain `run_steps.jsonl` through `appendChained` (never-throwing writer kept; the 2 MB halving trim becomes ADR-0027 rotation with an explicit marker), new writer-owned `rv: 1`, `loadStepEvidence` skips markers by kind, ledger enters `VERIFIED_LEDGERS` only. Touches src/runStepLedger.ts, src/evidenceVerify.ts and their tests. — Claude Code (chain-run-steps worktree) PR #1579
 
