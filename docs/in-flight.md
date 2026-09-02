@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-02 `fix/agent-transport-parity` — provenance step 2: the governed recipe instruction is resolved ONCE at the executor seam and carried to all four agent transports (anthropic, provider drivers, local, subprocess). Compat keeps exact call shapes and arity. Touches src/recipes/agentExecutor.ts, src/recipes/yamlRunner.ts, new src/governance/recipeSystemPrompt.ts and a new test. — Claude Code (agent-transport-parity worktree)
+
 
 
 ## Recently closed (informal log, prune periodically)
