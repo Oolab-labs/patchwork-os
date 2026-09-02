@@ -229,7 +229,9 @@ describe("the WIRING, not just the summariser", () => {
       const rows = readFileSync(join(home, "privacy_shadow.jsonl"), "utf-8")
         .split("\n")
         .filter(Boolean)
-        .map((l) => JSON.parse(l) as { recipeName?: string });
+        .map((l) => JSON.parse(l) as { kind?: string; recipeName?: string })
+        // ADR-0027 marker rows (`chain-start`, `rotation`) share the file; skip them like every production loader.
+        .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation");
 
       expect(rows.length).toBeGreaterThan(0);
       expect(rows.at(-1)?.recipeName).toBe("a-named-recipe");

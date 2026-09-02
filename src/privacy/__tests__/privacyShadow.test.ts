@@ -153,7 +153,13 @@ describe("the ledger carries no payload", () => {
       { dir },
     );
     const raw = readFileSync(path.join(dir, "privacy_shadow.jsonl"), "utf-8");
-    const row = JSON.parse(raw.trim());
+    // ADR-0027 marker rows (`chain-start`, `rotation`) share the file; skip them like every production loader.
+    const row = raw
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+      .at(-1) as Record<string, unknown>;
     // Category NAMES are metadata; their contents are not. A privacy ledger
     // holding the prompts would be the largest unclassified copy of exactly
     // what the boundary protects.
