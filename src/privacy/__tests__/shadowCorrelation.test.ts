@@ -79,14 +79,23 @@ function writeConfig(): void {
   );
 }
 
-type Row = { rv?: number; correlationId?: string; path?: string };
+type Row = {
+  kind?: string;
+  rv?: number;
+  correlationId?: string;
+  path?: string;
+};
 
 function readJsonl(name: string): Row[] {
   try {
-    return readFileSync(join(home, name), "utf-8")
-      .split("\n")
-      .filter(Boolean)
-      .map((l) => JSON.parse(l) as Row);
+    return (
+      readFileSync(join(home, name), "utf-8")
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as Row)
+        // ADR-0027 marker rows (`chain-start`, `rotation`) share the file; skip them like every production loader.
+        .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+    );
   } catch {
     return [];
   }

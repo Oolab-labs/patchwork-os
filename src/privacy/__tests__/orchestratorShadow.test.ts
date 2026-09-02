@@ -51,10 +51,14 @@ function writeShadowConfig(): void {
 
 function rows(): Array<Record<string, unknown>> {
   try {
-    return readFileSync(path.join(dir, "privacy_shadow.jsonl"), "utf-8")
-      .split("\n")
-      .filter((l) => l.trim())
-      .map((l) => JSON.parse(l));
+    return (
+      readFileSync(path.join(dir, "privacy_shadow.jsonl"), "utf-8")
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l) as Record<string, unknown>)
+        // ADR-0027 marker rows (`chain-start`, `rotation`) share the file; skip them like every production loader.
+        .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+    );
   } catch {
     return [];
   }
