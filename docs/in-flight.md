@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-02 `fix/evidence-skip-markers` — `patchwork evidence` and its relationships view counted ADR-0027 marker rows as data (one phantom row per chained ledger in every denominator, and a phantom LEGACY gate decision). Shared `isChainMarker` predicate in ledgerChain.ts, both readers skip it, failing-first test. Touches evidenceCoverage, evidenceRelationships, ledgerChain. — Claude Code (phase1-ledgers worktree) PR #1577
+
 - 2026-09-02 `feat/tamper-evident-ledgers` — Phase 1 slice 1: tamper-evident ledgers. ADR for the integrity wire format (per-ledger integrity seq + prevHash behind `rv`, rotation marker, legacy prefix committed by the first chain marker, never backfilled), one shared append primitive (lock → tail read → chain → rotation → append), proven on `boundary_receipts.jsonl` (unlocked writer) and `worker_gate_decisions.jsonl` (rotation), `patchwork evidence verify`, write_failed counter. Touches boundaryReceiptLog, workerGateDecisionLog, evidenceCoverage, index.ts. — Claude Code (phase1-ledgers worktree) PR #1573
 
 - 2026-09-01 `feat/governed-profile` — Phase 0 governed runtime: `profile: governed` config + `src/governance/*` (profile resolver, effective policy, kill-switch policy), `patchwork policy explain`, `patchwork doctor` governance section, automated-trigger gating, universal kill switch, subprocess containment, recipe `servers:` allowlist, value-based secret redaction, unified SSRF guard, untrusted-content envelope, adversarial acceptance suite. ADR-0026. Touches recipeOrchestration, both runners, transport, drivers, pluginLoader, stepObservation, http tool. — Claude Code (phase0 worktree)

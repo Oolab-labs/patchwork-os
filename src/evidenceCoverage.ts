@@ -34,6 +34,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { isChainMarker } from "./ledgerChain.js";
 import { patchworkHome } from "./patchworkHome.js";
 
 /** Ledgers on the spine, with where each lives relative to `$PATCHWORK_HOME`. */
@@ -124,6 +125,9 @@ function scan(dir: string, key: string, file: string) {
       corrupt++;
       continue;
     }
+    // ADR-0027 marker rows share the file and are not evidence: counting one
+    // inflates the denominator by exactly one per chained ledger, silently.
+    if (isChainMarker(parsed)) continue;
     rows++;
     const c = (parsed as { correlationId?: unknown }).correlationId;
     if (typeof c === "string" && c !== "") {
