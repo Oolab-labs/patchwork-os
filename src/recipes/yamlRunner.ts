@@ -58,6 +58,8 @@ import {
 import { toolFactsFor } from "../governance/toolFacts.js";
 import {
   isConnectorSource,
+  provenanceOf,
+  type UntrustedProvenance,
   wrapUntrusted,
 } from "../governance/untrustedContent.js";
 import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
@@ -1413,23 +1415,39 @@ export async function runYamlRecipe(
   // key, so `{{...}}` shapes do not change) from an `into:` key to the
   // connector tool that produced it. Consulted only when an AGENT prompt is
   // rendered; tool params, `expect` and the run log see the raw value.
-  const untrustedProvenance = new Map<string, string>();
+  const untrustedProvenance = new Map<string, UntrustedProvenance>();
   const envelopeActive = (deps.governance ?? activeProfile()).untrustedEnvelope;
-  const renderAgentPrompt = (template: string): string =>
-    render(
+  /**
+   * Origins collected during the LAST agent-prompt render.
+   *
+   * Filled by the `wrap` hook, which fires once per substitution and knows the
+   * root key at that moment — so this is what the renderer ACTUALLY
+   * interpolated, not what the template mentions. A key referenced behind a
+   * condition that did not fire contributes nothing, which is correct and is
+   * why this cannot be a scan of the template text.
+   *
+   * Cleared before each render rather than per step: a step may render more
+   * than once (a judge artefact, a revision), and each render's origins belong
+   * to the value that render produced.
+   */
+  let renderOrigins = new Set<string>();
+  const renderAgentPrompt = (template: string): string => {
+    renderOrigins = new Set<string>();
+    return render(
       template,
       redactSecretsForPrompt(ctx, secretKeys),
       envelopeActive
         ? {
             wrap: (root, value) => {
-              const source = untrustedProvenance.get(root);
-              return source === undefined
-                ? undefined
-                : wrapUntrusted(value, source);
+              const prov = untrustedProvenance.get(root);
+              if (prov === undefined) return undefined;
+              for (const o of prov.origins) renderOrigins.add(o);
+              return wrapUntrusted(value, prov);
             },
           }
         : undefined,
     );
+  };
 
   /**
    * The provenance source a fan_out loop variable inherits, if any.
@@ -1447,7 +1465,9 @@ export async function runYamlRecipe(
    * propagation work unmeasurable — the whole point of leaving them bare is
    * that they stay visible as the population that still needs solving.
    */
-  const fanOutItemsSource = (step: unknown): string | undefined => {
+  const fanOutItemsSource = (
+    step: unknown,
+  ): UntrustedProvenance | undefined => {
     const raw = (step as { items?: unknown } | null)?.items;
     if (typeof raw !== "string") return undefined;
     const m = raw.trim().match(/^\{\{\s*([A-Za-z0-9_$]+)(?:\.[^}]*)?\s*\}\}$/);
@@ -2618,6 +2638,9 @@ export async function runYamlRecipe(
         // suffix and, when `reviews: <stepId>` is set, inject the
         // upstream step's output as an <artefact> block.
         let renderedPrompt = renderAgentPrompt(agentCfg.prompt);
+        // Snapshot immediately: the judge-artefact render below re-enters the
+        // renderer and would otherwise overwrite this step's collected set.
+        const promptOrigins = new Set(renderOrigins);
         if (isJudge) {
           if (agentCfg.reviews) {
             renderedPrompt += judgeArtefactBlock(agentCfg.reviews);
@@ -2810,6 +2833,16 @@ export async function runYamlRecipe(
                 if (!isJudge) ctx[intoKey] = parsed;
               } catch {
                 if (!isJudge) ctx[intoKey] = stripped;
+              }
+              // Gaps 2+3: the value the model just produced inherits the
+              // origins its PROMPT was proven to carry. Written after the
+              // commit, so a step that produced nothing records nothing.
+              // `provenanceOf` returns undefined for an empty set — an agent
+              // fed no provenance-bearing key stays completely unmarked, and
+              // `derived` never stands in for an origin.
+              if (!isJudge && envelopeActive) {
+                const prov = provenanceOf(promptOrigins, true);
+                if (prov) untrustedProvenance.set(intoKey, prov);
               }
               if (!isJudge) outputs.push(intoKey);
               // PR3a: parse + stash the judge verdict on the step result.
@@ -3213,7 +3246,11 @@ export async function runYamlRecipe(
             // `into` key and the `into.<field>` keys applyToolOutputContext
             // derives from it, because `render` keys the lookup on the root.
             if (envelopeActive && isConnectorSource(step.tool)) {
-              untrustedProvenance.set(step.into, step.tool);
+              // Raw connector output: exactly one origin, not derived.
+              untrustedProvenance.set(step.into, {
+                origins: [step.tool],
+                derived: false,
+              });
             }
           }
         }

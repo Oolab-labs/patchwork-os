@@ -33,7 +33,10 @@
  */
 
 import { redactKnownSecrets } from "../governance/secretValues.js";
-import { wrapUntrusted } from "../governance/untrustedContent.js";
+import {
+  type UntrustedProvenance,
+  wrapUntrusted,
+} from "../governance/untrustedContent.js";
 
 export type JudgeVerdictKind = "approve" | "request_changes" | "unparseable";
 
@@ -90,7 +93,7 @@ export interface JudgeArtefactOptions {
    * profile distinction, matching how the agent-render path gates its own
    * provenance envelope.
    */
-  envelope?: { source: string };
+  envelope?: { source: string | UntrustedProvenance };
 }
 
 /**
