@@ -52,11 +52,11 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- **feat/prompt-byte-cap** (2026-09-03) — refuse over-cap agent prompts at the `executeAgent` seam (96 KiB author budget, `prompt_too_large` halt). Touches `agentExecutor.ts`, `haltCategory.ts` + the dashboard halt maps.
-
 
 
 ## Recently closed (informal log, prune periodically)
+
+- **feat/prompt-byte-cap** — 96 KiB author-prompt cap refused at the `executeAgent` seam, `prompt_too_large` halt (#1588)
 
 - 2026-09-02 `fix/fanout-item-prompts` — provenance gap 1: fan_out agent-item prompts get secret redaction (both profiles) and the existing root provenance envelope (governed) via a renderer injected by yamlRunner; nothing transitive. Touches src/recipes/yamlRunner.ts, src/recipes/tools/fanOut.ts and a new test. — Claude Code (fanout-provenance worktree) PR #1587
 - 2026-09-02 `fix/judge-artefact-envelope` — provenance gap 3: the judge's reviewed `<artefact>` gets secret redaction and closing-tag containment in BOTH profiles, plus the untrusted envelope under governed; both the first-pass and re-judge call sites. Touches src/recipes/judgeVerdict.ts, src/recipes/yamlRunner.ts and two new tests. — Claude Code (judge-artefact worktree) PR #1584
