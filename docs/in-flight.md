@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- **feat/prompt-byte-cap** (2026-09-03) — refuse over-cap agent prompts at the `executeAgent` seam (96 KiB author budget, `prompt_too_large` halt). Touches `agentExecutor.ts`, `haltCategory.ts` + the dashboard halt maps.
+
 
 
 ## Recently closed (informal log, prune periodically)
