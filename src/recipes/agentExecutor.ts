@@ -555,6 +555,27 @@ function evaluateAgainst(
   });
 }
 
+/**
+ * Ceiling on the AUTHORED prompt an agent step may dispatch, in UTF-8 bytes.
+ *
+ * 96 KiB. One figure for every driver, deliberately: a per-driver ceiling makes
+ * the same recipe work or fail depending on which model answered, which is a
+ * property no author can reason about. The recipe gets one predictable limit.
+ *
+ * The number is chosen against the argv-bound path, which is the one with a
+ * hard ceiling rather than a policy: the Claude CLI receives the prompt as a
+ * single argv element, and Linux caps ONE argument at 128 KiB
+ * (`MAX_ARG_STRLEN`) regardless of how much total argv space is free. Above it
+ * `spawn` fails E2BIG — so an over-cap prompt is not "expensive", it is
+ * unrunnable on a Linux bridge while working on a developer's macOS box. 96 KiB
+ * leaves room for the system prompt, the flags and the environment without the
+ * author's budget having to know any of that.
+ *
+ * It is the AUTHOR's budget. The mandatory system/governance instruction is
+ * reserved separately and never counted against it — see `executeAgent`.
+ */
+export const MAX_AGENT_PROMPT_BYTES = 98_304;
+
 export async function executeAgent(
   input: AgentExecutorInput,
   deps: AgentExecutorDeps,
@@ -690,6 +711,39 @@ export async function executeAgent(
       labelSource: input.boundary?.dataPolicy ? "declared" : "assumed",
       ...(boundary.categories && { categories: boundary.categories }),
     });
+  }
+
+  // ── PROMPT BYTE CAP ─────────────────────────────────────────────────────
+  // One byte-limit decision, after the prompt is fully composed and before any
+  // transport receives it. No driver implements its own cap: two places
+  // deciding this would drift, and the drift is silent — a prompt refused by
+  // one driver and dispatched by another is indistinguishable, from the
+  // recipe's side, from a flaky model.
+  //
+  // REFUSES; never truncates. Truncation would cut the tail of a rendered
+  // prompt, which is where the author's instructions sit once a large tool
+  // output has been interpolated above them — the model would then act on the
+  // data with no task, and the run would look successful. It can also sever the
+  // closing tag of an `<untrusted>` envelope this codebase put there.
+  //
+  // Measured on the AUTHORED prompt only. The governed instruction is 550 bytes
+  // against compat's 257, so charging the reservation to the author would
+  // shrink every recipe's allowance by 293 bytes the day an operator switched
+  // profile — a policy change quietly rewriting what recipes are allowed to
+  // say. Both figures are constants; neither is the author's to pay for.
+  //
+  // Placed AFTER the boundary so a refused dispatch still writes its privacy
+  // receipt, and a boundary refusal still wins: an over-cap prompt to a
+  // destination that may not receive it is a boundary event first.
+  const promptBytes = Buffer.byteLength(prompt, "utf8");
+  if (promptBytes > MAX_AGENT_PROMPT_BYTES) {
+    // Numbers FIRST. `stepObservation` truncates the matched fragment at 120
+    // characters, which already amputated the actionable half of the
+    // information-boundary message once. Never echo the prompt: this string
+    // reaches the run log, the halt summary and a push notification.
+    return {
+      text: `[agent step failed: prompt_too_large: ${promptBytes} bytes > ${MAX_AGENT_PROMPT_BYTES} byte limit — shorten the step's prompt or the tool output it interpolates]`,
+    };
   }
 
   // ── AGENT CONTAINMENT (Phase 0 step 6) ──────────────────────────────────
