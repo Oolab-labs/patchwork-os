@@ -177,6 +177,14 @@ export function ownerHaltPhrase(
         fix: "open-trace",
         fixLabel: "See what happened",
       };
+    case "prompt_too_large":
+      // Deliberately NOT "open-trace": no model was called, so a trace has no
+      // model call to show. The fix is in the recipe, like `unsupported_step`.
+      return {
+        sentence:
+          "It built a message too large to send, so it stopped before sending anything.",
+        fix: "none",
+      };
     case "unknown":
       return {
         sentence: "It stopped for a reason we couldn't label.",

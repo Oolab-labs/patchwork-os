@@ -91,6 +91,12 @@ describe("flat runner", () => {
 // ── T9: fan_out per-item agent ───────────────────────────────────────────────
 
 describe("fan_out agent iterations", () => {
+  // fan_out's default is `on_iter_error: continue`, so the assertion is that
+  // the ITERATION fails without dispatching — not that the step halts. A cap
+  // refusal deliberately does NOT behave like the budget halt one line below it
+  // in `fanOut.ts`: a budget is global and monotonic, so once it says stop every
+  // later iteration is also refused, whereas an over-cap prompt is a property of
+  // ONE item's rendered text and the next item may be small.
   it("refuses the over-cap iteration without dispatching it", async () => {
     const localFn = vi.fn(async () => "should not be reached");
     const recipe = {
@@ -108,9 +114,16 @@ describe("fan_out agent iterations", () => {
     } as unknown as YamlRecipe;
 
     const result = await runYamlRecipe(recipe, baseDeps({ localFn }));
+
     expect(localFn).not.toHaveBeenCalled();
-    const halt = result.stepResults.find((s) => s.status === "error");
-    expect(halt?.haltReason ?? "").toContain("prompt_too_large");
+    const step = result.stepResults[0];
+    expect(step?.status).toBe("ok");
+    const aggregate = step?.output as { index: number; ok: boolean }[];
+    // Both items still appear — the loop shape is unchanged — and each records
+    // the refusal rather than a model failure.
+    expect(aggregate).toHaveLength(2);
+    expect(aggregate.every((r) => r.ok === false)).toBe(true);
+    expect(JSON.stringify(aggregate)).toContain("prompt_too_large");
   });
 
   it("control: under-cap iterations each dispatch once", async () => {
@@ -137,32 +150,43 @@ describe("fan_out agent iterations", () => {
 // ── T10: a judge/refine revision ─────────────────────────────────────────────
 
 describe("judge / refine", () => {
-  it("an over-cap revision refuses without dispatching, and is not counted as a completed revision", async () => {
-    // First pass is small and succeeds; the revision prompt carries the
-    // (over-cap) prior output back in, which is how a revision grows past a
-    // limit the original pass sat under.
-    const localFn = vi.fn(async () => OVER);
+  // The writer's prompt is small and dispatches; its OUTPUT is over-cap, and
+  // the judge prompt embeds that output in an `<artefact>` block. This is how a
+  // prompt grows past a limit nothing in the recipe text approaches — the
+  // author never wrote 96 KiB, a tool or a prior step handed it over.
+  it("an over-cap judge prompt refuses without dispatching the judge", async () => {
+    const claudeFn = vi.fn(async (prompt: string) =>
+      prompt.includes("<artefact>") ? "should not be reached" : OVER,
+    );
     const recipe = {
-      name: "prompt-cap-revision",
+      name: "prompt-cap-judge",
       trigger: { type: "manual" },
       steps: [
         {
           agent: {
-            prompt: "draft something",
-            driver: "local",
-            reviews: "answer",
-            max_revisions: 1,
+            prompt: "write the thing",
+            driver: "anthropic",
+            into: "draft",
           },
-          into: "answer",
+        },
+        {
+          agent: {
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 1,
+            prompt: "review the draft",
+            driver: "anthropic",
+          },
         },
       ],
     } as unknown as YamlRecipe;
 
-    const result = await runYamlRecipe(recipe, baseDeps({ localFn }));
+    const result = await runYamlRecipe(recipe, baseDeps({ claudeFn }));
+
+    // The writer ran once; the judge never did.
+    expect(claudeFn).toHaveBeenCalledTimes(1);
     const halt = result.stepResults.find((s) => s.status === "error");
     expect(halt?.haltReason ?? "").toContain("prompt_too_large");
-    // The revision that never dispatched must not be recorded as one that did.
-    expect(halt?.revisions ?? 0).toBe(0);
   });
 });
 
