@@ -52,11 +52,11 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- **feat/provenance-propagation** (2026-09-03) — carry proven origins through agent outputs and nested recipe outputs (multi-origin + `derived`). Touches `untrustedContent.ts`, both runners.
-
 
 
 ## Recently closed (informal log, prune periodically)
+
+- **feat/provenance-propagation** — proven origins carried through agent, judge/refine and nested outputs; zero origins stays unmarked (#1589)
 
 - **feat/prompt-byte-cap** — 96 KiB author-prompt cap refused at the `executeAgent` seam, `prompt_too_large` halt (#1588)
 
