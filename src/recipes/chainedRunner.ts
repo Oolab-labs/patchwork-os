@@ -17,6 +17,8 @@ import {
 import { toolFactsFor } from "../governance/toolFacts.js";
 import {
   isConnectorSource,
+  provenanceOf,
+  type UntrustedProvenance,
   wrapUntrusted,
 } from "../governance/untrustedContent.js";
 import { classifyTool } from "../riskTier.js";
@@ -355,10 +357,12 @@ function nestedRecipeRef(step: ChainedStep): string | undefined {
  */
 const untrustedProvenanceByRegistry = new WeakMap<
   OutputRegistry,
-  Map<string, string>
+  Map<string, UntrustedProvenance>
 >();
 
-function untrustedProvenanceFor(registry: OutputRegistry): Map<string, string> {
+function untrustedProvenanceFor(
+  registry: OutputRegistry,
+): Map<string, UntrustedProvenance> {
   let m = untrustedProvenanceByRegistry.get(registry);
   if (!m) {
     m = new Map();
@@ -631,13 +635,17 @@ export async function executeChainedStep(
   // Untrusted envelope (Phase 0 step 10): agent prompts only. Tool params,
   // `when:` guards and `expect` evaluate against the raw registry value.
   const envelopeActive = (deps.governance ?? activeProfile()).untrustedEnvelope;
+  // Origins the renderer actually interpolated into THIS step's prompt. The
+  // hook fires per `steps.X.data…` reference, so this is what the model was
+  // really shown — not what the template mentions.
+  const promptOrigins = new Set<string>();
   const promptOptions: TemplateEvaluateOptions | undefined = envelopeActive
     ? {
         wrap: (stepId, value) => {
-          const source = untrustedProvenanceFor(registry).get(stepId);
-          return source === undefined
-            ? undefined
-            : wrapUntrusted(value, source);
+          const prov = untrustedProvenanceFor(registry).get(stepId);
+          if (prov === undefined) return undefined;
+          for (const o of prov.origins) promptOrigins.add(o);
+          return wrapUntrusted(value, prov);
         },
       }
     : undefined;
@@ -957,6 +965,13 @@ export async function executeChainedStep(
         depth + 1,
       );
 
+      const childOrigins = [
+        ...new Set(
+          [...untrustedProvenanceFor(childRegistry).values()].flatMap(
+            (p) => p.origins,
+          ),
+        ),
+      ];
       return {
         success: !childResult.errorMessage,
         data: {
@@ -966,6 +981,12 @@ export async function executeChainedStep(
             childRegistry.keys().map((k) => [k, childRegistry.get(k)?.data]),
           ),
         },
+        // The child's provenance map is keyed by ITS registry and dies with it,
+        // while every one of its outputs is exposed here under this step's id.
+        // Union rather than per-key, because neither engine can attribute below
+        // a step id: a parent referencing `steps.sub.data` receives the whole
+        // blob, so the honest claim is "everything proven in there".
+        ...(childOrigins.length > 0 ? { derivedOrigins: childOrigins } : {}),
       };
     } else if (step.agent) {
       // Agent step
@@ -1115,6 +1136,9 @@ export async function executeChainedStep(
         resolvedParams: resolved,
         ...(usage ? { usage } : {}),
         ...(agentExpectWarnings ? { expectWarnings: agentExpectWarnings } : {}),
+        ...(promptOrigins.size > 0
+          ? { derivedOrigins: [...promptOrigins] }
+          : {}),
       };
     } else if (step.tool) {
       // Tool step
@@ -1197,6 +1221,16 @@ interface StepExecResult {
   /** `expect` assertion failures recorded under `on_fail: "warn"` — forwarded
    *  from `executeChainedStep` so the runner can attach them to the step row. */
   expectWarnings?: string[];
+  /**
+   * Gaps 2+3: the proven origins this step's OUTPUT inherits.
+   *
+   * Collected by the prompt renderer (which knows the referenced step ids at
+   * substitution time) and carried here because the single `registry.set` site
+   * lives in the caller, not in `executeChainedStep`. For a nested recipe it is
+   * the union of everything proven inside the child, since the child's whole
+   * output blob is exposed under this step's id.
+   */
+  derivedOrigins?: string[];
 }
 
 /** Upper bound on retries — clamps absurd/misconfigured values so a recipe
@@ -1742,13 +1776,25 @@ export async function runChainedRecipe(
             : "error",
       data: result.data,
     });
+    // Gaps 2+3: a value this step PRODUCED from provenance-bearing inputs
+    // inherits their origins. `provenanceOf` returns undefined for an empty
+    // set, so a step that referenced nothing provenanced stays unmarked —
+    // `derived` is a property of the origins, never a stand-in for them.
+    if ((deps.governance ?? activeProfile()).untrustedEnvelope) {
+      const derived = provenanceOf(result.derivedOrigins ?? [], true);
+      if (derived) untrustedProvenanceFor(registry).set(stepId, derived);
+    }
     // Untrusted envelope provenance (side map, never on StepOutput).
     if (
       typeof step.tool === "string" &&
       (deps.governance ?? activeProfile()).untrustedEnvelope &&
       isConnectorSource(step.tool)
     ) {
-      untrustedProvenanceFor(registry).set(stepId, step.tool);
+      // Raw connector output: exactly one origin, not derived.
+      untrustedProvenanceFor(registry).set(stepId, {
+        origins: [step.tool],
+        derived: false,
+      });
     }
 
     // VD-2: capture per-step inputs/outputs/registry snapshot for the

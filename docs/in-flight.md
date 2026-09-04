@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- **feat/provenance-propagation** — proven origins carried through agent, judge/refine and nested outputs; zero origins stays unmarked (#1589)
+
 - **feat/prompt-byte-cap** — 96 KiB author-prompt cap refused at the `executeAgent` seam, `prompt_too_large` halt (#1588)
 
 - 2026-09-02 `fix/fanout-item-prompts` — provenance gap 1: fan_out agent-item prompts get secret redaction (both profiles) and the existing root provenance envelope (governed) via a renderer injected by yamlRunner; nothing transitive. Touches src/recipes/yamlRunner.ts, src/recipes/tools/fanOut.ts and a new test. — Claude Code (fanout-provenance worktree) PR #1587
