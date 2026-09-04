@@ -5318,6 +5318,19 @@ if (process.argv[2] === "evidence") {
   }
   (async () => {
     try {
+      // Fail closed. Before this, `evidence check` — a plausible typo for the
+      // real `verify` — ran the plain coverage report and exited 0, telling an
+      // operator who asked about ledger integrity that everything was fine from
+      // a command that never looked. That is the exact incident this guard is
+      // named for, one token over.
+      const { rejectUnknownArgs } = await import("./cliArgs.js");
+      rejectUnknownArgs({
+        command: "evidence",
+        args,
+        subcommands: ["verify"],
+        valueFlags: ["--dir"],
+        flags: ["--json"],
+      });
       const dirIdx = args.indexOf("--dir");
       const dir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
       if (args[0] === "verify") {
