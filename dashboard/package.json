@@ -47,7 +47,7 @@
     "eslint-config-next": "^15.5.18",
     "jsdom": "^29.1.0",
     "typescript": "^5.4.0",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "postcss": "^8.5.25",
