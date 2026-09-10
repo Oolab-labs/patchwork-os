@@ -220,6 +220,6 @@
     "@vscode/codicons": "^0.0.45",
     "esbuild": "^0.28.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.11"
   }
 }
