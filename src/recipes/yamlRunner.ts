@@ -4933,6 +4933,7 @@ export function buildChainedDeps(
       disallowedTools?: string[];
       /** Resolved governed containment (Phase 0); forwarded to the driver. */
       containment?: import("../governance/profile.js").AgentContainment;
+      boundary?: import("./agentExecutor.js").AgentExecutorInput["boundary"];
     },
   ): Promise<AgentResult> => {
     // Surface the FULL AgentResult (text + usage + servedBy) so the chained
@@ -4955,6 +4956,7 @@ export function buildChainedDeps(
         ...(opts?.allowedTools !== undefined && {
           allowedTools: opts.allowedTools,
         }),
+        ...(opts?.boundary !== undefined && { boundary: opts.boundary }),
         // Worker.autonomy: single chokepoint for the CHAINED path — fold the
         // worker's agent-step deny list into every chained agent call so the
         // subprocess can't bypass the per-step gate (mirrors the flat branch).
