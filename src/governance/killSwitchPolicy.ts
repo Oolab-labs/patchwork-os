@@ -17,7 +17,11 @@
  * every other site".
  */
 
-import { isWriteKillSwitchActive } from "../featureFlags.js";
+import {
+  KillSwitchFileMissingAfterLoadError,
+  KillSwitchStateUnreadableError,
+  readWriteKillSwitchForPolicy,
+} from "../featureFlags.js";
 import { activeProfile, type GovernanceProfile } from "./profile.js";
 
 export interface KillSwitchReading {
@@ -26,11 +30,13 @@ export interface KillSwitchReading {
   reason:
     | "engaged"
     | "released"
+    | "missing_after_load_cached"
+    | "unreadable_engaged"
     | "unreadable_fail_closed"
     | "unreadable_fail_open";
 }
 
-let reader: () => boolean = isWriteKillSwitchActive;
+let reader: () => boolean = readWriteKillSwitchForPolicy;
 
 export function readKillSwitch(
   profile: GovernanceProfile = activeProfile(),
@@ -38,7 +44,16 @@ export function readKillSwitch(
   try {
     const engaged = reader();
     return { engaged, reason: engaged ? "engaged" : "released" };
-  } catch {
+  } catch (err) {
+    if (err instanceof KillSwitchFileMissingAfterLoadError) {
+      return {
+        engaged: err.cachedEngaged,
+        reason: "missing_after_load_cached",
+      };
+    }
+    if (err instanceof KillSwitchStateUnreadableError && err.cachedEngaged) {
+      return { engaged: true, reason: "unreadable_engaged" };
+    }
     if (profile.killSwitchFailClosed) {
       return { engaged: true, reason: "unreadable_fail_closed" };
     }
@@ -52,7 +67,11 @@ export function killSwitchMessage(
 ): string {
   return r.reason === "unreadable_fail_closed"
     ? `kill_switch_blocked: ${operation} refused — kill-switch state unreadable and the governed profile fails closed`
-    : `kill_switch_blocked: ${operation} refused — write kill switch engaged. Release with \`patchwork kill-switch release\`.`;
+    : r.reason === "unreadable_engaged"
+      ? `kill_switch_blocked: ${operation} refused — write kill switch remains engaged while its file state is unreadable`
+      : r.reason === "missing_after_load_cached"
+        ? `kill_switch_blocked: ${operation} refused — flags file is missing after a previous load; cached engaged state retained`
+        : `kill_switch_blocked: ${operation} refused — write kill switch engaged. Release with \`patchwork kill-switch release\`.`;
 }
 
 /** Throw a coded error when the switch is engaged. Same code as `assertWriteAllowed`. */
@@ -72,5 +91,5 @@ export function assertKillSwitchReleased(
 export function _setKillSwitchReaderForTesting(
   fn: (() => boolean) | null,
 ): void {
-  reader = fn ?? isWriteKillSwitchActive;
+  reader = fn ?? readWriteKillSwitchForPolicy;
 }

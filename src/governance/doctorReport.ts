@@ -249,22 +249,27 @@ export function governanceReport(
 
   // 8. Kill switch.
   const ks = readKillSwitch(profile);
+  const missingAfterLoad = ks.reason === "missing_after_load_cached";
   push({
     key: "killSwitch",
     label: "Kill switch",
-    value: ks.engaged
-      ? `ENGAGED (${ks.reason})`
-      : profile.killSwitchFailClosed
-        ? "READY (fails closed)"
-        : "READY (fails OPEN if unreadable)",
-    status:
-      ks.reason === "unreadable_fail_open"
+    value: missingAfterLoad
+      ? `STALE (flags file missing; cached ${ks.engaged ? "engaged" : "released"})`
+      : ks.engaged
+        ? `ENGAGED (${ks.reason})`
+        : profile.killSwitchFailClosed
+          ? "READY (fails closed)"
+          : "READY (fails OPEN if unreadable)",
+    status: missingAfterLoad
+      ? "warn"
+      : ks.reason === "unreadable_fail_open"
         ? "fail"
         : profile.killSwitchFailClosed
           ? "ok"
           : "warn",
-    reason:
-      ks.reason === "unreadable_fail_open"
+    reason: missingAfterLoad
+      ? "flags file disappeared after a previous load; last-known kill-switch value is retained pending an explicit deletion policy"
+      : ks.reason === "unreadable_fail_open"
         ? "kill-switch state unreadable and the compat profile treats that as released"
         : undefined,
   });

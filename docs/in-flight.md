@@ -52,10 +52,9 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-
-
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-16 `codex/kill-switch-fail-closed` — Gate 3A only: propagate real `flags.json` load failures to the existing governed/compat kill-switch decision while preserving sparse/missing config, frozen env precedence, and engaged-state protection. Tests use isolated synthetic state; no deployment or live bridge changes. Touches featureFlags, kill-switch policy/diagnostics, and focused tests. — Codex (kill-switch-fail-closed worktree) PR #1599
 - 2026-09-16 `codex/security-dependency-train` — coordinated production remediation for the current Next.js and sharp CVE findings, with generated licence inventory and full dashboard/security verification; no Vitest or Express 5 migration — Codex (security dependency worktree) PR #1598
 - **feat/provenance-propagation** — proven origins carried through agent, judge/refine and nested outputs; zero origins stays unmarked (#1589)
 - 2026-09-04 `fix/fail-closed-cli-parsing` — an unrecognised argument exits non-zero and names what it did not understand, in the two confirmed instances of that family (`patchwork evidence`, `audit-private-identifiers.mjs`) plus a shared `rejectUnknownArgs` helper the remaining verbs can adopt incrementally. Usage errors exit 2 so a typo stays distinguishable from `evidence verify`'s exit 1 on a broken chain. Touches src/cliArgs.ts, src/index.ts, scripts/audit-private-identifiers.mjs and two new tests. — Claude Code (fail-closed-cli-parsing worktree) PR #1590
