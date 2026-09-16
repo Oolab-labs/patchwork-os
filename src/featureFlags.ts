@@ -36,6 +36,17 @@ const FLAG_REGISTRY: Map<string, FeatureFlag> = new Map();
 /** Runtime flag values (after env/file resolution) */
 const FLAG_VALUES: Map<string, boolean> = new Map();
 
+/**
+ * Health of the most recent flags-file load.
+ *
+ * This is intentionally consumed only by the profile-aware kill-switch
+ * reader. Other feature flags retain their historical cached/default
+ * behaviour when flags.json cannot be read.
+ */
+let killSwitchFileError: Error | null = null;
+let flagsFileWasObserved = false;
+let flagsFileDisappeared = false;
+
 /** Flag storage path */
 function getFlagsPath(): string {
   return join(patchworkHome(), "config", "flags.json");
@@ -238,21 +249,65 @@ export function listFlags(): Array<FeatureFlag & { currentValue: boolean }> {
  */
 export function loadFlags(): void {
   const path = getFlagsPath();
-  if (!existsSync(path)) {
-    return;
-  }
 
   try {
     const raw = readFileSync(path, "utf-8");
-    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    flagsFileWasObserved = true;
+    flagsFileDisappeared = false;
 
-    for (const [key, value] of Object.entries(parsed)) {
-      if (FLAG_REGISTRY.has(key)) {
-        FLAG_VALUES.set(key, value);
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      throw new TypeError("flags.json must contain a JSON object");
+    }
+
+    const values = parsed as Record<string, unknown>;
+    const hasKillSwitchValue = Object.hasOwn(values, KILL_SWITCH_WRITES);
+    const killSwitchValue = values[KILL_SWITCH_WRITES];
+    if (hasKillSwitchValue && typeof killSwitchValue !== "boolean") {
+      throw new TypeError(
+        `flags.json value for "${KILL_SWITCH_WRITES}" must be boolean`,
+      );
+    }
+
+    // A sparse file is valid and does not itself constitute a release. Only an
+    // explicitly present boolean may change an already-cached emergency stop.
+    if (hasKillSwitchValue) {
+      FLAG_VALUES.set(KILL_SWITCH_WRITES, killSwitchValue as boolean);
+    }
+
+    for (const [key, value] of Object.entries(values)) {
+      if (key !== KILL_SWITCH_WRITES && FLAG_REGISTRY.has(key)) {
+        // Preserve historical behaviour for non-kill-switch flags. Gate 3A
+        // deliberately does not turn this into a global flags-schema change.
+        FLAG_VALUES.set(key, value as boolean);
       }
     }
-  } catch {
-    // Invalid file — ignore, use defaults
+
+    killSwitchFileError = null;
+  } catch (err) {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? (err as { code?: unknown }).code
+        : undefined;
+
+    if (code === "ENOENT") {
+      if (!flagsFileWasObserved) {
+        // A fresh install has no flags file. That is a valid default state.
+        killSwitchFileError = null;
+        flagsFileDisappeared = false;
+      } else {
+        // Existing contracts do not define deletion as release or corruption.
+        // Retain the last known value, but remember that no fresh read occurred.
+        flagsFileDisappeared = true;
+      }
+      return;
+    }
+
+    killSwitchFileError = err instanceof Error ? err : new Error(String(err));
   }
 }
 
@@ -521,6 +576,73 @@ export function watchFlags(
  */
 export function isWriteKillSwitchActive(): boolean {
   return isEnabled(KILL_SWITCH_WRITES);
+}
+
+/**
+ * Raised only at the profile-aware kill-switch decision seam when the real
+ * flags loader could not establish a valid state. The last known engaged
+ * value travels with the error so compat cannot accidentally release an
+ * already-active emergency stop while preserving its historical fail-open
+ * behaviour for a previously released switch.
+ */
+export class KillSwitchStateUnreadableError extends Error {
+  public readonly cachedEngaged: boolean;
+
+  constructor(cause: Error, cachedEngaged: boolean) {
+    super(`Kill-switch flags state is unreadable: ${cause.message}`, { cause });
+    this.name = "KillSwitchStateUnreadableError";
+    this.cachedEngaged = cachedEngaged;
+  }
+}
+
+/**
+ * Signals that a file which previously loaded successfully is now absent.
+ * ADR-0013/0026 do not define deletion as release or corruption, so the
+ * policy layer reports the cached value explicitly without reclassifying it.
+ */
+export class KillSwitchFileMissingAfterLoadError extends Error {
+  public readonly cachedEngaged: boolean;
+
+  constructor(cachedEngaged: boolean) {
+    super("Kill-switch flags file disappeared after a previous load");
+    this.name = "KillSwitchFileMissingAfterLoadError";
+    this.cachedEngaged = cachedEngaged;
+  }
+}
+
+/**
+ * Profile-aware reader used by governance dispatch. Environment precedence is
+ * resolved before file health: an authoritative env value remains usable even
+ * when the lower-priority file is malformed or unreadable.
+ */
+export function readWriteKillSwitchForPolicy(): boolean {
+  const envKey = "PATCHWORK_FLAG_KILL_SWITCH_WRITES";
+  const liveEnv = process.env[envKey];
+  const envOverride = envLocked
+    ? FROZEN_KILL_SWITCH_ENV.get(KILL_SWITCH_WRITES)
+    : liveEnv === undefined
+      ? undefined
+      : liveEnv === "1" || liveEnv.toLowerCase() === "true";
+
+  if (envOverride !== undefined) return envOverride;
+
+  if (killSwitchFileError) {
+    throw new KillSwitchStateUnreadableError(
+      killSwitchFileError,
+      FLAG_VALUES.get(KILL_SWITCH_WRITES) === true,
+    );
+  }
+
+  // Deletion after a prior successful read has no settled release/corruption
+  // policy in ADR-0013/0026. Preserve and explicitly label the last-known
+  // value rather than inventing a policy or claiming a successful fresh read.
+  if (flagsFileDisappeared) {
+    throw new KillSwitchFileMissingAfterLoadError(
+      FLAG_VALUES.get(KILL_SWITCH_WRITES) === true,
+    );
+  }
+
+  return FLAG_VALUES.get(KILL_SWITCH_WRITES) === true;
 }
 
 /**

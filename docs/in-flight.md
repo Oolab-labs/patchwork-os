@@ -52,6 +52,7 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-16 `codex/kill-switch-fail-closed` — Gate 3A only: propagate real `flags.json` load failures to the existing governed/compat kill-switch decision while preserving sparse/missing config, frozen env precedence, and engaged-state protection. Tests use isolated synthetic state; no deployment or live bridge changes. Touches featureFlags, kill-switch policy/diagnostics, and focused tests. — Codex (kill-switch-fail-closed worktree)
 
 
 ## Recently closed (informal log, prune periodically)
