@@ -50,7 +50,7 @@ verified (which is how this line came to be written).
 
 ## Active
 
-_Empty is a legitimate state. See "Retire your own entry before merging" above._
+- 2026-09-16 `codex/security-dependency-train` — coordinated production remediation for the current Next.js and sharp CVE findings, with generated licence inventory and full dashboard/security verification; no Vitest or Express 5 migration — Codex (security dependency worktree)
 
 
 
