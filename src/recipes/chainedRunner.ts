@@ -7,6 +7,10 @@
  *   - Dry-run mode
  */
 
+import {
+  approvalIdentityMatches,
+  executionEvidence,
+} from "../approvalIdentity.js";
 import { computeEffectivePolicy } from "../governance/effectivePolicy.js";
 import { readKillSwitch } from "../governance/killSwitchPolicy.js";
 import {
@@ -24,7 +28,10 @@ import {
 import { classifyTool } from "../riskTier.js";
 import type { AgentExecutorInput, AgentResult } from "./agentExecutor.js";
 import { stepSandboxRequest } from "./agentExecutor.js";
-import { normaliseApprovalVerdict } from "./approvalRequest.js";
+import {
+  normaliseApprovalVerdict,
+  recipeApprovalIdentityMatches,
+} from "./approvalRequest.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
   buildDependencyGraph,
@@ -265,6 +272,7 @@ export interface StepExecutionContext {
 export type ToolExecutor = (
   tool: string,
   params: Record<string, unknown>,
+  approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
 ) => Promise<unknown>;
 
 /**
@@ -861,22 +869,26 @@ export async function executeChainedStep(
         resolvedParams: resolved,
       };
     }
+    let stepApprovalEvidence:
+      | import("../approvalIdentity.js").ApprovalExecutionEvidence
+      | undefined;
+    let stepApprovalGrant:
+      | import("../approvalIdentity.js").ApprovalGrant
+      | undefined;
     if (deps.requireApprovalFn && effective?.consultsApproval) {
       const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
+      const approvalInput = {
+        toolId: approvalToolId,
+        tier: classifyTool(approvalToolId),
+        effective: effective.final,
+        summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
+        params: step.agent ? undefined : (resolved as Record<string, unknown>),
+        ...(options.signal && { signal: options.signal }),
+        runTaskId: ctx.runTaskId ?? "",
+        recipeName: recipe.name,
+      };
       const verdict = normaliseApprovalVerdict(
-        await deps.requireApprovalFn({
-          toolId: approvalToolId,
-          tier: classifyTool(approvalToolId),
-          effective: effective.final,
-          summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
-          params: step.agent
-            ? undefined
-            : (resolved as Record<string, unknown>),
-          ...(options.signal && { signal: options.signal }), // L1
-          // Join key onto this run's rows — the same id `runChainedRecipe`
-          // writes to the run log, threaded through the step context.
-          runTaskId: ctx.runTaskId ?? "",
-        }),
+        await deps.requireApprovalFn(approvalInput),
       );
       if (!verdict.approved) {
         // The sentence comes from the shared helper, not a literal here: this
@@ -888,6 +900,18 @@ export async function executeChainedStep(
           error: approvalHaltFor(verdict.refusal).reason,
           resolvedParams: resolved,
         };
+      }
+      if (!recipeApprovalIdentityMatches(verdict, approvalInput)) {
+        return {
+          success: false,
+          error:
+            "approval_identity_mismatch: approved action changed before dispatch; no action taken",
+          resolvedParams: resolved,
+        };
+      }
+      if (verdict.grant) {
+        stepApprovalGrant = verdict.grant;
+        stepApprovalEvidence = executionEvidence(verdict.grant);
       }
     }
 
@@ -1148,8 +1172,28 @@ export async function executeChainedStep(
       };
     } else if (step.tool) {
       // Tool step
+      if (
+        stepApprovalGrant &&
+        !approvalIdentityMatches(stepApprovalGrant.approvedActionIdentity, {
+          toolName: step.tool,
+          params: resolved,
+          sessionId: "recipe",
+          tier: classifyTool(step.tool),
+          correlationId: ctx.runTaskId ?? "",
+          recipeName: recipe.name,
+        })
+      ) {
+        return {
+          success: false,
+          error:
+            "approval_identity_mismatch: approved action changed at dispatch; no action taken",
+          resolvedParams: resolved,
+        };
+      }
       let result: unknown = await raceStepTimeout(
-        deps.executeTool(step.tool, resolved),
+        stepApprovalEvidence
+          ? deps.executeTool(step.tool, resolved, stepApprovalEvidence)
+          : deps.executeTool(step.tool, resolved),
         step.timeout_ms,
         step.id,
         options.signal,

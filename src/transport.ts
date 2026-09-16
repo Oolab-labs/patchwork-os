@@ -1,6 +1,11 @@
 import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
 import { createAjv2020, type ValidateFunction } from "./ajv2020.js";
+import {
+  type ApprovalGrant,
+  approvalIdentityMatches,
+  executionEvidence,
+} from "./approvalIdentity.js";
 import { ErrorCodes, ToolErrorCodes } from "./errors.js";
 import {
   killSwitchMessage,
@@ -230,6 +235,7 @@ export class McpTransport {
         | "cancelled"
         | "bypass"
         | "policy_denied"
+        | ApprovalGrant
       >)
     | null = null;
 
@@ -246,6 +252,7 @@ export class McpTransport {
       | "cancelled"
       | "bypass"
       | "policy_denied"
+      | ApprovalGrant
     >,
   ): void {
     this.approvalGate = fn;
@@ -1455,6 +1462,7 @@ export class McpTransport {
               const callLog = this.logger.child({ tool: params.name, callId });
               let timedOut = false;
               let handlerPromise: Promise<unknown> | null = null;
+              let approvalGrant: ApprovalGrant | undefined;
               try {
                 const rawArgs = params.arguments ?? {};
                 if (
@@ -1609,7 +1617,8 @@ export class McpTransport {
                     | "expired"
                     | "cancelled"
                     | "bypass"
-                    | "policy_denied";
+                    | "policy_denied"
+                    | ApprovalGrant;
                   try {
                     decision = await this.approvalGate({
                       toolName: params.name,
@@ -1651,6 +1660,9 @@ export class McpTransport {
                       );
                     }
                     throw gateErr;
+                  }
+                  if (typeof decision === "object") {
+                    approvalGrant = decision;
                   }
                   if (
                     decision === "rejected" ||
@@ -1720,6 +1732,58 @@ export class McpTransport {
                     };
                     break;
                   }
+                  if (
+                    (decision === "approved" && !approvalGrant) ||
+                    (approvalGrant &&
+                      !approvalIdentityMatches(
+                        approvalGrant.approvedActionIdentity,
+                        {
+                          toolName: params.name,
+                          params: toolArgs as Record<string, unknown>,
+                          sessionId: this.sessionId,
+                          tier: approvalGrant.facts.tier,
+                        },
+                      ))
+                  ) {
+                    const wasSoftPreserved = this.detachSoftInflight.delete(
+                      msg.id,
+                    );
+                    if (wasSoftPreserved) respondViaActiveWs = true;
+                    if (gen === this.generation || wasSoftPreserved) {
+                      this.activeToolCalls = Math.max(
+                        0,
+                        this.activeToolCalls - 1,
+                      );
+                      this.inFlightToolNames.delete(msg.id);
+                      this.inFlightControllers.delete(msg.id);
+                    }
+                    this.activityLog?.recordEvent(
+                      "approval_identity_mismatch",
+                      {
+                        tool: params.name,
+                        sessionId: this.sessionId ?? undefined,
+                        ...(approvalGrant && {
+                          approvalId: approvalGrant.approvalId,
+                          approvedActionIdentity:
+                            approvalGrant.approvedActionIdentity,
+                        }),
+                      },
+                    );
+                    response = {
+                      jsonrpc: "2.0",
+                      id: msg.id,
+                      result: {
+                        content: [
+                          {
+                            type: "text",
+                            text: "[approval_identity_mismatch] Approved action identity no longer matches the action at dispatch; no action taken.",
+                          },
+                        ],
+                        isError: true,
+                      },
+                    };
+                    break;
+                  }
                 }
                 // Start the duration clock now — AFTER the approval gate has
                 // resolved — so stats reflect actual tool execution time, not
@@ -1771,6 +1835,9 @@ export class McpTransport {
                     "success",
                     undefined,
                     this.sessionId ?? undefined,
+                    approvalGrant
+                      ? executionEvidence(approvalGrant)
+                      : undefined,
                   );
                   callLog.debug(`Tool completed in ${durationMs}ms`);
                   // Validate structuredContent against outputSchema before sending.
@@ -1896,6 +1963,7 @@ export class McpTransport {
                   "error",
                   message,
                   this.sessionId ?? undefined,
+                  approvalGrant ? executionEvidence(approvalGrant) : undefined,
                 );
                 const errPayload: Record<string, string> = { error: message };
                 if (errCode !== undefined) errPayload.code = errCode;

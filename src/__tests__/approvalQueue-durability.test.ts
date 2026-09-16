@@ -103,6 +103,48 @@ describe("ApprovalQueue — durable persistence", () => {
     expect(decisions[0]?.decision).toBe("approved");
   });
 
+  it("does not attach a new live caller to a restored unowned request", () => {
+    const first = new ApprovalQueue({ persistDir: dir });
+    const stale = first.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "recipe",
+      correlationId: "release:old-run",
+    });
+
+    const restarted = new ApprovalQueue({ persistDir: dir });
+    expect(restarted.list()).toEqual([
+      expect.objectContaining({ callId: stale.callId, owned: false }),
+    ]);
+
+    const live = restarted.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "recipe",
+      correlationId: "release:new-run",
+    });
+
+    expect(live.callId).not.toBe(stale.callId);
+    expect(restarted.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ callId: stale.callId, owned: false }),
+        expect.objectContaining({ callId: live.callId, owned: true }),
+      ]),
+    );
+
+    restarted.approve(stale.callId);
+    const duplicateLive = restarted.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "recipe",
+      correlationId: "release:new-run",
+    });
+    expect(duplicateLive.callId).toBe(live.callId);
+  });
+
   it("a request already past its expiry while the process was down resolves as expired immediately, not restored", () => {
     const q1 = new ApprovalQueue({ persistDir: dir, ttlMs: { high: 10 } });
     q1.request({ toolName: "gitPush", params: {}, tier: "high" });

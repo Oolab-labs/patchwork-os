@@ -71,6 +71,7 @@ export interface ToolContext {
   ctx: RunContext;
   /** Dependencies injected for I/O and connector access */
   deps: StepDeps;
+  approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence;
 }
 
 export type ToolExecute = (context: ToolContext) => Promise<string | null>;
@@ -191,6 +192,8 @@ export async function executeTool(
       Date.now() - start,
       ok ? "success" : "error",
       errMsg,
+      undefined,
+      context.approvalEvidence,
     );
   };
 

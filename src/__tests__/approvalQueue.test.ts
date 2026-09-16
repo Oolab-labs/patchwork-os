@@ -535,6 +535,27 @@ describe("ApprovalQueue dedup (inflight key)", () => {
     expect(r2.callId).not.toBe(r1.callId);
   });
 
+  it("different action correlation identities do NOT dedup", () => {
+    const q = new ApprovalQueue();
+    const r1 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "recipe",
+      correlationId: "release:first-run",
+    });
+    const r2 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "recipe",
+      correlationId: "release:second-run",
+    });
+
+    expect(r2.callId).not.toBe(r1.callId);
+    expect(q.list()).toHaveLength(2);
+  });
+
   it("approve() resolves both deduped promises", async () => {
     const q = new ApprovalQueue();
     const r1 = q.request({

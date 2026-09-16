@@ -513,27 +513,36 @@ export class Bridge {
             workspace: this.config.workspace,
           });
           if (gate.decision === "bypass") return "bypass";
-          const { promise, callId } = enqueueApprovalWithDispatch(
-            {
-              queue: getApprovalQueue(),
-              webhookUrl: this.server.approvalWebhookUrl,
-              pushServiceUrl: this.server.pushServiceUrl,
-              pushServiceToken: this.server.pushServiceToken,
-              pushServiceBaseUrl: this.server.pushServiceBaseUrl,
-              pushServiceAllowPrivate: this.server.pushServiceAllowPrivate,
-              ntfyTopic: this.server.ntfyTopic,
-              ntfyServer: this.server.ntfyServer,
-            },
-            {
-              toolName,
-              params,
-              tier: gate.tier,
-              sessionId: sessionId ?? undefined,
-              riskSignals: gate.riskSignals,
-            },
-          );
+          const { promise, callId, approvedActionIdentity } =
+            enqueueApprovalWithDispatch(
+              {
+                queue: getApprovalQueue(),
+                webhookUrl: this.server.approvalWebhookUrl,
+                pushServiceUrl: this.server.pushServiceUrl,
+                pushServiceToken: this.server.pushServiceToken,
+                pushServiceBaseUrl: this.server.pushServiceBaseUrl,
+                pushServiceAllowPrivate: this.server.pushServiceAllowPrivate,
+                ntfyTopic: this.server.ntfyTopic,
+                ntfyServer: this.server.ntfyServer,
+              },
+              {
+                toolName,
+                params,
+                tier: gate.tier,
+                sessionId: sessionId ?? undefined,
+                riskSignals: gate.riskSignals,
+              },
+            );
           onPending?.(callId);
-          return promise;
+          const decision = await promise;
+          return decision === "approved"
+            ? {
+                decision,
+                approvalId: callId,
+                approvedActionIdentity,
+                facts: { tier: gate.tier },
+              }
+            : decision;
         },
       );
       transport.setExtensionConnectedFn(() =>

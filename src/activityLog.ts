@@ -205,6 +205,10 @@ export class ActivityLog {
     status: "success" | "error",
     errorMessage?: string,
     sessionId?: string,
+    approvalEvidence?: Pick<
+      ActivityEntry,
+      "approvalId" | "approvedActionIdentity" | "approvalRevalidated"
+    >,
   ): void {
     const entry: ActivityEntry = {
       id: this.nextId++,
@@ -219,6 +223,7 @@ export class ActivityLog {
           ? undefined
           : redactKnownSecrets(errorMessage),
       sessionId,
+      ...(approvalEvidence ?? {}),
     };
     this.entries.push(entry);
     this._appendToDisk("tool", entry);
