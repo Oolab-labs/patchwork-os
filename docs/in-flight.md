@@ -54,6 +54,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-16 `codex/chained-data-policy-parity` — Gate 3B only: preserve each chained agent step's raw `data_policy` declaration through the chained runner and `buildChainedDeps()` into the existing shared information-boundary evaluator, with isolated production-path parity, shadow, concurrency, and nested-call regressions. No policy redesign, destination-resolution change, deployment, or installation work. — Codex (chained-data-policy-parity worktree) PR #1600
 - 2026-09-16 `codex/kill-switch-fail-closed` — Gate 3A only: propagate real `flags.json` load failures to the existing governed/compat kill-switch decision while preserving sparse/missing config, frozen env precedence, and engaged-state protection. Tests use isolated synthetic state; no deployment or live bridge changes. Touches featureFlags, kill-switch policy/diagnostics, and focused tests. — Codex (kill-switch-fail-closed worktree) PR #1599
 - 2026-09-16 `codex/security-dependency-train` — coordinated production remediation for the current Next.js and sharp CVE findings, with generated licence inventory and full dashboard/security verification; no Vitest or Express 5 migration — Codex (security dependency worktree) PR #1598
 - **feat/provenance-propagation** — proven origins carried through agent, judge/refine and nested outputs; zero origins stays unmarked (#1589)

@@ -22,7 +22,7 @@ import {
   wrapUntrusted,
 } from "../governance/untrustedContent.js";
 import { classifyTool } from "../riskTier.js";
-import type { AgentResult } from "./agentExecutor.js";
+import type { AgentExecutorInput, AgentResult } from "./agentExecutor.js";
 import { stepSandboxRequest } from "./agentExecutor.js";
 import { normaliseApprovalVerdict } from "./approvalRequest.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
@@ -98,6 +98,8 @@ export interface ChainedStep {
       | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
     /** Deny rules via --disallowed-tools in any mode. */
     disallowedTools?: string[];
+    /** Raw ADR-0021 declaration; parsed at the shared agent boundary. */
+    data_policy?: unknown;
   };
   recipe?: NestedRecipeConfig["recipe"];
   chain?: NestedRecipeConfig["recipe"];
@@ -283,6 +285,7 @@ export type AgentExecutor = (
     allowedTools?: string[];
     disallowedTools?: string[];
     containment?: import("../governance/profile.js").AgentContainment;
+    boundary?: AgentExecutorInput["boundary"];
   },
 ) => Promise<string | AgentResult>;
 
@@ -1025,6 +1028,9 @@ export async function executeChainedStep(
             }),
             ...(step.agent.disallowedTools !== undefined && {
               disallowedTools: step.agent.disallowedTools,
+            }),
+            ...(step.agent.data_policy !== undefined && {
+              boundary: { dataPolicy: step.agent.data_policy },
             }),
           }),
           step.timeout_ms,
