@@ -17,7 +17,10 @@ import {
   decryptSecretString,
   encryptSecretString,
 } from "./connectors/tokenStorage.js";
-import type { IClaudeDriver } from "./drivers/types.js";
+import type {
+  IClaudeDriver,
+  ResolvedDestinationFacts,
+} from "./drivers/types.js";
 import {
   killSwitchMessage,
   readKillSwitch,
@@ -270,7 +273,7 @@ interface PersistedTask {
  * wiring to forget. It stays inert unless `privacy.shadow` is configured.
  */
 function observeOrchestratorShadow(
-  driverName: string | undefined,
+  destinationFacts: ResolvedDestinationFacts,
   workspace: string | undefined,
   /**
    * The operator's PATH-LEVEL classification, if they have opted this path into
@@ -294,9 +297,9 @@ function observeOrchestratorShadow(
     const registry = parseRegistry(cfg);
     const resolved = resolveDestination(
       registry,
-      driverName,
+      destinationFacts.driver,
       classification,
-      {},
+      destinationFacts,
     );
     if (!resolved) return;
     const outcome = decideBoundary({ classification }, resolved.destination, {
@@ -407,7 +410,7 @@ function orchestratorPathClassification(
  * enforcement that silently stops enforcing.
  */
 function governOrchestratorDispatch(
-  driverName: string | undefined,
+  destinationFacts: ResolvedDestinationFacts,
   workspace: string | undefined,
   classification: Classification | undefined,
 ): void {
@@ -416,7 +419,12 @@ function governOrchestratorDispatch(
   if (classification === undefined) return;
   const cfg = (loadPatchworkConfig() as { privacy?: PrivacyConfig }).privacy;
   const registry = parseRegistry(cfg);
-  const resolved = resolveDestination(registry, driverName, classification, {});
+  const resolved = resolveDestination(
+    registry,
+    destinationFacts.driver,
+    classification,
+    destinationFacts,
+  );
   // No destination registered for this driver and classification. The registry
   // is the opt-in for the boundary as a whole (ADR-0021), so an unregistered
   // destination is inert here exactly as it is on the recipe path — NOT a
@@ -791,6 +799,14 @@ export class ClaudeOrchestrator {
       this.workspace;
 
     try {
+      // Capture the actual transport target exactly once. Object.freeze keeps
+      // drivers' optional fact seam honest without cloning it: shadow,
+      // enforcement and execution all receive this same object reference.
+      const destinationFacts = Object.freeze(
+        this.driver.resolveDestinationFacts?.() ?? {
+          driver: this.driver.name,
+        },
+      );
       // Observation first, then enforcement — in that order, deliberately.
       // The shadow ledger's job is to record what a CANDIDATE policy would have
       // done, and a refused dispatch is exactly the case a candidate policy is
@@ -808,14 +824,14 @@ export class ClaudeOrchestrator {
         ).privacy,
       );
       observeOrchestratorShadow(
-        this.driver.name,
+        destinationFacts,
         resolvedWorkspace,
         pathClassification,
       );
       // May THROW. Caught below as a non-abort error, so the task lands
       // `error` with the boundary's reason as its message.
       governOrchestratorDispatch(
-        this.driver.name,
+        destinationFacts,
         resolvedWorkspace,
         pathClassification,
       );
@@ -846,6 +862,7 @@ export class ClaudeOrchestrator {
         ...(task.containment !== undefined && {
           containment: task.containment,
         }),
+        destinationFacts,
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);

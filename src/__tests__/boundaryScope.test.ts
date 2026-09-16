@@ -84,7 +84,9 @@ describe("ADR-0021 scope — the boundary covers the recipe agent-step path", ()
     // header records, and the one that left the shadow guard green with the
     // observation deleted.
     expect(
-      /governOrchestratorDispatch\s*\(\s*\n?\s*this\.driver/.test(orchestrator),
+      /governOrchestratorDispatch\s*\(\s*\n?\s*destinationFacts/.test(
+        orchestrator,
+      ),
       "claudeOrchestrator.ts declares governOrchestratorDispatch but no longer " +
         "CALLS it at its dispatch point, so every orchestrator task flows " +
         "unjudged while the ADR says the path is enforced",
@@ -112,7 +114,7 @@ describe("ADR-0021 scope — the boundary covers the recipe agent-step path", ()
     // left this guard green — probed, not assumed, and it is the same trap
     // this file's header records for `recordBoundaryDecisionFn_REMOVED`.
     expect(
-      /observeOrchestratorShadow\s*\(\s*this\.driver/.test(orchestrator),
+      /observeOrchestratorShadow\s*\(\s*destinationFacts/.test(orchestrator),
       "claudeOrchestrator.ts no longer CALLS observeOrchestratorShadow at its " +
         "dispatch point, so `patchwork privacy shadow` will report 0 " +
         "orchestrator rows and read as coverage rather than absence",
@@ -130,13 +132,13 @@ describe("ADR-0021 scope — the boundary covers the recipe agent-step path", ()
     // unobserved — dropping from the shadow report exactly the traffic a
     // candidate policy is being evaluated against.
     //
-    // Anchored on `this.driver`, i.e. the CALL, not the identifier. A first
+    // Anchored on `destinationFacts`, i.e. the CALL, not the identifier. A first
     // attempt used plain `indexOf` on the bare name and compared the two
     // FUNCTION DECLARATIONS instead — which sit in the opposite order and never
     // move — so it passed against a deliberately swapped call site. Found by
     // making that swap and watching the guard stay green, not by reading it.
     const callOf = (name: string) =>
-      orchestrator.search(new RegExp(`${name}\\(\\s*\\n\\s*this\\.driver`));
+      orchestrator.search(new RegExp(`${name}\\(\\s*\\n?\\s*destinationFacts`));
     const observeAt = callOf("observeOrchestratorShadow");
     const governAt = callOf("governOrchestratorDispatch");
     expect(observeAt).toBeGreaterThan(-1);

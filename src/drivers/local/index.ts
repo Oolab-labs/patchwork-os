@@ -1,5 +1,6 @@
 import { isLoopbackOrPrivateEndpoint } from "../../localEndpointGuard.js";
 import { OpenAIApiDriver } from "../openai/index.js";
+import type { ResolvedDestinationFacts } from "../types.js";
 
 // Re-export so existing importers (`import { isLoopbackOrPrivateEndpoint }
 // from ".../drivers/local/index.js"`) keep working after the predicate moved
@@ -28,6 +29,7 @@ export { isLoopbackOrPrivateEndpoint };
  */
 export class LocalApiDriver extends OpenAIApiDriver {
   override readonly name = "local";
+  private readonly endpoint: string;
 
   constructor(log: (msg: string) => void) {
     const baseURL = process.env.LOCAL_ENDPOINT;
@@ -52,6 +54,11 @@ export class LocalApiDriver extends OpenAIApiDriver {
       // Per-install default — caller can still override via input.model.
       defaultModel: process.env.LOCAL_MODEL ?? "llama3.2",
     });
+    this.endpoint = baseURL;
+  }
+
+  resolveDestinationFacts(): ResolvedDestinationFacts {
+    return Object.freeze({ driver: this.name, endpoint: this.endpoint });
   }
 
   protected override apiKey(): string | undefined {
