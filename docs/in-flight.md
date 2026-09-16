@@ -50,12 +50,13 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-09-16 `codex/security-dependency-train` — coordinated production remediation for the current Next.js and sharp CVE findings, with generated licence inventory and full dashboard/security verification; no Vitest or Express 5 migration — Codex (security dependency worktree)
+_Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-16 `codex/security-dependency-train` — coordinated production remediation for the current Next.js and sharp CVE findings, with generated licence inventory and full dashboard/security verification; no Vitest or Express 5 migration — Codex (security dependency worktree) PR #1598
 - **feat/provenance-propagation** — proven origins carried through agent, judge/refine and nested outputs; zero origins stays unmarked (#1589)
 - 2026-09-04 `fix/fail-closed-cli-parsing` — an unrecognised argument exits non-zero and names what it did not understand, in the two confirmed instances of that family (`patchwork evidence`, `audit-private-identifiers.mjs`) plus a shared `rejectUnknownArgs` helper the remaining verbs can adopt incrementally. Usage errors exit 2 so a typo stays distinguishable from `evidence verify`'s exit 1 on a broken chain. Touches src/cliArgs.ts, src/index.ts, scripts/audit-private-identifiers.mjs and two new tests. — Claude Code (fail-closed-cli-parsing worktree) PR #1590
 
