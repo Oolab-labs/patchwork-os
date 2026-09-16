@@ -75,5 +75,6 @@ export type {
   ProviderTaskInput,
   ProviderTaskOutcome,
   ProviderTaskResult,
+  ResolvedDestinationFacts,
 } from "./types.js";
 export { toProviderTaskOutcome } from "./types.js";

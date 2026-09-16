@@ -6142,14 +6142,18 @@ if (process.argv[2] === "privacy") {
     // wiring deliberately keeps out of it, and would smuggle in "purpose"
     // ahead of the per-field labels ADR-0021 reserves it for.
     if (args[0] === "destinations") {
-      const { parseRegistry } = await import(
+      const { isLocalFamilyDriver, parseRegistry } = await import(
         "./privacy/destinationRegistry.js"
       );
       const { describeDestinations, formatDestinationsReport } = await import(
         "./privacy/describeDestinations.js"
       );
       const { loadConfig } = await import("./patchworkConfig.js");
+      const { resolveLocalEndpoint } = await import(
+        "./recipes/localSettings.js"
+      );
       const cfg = loadConfig() as {
+        localEndpoint?: string;
         privacy?: import("./privacy/destinationRegistry.js").PrivacyConfig & {
           notes?: Record<
             string,
@@ -6158,10 +6162,25 @@ if (process.argv[2] === "privacy") {
         };
       };
       const registry = parseRegistry(cfg.privacy);
+      const destinationFactsByDriver = new Map<
+        string,
+        import("./drivers/types.js").ResolvedDestinationFacts
+      >();
+      for (const drivers of registry.driversFor.values()) {
+        for (const driver of drivers) {
+          const facts = isLocalFamilyDriver(driver)
+            ? { driver, endpoint: resolveLocalEndpoint(cfg) }
+            : { driver };
+          destinationFactsByDriver.set(driver, Object.freeze(facts));
+        }
+      }
       const described = describeDestinations(
         registry.destinations,
         registry.driversFor,
-        { ...(cfg.privacy?.notes && { notes: cfg.privacy.notes }) },
+        {
+          destinationFactsByDriver,
+          ...(cfg.privacy?.notes && { notes: cfg.privacy.notes }),
+        },
       );
       if (args.includes("--json")) {
         process.stdout.write(`${JSON.stringify(described, null, 2)}\n`);
