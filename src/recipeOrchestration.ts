@@ -153,46 +153,50 @@ export async function makeRecipeApprovalFn(
     // broken one. That is the same defect the dispatch helper's own doc
     // comment records being fixed for the CLI gate; the fix reached the HTTP
     // route and the CLI gate and missed this third caller.
-    const { promise } = enqueueApprovalWithDispatch(
-      {
-        queue,
-        ...(server?.approvalWebhookUrl && {
-          webhookUrl: server.approvalWebhookUrl,
-        }),
-        ...(server?.pushServiceUrl && {
-          pushServiceUrl: server.pushServiceUrl,
-        }),
-        ...(server?.pushServiceToken && {
-          pushServiceToken: server.pushServiceToken,
-        }),
-        ...(server?.pushServiceBaseUrl && {
-          pushServiceBaseUrl: server.pushServiceBaseUrl,
-        }),
-        ...(server?.pushServiceAllowPrivate !== undefined && {
-          pushServiceAllowPrivate: server.pushServiceAllowPrivate,
-        }),
-        ...(server?.ntfyTopic && { ntfyTopic: server.ntfyTopic }),
-        ...(server?.ntfyServer && { ntfyServer: server.ntfyServer }),
-      },
-      {
-        toolName: input.toolId,
-        params: input.params ?? {},
-        tier: input.tier,
-        sessionId: "recipe",
-        // No risk signals on this path — the recipe runner computes none. An
-        // empty list is honest; inventing signals to fill the shape would put
-        // fabricated evidence into a notification and a receipt.
-        riskSignals: [],
-        // ADR-0025 — the join key between this approval and the run that
-        // needed it. Same value the Decision Record stamps as `correlationId`
-        // a few lines up, from the same `input`.
-        correlationId: input.runTaskId,
-        ...(input.summary !== undefined && { summary: input.summary }),
-      },
-      // L1: abort the wait if the run is cancelled (→ "cancelled" → halt)
-      // instead of blocking for the full approval TTL.
-      { signal: input.signal },
-    );
+    const { promise, callId, approvedActionIdentity } =
+      enqueueApprovalWithDispatch(
+        {
+          queue,
+          ...(server?.approvalWebhookUrl && {
+            webhookUrl: server.approvalWebhookUrl,
+          }),
+          ...(server?.pushServiceUrl && {
+            pushServiceUrl: server.pushServiceUrl,
+          }),
+          ...(server?.pushServiceToken && {
+            pushServiceToken: server.pushServiceToken,
+          }),
+          ...(server?.pushServiceBaseUrl && {
+            pushServiceBaseUrl: server.pushServiceBaseUrl,
+          }),
+          ...(server?.pushServiceAllowPrivate !== undefined && {
+            pushServiceAllowPrivate: server.pushServiceAllowPrivate,
+          }),
+          ...(server?.ntfyTopic && { ntfyTopic: server.ntfyTopic }),
+          ...(server?.ntfyServer && { ntfyServer: server.ntfyServer }),
+        },
+        {
+          toolName: input.toolId,
+          params: input.params ?? {},
+          tier: input.tier,
+          sessionId: "recipe",
+          // No risk signals on this path — the recipe runner computes none. An
+          // empty list is honest; inventing signals to fill the shape would put
+          // fabricated evidence into a notification and a receipt.
+          riskSignals: [],
+          // ADR-0025 — the join key between this approval and the run that
+          // needed it. Same value the Decision Record stamps as `correlationId`
+          // a few lines up, from the same `input`.
+          correlationId: input.runTaskId,
+          ...(input.recipeName !== undefined && {
+            recipeName: input.recipeName,
+          }),
+          ...(input.summary !== undefined && { summary: input.summary }),
+        },
+        // L1: abort the wait if the run is cancelled (→ "cancelled" → halt)
+        // instead of blocking for the full approval TTL.
+        { signal: input.signal },
+      );
     const decision = await promise;
     // Carry WHICH refusal this was to the runner. The queue distinguishes
     // rejected / expired / cancelled; collapsing them to a boolean here is
@@ -200,7 +204,21 @@ export async function makeRecipeApprovalFn(
     // turned it down" everywhere downstream, including the owner-facing
     // sentence "You turned down its last request".
     return decision === "approved"
-      ? { approved: true }
+      ? {
+          approved: true,
+          grant: {
+            decision,
+            approvalId: callId,
+            approvedActionIdentity,
+            facts: {
+              tier: input.tier,
+              correlationId: input.runTaskId,
+              ...(input.recipeName !== undefined && {
+                recipeName: input.recipeName,
+              }),
+            },
+          },
+        }
       : { approved: false, refusal: decision };
   };
 }

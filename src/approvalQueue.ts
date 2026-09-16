@@ -4,6 +4,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { computeApprovedActionIdentity } from "./approvalIdentity.js";
 import { ApprovalPersistence } from "./approvalPersistence.js";
 import {
   redactKnownSecrets,
@@ -122,7 +123,7 @@ interface Entry extends PendingApproval {
   /** Null when the resolved TTL for this entry's tier is "no expiry" (held until decided). */
   timer: ReturnType<typeof setTimeout> | null;
   /**
-   * Stable key derived from `(sessionId, toolName, params)`. Multiple `request()`
+   * Stable key derived from the live action identity. Multiple `request()`
    * calls with the same key share the entry's promise instead of creating a
    * new one each time. Without this, a buggy/malicious agent firing the same
    * approval call N times spawns N queue entries and N push notifications.
@@ -205,6 +206,32 @@ function canonicalJson(value: unknown): string {
   } catch {
     return "[uncloneable]";
   }
+}
+
+function approvalInflightKey(
+  input: Pick<
+    PendingApproval,
+    | "sessionId"
+    | "toolName"
+    | "params"
+    | "tier"
+    | "correlationId"
+    | "recipeName"
+  >,
+): string {
+  return createHash("sha256")
+    .update(input.sessionId ?? "")
+    .update("\0")
+    .update(input.toolName)
+    .update("\0")
+    .update(input.tier)
+    .update("\0")
+    .update(input.correlationId ?? "")
+    .update("\0")
+    .update(input.recipeName ?? "")
+    .update("\0")
+    .update(canonicalJson(input.params))
+    .digest("hex");
 }
 
 export class ApprovalQueue {
@@ -307,13 +334,14 @@ export class ApprovalQueue {
         this.persistence?.recordDecision(req.callId, "expired", now);
         continue;
       }
-      const inflightKey = createHash("sha256")
-        .update(req.sessionId ?? "")
-        .update("\0")
-        .update(req.toolName)
-        .update("\0")
-        .update(canonicalJson(req.params))
-        .digest("hex");
+      const inflightKey = approvalInflightKey({
+        sessionId: req.sessionId,
+        toolName: req.toolName,
+        params: req.params,
+        tier: req.tier as RiskTier,
+        correlationId: req.correlationId,
+        recipeName: req.recipeName,
+      });
       const timer =
         req.expiresAt !== null
           ? setTimeout(
@@ -355,7 +383,6 @@ export class ApprovalQueue {
         tokenFailures: 0,
       };
       this.entries.set(req.callId, entry);
-      this.inflight.set(inflightKey, req.callId);
     }
   }
 
@@ -403,19 +430,31 @@ export class ApprovalQueue {
   ): {
     callId: string;
     approvalToken?: string;
+    approvedActionIdentity: string;
     promise: Promise<ApprovalDecision>;
   } {
-    // Dedup: if an identical (sessionId, toolName, params) request is already
-    // queued, return its existing promise instead of allocating a fresh
-    // callId + push notification. Prevents a buggy/malicious agent that
-    // spams the same call N times from generating N prompts.
+    // Dedup: if an identical live action identity is already queued, return
+    // its existing promise instead of allocating a fresh callId + push
+    // notification. Restored entries are deliberately absent from the
+    // inflight index: they have no waiting caller and must never be rebound
+    // to a new process after restart (ADR-0018).
+    const approvedActionIdentity = computeApprovedActionIdentity({
+      toolName: input.toolName,
+      params: input.params,
+      sessionId: input.sessionId,
+      tier: input.tier,
+      correlationId: input.correlationId,
+      recipeName: input.recipeName,
+    });
+    const inflightKey = approvalInflightKey(input);
     // Value-based secret redaction at the ONE point where the record is
     // built: everything downstream — the live entry, `list()`, the dashboard
     // modal, push/webhook payloads and the durable `approval_log.jsonl` —
     // reads from this entry. The tool still executes with the CALLER's
     // params; the queue never hands `entry.params` back for execution.
-    // The dedup hash is taken over the redacted params so a restored
-    // (persisted, therefore redacted) entry and a live re-request agree.
+    // The dedup hash above is taken over the caller's original params so two
+    // distinct secret-bearing actions cannot collapse to the same identity
+    // after redaction. Only the redacted record is retained or persisted.
     input = {
       ...input,
       params: redactKnownSecretsDeep(input.params) as Record<string, unknown>,
@@ -423,17 +462,10 @@ export class ApprovalQueue {
         summary: redactKnownSecrets(input.summary),
       }),
     };
-    const inflightKey = createHash("sha256")
-      .update(input.sessionId ?? "")
-      .update("\0")
-      .update(input.toolName)
-      .update("\0")
-      .update(canonicalJson(input.params))
-      .digest("hex");
     const existingCallId = this.inflight.get(inflightKey);
     if (existingCallId) {
       const existing = this.entries.get(existingCallId);
-      if (existing) {
+      if (existing?.owned) {
         const promise = new Promise<ApprovalDecision>((res) => {
           existing.pendingPromises.push(res);
         });
@@ -446,11 +478,14 @@ export class ApprovalQueue {
         return {
           callId: existing.callId,
           approvalToken: existing.approvalToken,
+          approvedActionIdentity,
           promise,
         };
       }
-      // Stale inflight entry pointing at a callId that no longer exists —
-      // fall through and create a fresh request.
+      // Stale inflight entry pointing at a missing or unowned callId — fall
+      // through and create a fresh live request. The `owned` guard is a
+      // fail-closed backstop for any restored/legacy entry that reaches this
+      // index despite restore intentionally excluding it.
       this.inflight.delete(inflightKey);
     }
 
@@ -520,7 +555,7 @@ export class ApprovalQueue {
       }
     }
 
-    return { callId, approvalToken, promise };
+    return { callId, approvalToken, approvedActionIdentity, promise };
   }
 
   /**
@@ -694,7 +729,12 @@ export class ApprovalQueue {
     if (!entry) return false;
     if (entry.timer) clearTimeout(entry.timer);
     this.entries.delete(callId);
-    this.inflight.delete(entry.inflightKey);
+    // A restored unowned entry may have the same identity as a newer live
+    // request. Resolving the stale record must not evict that live request's
+    // dedup slot.
+    if (this.inflight.get(entry.inflightKey) === callId) {
+      this.inflight.delete(entry.inflightKey);
+    }
     // Record the decision in the short-lived `recentlyDecided` map so a
     // concurrent counter-decision (dashboard denies while phone approves
     // in the same window) can be told "already decided as X" instead of

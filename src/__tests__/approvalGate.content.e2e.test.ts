@@ -102,7 +102,7 @@ function setup(): {
         workspace: WS,
       });
       if (gate.decision === "bypass") return "bypass";
-      const { promise, callId } = queue.request({
+      const { promise, callId, approvedActionIdentity } = queue.request({
         toolName,
         params,
         tier: gate.tier,
@@ -110,7 +110,15 @@ function setup(): {
         riskSignals: gate.riskSignals,
       });
       onPending?.(callId);
-      return promise;
+      const decision = await promise;
+      return decision === "approved"
+        ? {
+            decision,
+            approvalId: callId,
+            approvedActionIdentity,
+            facts: { tier: gate.tier },
+          }
+        : decision;
     },
   );
 

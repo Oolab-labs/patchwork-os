@@ -36,6 +36,10 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import {
+  approvalIdentityMatches,
+  executionEvidence,
+} from "../approvalIdentity.js";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
 import {
@@ -86,7 +90,10 @@ import {
   type AgentUsage,
   stepSandboxRequest,
 } from "./agentExecutor.js";
-import { normaliseApprovalVerdict } from "./approvalRequest.js";
+import {
+  normaliseApprovalVerdict,
+  recipeApprovalIdentityMatches,
+} from "./approvalRequest.js";
 import { deriveBreakerKey, getCircuitBreaker } from "./circuitBreaker.js";
 import {
   expandFlatParallel,
@@ -2588,23 +2595,27 @@ export async function runYamlRecipe(
         emitStepDone(stepIdForEmit);
         continue;
       }
+      let stepApprovalEvidence:
+        | import("../approvalIdentity.js").ApprovalExecutionEvidence
+        | undefined;
+      let stepApprovalGrant:
+        | import("../approvalIdentity.js").ApprovalGrant
+        | undefined;
       if (deps.requireApprovalFn && effective.consultsApproval) {
+        const approvalInput = {
+          toolId: approvalToolId,
+          tier: classifyTool(approvalToolId),
+          effective: effective.final,
+          summary: step.agent
+            ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
+            : `tool ${approvalToolId}`,
+          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
+          runTaskId,
+          recipeName: recipe.name,
+          ...(effectiveRunSignal && { signal: effectiveRunSignal }),
+        };
         const verdict = normaliseApprovalVerdict(
-          await deps.requireApprovalFn({
-            toolId: approvalToolId,
-            tier: classifyTool(approvalToolId),
-            effective: effective.final,
-            summary: step.agent
-              ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
-              : `tool ${approvalToolId}`,
-            params: step.agent
-              ? undefined
-              : resolveParamsForApproval(step, ctx),
-            // The join key onto this run's rows in the run log. Same const the
-            // run-log writes above, never a second expression.
-            runTaskId,
-            ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
-          }),
+          await deps.requireApprovalFn(approvalInput),
         );
         if (!verdict.approved) {
           // Which refusal this was decides the sentence AND the category — an
@@ -2627,6 +2638,33 @@ export async function runYamlRecipe(
           persistLiveStepResults();
           emitStepDone(stepIdForEmit);
           continue;
+        }
+        const dispatchApprovalInput = {
+          ...approvalInput,
+          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
+        };
+        if (!recipeApprovalIdentityMatches(verdict, dispatchApprovalInput)) {
+          const reason =
+            "approval_identity_mismatch: approved action changed before dispatch; no action taken";
+          runError = runError ?? reason;
+          haltAfterFailure = true;
+          stepResults.push({
+            id: step.into ?? step.agent?.into ?? `step_${stepsRun}`,
+            tool: step.agent ? "agent" : step.tool,
+            status: "error",
+            error: reason,
+            haltReason: reason,
+            haltCategory: "unknown",
+            durationMs: 0,
+          });
+          stepsRun++;
+          persistLiveStepResults();
+          emitStepDone(stepIdForEmit);
+          continue;
+        }
+        if (verdict.grant) {
+          stepApprovalGrant = verdict.grant;
+          stepApprovalEvidence = executionEvidence(verdict.grant);
         }
       }
 
@@ -3013,14 +3051,38 @@ export async function runYamlRecipe(
               });
               try {
                 result = await Promise.race([
-                  executeStep(step, ctx, stepDeps),
+                  executeStep(
+                    step,
+                    ctx,
+                    stepDeps,
+                    stepApprovalEvidence,
+                    stepApprovalGrant
+                      ? {
+                          grant: stepApprovalGrant,
+                          runTaskId,
+                          recipeName: recipe.name,
+                        }
+                      : undefined,
+                  ),
                   timeoutPromise,
                 ]);
               } finally {
                 if (timer) clearTimeout(timer);
               }
             } else {
-              result = await executeStep(step, ctx, stepDeps);
+              result = await executeStep(
+                step,
+                ctx,
+                stepDeps,
+                stepApprovalEvidence,
+                stepApprovalGrant
+                  ? {
+                      grant: stepApprovalGrant,
+                      runTaskId,
+                      recipeName: recipe.name,
+                    }
+                  : undefined,
+              );
             }
             // Detect tool-level errors reported as JSON {ok: false, error: ...}
             if (result !== null) {
@@ -3469,6 +3531,12 @@ export async function executeStep(
   step: YamlStep,
   ctx: RunContext,
   deps: StepDeps,
+  approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
+  approvalDispatch?: {
+    grant: import("../approvalIdentity.js").ApprovalGrant;
+    runTaskId: string;
+    recipeName: string;
+  },
 ): Promise<string | null> {
   const toolId = step.tool;
   if (!toolId) {
@@ -3518,6 +3586,22 @@ export async function executeStep(
         continue;
       }
       params[key] = deepRender(value, ctx);
+    }
+
+    if (
+      approvalDispatch &&
+      !approvalIdentityMatches(approvalDispatch.grant.approvedActionIdentity, {
+        toolName: toolId,
+        params,
+        sessionId: "recipe",
+        tier: classifyTool(toolId),
+        correlationId: approvalDispatch.runTaskId,
+        recipeName: approvalDispatch.recipeName,
+      })
+    ) {
+      throw new Error(
+        "approval_identity_mismatch: approved action changed at dispatch; no action taken",
+      );
     }
 
     // Deterministic policy check. Recipe/worker tool calls dispatch
@@ -3616,13 +3700,20 @@ export async function executeStep(
           tool.namespace,
           toolId.split(".")[1] ?? toolId,
           params,
-          async () => executeTool(toolId, { params, step, ctx, deps }),
+          async () =>
+            executeTool(toolId, {
+              params,
+              step,
+              ctx,
+              deps,
+              approvalEvidence,
+            }),
         ),
       );
     }
 
     return runAndRecordBreaker(() =>
-      executeTool(toolId, { params, step, ctx, deps }),
+      executeTool(toolId, { params, step, ctx, deps, approvalEvidence }),
     );
   }
 
@@ -4888,6 +4979,7 @@ export function buildChainedDeps(
   const executeTool = async (
     tool: string,
     params: Record<string, unknown>,
+    approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
   ): Promise<unknown> => {
     // R2 C-1 third-substitution-site coverage: the chained runner has its
     // own template-resolution path (`chainedRunner.ts:194-205`). By the
@@ -4916,7 +5008,7 @@ export function buildChainedDeps(
     // executeStep uses a RunContext for {{}} rendering — by the time executeTool
     // is called the chained runner has already resolved templates, so we pass
     // an empty context (no double-rendering).
-    const result = await executeStep(step, {}, stepDeps);
+    const result = await executeStep(step, {}, stepDeps, approvalEvidence);
     return result ?? "";
   };
 

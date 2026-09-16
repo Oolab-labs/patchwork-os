@@ -977,6 +977,7 @@ export function enqueueApprovalWithDispatch(
      * run, and omit it. Absence is a state here, not a gap.
      */
     correlationId?: string;
+    recipeName?: string;
   },
   /**
    * Forwarded to `queue.request`. The recipe runner cancels its wait when the
@@ -987,33 +988,38 @@ export function enqueueApprovalWithDispatch(
   opts: { signal?: AbortSignal } = {},
 ): {
   callId: string;
+  approvedActionIdentity: string;
   promise: Promise<ApprovalDecision>;
 } {
   const { toolName, params, tier, riskSignals, summary, sessionId } = request;
   const now = Date.now();
-  const { callId, approvalToken, promise } = deps.queue.request(
-    {
-      toolName,
-      params,
-      tier,
-      summary,
-      sessionId,
-      riskSignals,
-      // Read off `request`, not the destructure above: a field added to the
-      // type and missed in the rebuild is dropped silently, and this helper is
-      // the more common of the two run-bearing paths into the queue.
-      ...(request.correlationId !== undefined && {
-        correlationId: request.correlationId,
-      }),
-      ...(request.personalSignals !== undefined && {
-        personalSignals: request.personalSignals,
-      }),
-    },
-    {
-      withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic,
-      ...(opts.signal !== undefined && { signal: opts.signal }),
-    },
-  );
+  const { callId, approvalToken, approvedActionIdentity, promise } =
+    deps.queue.request(
+      {
+        toolName,
+        params,
+        tier,
+        summary,
+        sessionId,
+        riskSignals,
+        // Read off `request`, not the destructure above: a field added to the
+        // type and missed in the rebuild is dropped silently, and this helper is
+        // the more common of the two run-bearing paths into the queue.
+        ...(request.correlationId !== undefined && {
+          correlationId: request.correlationId,
+        }),
+        ...(request.recipeName !== undefined && {
+          recipeName: request.recipeName,
+        }),
+        ...(request.personalSignals !== undefined && {
+          personalSignals: request.personalSignals,
+        }),
+      },
+      {
+        withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic,
+        ...(opts.signal !== undefined && { signal: opts.signal }),
+      },
+    );
   recordApprovalPrompted();
 
   // Read back the entry's actual resolved deadline rather than assuming a
@@ -1070,7 +1076,7 @@ export function enqueueApprovalWithDispatch(
     }).catch(() => {});
   }
 
-  return { callId, promise };
+  return { callId, approvedActionIdentity, promise };
 }
 
 async function handleApprovalRequest(
