@@ -63,7 +63,7 @@ function parseLimit(url: URL): number | null {
   if (raw === null || raw === "") return 3;
   if (!/^\d+$/.test(raw)) return null;
   const n = Number(raw);
-  return Number.isSafeInteger(n) && n >= 0 && n <= 20 ? n : null;
+  return Number.isSafeInteger(n) && n >= 1 && n <= 20 ? n : null;
 }
 
 function parseKind(raw: string | null): OpenLoopKind | null | undefined {
@@ -131,7 +131,7 @@ export function tryHandleButlerOpenLoopRoute(
     try {
       const limit = parseLimit(parsedUrl);
       if (limit === null) {
-        badRequest(res, "limit must be an integer between 0 and 20");
+        badRequest(res, "limit must be an integer between 1 and 20");
         return true;
       }
       const brief = deps.storeFn().brief(limit);
