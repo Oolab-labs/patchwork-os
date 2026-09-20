@@ -20,12 +20,11 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  renameSync,
-  writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { withFileLockSync } from "../fileLockSync.js";
 import { patchworkPath } from "../patchworkHome.js";
+import { writeFileAtomicSync } from "../writeFileAtomic.js";
 import { ButlerNotFoundError, ButlerValidationError } from "./errors.js";
 import { resolveOpenLoops } from "./openLoopResolve.js";
 import {
@@ -201,8 +200,6 @@ export class ButlerOpenLoopStore {
       loopId,
       erasedAt,
     };
-    const tmp = `${this.file}.erase.${process.pid}.${this.uuid()}.tmp`;
-
     withFileLockSync(this.file, () => {
       const rows = this.readRawRows();
       const kept: string[] = [];
@@ -225,8 +222,7 @@ export class ButlerOpenLoopStore {
         kept.push(row);
       }
       kept.push(JSON.stringify(marker));
-      writeFileSync(tmp, `${kept.join("\n")}\n`, { mode: 0o600 });
-      renameSync(tmp, this.file);
+      writeFileAtomicSync(this.file, `${kept.join("\n")}\n`, { mode: 0o600 });
     });
 
     return { id: loopId, erasedAt };
