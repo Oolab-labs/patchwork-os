@@ -90,7 +90,7 @@ export function tryHandleButlerOpenLoopRoute(
   deps: ButlerOpenLoopRouteDeps,
 ): boolean {
   const pathname = parsedUrl.pathname ?? "";
-  if (!pathname.startsWith("/butler/loops")) return false;
+  if (pathname !== "/butler/loops" && !pathname.startsWith("/butler/loops/")) return false;
 
   // Fail before reading a body or touching disk when the experiment is off.
   if (!deps.enabledFn()) {
