@@ -86,7 +86,6 @@ describe("ButlerOpenLoopStore", () => {
     const first = store.create({ kind: "remember", text: "First" });
 
     const file = path.join(dir, "open_loops.jsonl");
-    const { appendFileSync } = require("node:fs") as typeof import("node:fs");
     appendFileSync(file, "{not json}\n");
 
     const second = store.create({ kind: "waiting", text: "Second" });
