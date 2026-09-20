@@ -19,7 +19,9 @@ import {
 } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import { StandingPermissionStore } from "./butler/permissionStore.js";
+import { getButlerOpenLoopStore } from "./butler/openLoopSharedStore.js";
 import { getButlerFactStore } from "./butler/sharedStore.js";
+import { tryHandleButlerOpenLoopRoute } from "./butlerOpenLoopRoutes.js";
 import { tryHandleButlerRoute } from "./butlerRoutes.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
 import {
@@ -41,6 +43,7 @@ import {
   isEnabled,
   isEnvLockedFor,
   isWriteKillSwitchActive,
+  FLAG_BUTLER_OPEN_LOOPS,
   KILL_SWITCH_WRITES,
   listFlags,
   setFlag,
@@ -1802,6 +1805,19 @@ export class Server extends EventEmitter<ServerEvents> {
           // whole-file read, so a grant made by another process is visible
           // immediately.
           permissionStoreFn: () => new StandingPermissionStore(),
+        })
+      ) {
+        return;
+      }
+
+      // ── Butler Loose Ends routes (experimental, default off) ─────────────
+      // Mounted after the same Bearer-token gate as Butler facts. The store is
+      // separate from ButlerFactStore because errands/promises are temporary
+      // open loops, not durable beliefs about the user.
+      if (
+        tryHandleButlerOpenLoopRoute(req, res, parsedUrl, {
+          storeFn: () => getButlerOpenLoopStore(),
+          enabledFn: () => isEnabled(FLAG_BUTLER_OPEN_LOOPS),
         })
       ) {
         return;
