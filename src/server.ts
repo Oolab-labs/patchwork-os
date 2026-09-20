@@ -18,8 +18,8 @@ import {
   routeApprovalRequest,
 } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
-import { StandingPermissionStore } from "./butler/permissionStore.js";
 import { getButlerOpenLoopStore } from "./butler/openLoopSharedStore.js";
+import { StandingPermissionStore } from "./butler/permissionStore.js";
 import { getButlerFactStore } from "./butler/sharedStore.js";
 import { tryHandleButlerOpenLoopRoute } from "./butlerOpenLoopRoutes.js";
 import { tryHandleButlerRoute } from "./butlerRoutes.js";
@@ -39,11 +39,11 @@ import { renderDashboardHtml } from "./dashboard.js";
 import { isLoopbackOrPrivateEndpoint } from "./drivers/local/index.js";
 import {
   EnvLockedFlagError,
+  FLAG_BUTLER_OPEN_LOOPS,
   getEnvLockedValue,
   isEnabled,
   isEnvLockedFor,
   isWriteKillSwitchActive,
-  FLAG_BUTLER_OPEN_LOOPS,
   KILL_SWITCH_WRITES,
   listFlags,
   setFlag,
