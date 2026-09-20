@@ -45,8 +45,14 @@ export function resolveOpenLoops(events: readonly OpenLoopEvent[]): OpenLoop[] {
         completedAt: event.at,
       });
     } else if (event.event === "reopened") {
-      const { completedAt: _completedAt, ...rest } = loop;
-      loops.set(event.loopId, { ...rest, status: "open" });
+      loops.set(event.loopId, {
+        id: loop.id,
+        kind: loop.kind,
+        text: loop.text,
+        source: loop.source,
+        createdAt: loop.createdAt,
+        status: "open",
+      });
     }
   }
 
