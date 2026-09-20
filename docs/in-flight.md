@@ -50,6 +50,8 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-09-20 `feat/butler-open-loops` — experimental Butler Loose Ends v0: separate append-only personal open-loop store + authenticated HTTP routes + default-off flag + focused tests. No Butler fact-store reuse, no Apple/Tailscale code, no calendar/location/HealthKit, no dashboard changes, no worker autonomy. — ChatGPT build session
+
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
