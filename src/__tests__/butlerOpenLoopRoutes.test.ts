@@ -166,21 +166,20 @@ describe("Butler Loose Ends routes", () => {
     expect(erased.status).toBe(200);
     expect(erased.json.erased).toBe(true);
     expect(store.get(id)).toBeUndefined();
-    expect(readFileSync(path.join(dir, "open_loops.jsonl"), "utf8")).not.toContain(
-      "Private refund reference",
-    );
+    expect(
+      readFileSync(path.join(dir, "open_loops.jsonl"), "utf8"),
+    ).not.toContain("Private refund reference");
   });
 
   it("returns 404 for an unknown id and validates filters", async () => {
-    const missing = await call(
-      "POST",
-      "/butler/loops/not-a-real-id/complete",
-    );
+    const missing = await call("POST", "/butler/loops/not-a-real-id/complete");
     expect(missing.status).toBe(404);
 
     expect((await call("GET", "/butler/loops?status=maybe")).status).toBe(400);
     expect((await call("GET", "/butler/loops?kind=other")).status).toBe(400);
-    expect((await call("GET", "/butler/loops/brief?limit=99")).status).toBe(400);
+    expect((await call("GET", "/butler/loops/brief?limit=99")).status).toBe(
+      400,
+    );
   });
 
   it("does not claim unrelated Butler paths", async () => {
