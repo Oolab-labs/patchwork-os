@@ -123,6 +123,24 @@ describe("ButlerOpenLoopStore", () => {
     );
   });
 
+  it("uses durable capture order when two items share a timestamp", () => {
+    const ids = ["z-loop", "evt-z", "a-loop", "evt-a"];
+    const store = new ButlerOpenLoopStore({
+      dir,
+      now: () => 1234,
+      uuid: () => ids.shift() ?? "extra",
+      logger: { warn: () => {} },
+    });
+
+    store.create({ kind: "remember", text: "Captured first" });
+    store.create({ kind: "remember", text: "Captured second" });
+
+    expect(store.brief(2).items.map((item) => item.text)).toEqual([
+      "Captured first",
+      "Captured second",
+    ]);
+  });
+
   it("rejects empty, oversized, and NUL-containing text", () => {
     const store = new ButlerOpenLoopStore({ dir, logger: { warn: () => {} } });
     expect(() => store.create({ kind: "remember", text: "  " })).toThrow(
