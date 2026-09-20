@@ -56,7 +56,9 @@ export function resolveOpenLoops(events: readonly OpenLoopEvent[]): OpenLoop[] {
     }
   }
 
-  return [...loops.values()].sort(
-    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-  );
+  // Map iteration preserves insertion order, which is the durable JSONL order.
+  // That is the only honest tie-break when two captures share the same
+  // millisecond: random UUID lexical order would make the brief nondeterministic
+  // from the user's point of view.
+  return [...loops.values()];
 }
