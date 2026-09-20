@@ -18,10 +18,7 @@ import {
   isButlerValidationError,
 } from "./butler/errors.js";
 import type { ButlerOpenLoopStore } from "./butler/openLoopStore.js";
-import {
-  OPEN_LOOP_KINDS,
-  type OpenLoopKind,
-} from "./butler/openLoopTypes.js";
+import { OPEN_LOOP_KINDS, type OpenLoopKind } from "./butler/openLoopTypes.js";
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
 import { readJsonBody, respond413 } from "./recipeRoutes.js";
@@ -90,7 +87,8 @@ export function tryHandleButlerOpenLoopRoute(
   deps: ButlerOpenLoopRouteDeps,
 ): boolean {
   const pathname = parsedUrl.pathname ?? "";
-  if (pathname !== "/butler/loops" && !pathname.startsWith("/butler/loops/")) return false;
+  if (pathname !== "/butler/loops" && !pathname.startsWith("/butler/loops/"))
+    return false;
 
   // Fail before reading a body or touching disk when the experiment is off.
   if (!deps.enabledFn()) {
@@ -167,7 +165,10 @@ export function tryHandleButlerOpenLoopRoute(
           typeof body.kind !== "string" ||
           !OPEN_LOOP_KINDS.has(body.kind as OpenLoopKind)
         ) {
-          badRequest(res, "kind must be remember, promise, waiting, or future_me");
+          badRequest(
+            res,
+            "kind must be remember, promise, waiting, or future_me",
+          );
           return;
         }
         if (typeof body.text !== "string") {
