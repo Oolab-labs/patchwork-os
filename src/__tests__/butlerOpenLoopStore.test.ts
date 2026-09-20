@@ -118,7 +118,9 @@ describe("ButlerOpenLoopStore", () => {
     const brief = store.brief(2);
     expect(brief.openCount).toBe(3);
     expect(brief.items.map((item) => item.text)).toEqual(["A", "B"]);
-    expect(brief.items.every((item) => item.reason === "Still open")).toBe(true);
+    expect(brief.items.every((item) => item.reason === "Still open")).toBe(
+      true,
+    );
   });
 
   it("rejects empty, oversized, and NUL-containing text", () => {
@@ -129,8 +131,8 @@ describe("ButlerOpenLoopStore", () => {
     expect(() =>
       store.create({ kind: "remember", text: "x".repeat(1025) }),
     ).toThrow(/exceeds 1024/);
-    expect(() =>
-      store.create({ kind: "remember", text: "bad\0text" }),
-    ).toThrow(/null bytes/);
+    expect(() => store.create({ kind: "remember", text: "bad\0text" })).toThrow(
+      /null bytes/,
+    );
   });
 });
