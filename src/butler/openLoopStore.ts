@@ -15,12 +15,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { withFileLockSync } from "../fileLockSync.js";
 import { patchworkPath } from "../patchworkHome.js";
@@ -137,9 +132,12 @@ export class ButlerOpenLoopStore {
     return created;
   }
 
-  list(opts: { status?: "open" | "done"; kind?: OpenLoopKind } = {}): OpenLoop[] {
+  list(
+    opts: { status?: "open" | "done"; kind?: OpenLoopKind } = {},
+  ): OpenLoop[] {
     let loops = resolveOpenLoops(this.readEvents());
-    if (opts.status) loops = loops.filter((loop) => loop.status === opts.status);
+    if (opts.status)
+      loops = loops.filter((loop) => loop.status === opts.status);
     if (opts.kind) loops = loops.filter((loop) => loop.kind === opts.kind);
     return loops;
   }
@@ -213,10 +211,7 @@ export class ButlerOpenLoopStore {
           kept.push(row);
           continue;
         }
-        if (
-          isOpenLoopEvent(parsed) &&
-          parsed.loopId === loopId
-        ) {
+        if (isOpenLoopEvent(parsed) && parsed.loopId === loopId) {
           continue;
         }
         kept.push(row);
