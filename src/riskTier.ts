@@ -119,6 +119,46 @@ const TIER_MAP: Record<string, RiskTier> = {
   cancelClaudeTask: "high", // sibling of runClaudeTask/resumeClaudeTask, kept consistent with them
 };
 
+const LINE_TERMINATORS = new Set([0x0a, 0x0d, 0x2028, 0x2029]);
+
+/** Case-insensitive match of an ASCII-lowercase `word` at `at`, ASCII folding only. */
+function asciiEqualsAt(s: string, at: number, word: string): boolean {
+  if (at + word.length > s.length) return false;
+  for (let k = 0; k < word.length; k++) {
+    let c = s.charCodeAt(at + k);
+    if (c >= 65 && c <= 90) c += 32;
+    if (c !== word.charCodeAt(k)) return false;
+  }
+  return true;
+}
+
+/**
+ * True exactly when `/search[A-Z].*Replace/i` would match, in one linear pass.
+ * That regex was a polynomial-ReDoS sink (`.*` backtracks against every later
+ * position). Semantics kept deliberately: ASCII-only case folding (`/i`
+ * without `u` never folds a non-ASCII char to ASCII, so `toLowerCase()` would
+ * be wrong for e.g. the Kelvin sign), and `.` does not cross a line
+ * terminator. Pinned against a brute-force oracle in
+ * `riskTier.searchReplace.test.ts`.
+ */
+export function matchesSearchReplace(name: string): boolean {
+  let armed = false;
+  for (let p = 0; p < name.length; p++) {
+    if (LINE_TERMINATORS.has(name.charCodeAt(p))) {
+      armed = false;
+    } else if (!armed) {
+      const letter = name.charCodeAt(p + 6) | 32;
+      if (asciiEqualsAt(name, p, "search") && letter >= 97 && letter <= 122) {
+        armed = true;
+        p += 6; // "replace" may start only after the letter
+      }
+    } else if (asciiEqualsAt(name, p, "replace")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Infer a risk tier from the tool name when the hardcoded map has no entry.
  * Lets us classify newly-added tools without maintaining a parallel list.
@@ -146,7 +186,7 @@ export function inferTierFromName(toolName: string): RiskTier {
       n,
     ) ||
     /(^set|^update|^replace)[A-Z]/.test(n) ||
-    /search[A-Z].*Replace/i.test(n)
+    matchesSearchReplace(n)
   )
     return "medium";
 
