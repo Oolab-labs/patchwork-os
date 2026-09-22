@@ -50,7 +50,7 @@ describe("recipe approvals are wired to the notifying path", () => {
     // makeRecipeApprovalFn is the silent path.
     const fn = orchestration.slice(
       orchestration.indexOf("async function makeRecipeApprovalFn"),
-      orchestration.indexOf("async function makeRecipeApprovalFn") + 2000,
+      orchestration.indexOf("async function makeRecipeApprovalFn") + 4000,
     );
     expect(fn).not.toMatch(/queue\.request\(/);
     expect(fn).toMatch(/enqueueApprovalWithDispatch/);
@@ -70,7 +70,7 @@ describe("recipe approvals are wired to the notifying path", () => {
   it("it passes the notification channels through", () => {
     const fn = orchestration.slice(
       orchestration.indexOf("async function makeRecipeApprovalFn"),
-      orchestration.indexOf("async function makeRecipeApprovalFn") + 2000,
+      orchestration.indexOf("async function makeRecipeApprovalFn") + 4000,
     );
     // ntfyTopic is the channel that was configured and silent. If the deps are
     // not threaded through, the helper mints no token and dispatches nothing.

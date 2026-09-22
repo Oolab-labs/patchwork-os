@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { computeApprovedActionIdentity } from "../../approvalIdentity.js";
 import type {
   ChainedRecipe,
   ChainedStep,
@@ -168,6 +169,104 @@ describe("chain: alias for nested recipe steps", () => {
 });
 
 describe("executeChainedStep", () => {
+  it("revalidates a human approval immediately before recipe tool dispatch", async () => {
+    const executeTool = vi.fn().mockResolvedValue("ok");
+    const step = { id: "s", tool: "myTool", amount: 100 };
+    const deps: ExecutionDeps = {
+      executeTool,
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+      requireApprovalFn: async (input) => ({
+        approved: true,
+        grant: {
+          decision: "approved",
+          approvalId: "recipe-approval-a",
+          approvedActionIdentity: computeApprovedActionIdentity({
+            toolName: input.toolId,
+            params: input.params ?? {},
+            sessionId: "recipe",
+            tier: input.tier,
+            correlationId: input.runTaskId,
+            recipeName: input.recipeName,
+          }),
+          facts: {
+            tier: input.tier,
+            correlationId: input.runTaskId,
+            recipeName: input.recipeName,
+          },
+        },
+      }),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: createOutputRegistry(),
+        step,
+        options: baseOptions,
+        recipe: { name: "r", steps: [step] },
+        depth: 0,
+        runTaskId: "run-a",
+      },
+      deps,
+    );
+    expect(result.success).toBe(true);
+    expect(executeTool).toHaveBeenCalledWith(
+      "myTool",
+      expect.objectContaining({ amount: 100 }),
+      expect.objectContaining({
+        approvalId: "recipe-approval-a",
+        approvalRevalidated: true,
+      }),
+    );
+  });
+
+  it("fails closed when recipe action facts mutate across the approval barrier", async () => {
+    const executeTool = vi.fn().mockResolvedValue("wrong-action-ran");
+    const step = { id: "s", tool: "myTool", amount: 100 };
+    const deps: ExecutionDeps = {
+      executeTool,
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+      requireApprovalFn: async (input) => {
+        const approvedActionIdentity = computeApprovedActionIdentity({
+          toolName: input.toolId,
+          params: input.params ?? {},
+          sessionId: "recipe",
+          tier: input.tier,
+          correlationId: input.runTaskId,
+          recipeName: input.recipeName,
+        });
+        if (input.params) input.params.amount = 101;
+        return {
+          approved: true,
+          grant: {
+            decision: "approved",
+            approvalId: "recipe-approval-a",
+            approvedActionIdentity,
+            facts: {
+              tier: input.tier,
+              correlationId: input.runTaskId,
+              recipeName: input.recipeName,
+            },
+          },
+        };
+      },
+    };
+    const result = await executeChainedStep(
+      {
+        registry: createOutputRegistry(),
+        step,
+        options: baseOptions,
+        recipe: { name: "r", steps: [step] },
+        depth: 0,
+        runTaskId: "run-a",
+      },
+      deps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("approval_identity_mismatch");
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
   it("executes tool step", async () => {
     const reg = createOutputRegistry();
     const result = await executeChainedStep(

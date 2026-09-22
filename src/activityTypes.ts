@@ -14,6 +14,9 @@ export interface ActivityEntry {
   status: "success" | "error";
   errorMessage?: string;
   sessionId?: string;
+  approvalId?: string;
+  approvedActionIdentity?: string;
+  approvalRevalidated?: boolean;
 }
 
 export interface LifecycleEntry {

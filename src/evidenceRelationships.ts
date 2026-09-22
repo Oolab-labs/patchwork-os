@@ -54,6 +54,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { isChainMarker } from "./ledgerChain.js";
 import { patchworkHome } from "./patchworkHome.js";
 
 export type RelationState =
@@ -105,7 +106,10 @@ function readRows(dir: string, file: string): { rows: Row[]; corrupt: number } {
     const t = line.trim();
     if (!t) continue;
     try {
-      rows.push(JSON.parse(t) as Row);
+      const parsed = JSON.parse(t) as Row;
+      // ADR-0027 marker rows are not evidence (see evidenceCoverage.ts).
+      if (isChainMarker(parsed)) continue;
+      rows.push(parsed);
     } catch {
       corrupt++;
     }

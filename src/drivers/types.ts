@@ -3,6 +3,21 @@
  * All drivers implement ProviderDriver; Claude-specific fields go in providerOptions.
  */
 
+import type { AgentContainment } from "../governance/profile.js";
+
+/**
+ * Transport facts captured once for a single dispatch.
+ *
+ * This is deliberately facts-only: privacy policy decides what these facts
+ * mean. Drivers that have a configurable transport endpoint expose the exact
+ * endpoint their run implementation uses; drivers without one retain their
+ * existing name-based behaviour.
+ */
+export interface ResolvedDestinationFacts {
+  readonly driver: string;
+  readonly endpoint?: string;
+}
+
 export interface ProviderTaskInput {
   prompt: string;
   /** Working directory / context hint passed as cwd to the subprocess or API call. */
@@ -24,6 +39,21 @@ export interface ProviderTaskInput {
    * OpenAI API: { maxTokens, temperature }
    */
   providerOptions?: Record<string, unknown>;
+  /**
+   * Resolved agent containment (Phase 0 step 6 — `resolveAgentContainment`).
+   * When present AND `enforced`, a subprocess driver applies the tool
+   * allowlist / deny list, the environment allowlist and the MCP-access gate
+   * it describes. Absent ⇒ the driver's pre-profile behaviour (the legacy
+   * `providerOptions.sandbox` / `allowedTools` / `disallowedTools` /
+   * `mcpAccess` keys), so no existing caller changes behaviour.
+   *
+   * Drivers also accept the same object under `providerOptions.containment`
+   * for the one hop (`claudeOrchestrator`) that repackages typed fields into
+   * the untyped bag.
+   */
+  containment?: AgentContainment;
+  /** The immutable transport facts evaluated by policy for this dispatch. */
+  destinationFacts?: ResolvedDestinationFacts;
 }
 
 export interface ProviderTaskResult {
@@ -58,6 +88,8 @@ export type ProviderTaskOutcome =
 
 export interface ProviderDriver {
   readonly name: string;
+  /** Optional transport-fact seam for drivers whose destination is configurable. */
+  resolveDestinationFacts?(): ResolvedDestinationFacts;
   /** Primary entry point. Must resolve; never reject (swallow errors into result). */
   run(input: ProviderTaskInput): Promise<ProviderTaskResult>;
   /** Optional: discriminated-union variant. Default impl wraps run(). */

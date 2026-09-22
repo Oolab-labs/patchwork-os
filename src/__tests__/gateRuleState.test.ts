@@ -79,7 +79,9 @@ describe("the durable record carries the rule", () => {
     )
       .split("\n")
       .filter(Boolean)
-      .map((l) => JSON.parse(l));
+      .map((l) => JSON.parse(l))
+      // ADR-0027 marker rows share the file and are not data rows.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation");
 
     expect(rows).toHaveLength(1);
     expect(rows[0].ruleId).toBe("gate.unearned-trust");

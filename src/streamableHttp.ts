@@ -976,7 +976,7 @@ export class StreamableHttpHandler {
         });
         if (gate.decision === "bypass") return "bypass";
         const queue = getApprovalQueue();
-        const { promise, callId } = queue.request({
+        const { promise, callId, approvedActionIdentity } = queue.request({
           toolName,
           params,
           tier: gate.tier,
@@ -984,7 +984,15 @@ export class StreamableHttpHandler {
           riskSignals: gate.riskSignals,
         });
         onPending?.(callId);
-        return promise;
+        const decision = await promise;
+        return decision === "approved"
+          ? {
+              decision,
+              approvalId: callId,
+              approvedActionIdentity,
+              facts: { tier: gate.tier },
+            }
+          : decision;
       },
     );
 

@@ -20,8 +20,21 @@ export type HaltCategory =
   | "tool_error"
   /** Write blocked by the global kill-switch (#422). Distinct from a real tool failure. */
   | "kill_switch"
+  /** Effective policy refused the step before dispatch (governed profile: plugin allowlist, recipe tool allowlist, worker forbid). */
+  | "policy_denied"
+  /** No tool is registered under the step's id; the governed profile refuses rather than skips. */
+  | "unresolved_tool"
   /** Recipe's `tokensMax` budget breached (PR2b). */
   | "budget_exceeded"
+  /**
+   * The composed prompt exceeded the agent prompt byte cap, so the step was
+   * refused BEFORE dispatch. Its own category, not `budget_exceeded`: that one
+   * means real tokens or dollars were spent up to a ceiling the author set,
+   * while this one means nothing was spent and nothing was sent. Not
+   * `agent_threw` either — no model was called, so a run trace shows no model
+   * call to open.
+   */
+  | "prompt_too_large"
   /** Per-step `expect` assertion failed (slice 2). */
   | "expect_failed"
   /** Per-step wall-clock `timeout_ms` exceeded (sandbox-alternative slice). */
@@ -106,7 +119,10 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   tool_threw: "tool threw",
   tool_error: "tool error",
   kill_switch: "kill-switch blocked",
+  policy_denied: "policy refused",
+  unresolved_tool: "tool not registered",
   budget_exceeded: "budget exceeded",
+  prompt_too_large: "prompt too large",
   expect_failed: "expect failed",
   step_timeout: "step timeout",
   judge_revisions_exhausted: "judge revisions exhausted",
@@ -135,7 +151,13 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   tool_threw: "check inner error in trace",
   tool_error: "check inner error in trace",
   kill_switch: "run `patchwork kill-switch release`",
+  policy_denied:
+    "run `patchwork policy explain <recipe> <tool>` to see which stage refused",
+  unresolved_tool:
+    "run `recipe doctor`; install or allowlist the plugin that provides the tool",
   budget_exceeded: "raise tokensMax / usdMax or shrink prompts",
+  prompt_too_large:
+    "shorten the step prompt, or the tool output it interpolates — nothing was sent",
   expect_failed: "inspect assertion vs actual output",
   step_timeout: "bump timeout_ms or speed up step",
   judge_revisions_exhausted:
@@ -172,6 +194,9 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (/kill[- _]?switch/i.test(reason)) return "kill_switch";
   if (/budget[_ ]?exceeded|exceeded its token budget/i.test(reason))
     return "budget_exceeded";
+  // Before every generic matcher: the sentence contains "agent step failed",
+  // which `agent_threw` would otherwise claim.
+  if (/prompt_too_large/i.test(reason)) return "prompt_too_large";
   // Both must precede the rejection matcher: its `rejected by .*approval`
   // alternative is broad, and a mis-ordered expiry reading as a rejection is
   // exactly the failure this split exists to end.

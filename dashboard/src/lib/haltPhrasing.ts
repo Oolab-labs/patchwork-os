@@ -86,6 +86,20 @@ export function ownerHaltPhrase(
         sentence: "You turned down its last request, so it stopped.",
         fix: "none",
       };
+    case "policy_denied":
+      return {
+        sentence:
+          "Your policy doesn't allow this step, so it stopped before doing anything.",
+        fix: "open-trace",
+        fixLabel: "See why",
+      };
+    case "unresolved_tool":
+      return {
+        sentence:
+          "One of its steps uses a tool that isn't installed or allowed here.",
+        fix: "open-trace",
+        fixLabel: "See which step",
+      };
     case "approval_expired":
       // NOT `fix: "approve"`. The request it was waiting on has already been
       // resolved by the timeout, so an approve button would point at nothing.
@@ -162,6 +176,14 @@ export function ownerHaltPhrase(
           "It finished, but the result didn't pass its own final check — don't rely on it yet.",
         fix: "open-trace",
         fixLabel: "See what happened",
+      };
+    case "prompt_too_large":
+      // Deliberately NOT "open-trace": no model was called, so a trace has no
+      // model call to show. The fix is in the recipe, like `unsupported_step`.
+      return {
+        sentence:
+          "It built a message too large to send, so it stopped before sending anything.",
+        fix: "none",
       };
     case "unknown":
       return {

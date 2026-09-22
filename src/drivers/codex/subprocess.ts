@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
 import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
-import { sanitizeEnv } from "../claude/envSanitizer.js";
+import {
+  allowlistEnv,
+  passEnvFromProviderOptions,
+  sanitizeEnv,
+} from "../claude/envSanitizer.js";
+import { containmentFromInput } from "../claude/subprocess.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
@@ -55,6 +60,28 @@ export function scrubSecrets(text: string): string {
  * (process-group kill, not a direct-child-only kill()) is used from the
  * start, not added later.
  */
+/**
+ * Codex containment (Phase 0 step 6) — what `codex exec` CAN and CANNOT
+ * express. Codex has no per-tool allow/deny list at all; its knobs are the
+ * OS sandbox (`--sandbox read-only|workspace-write|danger-full-access`),
+ * `sandbox.network_access`, and `--search`. So containment is COARSE:
+ *
+ *   - Contained: `--sandbox read-only` is FORCED (a step's own
+ *     `sandboxMode` escalation is ignored), even when `shell` is widened —
+ *     shell commands still run, but against a read-only filesystem, which
+ *     is the narrowest mode that permits them.
+ *   - Network: `sandbox.network_access=true` and `--search` only when the
+ *     containment widened network AND the step asked for them.
+ *   - `allowedTools` is not enforceable (no primitive). `policy explain`
+ *     should describe Codex containment as "coarse: OS sandbox + network".
+ *
+ * Provider credential kept under the env allowlist: OPENAI_API_KEY (the
+ * subscription path uses codex's own auth file and needs no env at all).
+ */
+export const CODEX_PROVIDER_ENV_KEYS: readonly string[] = Object.freeze([
+  "OPENAI_API_KEY",
+]);
+
 export class CodexDriver implements ProviderDriver {
   readonly name = "codex";
 
@@ -78,13 +105,19 @@ export class CodexDriver implements ProviderDriver {
 
     const effectiveBinary = ensureCmdShim(this.binary);
 
-    const sandboxMode: SandboxMode =
-      opts.sandboxMode === "workspace-write" ||
-      opts.sandboxMode === "danger-full-access"
+    const containment = containmentFromInput(input);
+    const contained = containment?.enforced === true;
+    const networkWidened =
+      contained && !(containment?.deniedTools ?? []).includes("WebFetch");
+    const sandboxMode: SandboxMode = contained
+      ? "read-only"
+      : opts.sandboxMode === "workspace-write" ||
+          opts.sandboxMode === "danger-full-access"
         ? opts.sandboxMode
         : "read-only";
-    const networkAccess = opts.networkAccess === true;
-    const webSearch = opts.webSearch === true;
+    const networkAccess =
+      opts.networkAccess === true && (!contained || networkWidened);
+    const webSearch = opts.webSearch === true && (!contained || networkWidened);
 
     const args = [
       "exec",
@@ -106,7 +139,12 @@ export class CodexDriver implements ProviderDriver {
     // see envSanitizer.ts's own doc comment). Codex's subscription auth
     // lives in codex's own config/auth file, not an env var, so no
     // `preserve` entry is needed for the default (subscription) auth path.
-    const env = sanitizeEnv(process.env);
+    const env = containment?.envAllowlist
+      ? allowlistEnv(process.env, {
+          providerKeys: CODEX_PROVIDER_ENV_KEYS,
+          passEnv: passEnvFromProviderOptions(opts),
+        })
+      : sanitizeEnv(process.env);
 
     this.log(
       `[CodexDriver] spawning: ${effectiveBinary} exec <prompt> (workspace: ${input.workspace}, sandbox: ${sandboxMode})`,

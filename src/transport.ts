@@ -1,8 +1,18 @@
 import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
 import { createAjv2020, type ValidateFunction } from "./ajv2020.js";
+import {
+  type ApprovalGrant,
+  approvalIdentityMatches,
+  executionEvidence,
+} from "./approvalIdentity.js";
 import { ErrorCodes, ToolErrorCodes } from "./errors.js";
+import {
+  killSwitchMessage,
+  readKillSwitch,
+} from "./governance/killSwitchPolicy.js";
 import type { Logger } from "./logger.js";
+import { classifyBehavior } from "./riskTier.js";
 import { withSpan } from "./telemetry.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 import { safeSend } from "./wsUtils.js";
@@ -225,6 +235,7 @@ export class McpTransport {
         | "cancelled"
         | "bypass"
         | "policy_denied"
+        | ApprovalGrant
       >)
     | null = null;
 
@@ -241,6 +252,7 @@ export class McpTransport {
       | "cancelled"
       | "bypass"
       | "policy_denied"
+      | ApprovalGrant
     >,
   ): void {
     this.approvalGate = fn;
@@ -1450,6 +1462,7 @@ export class McpTransport {
               const callLog = this.logger.child({ tool: params.name, callId });
               let timedOut = false;
               let handlerPromise: Promise<unknown> | null = null;
+              let approvalGrant: ApprovalGrant | undefined;
               try {
                 const rawArgs = params.arguments ?? {};
                 if (
@@ -1554,6 +1567,49 @@ export class McpTransport {
                 this.activeToolCalls++;
                 this.inFlightToolNames.set(msg.id, params.name);
                 let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+                // Kill switch — BEFORE the approval gate, so an engaged switch
+                // never parks a write for a human to approve into a refusal.
+                // Read tools are never blocked. Anything not read-only is a
+                // write for this purpose; under the governed profile an
+                // unreadable switch state refuses (see killSwitchPolicy).
+                if (classifyBehavior(params.name) !== "readOnly") {
+                  const ks = readKillSwitch();
+                  if (ks.engaged) {
+                    // Release the three in-flight slots exactly like the
+                    // gateErr catch below — generation-guarded.
+                    const wasSoftPreserved = this.detachSoftInflight.delete(
+                      msg.id,
+                    );
+                    if (wasSoftPreserved) respondViaActiveWs = true;
+                    if (gen === this.generation || wasSoftPreserved) {
+                      this.inFlightControllers.delete(msg.id);
+                      this.inFlightToolNames.delete(msg.id);
+                      this.activeToolCalls = Math.max(
+                        0,
+                        this.activeToolCalls - 1,
+                      );
+                    }
+                    this.activityLog?.recordEvent("kill_switch_blocked", {
+                      tool: params.name,
+                      reason: ks.reason,
+                      sessionId: this.sessionId ?? undefined,
+                    });
+                    response = {
+                      jsonrpc: "2.0",
+                      id: msg.id,
+                      result: {
+                        content: [
+                          {
+                            type: "text",
+                            text: `[${ToolErrorCodes.KILL_SWITCH_BLOCKED}] ${killSwitchMessage(ks, `tool "${params.name}"`)}`,
+                          },
+                        ],
+                        isError: true,
+                      },
+                    };
+                    break;
+                  }
+                }
                 if (this.approvalGate) {
                   let decision:
                     | "approved"
@@ -1561,7 +1617,8 @@ export class McpTransport {
                     | "expired"
                     | "cancelled"
                     | "bypass"
-                    | "policy_denied";
+                    | "policy_denied"
+                    | ApprovalGrant;
                   try {
                     decision = await this.approvalGate({
                       toolName: params.name,
@@ -1603,6 +1660,9 @@ export class McpTransport {
                       );
                     }
                     throw gateErr;
+                  }
+                  if (typeof decision === "object") {
+                    approvalGrant = decision;
                   }
                   if (
                     decision === "rejected" ||
@@ -1672,6 +1732,58 @@ export class McpTransport {
                     };
                     break;
                   }
+                  if (
+                    (decision === "approved" && !approvalGrant) ||
+                    (approvalGrant &&
+                      !approvalIdentityMatches(
+                        approvalGrant.approvedActionIdentity,
+                        {
+                          toolName: params.name,
+                          params: toolArgs as Record<string, unknown>,
+                          sessionId: this.sessionId,
+                          tier: approvalGrant.facts.tier,
+                        },
+                      ))
+                  ) {
+                    const wasSoftPreserved = this.detachSoftInflight.delete(
+                      msg.id,
+                    );
+                    if (wasSoftPreserved) respondViaActiveWs = true;
+                    if (gen === this.generation || wasSoftPreserved) {
+                      this.activeToolCalls = Math.max(
+                        0,
+                        this.activeToolCalls - 1,
+                      );
+                      this.inFlightToolNames.delete(msg.id);
+                      this.inFlightControllers.delete(msg.id);
+                    }
+                    this.activityLog?.recordEvent(
+                      "approval_identity_mismatch",
+                      {
+                        tool: params.name,
+                        sessionId: this.sessionId ?? undefined,
+                        ...(approvalGrant && {
+                          approvalId: approvalGrant.approvalId,
+                          approvedActionIdentity:
+                            approvalGrant.approvedActionIdentity,
+                        }),
+                      },
+                    );
+                    response = {
+                      jsonrpc: "2.0",
+                      id: msg.id,
+                      result: {
+                        content: [
+                          {
+                            type: "text",
+                            text: "[approval_identity_mismatch] Approved action identity no longer matches the action at dispatch; no action taken.",
+                          },
+                        ],
+                        isError: true,
+                      },
+                    };
+                    break;
+                  }
                 }
                 // Start the duration clock now — AFTER the approval gate has
                 // resolved — so stats reflect actual tool execution time, not
@@ -1723,6 +1835,9 @@ export class McpTransport {
                     "success",
                     undefined,
                     this.sessionId ?? undefined,
+                    approvalGrant
+                      ? executionEvidence(approvalGrant)
+                      : undefined,
                   );
                   callLog.debug(`Tool completed in ${durationMs}ms`);
                   // Validate structuredContent against outputSchema before sending.
@@ -1848,6 +1963,7 @@ export class McpTransport {
                   "error",
                   message,
                   this.sessionId ?? undefined,
+                  approvalGrant ? executionEvidence(approvalGrant) : undefined,
                 );
                 const errPayload: Record<string, string> = { error: message };
                 if (errCode !== undefined) errPayload.code = errCode;

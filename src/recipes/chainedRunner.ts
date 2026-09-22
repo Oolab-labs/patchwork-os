@@ -7,9 +7,31 @@
  *   - Dry-run mode
  */
 
+import {
+  approvalIdentityMatches,
+  executionEvidence,
+} from "../approvalIdentity.js";
+import { computeEffectivePolicy } from "../governance/effectivePolicy.js";
+import { readKillSwitch } from "../governance/killSwitchPolicy.js";
+import {
+  activeProfile,
+  COMPAT_PROFILE,
+  resolveAgentContainment,
+} from "../governance/profile.js";
+import { toolFactsFor } from "../governance/toolFacts.js";
+import {
+  isConnectorSource,
+  provenanceOf,
+  type UntrustedProvenance,
+  wrapUntrusted,
+} from "../governance/untrustedContent.js";
 import { classifyTool } from "../riskTier.js";
-import type { AgentResult } from "./agentExecutor.js";
-import { normaliseApprovalVerdict } from "./approvalRequest.js";
+import type { AgentExecutorInput, AgentResult } from "./agentExecutor.js";
+import { stepSandboxRequest } from "./agentExecutor.js";
+import {
+  normaliseApprovalVerdict,
+  recipeApprovalIdentityMatches,
+} from "./approvalRequest.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
   buildDependencyGraph,
@@ -42,7 +64,11 @@ import {
   detectSilentFail,
   redactSecretsForPrompt,
 } from "./stepObservation.js";
-import type { TemplateContext, TemplateError } from "./templateEngine.js";
+import type {
+  TemplateContext,
+  TemplateError,
+  TemplateEvaluateOptions,
+} from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 import { evaluateWhen } from "./whenGuard.js";
 // TYPE-ONLY on purpose. `yamlRunner` imports this module dynamically to break
@@ -73,10 +99,14 @@ export interface ChainedStep {
     mcpAccess?: boolean;
     /** Tool allowlist enforced via --allowed-tools when `sandbox` is true. */
     tools?: string[];
-    /** Opt-in tool sandbox — drop --dangerously-skip-permissions, enforce allowlist. */
-    sandbox?: boolean;
+    /** Opt-in tool sandbox — drop --dangerously-skip-permissions, enforce allowlist. Object form = explicit governed widening. */
+    sandbox?:
+      | boolean
+      | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
     /** Deny rules via --disallowed-tools in any mode. */
     disallowedTools?: string[];
+    /** Raw ADR-0021 declaration; parsed at the shared agent boundary. */
+    data_policy?: unknown;
   };
   recipe?: NestedRecipeConfig["recipe"];
   chain?: NestedRecipeConfig["recipe"];
@@ -242,6 +272,7 @@ export interface StepExecutionContext {
 export type ToolExecutor = (
   tool: string,
   params: Record<string, unknown>,
+  approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
 ) => Promise<unknown>;
 
 /**
@@ -256,9 +287,13 @@ export type AgentExecutor = (
   driver?: string,
   opts?: {
     mcpAccess?: boolean;
-    sandbox?: boolean;
+    sandbox?:
+      | boolean
+      | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
     allowedTools?: string[];
     disallowedTools?: string[];
+    containment?: import("../governance/profile.js").AgentContainment;
+    boundary?: AgentExecutorInput["boundary"];
   },
 ) => Promise<string | AgentResult>;
 
@@ -312,6 +347,8 @@ export interface ExecutionDeps {
    * gate with no tier fn) and nothing else.
    */
   gateAutomatedRuns?: boolean;
+  /** See `RunnerDeps.governance` (yamlRunner.ts). */
+  governance?: import("../governance/profile.js").GovernanceProfile;
 }
 
 function nestedRecipeRef(step: ChainedStep): string | undefined {
@@ -320,6 +357,29 @@ function nestedRecipeRef(step: ChainedStep): string | undefined {
     : typeof step.chain === "string"
       ? step.chain
       : undefined;
+}
+
+/**
+ * Phase 0 step 10 — untrusted-content envelope, chained side. Provenance is a
+ * SIDE map keyed by the run's registry (never a field on `StepOutput`, so
+ * `{{steps.X.*}}` shapes and the registry snapshot do not change): step id →
+ * the connector tool that produced its data. Written at the single
+ * `registry.set` site; read only when an agent prompt is rendered.
+ */
+const untrustedProvenanceByRegistry = new WeakMap<
+  OutputRegistry,
+  Map<string, UntrustedProvenance>
+>();
+
+function untrustedProvenanceFor(
+  registry: OutputRegistry,
+): Map<string, UntrustedProvenance> {
+  let m = untrustedProvenanceByRegistry.get(registry);
+  if (!m) {
+    m = new Map();
+    untrustedProvenanceByRegistry.set(registry, m);
+  }
+  return m;
 }
 
 /** Build template context from registry and env */
@@ -335,6 +395,8 @@ export function resolveStepTemplates(
   step: ChainedStep,
   context: TemplateContext,
   secretKeys?: ReadonlySet<string>,
+  /** Agent-prompt-only render hook (untrusted envelope). Tool params never see it. */
+  promptOptions?: TemplateEvaluateOptions,
 ): {
   resolved: Record<string, unknown>;
   conditionResult: boolean;
@@ -428,7 +490,7 @@ export function resolveStepTemplates(
             ),
           }
         : context;
-    const result = compiled.evaluate(promptContext);
+    const result = compiled.evaluate(promptContext, promptOptions);
     if ("error" in result) {
       errors.push(result.error);
     } else {
@@ -581,10 +643,28 @@ export async function executeChainedStep(
   );
 
   // Resolve templates
+  // Untrusted envelope (Phase 0 step 10): agent prompts only. Tool params,
+  // `when:` guards and `expect` evaluate against the raw registry value.
+  const envelopeActive = (deps.governance ?? activeProfile()).untrustedEnvelope;
+  // Origins the renderer actually interpolated into THIS step's prompt. The
+  // hook fires per `steps.X.data…` reference, so this is what the model was
+  // really shown — not what the template mentions.
+  const promptOrigins = new Set<string>();
+  const promptOptions: TemplateEvaluateOptions | undefined = envelopeActive
+    ? {
+        wrap: (stepId, value) => {
+          const prov = untrustedProvenanceFor(registry).get(stepId);
+          if (prov === undefined) return undefined;
+          for (const o of prov.origins) promptOrigins.add(o);
+          return wrapUntrusted(value, prov);
+        },
+      }
+    : undefined;
   const { resolved, conditionResult, errors } = resolveStepTemplates(
     step,
     templateContext,
     secretKeys,
+    promptOptions,
   );
 
   if (errors.length > 0) {
@@ -729,29 +809,86 @@ export async function executeChainedStep(
     // result is an explicit human rejection → halt the step (and, via the
     // dependency graph, its dependents). Only agent/tool steps are gated;
     // nested-recipe steps are gated through their own inner steps.
-    if (
-      deps.requireApprovalFn &&
-      depth === 0 &&
-      (step.agent || step.tool) &&
-      // Same invariant as the flat runner: the opt-out covers the tier policy,
-      // never worker governance.
-      ((recipe as { requireApproval?: boolean }).requireApproval !== false ||
-        deps.gateAutomatedRuns === true)
-    ) {
+    // Phase 0: the predicate is `computeEffectivePolicy` — the same function
+    // `patchwork policy explain` prints. A top-level chained run is the
+    // interactive case (see the comment above), so it is evaluated as a
+    // "manual" trigger; under compat that reproduces the old predicate.
+    const governance = deps.governance ?? COMPAT_PROFILE;
+    const effective =
+      depth === 0 && (step.agent || step.tool)
+        ? computeEffectivePolicy({
+            profile: governance,
+            recipe: {
+              name: recipe.name,
+              ...((recipe as { requireApproval?: boolean }).requireApproval !==
+                undefined && {
+                requireApproval: (recipe as { requireApproval?: boolean })
+                  .requireApproval,
+              }),
+            },
+            trigger: "manual",
+            tool: toolFactsFor(
+              step.agent ? "agent" : (step.tool ?? "unknown"),
+              step.agent
+                ? {
+                    containment: resolveAgentContainment(
+                      governance,
+                      stepSandboxRequest({
+                        ...(step.agent.sandbox !== undefined && {
+                          sandbox: step.agent.sandbox,
+                        }),
+                        ...(step.agent.tools !== undefined && {
+                          allowedTools: step.agent.tools,
+                        }),
+                        ...(step.agent.disallowedTools !== undefined && {
+                          disallowedTools: step.agent.disallowedTools,
+                        }),
+                        ...(step.agent.mcpAccess !== undefined && {
+                          mcpAccess: step.agent.mcpAccess,
+                        }),
+                      }),
+                    ),
+                  }
+                : undefined,
+            ),
+            killSwitch: readKillSwitch(governance),
+            gate: {
+              approvalFnInjected: deps.requireApprovalFn !== undefined,
+              workerGateInjected: deps.gateAutomatedRuns === true,
+            },
+          })
+        : undefined;
+    if (effective?.final === "REFUSED") {
+      const refusing = effective.stages.find((s) => s.verdict === "REFUSE");
+      return {
+        success: false,
+        error:
+          refusing?.stage === "kill_switch"
+            ? `kill_switch_blocked: step refused before dispatch — ${refusing.reason}`
+            : `policy refused step: ${refusing?.reason ?? "refused"}`,
+        resolvedParams: resolved,
+      };
+    }
+    let stepApprovalEvidence:
+      | import("../approvalIdentity.js").ApprovalExecutionEvidence
+      | undefined;
+    let stepApprovalGrant:
+      | import("../approvalIdentity.js").ApprovalGrant
+      | undefined;
+    if (deps.requireApprovalFn && effective?.consultsApproval) {
       const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
+      const approvalInput = {
+        toolId: approvalToolId,
+        tier: classifyTool(approvalToolId),
+        effective: effective.final,
+        summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
+        params: step.agent ? undefined : (resolved as Record<string, unknown>),
+        ...(options.signal && { signal: options.signal }),
+        runTaskId: ctx.runTaskId ?? "",
+        recipeName: recipe.name,
+      };
       const verdict = normaliseApprovalVerdict(
-        await deps.requireApprovalFn({
-          toolId: approvalToolId,
-          tier: classifyTool(approvalToolId),
-          summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
-          params: step.agent
-            ? undefined
-            : (resolved as Record<string, unknown>),
-          ...(options.signal && { signal: options.signal }), // L1
-          // Join key onto this run's rows — the same id `runChainedRecipe`
-          // writes to the run log, threaded through the step context.
-          runTaskId: ctx.runTaskId ?? "",
-        }),
+        await deps.requireApprovalFn(approvalInput),
       );
       if (!verdict.approved) {
         // The sentence comes from the shared helper, not a literal here: this
@@ -763,6 +900,18 @@ export async function executeChainedStep(
           error: approvalHaltFor(verdict.refusal).reason,
           resolvedParams: resolved,
         };
+      }
+      if (!recipeApprovalIdentityMatches(verdict, approvalInput)) {
+        return {
+          success: false,
+          error:
+            "approval_identity_mismatch: approved action changed before dispatch; no action taken",
+          resolvedParams: resolved,
+        };
+      }
+      if (verdict.grant) {
+        stepApprovalGrant = verdict.grant;
+        stepApprovalEvidence = executionEvidence(verdict.grant);
       }
     }
 
@@ -843,6 +992,13 @@ export async function executeChainedStep(
         depth + 1,
       );
 
+      const childOrigins = [
+        ...new Set(
+          [...untrustedProvenanceFor(childRegistry).values()].flatMap(
+            (p) => p.origins,
+          ),
+        ),
+      ];
       return {
         success: !childResult.errorMessage,
         data: {
@@ -852,6 +1008,12 @@ export async function executeChainedStep(
             childRegistry.keys().map((k) => [k, childRegistry.get(k)?.data]),
           ),
         },
+        // The child's provenance map is keyed by ITS registry and dies with it,
+        // while every one of its outputs is exposed here under this step's id.
+        // Union rather than per-key, because neither engine can attribute below
+        // a step id: a parent referencing `steps.sub.data` receives the whole
+        // blob, so the honest claim is "everything proven in there".
+        ...(childOrigins.length > 0 ? { derivedOrigins: childOrigins } : {}),
       };
     } else if (step.agent) {
       // Agent step
@@ -890,6 +1052,9 @@ export async function executeChainedStep(
             }),
             ...(step.agent.disallowedTools !== undefined && {
               disallowedTools: step.agent.disallowedTools,
+            }),
+            ...(step.agent.data_policy !== undefined && {
+              boundary: { dataPolicy: step.agent.data_policy },
             }),
           }),
           step.timeout_ms,
@@ -1001,11 +1166,34 @@ export async function executeChainedStep(
         resolvedParams: resolved,
         ...(usage ? { usage } : {}),
         ...(agentExpectWarnings ? { expectWarnings: agentExpectWarnings } : {}),
+        ...(promptOrigins.size > 0
+          ? { derivedOrigins: [...promptOrigins] }
+          : {}),
       };
     } else if (step.tool) {
       // Tool step
+      if (
+        stepApprovalGrant &&
+        !approvalIdentityMatches(stepApprovalGrant.approvedActionIdentity, {
+          toolName: step.tool,
+          params: resolved,
+          sessionId: "recipe",
+          tier: classifyTool(step.tool),
+          correlationId: ctx.runTaskId ?? "",
+          recipeName: recipe.name,
+        })
+      ) {
+        return {
+          success: false,
+          error:
+            "approval_identity_mismatch: approved action changed at dispatch; no action taken",
+          resolvedParams: resolved,
+        };
+      }
       let result: unknown = await raceStepTimeout(
-        deps.executeTool(step.tool, resolved),
+        stepApprovalEvidence
+          ? deps.executeTool(step.tool, resolved, stepApprovalEvidence)
+          : deps.executeTool(step.tool, resolved),
         step.timeout_ms,
         step.id,
         options.signal,
@@ -1083,6 +1271,16 @@ interface StepExecResult {
   /** `expect` assertion failures recorded under `on_fail: "warn"` — forwarded
    *  from `executeChainedStep` so the runner can attach them to the step row. */
   expectWarnings?: string[];
+  /**
+   * Gaps 2+3: the proven origins this step's OUTPUT inherits.
+   *
+   * Collected by the prompt renderer (which knows the referenced step ids at
+   * substitution time) and carried here because the single `registry.set` site
+   * lives in the caller, not in `executeChainedStep`. For a nested recipe it is
+   * the union of everything proven inside the child, since the child's whole
+   * output blob is exposed under this step's id.
+   */
+  derivedOrigins?: string[];
 }
 
 /** Upper bound on retries — clamps absurd/misconfigured values so a recipe
@@ -1276,8 +1474,12 @@ export async function runChainedRecipe(
     try {
       const { loadRecipeServers } = await import("./yamlRunner.js");
       await loadRecipeServers(recipe.servers);
-    } catch {
-      // Non-fatal — if yamlRunner import fails, proceed without plugins
+    } catch (err) {
+      // A plugin-policy refusal (governed profile, spec not allowlisted)
+      // must halt the run — a recipe that silently proceeds without the
+      // plugin it named is the fail-open this check exists to close.
+      if (err instanceof Error && err.name === "PluginPolicyError") throw err;
+      // Otherwise non-fatal — if yamlRunner import fails, proceed without plugins
     }
   }
 
@@ -1624,6 +1826,26 @@ export async function runChainedRecipe(
             : "error",
       data: result.data,
     });
+    // Gaps 2+3: a value this step PRODUCED from provenance-bearing inputs
+    // inherits their origins. `provenanceOf` returns undefined for an empty
+    // set, so a step that referenced nothing provenanced stays unmarked —
+    // `derived` is a property of the origins, never a stand-in for them.
+    if ((deps.governance ?? activeProfile()).untrustedEnvelope) {
+      const derived = provenanceOf(result.derivedOrigins ?? [], true);
+      if (derived) untrustedProvenanceFor(registry).set(stepId, derived);
+    }
+    // Untrusted envelope provenance (side map, never on StepOutput).
+    if (
+      typeof step.tool === "string" &&
+      (deps.governance ?? activeProfile()).untrustedEnvelope &&
+      isConnectorSource(step.tool)
+    ) {
+      // Raw connector output: exactly one origin, not derived.
+      untrustedProvenanceFor(registry).set(stepId, {
+        origins: [step.tool],
+        derived: false,
+      });
+    }
 
     // VD-2: capture per-step inputs/outputs/registry snapshot for the
     // dashboard's diff hover + replay. Only at depth 0 (nested steps are

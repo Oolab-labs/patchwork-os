@@ -72,7 +72,7 @@ describe("executeTool — kill switch enforcement", () => {
   it("blocks write tools when kill switch is active", async () => {
     process.env[KILL_SWITCH_ENV] = "1";
     await expect(executeTool("test.write", dummyContext)).rejects.toThrow(
-      /Write operation blocked by kill switch: test\.write/,
+      /kill_switch_blocked: test\.write refused/,
     );
     expect(writeExec).not.toHaveBeenCalled();
   });
@@ -87,7 +87,7 @@ describe("executeTool — kill switch enforcement", () => {
   it("error message includes the recovery instruction", async () => {
     process.env[KILL_SWITCH_ENV] = "true";
     await expect(executeTool("test.write", dummyContext)).rejects.toThrow(
-      /Unset PATCHWORK_FLAG_KILL_SWITCH_WRITES/,
+      /patchwork kill-switch release/,
     );
   });
 

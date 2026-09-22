@@ -85,6 +85,38 @@ describe("the disclosure", () => {
     // It must still say the operator owns those claims.
     expect(out).toMatch(/provider's claims/);
   });
+
+  it("does not claim an off-box local-driver endpoint stays on this machine", () => {
+    const [described] = describeDestinations([local], drivers, {
+      destinationFactsByDriver: new Map([
+        [
+          "local",
+          Object.freeze({
+            driver: "local",
+            endpoint: "https://inference.example.test/v1",
+          }),
+        ],
+      ]),
+    });
+    const text = disclosureFor(described as never);
+    expect(text).not.toMatch(/stays on this machine/i);
+    expect(text).toMatch(/LEAVES this machine|off-box|cannot verify/i);
+  });
+
+  it("keeps the local claim for a genuinely local endpoint", () => {
+    const [described] = describeDestinations([local], drivers, {
+      destinationFactsByDriver: new Map([
+        [
+          "local",
+          Object.freeze({
+            driver: "local",
+            endpoint: "http://127.0.0.1:11434/v1",
+          }),
+        ],
+      ]),
+    });
+    expect(disclosureFor(described as never)).toMatch(/stays on this machine/i);
+  });
 });
 
 describe("operator notes", () => {

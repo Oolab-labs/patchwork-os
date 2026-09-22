@@ -129,7 +129,7 @@ registerTool({
   },
   riskDefault: "low",
   isWrite: false,
-  execute: async ({ params, ctx, deps }) => {
+  execute: async ({ params, step, ctx, deps }) => {
     const itemsResult = coerceItems(params.items);
     if (!Array.isArray(itemsResult)) {
       throw new Error(itemsResult.error);
@@ -266,7 +266,19 @@ registerTool({
       // usage reconciliation. Checked before the tool path so the breaker /
       // executeTool machinery below stays tool-only.
       if (agentCfg) {
-        const prompt = render(String(agentCfg.prompt), iterCtx);
+        // Through the runner's renderer, which applies the same secret
+        // redaction and untrusted envelope a normal agent prompt gets. This
+        // used to be the bare `render`, making fan_out a second LLM-facing
+        // render path with neither. The fallback keeps a runner that has not
+        // injected one working exactly as before.
+        const prompt = deps.renderAgentItemPrompt
+          ? deps.renderAgentItemPrompt(
+              String(agentCfg.prompt),
+              iterCtx,
+              loopVar,
+              step,
+            )
+          : render(String(agentCfg.prompt), iterCtx);
         // biome-ignore lint/style/noNonNullAssertion: presence validated above
         const res = await deps.runNestedAgent!({
           prompt,

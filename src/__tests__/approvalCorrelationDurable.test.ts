@@ -34,6 +34,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { enqueueApprovalWithDispatch } from "../approvalHttp.js";
+import { APPROVAL_LOG_RV } from "../approvalPersistence.js";
 import { ApprovalQueue } from "../approvalQueue.js";
 
 let dir: string;
@@ -46,10 +47,16 @@ afterEach(() => {
 
 function rows(): Array<Record<string, unknown>> {
   const file = path.join(dir, "approval_log.jsonl");
-  return readFileSync(file, "utf8")
-    .split("\n")
-    .filter((l) => l.trim())
-    .map((l) => JSON.parse(l));
+  return (
+    readFileSync(file, "utf8")
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      // ADR-0027 marker rows (`chain-start`, `rotation`) live in the same
+      // file and carry `kind` and no data fields; skipped the way every
+      // production loader skips them.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+  );
 }
 
 function requestRows(): Array<Record<string, unknown>> {
@@ -96,7 +103,7 @@ describe("approval log carries the run it belongs to", () => {
   it("stamps the schema sentinel on every request row it writes", () => {
     const queue = new ApprovalQueue({ persistDir: dir, ttlMs: 60_000 });
     queue.request({ toolName: "t", params: {}, tier: "low" });
-    expect(requestRows()[0]?.rv).toBe(1);
+    expect(requestRows()[0]?.rv).toBe(APPROVAL_LOG_RV);
   });
 
   it("omits correlationId entirely when the approval had no run", () => {
@@ -110,7 +117,7 @@ describe("approval log carries the run it belongs to", () => {
     const req = requestRows()[0];
     expect(req).toBeDefined();
     expect(Object.hasOwn(req as object, "correlationId")).toBe(false);
-    expect(req?.rv).toBe(1);
+    expect(req?.rv).toBe(APPROVAL_LOG_RV);
   });
 
   it("survives the restore round-trip", () => {

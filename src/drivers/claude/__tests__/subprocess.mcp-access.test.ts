@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { dirname } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 class MockChild extends EventEmitter {
@@ -9,12 +10,19 @@ class MockChild extends EventEmitter {
 }
 
 let mockChild: MockChild;
+// The driver now removes the per-run MCP config dir when the child CLOSES, so
+// the file must be captured at spawn time rather than read after the run.
+let capturedMcpConfig: string | undefined;
 
 vi.mock("node:child_process", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:child_process")>();
+  const { readFileSync } = await import("node:fs");
   return {
     ...original,
-    spawn: vi.fn(() => {
+    spawn: vi.fn((_cmd: string, args: string[]) => {
+      const idx = args.indexOf("--mcp-config");
+      capturedMcpConfig =
+        idx === -1 ? undefined : readFileSync(args[idx + 1]!, "utf-8");
       mockChild = new MockChild();
       mockChild.stdout = new EventEmitter();
       mockChild.stderr = new EventEmitter();
@@ -91,12 +99,15 @@ describe("SubprocessDriver mcpAccess opt-in", () => {
     const idx = args.indexOf("--mcp-config");
     expect(idx).toBeGreaterThan(-1);
     const cfgPath = args[idx + 1]!;
-    const cfg = JSON.parse(readFileSync(cfgPath, "utf-8")) as {
+    const cfg = JSON.parse(capturedMcpConfig ?? "{}") as {
       mcpServers: Record<
         string,
         { type: string; command: string; args: string[] }
       >;
     };
+    // The per-run temp dir is removed once the child closes (previously it
+    // leaked forever).
+    expect(existsSync(dirname(cfgPath))).toBe(false);
     // Stdio shim — auto-discovers the bridge from ~/.claude/ide/*.lock at
     // runtime, so url/authToken from bridgeMcp() aren't echoed into the file.
     // On Windows the command is suffixed with `.cmd` so claude -p's own
@@ -108,7 +119,9 @@ describe("SubprocessDriver mcpAccess opt-in", () => {
     expect(cfg.mcpServers.patchwork).toEqual({
       type: "stdio",
       command: expectedCommand,
-      args: ["shim"],
+      // The bridge's port from bridgeMcp().url is pinned onto the shim so the
+      // child attaches to the bridge that spawned it, not the newest lock.
+      args: ["shim", "--port", "3101"],
     });
   });
 
@@ -152,8 +165,8 @@ describe("SubprocessDriver mcpAccess opt-in", () => {
       );
       const args = spawnMock.mock.calls[0]![1] as string[];
       const idx = args.indexOf("--mcp-config");
-      const cfgPath = args[idx + 1]!;
-      const cfg = JSON.parse(readFileSync(cfgPath, "utf-8")) as {
+      expect(idx).toBeGreaterThan(-1);
+      const cfg = JSON.parse(capturedMcpConfig ?? "{}") as {
         mcpServers: { patchwork: { command: string } };
       };
       expect(cfg.mcpServers.patchwork.command).toBe("claude-ide-bridge.cmd");

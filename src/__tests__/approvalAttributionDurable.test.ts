@@ -58,10 +58,16 @@ afterEach(() => {
 });
 
 function logRows(): Array<Record<string, unknown>> {
-  return readFileSync(path.join(dir, "approval_log.jsonl"), "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  return (
+    readFileSync(path.join(dir, "approval_log.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      // ADR-0027 marker rows (`chain-start`, `rotation`) live in the same
+      // file and carry `kind` and no data fields; skipped the way every
+      // production loader skips them.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+  );
 }
 
 async function decide(

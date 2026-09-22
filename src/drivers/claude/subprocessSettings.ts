@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,27 +46,47 @@ const DENY_LIST = [
   "Bash(pkill *)",
 ];
 
-const SETTINGS_CONTENT = JSON.stringify({
-  hooks: {},
-  permissions: { deny: DENY_LIST },
-});
+/**
+ * Build the settings content. `extraDeny` (Phase 0 step 6) is the
+ * containment's denied tool list — under a governed profile that includes
+ * bare `WebFetch` / `WebSearch` / `Bash`, written into `permissions.deny` as
+ * well as passed via `--disallowed-tools`, so the denial holds even if a
+ * future CLI version changes how the argv flag composes with the mode.
+ */
+function settingsContent(extraDeny: readonly string[]): string {
+  return JSON.stringify({
+    hooks: {},
+    permissions: { deny: Array.from(new Set([...DENY_LIST, ...extraDeny])) },
+  });
+}
 
 /**
  * Write a minimal subprocess settings file that suppresses hooks and denies
  * destructive operations. Uses --settings instead of --bare to preserve OAuth
  * auth flows (--bare sets CLAUDE_CODE_SIMPLE=1 which skips OAuth).
+ *
+ * The file path is keyed on the deny set: a contained run and an uncontained
+ * run in the same bridge process must never share (and race on) one file.
  */
-export function createSubprocessSettings(log: (msg: string) => void): {
+export function createSubprocessSettings(
+  log: (msg: string) => void,
+  extraDeny: readonly string[] = [],
+): {
   path: string;
   write: () => boolean;
 } {
+  const content = settingsContent(extraDeny);
+  const suffix =
+    extraDeny.length === 0
+      ? ""
+      : `-${createHash("sha256").update(content).digest("hex").slice(0, 12)}`;
   const path = join(
     tmpdir(),
-    `claude-ide-bridge-subprocess-settings-${process.pid}.json`,
+    `claude-ide-bridge-subprocess-settings-${process.pid}${suffix}.json`,
   );
   const write = (): boolean => {
     try {
-      writeFileSync(path, SETTINGS_CONTENT, "utf-8");
+      writeFileSync(path, content, "utf-8");
       return true;
     } catch (err) {
       log(

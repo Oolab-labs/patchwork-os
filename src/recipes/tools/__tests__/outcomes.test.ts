@@ -107,8 +107,13 @@ describe("outcomes.classify_issues", () => {
     const after = Date.now();
 
     const logPath = join(tmpHome, "outcome-log.jsonl");
-    const lines = readFileSync(logPath, "utf-8").trim().split("\n");
-    const record = JSON.parse(lines[lines.length - 1] as string);
+    // ADR-0027 marker rows (`chain-start`, `rotation`) are not records.
+    const records = readFileSync(logPath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation");
+    const record = records[records.length - 1] as Record<string, unknown>;
     expect(record.checkedAt).toBeGreaterThanOrEqual(before);
     expect(record.checkedAt).toBeLessThanOrEqual(after);
   });
@@ -129,8 +134,13 @@ describe("outcomes.classify_issues", () => {
     );
 
     const logPath = join(tmpHome, "outcome-log.jsonl");
-    const lines = readFileSync(logPath, "utf-8").trim().split("\n");
-    const record = JSON.parse(lines[lines.length - 1] as string);
+    // ADR-0027 marker rows (`chain-start`, `rotation`) are not records.
+    const records = readFileSync(logPath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation");
+    const record = records[records.length - 1] as Record<string, unknown>;
     expect(record.issueUrl).toBe("https://github.com/o/r/issues/3001");
     expect(record.disposition).toBe("confirmed");
   });

@@ -27,8 +27,9 @@
  * Every write path here swallows its own errors for that reason.
  */
 
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { appendChained } from "../ledgerChain.js";
 
 import { patchworkPath } from "../patchworkHome.js";
 
@@ -63,7 +64,13 @@ import type { LabelSource } from "./shadowLog.js";
  * is indistinguishable from a row written months ago — the mistake already
  * found shipped elsewhere and fixed as #1515.
  */
-export const BOUNDARY_RECORD_VERSION = 1;
+/**
+ * 2 (ADR-0027): every row also carries `iseq` and `prev`, stamped by
+ * `appendChained` from the file's tail under the lock. At `rv >= 2` their
+ * absence is a WRITER DEFECT. Rows at `rv 1` predate the chain and are never
+ * re-stamped; the `chain-start` marker commits to them as a block.
+ */
+export const BOUNDARY_RECORD_VERSION = 2;
 
 /** Clip so a runaway reason cannot bloat the audit log. */
 const MAX_REASON = 500;
@@ -244,7 +251,11 @@ export class BoundaryReceiptLog {
     this.receipts.push(receipt);
     this.trim();
     try {
-      appendFileSync(this.file, `${JSON.stringify(receipt)}\n`, {
+      // ADR-0027: locked, chained append. This writer had no lock at all until
+      // then — two bridges sharing $PATCHWORK_HOME could tear a row — and a
+      // failed append was indistinguishable on disk from a quiet day. Both are
+      // the primitive's job now; the never-throw contract below is unchanged.
+      appendChained(this.file, receipt as unknown as Record<string, unknown>, {
         mode: 0o600,
       });
     } catch (err) {

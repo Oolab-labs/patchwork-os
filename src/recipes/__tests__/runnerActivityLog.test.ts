@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActivityLog } from "../../activityLog.js";
+import { computeApprovedActionIdentity } from "../../approvalIdentity.js";
 import type { ChainedRecipe } from "../chainedRunner.js";
 import {
   buildChainedDeps,
@@ -87,15 +88,41 @@ describe("chained runner — records tool calls to ActivityLog", () => {
     // activityLog, and chainedDeps is built from those same runnerDeps so the
     // resolved StepDeps reach the executeTool chokepoint with activityLog.
     const runnerDeps = baseDeps(activityLog);
+    const chainedDeps = buildChainedDeps(runnerDeps);
+    chainedDeps.requireApprovalFn = async (input) => ({
+      approved: true,
+      grant: {
+        decision: "approved",
+        approvalId: "recipe-approval-1",
+        approvedActionIdentity: computeApprovedActionIdentity({
+          toolName: input.toolId,
+          params: input.params ?? {},
+          sessionId: "recipe",
+          tier: input.tier,
+          correlationId: input.runTaskId,
+          recipeName: input.recipeName,
+        }),
+        facts: {
+          tier: input.tier,
+          correlationId: input.runTaskId,
+          recipeName: input.recipeName,
+        },
+      },
+    });
     await dispatchRecipe(recipe as unknown as YamlRecipe, {
       ...runnerDeps,
-      chainedDeps: buildChainedDeps(runnerDeps),
+      chainedDeps,
       chainedOptions: { activityLog },
     });
 
     const stats = activityLog.stats();
     expect(stats["file.write"]).toBeDefined();
     expect(stats["file.write"]?.count).toBeGreaterThanOrEqual(1);
+    expect(activityLog.query({ tool: "file.write" })[0]).toMatchObject({
+      approvalId: "recipe-approval-1",
+      approvalRevalidated: true,
+      approvedActionIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
   });
 });
 

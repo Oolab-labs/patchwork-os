@@ -35,9 +35,10 @@
  * mixing it into the receipts would put unenforced decisions into the evidence
  * trail that is supposed to record what actually happened.
  */
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { appendChained } from "../ledgerChain.js";
 import { patchworkPath } from "../patchworkHome.js";
 import type { BoundaryDecision, Classification } from "./dataPolicy.js";
 
@@ -136,7 +137,13 @@ export const COVERAGE_IS_ENUMERATED =
  * Do NOT read "no `rv`" as "old" — a stale bridge writing un-`rv`'d rows today
  * is indistinguishable from a row written months ago (#1515).
  */
-export const SHADOW_RECORD_VERSION = 1;
+/**
+ * 2 (ADR-0027): every row also carries `iseq` and `prev`, stamped by
+ * `appendChained` from the file's tail under the lock. At `rv >= 2` their
+ * absence is a WRITER DEFECT. Rows at `rv 1` predate the chain and are never
+ * re-stamped; the `chain-start` marker commits to them as a block.
+ */
+export const SHADOW_RECORD_VERSION = 2;
 
 export interface PrivacyShadowRow {
   at: number;
@@ -163,6 +170,12 @@ export interface PrivacyShadowRow {
    * ABSENT on the `orchestrator-task` path by registration, not by omission.
    */
   correlationId?: string;
+  /**
+   * ADR-0027 integrity fields, stamped by `appendChained` — never by this
+   * writer. Optional on the type because rows at `rv < 2` have none.
+   */
+  iseq?: number;
+  prev?: string;
   /** Which dispatch path produced this. Absent on rows written before paths. */
   path?: ShadowPath;
   /** Whether the classification was declared or defaulted. */
@@ -239,7 +252,14 @@ export function recordPrivacyShadow(
       rv: SHADOW_RECORD_VERSION,
       reason: row.reason.slice(0, MAX_REASON),
     };
-    appendFileSync(file, `${JSON.stringify(full)}\n`);
+    // ADR-0027: locked, chained append. This writer had no lock at all until
+    // then — two bridges sharing $PATCHWORK_HOME could tear a row — and a
+    // failed append was indistinguishable on disk from a quiet day. Both are
+    // the primitive's job now (it counts its own failures in the sidecar); the
+    // never-throw contract below is unchanged.
+    appendChained(file, full as unknown as Record<string, unknown>, {
+      mode: 0o600,
+    });
   } catch {
     // Observation only — never disturb the dispatch being observed.
   }
@@ -339,6 +359,11 @@ export function summarisePrivacyShadow(
     } catch {
       continue;
     }
+    // ADR-0027 marker rows (`kind: chain-start | rotation`) share the file.
+    // They carry `at` but no `decision`, so the shape check below already
+    // drops them; the explicit test keeps that true if the shape ever widens —
+    // a marker in the denominator would be a dispatch that never happened.
+    if ((row as { kind?: unknown }).kind !== undefined) continue;
     if (typeof row.at !== "number" || typeof row.decision !== "string")
       continue;
     if (opts.since !== undefined && row.at < opts.since) continue;

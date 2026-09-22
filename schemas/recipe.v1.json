@@ -3,7 +3,9 @@
   "$id": "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json",
   "title": "Patchwork Recipe",
   "description": "YAML recipe schema for Patchwork automation",
-  "x-taplo": { "file-patterns": ["*.patchwork.yaml", "*.patchwork.yml"] },
+  "x-taplo": {
+    "file-patterns": ["*.patchwork.yaml", "*.patchwork.yml"]
+  },
   "type": "object",
   "required": ["name", "trigger", "steps"],
   "properties": {
@@ -74,7 +76,7 @@
         },
         "vars": {
           "type": "array",
-          "description": "Declared input variables resolvable as {{name}} in steps. Place declared variables here (NOT at recipe root \u2014 top-level vars are ignored at runtime).",
+          "description": "Declared input variables resolvable as {{name}} in steps. Place declared variables here (NOT at recipe root — top-level vars are ignored at runtime).",
           "items": {
             "type": "object",
             "required": ["name"],
@@ -88,7 +90,9 @@
                 "type": "boolean",
                 "description": "Whether the variable must be supplied."
               },
-              "default": { "description": "Default value when not supplied." },
+              "default": {
+                "description": "Default value when not supplied."
+              },
               "description": {
                 "type": "string",
                 "description": "Human-readable description of the variable."
@@ -98,7 +102,7 @@
         },
         "inputs": {
           "type": "array",
-          "description": "Alias for trigger.vars \u2014 declared input variables resolvable as {{name}} in steps.",
+          "description": "Alias for trigger.vars — declared input variables resolvable as {{name}} in steps.",
           "items": {
             "type": "object",
             "required": ["name"],
@@ -112,7 +116,9 @@
                 "type": "boolean",
                 "description": "Whether the variable must be supplied."
               },
-              "default": { "description": "Default value when not supplied." },
+              "default": {
+                "description": "Default value when not supplied."
+              },
               "description": {
                 "type": "string",
                 "description": "Human-readable description of the variable."
@@ -125,7 +131,14 @@
           "description": "Webhook/event source name after legacy trigger normalization"
         },
         "eventFilter": {
-          "oneOf": [{ "type": "string" }, { "type": "object" }],
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            }
+          ],
           "description": "Webhook/event filter after legacy trigger normalization"
         },
         "eventLeadTimeHours": {
@@ -150,9 +163,19 @@
         "type": "object",
         "required": ["type"],
         "properties": {
-          "type": { "type": "string", "enum": ["file", "env"] },
-          "path": { "type": "string" },
-          "keys": { "type": "array", "items": { "type": "string" } }
+          "type": {
+            "type": "string",
+            "enum": ["file", "env"]
+          },
+          "path": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -172,7 +195,9 @@
               "awaits": {
                 "type": "array",
                 "description": "Step IDs that must complete before this step runs",
-                "items": { "type": "string" }
+                "items": {
+                  "type": "string"
+                }
               },
               "when": {
                 "type": "string",
@@ -220,10 +245,17 @@
                   },
                   "contains": {
                     "oneOf": [
-                      { "type": "string" },
-                      { "type": "array", "items": { "type": "string" } }
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
                     ],
-                    "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                    "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                   },
                   "on_fail": {
                     "type": "string",
@@ -232,7 +264,7 @@
                   },
                   "required": {
                     "type": "boolean",
-                    "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                    "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                   }
                 }
               },
@@ -275,16 +307,39 @@
                   },
                   "tools": {
                     "type": "array",
-                    "items": { "type": "string" },
+                    "items": {
+                      "type": "string"
+                    },
                     "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
                   },
                   "sandbox": {
-                    "type": "boolean",
+                    "oneOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "network": {
+                            "type": "boolean"
+                          },
+                          "shell": {
+                            "type": "boolean"
+                          },
+                          "mcpAccess": {
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ],
                     "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
                   },
                   "disallowedTools": {
                     "type": "array",
-                    "items": { "type": "string" },
+                    "items": {
+                      "type": "string"
+                    },
                     "description": "Deny rules applied via --disallowed-tools regardless of sandbox mode."
                   },
                   "kind": {
@@ -294,12 +349,12 @@
                   },
                   "reviews": {
                     "type": "string",
-                    "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge\u2192refine loop."
+                    "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop."
                   },
                   "max_revisions": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "OPT-IN judge\u2192refine loop. Max revise\u2192re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
+                    "description": "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
                   },
                   "on_exhausted": {
                     "type": "string",
@@ -308,7 +363,7 @@
                   },
                   "downshift": {
                     "type": "array",
-                    "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent \u2192 preferred model always used.",
+                    "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent → preferred model always used.",
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
@@ -328,13 +383,15 @@
                             "local"
                           ]
                         },
-                        "model": { "type": "string" }
+                        "model": {
+                          "type": "string"
+                        }
                       }
                     }
                   },
                   "escalate": {
                     "type": "array",
-                    "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge\u2192refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model \u2014 start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
+                    "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge→refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model — start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
@@ -354,7 +411,9 @@
                             "local"
                           ]
                         },
-                        "model": { "type": "string" }
+                        "model": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -373,7 +432,9 @@
               "awaits": {
                 "type": "array",
                 "description": "Step IDs that must complete before this step runs",
-                "items": { "type": "string" }
+                "items": {
+                  "type": "string"
+                }
               },
               "when": {
                 "type": "string",
@@ -421,10 +482,17 @@
                   },
                   "contains": {
                     "oneOf": [
-                      { "type": "string" },
-                      { "type": "array", "items": { "type": "string" } }
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
                     ],
-                    "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                    "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                   },
                   "on_fail": {
                     "type": "string",
@@ -433,17 +501,31 @@
                   },
                   "required": {
                     "type": "boolean",
-                    "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                    "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                   }
                 }
               },
-              "tool": { "type": "string", "not": { "enum": [] } },
-              "into": { "type": "string" }
+              "tool": {
+                "type": "string",
+                "not": {
+                  "enum": []
+                }
+              },
+              "into": {
+                "type": "string"
+              }
             }
           },
           {
             "type": "object",
-            "anyOf": [{ "required": ["recipe"] }, { "required": ["chain"] }],
+            "anyOf": [
+              {
+                "required": ["recipe"]
+              },
+              {
+                "required": ["chain"]
+              }
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -452,7 +534,9 @@
               "awaits": {
                 "type": "array",
                 "description": "Step IDs that must complete before this step runs",
-                "items": { "type": "string" }
+                "items": {
+                  "type": "string"
+                }
               },
               "when": {
                 "type": "string",
@@ -500,10 +584,17 @@
                   },
                   "contains": {
                     "oneOf": [
-                      { "type": "string" },
-                      { "type": "array", "items": { "type": "string" } }
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
                     ],
-                    "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                    "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                   },
                   "on_fail": {
                     "type": "string",
@@ -512,7 +603,7 @@
                   },
                   "required": {
                     "type": "boolean",
-                    "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                    "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                   }
                 }
               },
@@ -527,7 +618,9 @@
               "vars": {
                 "type": "object",
                 "description": "Template variables passed into a nested recipe step",
-                "additionalProperties": { "type": "string" }
+                "additionalProperties": {
+                  "type": "string"
+                }
               },
               "output": {
                 "type": "string",
@@ -541,15 +634,17 @@
             "properties": {
               "id": {
                 "type": "string",
-                "description": "Optional group id \u2014 used as awaits target by later steps"
+                "description": "Optional group id — used as awaits target by later steps"
               },
               "awaits": {
                 "type": "array",
                 "description": "Step IDs that must complete before this group starts",
-                "items": { "type": "string" }
+                "items": {
+                  "type": "string"
+                }
               },
               "parallel": {
-                "description": "Run these steps concurrently. Array form: steps run in parallel. Object form: map-reduce \u2014 each item in `each` is bound to `as` and the steps array runs once per item.",
+                "description": "Run these steps concurrently. Array form: steps run in parallel. Object form: map-reduce — each item in `each` is bound to `as` and the steps array runs once per item.",
                 "oneOf": [
                   {
                     "type": "array",
@@ -567,7 +662,9 @@
                             "awaits": {
                               "type": "array",
                               "description": "Step IDs that must complete before this step runs",
-                              "items": { "type": "string" }
+                              "items": {
+                                "type": "string"
+                              }
                             },
                             "when": {
                               "type": "string",
@@ -615,13 +712,17 @@
                                 },
                                 "contains": {
                                   "oneOf": [
-                                    { "type": "string" },
+                                    {
+                                      "type": "string"
+                                    },
                                     {
                                       "type": "array",
-                                      "items": { "type": "string" }
+                                      "items": {
+                                        "type": "string"
+                                      }
                                     }
                                   ],
-                                  "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                                  "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                                 },
                                 "on_fail": {
                                   "type": "string",
@@ -630,7 +731,7 @@
                                 },
                                 "required": {
                                   "type": "boolean",
-                                  "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                                  "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                                 }
                               }
                             },
@@ -673,16 +774,39 @@
                                 },
                                 "tools": {
                                   "type": "array",
-                                  "items": { "type": "string" },
+                                  "items": {
+                                    "type": "string"
+                                  },
                                   "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
                                 },
                                 "sandbox": {
-                                  "type": "boolean",
+                                  "oneOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "network": {
+                                          "type": "boolean"
+                                        },
+                                        "shell": {
+                                          "type": "boolean"
+                                        },
+                                        "mcpAccess": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    }
+                                  ],
                                   "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
                                 },
                                 "disallowedTools": {
                                   "type": "array",
-                                  "items": { "type": "string" },
+                                  "items": {
+                                    "type": "string"
+                                  },
                                   "description": "Deny rules applied via --disallowed-tools regardless of sandbox mode."
                                 },
                                 "kind": {
@@ -692,12 +816,12 @@
                                 },
                                 "reviews": {
                                   "type": "string",
-                                  "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge\u2192refine loop."
+                                  "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop."
                                 },
                                 "max_revisions": {
                                   "type": "integer",
                                   "minimum": 0,
-                                  "description": "OPT-IN judge\u2192refine loop. Max revise\u2192re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
+                                  "description": "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
                                 },
                                 "on_exhausted": {
                                   "type": "string",
@@ -706,7 +830,7 @@
                                 },
                                 "downshift": {
                                   "type": "array",
-                                  "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent \u2192 preferred model always used.",
+                                  "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent → preferred model always used.",
                                   "items": {
                                     "type": "object",
                                     "additionalProperties": false,
@@ -726,13 +850,15 @@
                                           "local"
                                         ]
                                       },
-                                      "model": { "type": "string" }
+                                      "model": {
+                                        "type": "string"
+                                      }
                                     }
                                   }
                                 },
                                 "escalate": {
                                   "type": "array",
-                                  "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge\u2192refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model \u2014 start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
+                                  "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge→refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model — start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
                                   "items": {
                                     "type": "object",
                                     "additionalProperties": false,
@@ -752,7 +878,9 @@
                                           "local"
                                         ]
                                       },
-                                      "model": { "type": "string" }
+                                      "model": {
+                                        "type": "string"
+                                      }
                                     }
                                   }
                                 }
@@ -771,7 +899,9 @@
                             "awaits": {
                               "type": "array",
                               "description": "Step IDs that must complete before this step runs",
-                              "items": { "type": "string" }
+                              "items": {
+                                "type": "string"
+                              }
                             },
                             "when": {
                               "type": "string",
@@ -819,13 +949,17 @@
                                 },
                                 "contains": {
                                   "oneOf": [
-                                    { "type": "string" },
+                                    {
+                                      "type": "string"
+                                    },
                                     {
                                       "type": "array",
-                                      "items": { "type": "string" }
+                                      "items": {
+                                        "type": "string"
+                                      }
                                     }
                                   ],
-                                  "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                                  "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                                 },
                                 "on_fail": {
                                   "type": "string",
@@ -834,19 +968,30 @@
                                 },
                                 "required": {
                                   "type": "boolean",
-                                  "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                                  "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                                 }
                               }
                             },
-                            "tool": { "type": "string", "not": { "enum": [] } },
-                            "into": { "type": "string" }
+                            "tool": {
+                              "type": "string",
+                              "not": {
+                                "enum": []
+                              }
+                            },
+                            "into": {
+                              "type": "string"
+                            }
                           }
                         },
                         {
                           "type": "object",
                           "anyOf": [
-                            { "required": ["recipe"] },
-                            { "required": ["chain"] }
+                            {
+                              "required": ["recipe"]
+                            },
+                            {
+                              "required": ["chain"]
+                            }
                           ],
                           "properties": {
                             "id": {
@@ -856,7 +1001,9 @@
                             "awaits": {
                               "type": "array",
                               "description": "Step IDs that must complete before this step runs",
-                              "items": { "type": "string" }
+                              "items": {
+                                "type": "string"
+                              }
                             },
                             "when": {
                               "type": "string",
@@ -904,13 +1051,17 @@
                                 },
                                 "contains": {
                                   "oneOf": [
-                                    { "type": "string" },
+                                    {
+                                      "type": "string"
+                                    },
                                     {
                                       "type": "array",
-                                      "items": { "type": "string" }
+                                      "items": {
+                                        "type": "string"
+                                      }
                                     }
                                   ],
-                                  "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                                  "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                                 },
                                 "on_fail": {
                                   "type": "string",
@@ -919,7 +1070,7 @@
                                 },
                                 "required": {
                                   "type": "boolean",
-                                  "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                                  "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                                 }
                               }
                             },
@@ -934,7 +1085,9 @@
                             "vars": {
                               "type": "object",
                               "description": "Template variables passed into a nested recipe step",
-                              "additionalProperties": { "type": "string" }
+                              "additionalProperties": {
+                                "type": "string"
+                              }
                             },
                             "output": {
                               "type": "string",
@@ -947,7 +1100,7 @@
                   },
                   {
                     "type": "object",
-                    "description": "Map-reduce form \u2014 iterate over a collection and run steps once per item.",
+                    "description": "Map-reduce form — iterate over a collection and run steps once per item.",
                     "required": ["each", "steps"],
                     "properties": {
                       "each": {
@@ -974,7 +1127,9 @@
                                 "awaits": {
                                   "type": "array",
                                   "description": "Step IDs that must complete before this step runs",
-                                  "items": { "type": "string" }
+                                  "items": {
+                                    "type": "string"
+                                  }
                                 },
                                 "when": {
                                   "type": "string",
@@ -1022,13 +1177,17 @@
                                     },
                                     "contains": {
                                       "oneOf": [
-                                        { "type": "string" },
+                                        {
+                                          "type": "string"
+                                        },
                                         {
                                           "type": "array",
-                                          "items": { "type": "string" }
+                                          "items": {
+                                            "type": "string"
+                                          }
                                         }
                                       ],
-                                      "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                                      "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                                     },
                                     "on_fail": {
                                       "type": "string",
@@ -1037,7 +1196,7 @@
                                     },
                                     "required": {
                                       "type": "boolean",
-                                      "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                                      "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                                     }
                                   }
                                 },
@@ -1080,16 +1239,39 @@
                                     },
                                     "tools": {
                                       "type": "array",
-                                      "items": { "type": "string" },
+                                      "items": {
+                                        "type": "string"
+                                      },
                                       "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
                                     },
                                     "sandbox": {
-                                      "type": "boolean",
+                                      "oneOf": [
+                                        {
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "network": {
+                                              "type": "boolean"
+                                            },
+                                            "shell": {
+                                              "type": "boolean"
+                                            },
+                                            "mcpAccess": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        }
+                                      ],
                                       "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
                                     },
                                     "disallowedTools": {
                                       "type": "array",
-                                      "items": { "type": "string" },
+                                      "items": {
+                                        "type": "string"
+                                      },
                                       "description": "Deny rules applied via --disallowed-tools regardless of sandbox mode."
                                     },
                                     "kind": {
@@ -1099,12 +1281,12 @@
                                     },
                                     "reviews": {
                                       "type": "string",
-                                      "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge\u2192refine loop."
+                                      "description": "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop."
                                     },
                                     "max_revisions": {
                                       "type": "integer",
                                       "minimum": 0,
-                                      "description": "OPT-IN judge\u2192refine loop. Max revise\u2192re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
+                                      "description": "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews."
                                     },
                                     "on_exhausted": {
                                       "type": "string",
@@ -1113,7 +1295,7 @@
                                     },
                                     "downshift": {
                                       "type": "array",
-                                      "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent \u2192 preferred model always used.",
+                                      "description": "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent → preferred model always used.",
                                       "items": {
                                         "type": "object",
                                         "additionalProperties": false,
@@ -1133,13 +1315,15 @@
                                               "local"
                                             ]
                                           },
-                                          "model": { "type": "string" }
+                                          "model": {
+                                            "type": "string"
+                                          }
                                         }
                                       }
                                     },
                                     "escalate": {
                                       "type": "array",
-                                      "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge\u2192refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model \u2014 start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
+                                      "description": "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge→refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model — start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
                                       "items": {
                                         "type": "object",
                                         "additionalProperties": false,
@@ -1159,7 +1343,9 @@
                                               "local"
                                             ]
                                           },
-                                          "model": { "type": "string" }
+                                          "model": {
+                                            "type": "string"
+                                          }
                                         }
                                       }
                                     }
@@ -1178,7 +1364,9 @@
                                 "awaits": {
                                   "type": "array",
                                   "description": "Step IDs that must complete before this step runs",
-                                  "items": { "type": "string" }
+                                  "items": {
+                                    "type": "string"
+                                  }
                                 },
                                 "when": {
                                   "type": "string",
@@ -1226,13 +1414,17 @@
                                     },
                                     "contains": {
                                       "oneOf": [
-                                        { "type": "string" },
+                                        {
+                                          "type": "string"
+                                        },
                                         {
                                           "type": "array",
-                                          "items": { "type": "string" }
+                                          "items": {
+                                            "type": "string"
+                                          }
                                         }
                                       ],
-                                      "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                                      "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                                     },
                                     "on_fail": {
                                       "type": "string",
@@ -1241,22 +1433,30 @@
                                     },
                                     "required": {
                                       "type": "boolean",
-                                      "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                                      "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                                     }
                                   }
                                 },
                                 "tool": {
                                   "type": "string",
-                                  "not": { "enum": [] }
+                                  "not": {
+                                    "enum": []
+                                  }
                                 },
-                                "into": { "type": "string" }
+                                "into": {
+                                  "type": "string"
+                                }
                               }
                             },
                             {
                               "type": "object",
                               "anyOf": [
-                                { "required": ["recipe"] },
-                                { "required": ["chain"] }
+                                {
+                                  "required": ["recipe"]
+                                },
+                                {
+                                  "required": ["chain"]
+                                }
                               ],
                               "properties": {
                                 "id": {
@@ -1266,7 +1466,9 @@
                                 "awaits": {
                                   "type": "array",
                                   "description": "Step IDs that must complete before this step runs",
-                                  "items": { "type": "string" }
+                                  "items": {
+                                    "type": "string"
+                                  }
                                 },
                                 "when": {
                                   "type": "string",
@@ -1314,13 +1516,17 @@
                                     },
                                     "contains": {
                                       "oneOf": [
-                                        { "type": "string" },
+                                        {
+                                          "type": "string"
+                                        },
                                         {
                                           "type": "array",
-                                          "items": { "type": "string" }
+                                          "items": {
+                                            "type": "string"
+                                          }
                                         }
                                       ],
-                                      "description": "Substring(s) that must appear in the stringified output. Array \u2192 all must be present."
+                                      "description": "Substring(s) that must appear in the stringified output. Array → all must be present."
                                     },
                                     "on_fail": {
                                       "type": "string",
@@ -1329,7 +1535,7 @@
                                     },
                                     "required": {
                                       "type": "boolean",
-                                      "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only \u2014 a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
+                                      "description": "false (default): a step skipped by its `when:` guard never evaluates this block, so an expectation on a conditional step is advisory. true: the step is mandatory and a `when:`-skip is itself a failure (halt category expect_failed). Scoped to the `when:` guard only — a step whose tool id is not registered still skips silently, which is deliberate forward-compat for un-loaded plugins."
                                     }
                                   }
                                 },
@@ -1344,7 +1550,9 @@
                                 "vars": {
                                   "type": "object",
                                   "description": "Template variables passed into a nested recipe step",
-                                  "additionalProperties": { "type": "string" }
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  }
                                 },
                                 "output": {
                                   "type": "string",
@@ -1366,7 +1574,7 @@
     },
     "expect": {
       "type": "object",
-      "description": "Completion contract for the run: assertions that must hold once the recipe finishes. Evaluated on EVERY non-testMode run, not only under `recipe test` \u2014 a violation is persisted as `assertionFailures` and withholds the run's trust evidence from the owning worker.",
+      "description": "Completion contract for the run: assertions that must hold once the recipe finishes. Evaluated on EVERY non-testMode run, not only under `recipe test` — a violation is persisted as `assertionFailures` and withholds the run's trust evidence from the owning worker.",
       "properties": {
         "stepsRun": {
           "type": "number",
@@ -1375,7 +1583,9 @@
         "outputs": {
           "type": "array",
           "description": "Expected output paths or keys recorded by the run",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "errorMessage": {
           "type": ["string", "null"],
@@ -1384,7 +1594,9 @@
         "context": {
           "type": "object",
           "description": "Expected context key/value pairs after the run",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
@@ -1440,7 +1652,7 @@
         },
         "estimateUnmeasured": {
           "type": "boolean",
-          "description": "OPT-IN (default false). Estimate the notional list-price USD an unmeasured/subscription call would have cost and surface a \u2248$ figure. Label only \u2014 never counted toward usdMax, never halts. Requires usdMax."
+          "description": "OPT-IN (default false). Estimate the notional list-price USD an unmeasured/subscription call would have cost and surface a ≈$ figure. Label only — never counted toward usdMax, never halts. Requires usdMax."
         },
         "onBreach": {
           "type": "string",
@@ -1453,7 +1665,9 @@
     "servers": {
       "type": "array",
       "description": "Plugin package specifiers (npm package names or file paths) whose tools are loaded and available to steps in this recipe. Loaded once at run start.",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     }
   }
 }

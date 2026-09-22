@@ -96,7 +96,9 @@ export interface AgentStep {
   /** Allowlist enforced by --allowed-tools when `sandbox` is true. */
   tools?: string[];
   /** Opt-in tool sandbox: enforce `tools` allowlist via claude -p permission mode. */
-  sandbox?: boolean;
+  sandbox?:
+    | boolean
+    | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
   /** Deny rules applied via --disallowed-tools in any permission mode. */
   disallowedTools?: string[];
   risk?: RiskTier;

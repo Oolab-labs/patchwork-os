@@ -1,17 +1,13 @@
 import {
-  appendFileSync,
   closeSync,
   mkdirSync,
   openSync,
   readFileSync,
   readSync,
-  renameSync,
   statSync,
-  unlinkSync,
-  writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { withFileLockSync } from "./fileLockSync.js";
+import { appendChained } from "./ledgerChain.js";
 import type { Reversibility } from "./workers/actionClass.js";
 
 /**
@@ -202,7 +198,13 @@ export interface GateDecisionRecord {
  * a merely additive one. `correlationOf` does not skip rows from an unknown
  * version, so a bump adds a guarantee without stranding any existing reader.
  */
-export const GATE_RECORD_VERSION = 2 as const;
+/**
+ * 3 (ADR-0027): every row also carries `iseq` and `prev`, stamped by
+ * `appendChained` from the file's tail under the lock. At `rv >= 3` their
+ * absence is a WRITER DEFECT. Rows at `rv < 3` predate the chain and are never
+ * re-stamped; the `chain-start` marker commits to them as a block.
+ */
+export const GATE_RECORD_VERSION = 3 as const;
 
 /**
  * `rv` is excluded, and that exclusion is load-bearing rather than tidy. If a
@@ -221,7 +223,8 @@ const MAX_PERSIST_LINES = 10_000;
 /**
  * Low-water mark for rotation, as a fraction of the cap. The cap is the
  * TRIGGER; this is the TARGET. The gap between them is what stops rotation from
- * running on every append once the file is full — see `rotateDisk`.
+ * running on every append once the file is full — see `appendChained`
+ * (ADR-0027), which owns rotation now.
  */
 const ROTATE_TARGET_RATIO = 0.9;
 const MAX_REASON_LEN = 1_000;
@@ -524,121 +527,34 @@ export class WorkerGateDecisionLog {
 
   private append(rec: GateDecisionRecord): void {
     try {
-      try {
-        const st = statSync(this.file);
-        if (st.size > this.maxBytes) this.rotateDisk();
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT") throw err;
-      }
-      // Cross-process flock around the append (ADR-0007): two bridges sharing
-      // $HOME can interleave bytes within one JSONL row; the torn line then
-      // fails JSON.parse and is silently skipped on every reader.
-      withFileLockSync(this.file, () => {
-        appendFileSync(this.file, `${JSON.stringify(rec)}\n`, { mode: 0o600 });
-        // Advance the tail offset past our own write so the next query() doesn't
-        // re-read this row (we already pushed it in `record`).
-        try {
-          this.lastReadOffset = statSync(this.file).size;
-        } catch {
-          /* the next tailDisk() reloads cleanly if this ever fails */
-        }
+      // ADR-0027: one locked, chained append. Rotation, the tail read for
+      // `iseq` / `prev`, the head sidecar and the write-failure counter all
+      // live in the primitive now; what stays here is the warning with the
+      // COUNT, because a coverage measure over a rotated file converges toward
+      // 1.0 by deletion (ADR-0025) and a number nobody prints is a number
+      // nobody reads.
+      appendChained(this.file, rec as unknown as Record<string, unknown>, {
+        mode: 0o600,
+        maxBytes: this.maxBytes,
+        rotateTarget: this.rotateTarget,
+        maxLines: MAX_PERSIST_LINES,
+        onRotate: ({ dropped, before }) => {
+          this.opts.logger?.warn?.(
+            `[gate-decision-log] rotate dropped ${dropped} of ${before} row(s) (oldest first) to get under ${this.rotateTarget} bytes — coverage figures computed over this file exclude them`,
+          );
+        },
       });
+      // Advance the tail offset past our own write so the next query() doesn't
+      // re-read this row (we already pushed it in `record`). If rotation ran the
+      // file shrank, and tailDisk()'s size<offset branch reloads it cleanly.
+      try {
+        this.lastReadOffset = statSync(this.file).size;
+      } catch {
+        /* the next tailDisk() reloads cleanly if this ever fails */
+      }
     } catch (err) {
       this.opts.logger?.warn?.(
         `[gate-decision-log] append failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  /** Trim to the most recent MAX_PERSIST_LINES / `this.maxBytes`. Best-effort. */
-  private rotateDisk(): void {
-    try {
-      const raw = readFileSync(this.file, "utf-8");
-      let lines = raw.split("\n").filter((l) => l.trim());
-      const before = lines.length;
-      if (lines.length > MAX_PERSIST_LINES)
-        lines = lines.slice(-MAX_PERSIST_LINES);
-
-      // Trim to fit, newest-first, dropping only what the cap actually
-      // requires.
-      //
-      // This used to halve: `lines.slice(-floor(length / 2))` inside a `while`,
-      // so crossing the cap by one row discarded ~50% of the file and a second
-      // pass could take ~75%. Measured on a synthetic fill, the old code left
-      // 525,829 bytes of a 1 MB budget — half the ledger destroyed to reclaim
-      // one row. This file is the autonomy gate's trust evidence and its audit
-      // trail, so that was 50% of both.
-      //
-      // Byte length, not string length: rotation is TRIGGERED on `st.size`
-      // (real bytes) but the old arithmetic used `.length` (UTF-16 code units),
-      // so a reason containing non-ASCII could leave the file over a cap whose
-      // own name says bytes.
-      //
-      // Trims to ROTATE_TARGET_BYTES, not to the cap. Trimming to exactly the
-      // cap looks tidier and is much worse: `append` rotates when the file is
-      // over the cap and then writes its row, so a file sitting exactly at the
-      // limit rotates on EVERY subsequent append — dropping one row and
-      // emitting one warning each time, forever. Measured while building this:
-      // 826 rotations and 826 identical warnings across one fill. A high-water
-      // trigger needs a low-water target, and a warning that fires on every
-      // write is one nobody reads.
-      let budget = this.rotateTarget;
-      let keepFrom = lines.length;
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const cost = Buffer.byteLength(lines[i] as string, "utf8") + 1;
-        if (cost > budget) break;
-        budget -= cost;
-        keepFrom = i;
-      }
-      lines = lines.slice(keepFrom);
-      let joined = lines.join("\n");
-
-      const dropped = before - lines.length;
-      if (dropped > 0) {
-        // Say the COUNT, not just that it happened.
-        //
-        // Rotation deletes oldest-first, which is exactly the population of
-        // rows lacking any newer field. So a coverage measure over this file
-        // converges toward 1.0 BY DELETION, and "98% of decisions carry a run
-        // id" would read identically whether the ledger improved or ate its own
-        // counter-examples. Without this number a denominator computed here is
-        // not merely imprecise, it is confidently backwards.
-        this.opts.logger?.warn?.(
-          `[gate-decision-log] rotate dropped ${dropped} of ${before} row(s) (oldest first) to get under ${this.rotateTarget} bytes — coverage figures computed over this file exclude them`,
-        );
-      }
-      if (lines.length === 1 && joined.length + 1 > this.maxBytes) {
-        this.opts.logger?.warn?.(
-          `[gate-decision-log] rotate dropped 1 oversized row (${joined.length} bytes)`,
-        );
-        lines = [];
-        joined = "";
-      }
-      const tmp = `${this.file}.tmp`;
-      writeFileSync(tmp, joined.length > 0 ? `${joined}\n` : "", {
-        mode: 0o600,
-      });
-      try {
-        renameSync(tmp, this.file);
-      } catch (renameErr) {
-        if (
-          process.platform === "win32" &&
-          (renameErr as NodeJS.ErrnoException).code === "EEXIST"
-        ) {
-          try {
-            unlinkSync(this.file);
-          } catch {
-            /* best-effort */
-          }
-          renameSync(tmp, this.file);
-        } else {
-          throw renameErr;
-        }
-      }
-    } catch (err) {
-      this.opts.logger?.warn?.(
-        `[gate-decision-log] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

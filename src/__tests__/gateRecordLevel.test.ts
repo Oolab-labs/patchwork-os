@@ -77,7 +77,13 @@ const LEGACY = JSON.stringify({
 });
 
 function lines(): string[] {
-  return readFileSync(file, "utf-8").trim().split("\n");
+  return (
+    readFileSync(file, "utf-8")
+      .trim()
+      .split("\n")
+      // ADR-0027 marker rows share the file and are not decision records.
+      .filter((l) => !/"kind":"(chain-start|rotation)"/.test(l))
+  );
 }
 
 describe("the record level reaches disk", () => {

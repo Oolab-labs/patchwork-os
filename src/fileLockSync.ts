@@ -80,7 +80,29 @@ export function withFileLockSync<T>(
       lockFd = openSync(lockFile, "wx", 0o600);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST") throw err;
+      // EEXIST is contention everywhere. On Windows so are EPERM / EBUSY /
+      // EACCES: a lock whose delete is pending (the holder's `unlinkSync` in
+      // `finally`) stays visible until every handle closes, and an O_EXCL open
+      // against it fails with one of those instead of EEXIST. Treating them as
+      // errors made the losing writer of two concurrent chained appends die —
+      // intermittently, Windows cells only (ADR-0027's cross-process test).
+      // On POSIX the same codes are real permission errors and still throw:
+      // retrying would turn "read-only directory" into "timed out".
+      const contended =
+        code === "EEXIST" ||
+        (process.platform === "win32" &&
+          (code === "EPERM" || code === "EBUSY" || code === "EACCES"));
+      if (!contended) throw err;
+      // Deadline FIRST. The stale-lock branch below `continue`s on ENOENT
+      // (lock cleared between EEXIST and stat), and on Windows a contender
+      // can see EPERM with no lock on disk at all — so a deadline checked only
+      // after the stale branch was never reached on that path, and the wait
+      // was unbounded.
+      if (Date.now() > deadline) {
+        throw new Error(
+          `withFileLockSync: timed out after ${timeoutMs}ms waiting for ${lockFile}`,
+        );
+      }
       // Stale-lock cleanup. Best-effort: another contender may unlink
       // ours simultaneously; that race resolves benignly (next openSync
       // either wins or sees EEXIST again).
@@ -98,11 +120,6 @@ export function withFileLockSync<T>(
         // statSync ENOENT — lock cleared between EEXIST and stat; retry
         // immediately.
         continue;
-      }
-      if (Date.now() > deadline) {
-        throw new Error(
-          `withFileLockSync: timed out after ${timeoutMs}ms waiting for ${lockFile}`,
-        );
       }
       // Busy-spin for ~5ms via hrtime. Node has no sync sleep; under
       // contention the kernel preempts us, so this isn't actually a hot

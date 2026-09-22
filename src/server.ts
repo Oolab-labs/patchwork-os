@@ -2016,6 +2016,24 @@ export class Server extends EventEmitter<ServerEvents> {
               respond400('approvalGate must be "off", "high", or "all"');
               return;
             }
+            // Governed profile: the gate has a FLOOR of "high". A bearer
+            // holder cannot switch governance off over HTTP; that takes an
+            // explicit `patchwork profile compat` on the machine.
+            if (gateRaw === "off") {
+              try {
+                const { activeProfile } = await import(
+                  "./governance/profile.js"
+                );
+                if (activeProfile().mode === "governed") {
+                  respond400(
+                    'approvalGate "off" is not permitted under the governed profile (floor is "high"); run `patchwork profile compat` to change the profile',
+                  );
+                  return;
+                }
+              } catch {
+                /* profile module unavailable — no floor to apply */
+              }
+            }
 
             // approvalTimeouts — per-tier override, ms. Unlike the lenient
             // sanitizer used when reading a possibly-stale config file

@@ -69,6 +69,12 @@ export interface BoundaryReceiptView {
    * backfill performed invisibly on every load.
    */
   rv?: number;
+  /**
+   * ADR-0027 integrity position and previous-line hash, carried through
+   * verbatim from `rv >= 2`. Absent on rows that predate the chain.
+   */
+  iseq?: number;
+  prev?: string;
   /** The run that produced this receipt (`taskId`, never `seq`). */
   correlationId?: string;
   decision: BoundaryDecision;
@@ -161,6 +167,8 @@ function view(r: Record<string, unknown>): BoundaryReceiptView | null {
     // written correctly and discarded by every reader (#1517), and how
     // `workspaceId` was thrown away by the last step of its own pipeline.
     ...(typeof r.rv === "number" ? { rv: r.rv } : {}),
+    ...(typeof r.iseq === "number" ? { iseq: r.iseq } : {}),
+    ...(str("prev") ? { prev: str("prev") } : {}),
     ...(str("correlationId") ? { correlationId: str("correlationId") } : {}),
     at: r.at,
     decision: r.decision as BoundaryDecision,

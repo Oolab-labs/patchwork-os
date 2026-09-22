@@ -14,7 +14,12 @@ export type HaltCategory =
   | "tool_threw"
   | "tool_error"
   | "kill_switch"
+  /** Effective policy refused the step before dispatch (governed profile: plugin allowlist, recipe tool allowlist, worker forbid). */
+  | "policy_denied"
+  /** No tool is registered under the step's id; the governed profile refuses rather than skips. */
+  | "unresolved_tool"
   | "budget_exceeded"
+  | "prompt_too_large"
   | "expect_failed"
   | "step_timeout"
   | "judge_revisions_exhausted"
@@ -45,7 +50,10 @@ export const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   tool_threw: "tool threw",
   tool_error: "tool error",
   kill_switch: "kill-switch blocked",
+  policy_denied: "policy refused",
+  unresolved_tool: "tool not registered",
   budget_exceeded: "budget exceeded",
+  prompt_too_large: "prompt too large",
   expect_failed: "expect failed",
   step_timeout: "step timeout",
   judge_revisions_exhausted: "judge revisions exhausted",
@@ -76,8 +84,14 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "Tool returned an error response. Check the inner error in the trace.",
   kill_switch:
     "Write blocked by the kill-switch. Run `patchwork kill-switch release` to re-enable.",
+  policy_denied:
+    "The effective policy refused this step before it ran. Run `patchwork policy explain <recipe> <tool>` to see which stage refused.",
+  unresolved_tool:
+    "No tool is registered under this id. Run `recipe doctor`; install or allowlist the plugin that provides it.",
   budget_exceeded:
     "Run exceeded its tokensMax budget. Raise tokensMax in the recipe or shrink prompts.",
+  prompt_too_large:
+    "The step's prompt was larger than the agent prompt limit, so nothing was sent. Shorten the prompt, or the tool output it interpolates.",
   expect_failed:
     "A step's expect: assertion didn't match. Inspect the assertion + actual output.",
   step_timeout:

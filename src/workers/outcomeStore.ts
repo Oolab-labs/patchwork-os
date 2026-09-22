@@ -1,5 +1,6 @@
-import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { appendChained } from "../ledgerChain.js";
 import { patchworkHome } from "../patchworkHome.js";
 import {
   type ActionRef,
@@ -44,6 +45,28 @@ export function resolveOutcomeLogDir(override?: string): string {
   );
 }
 
+/**
+ * Record version for `outcome-log.jsonl` — the `rv` sentinel (ADR-0025)
+ * applied to this ledger for the first time, by ADR-0027.
+ *
+ * This ledger had NO `rv` before the chain. Every row written through
+ * `upsert` from now on carries `rv: OUTCOME_LOG_RV` plus the integrity fields
+ * `iseq` / `prev` stamped by `appendChained` from the file's tail under the
+ * lock. At `rv >= 1` the absence of `iseq` or `prev` is a WRITER DEFECT, not
+ * a state this ledger can legitimately represent.
+ *
+ * A row with no `rv` predates the chain. It is never re-stamped: the
+ * `chain-start` marker commits to the legacy prefix as a block (SHA-256 of
+ * the exact bytes), so it is verifiable from the migration boundary without
+ * being touched. Do NOT default `rv` on read — `origin` already defaults
+ * absence deliberately (see its comment), and that is a documented exception
+ * for one field, not a licence for the sentinel.
+ *
+ * `rv` is stamped by the WRITER, after the caller's fields, so a caller
+ * cannot assert a level for a row it did not write.
+ */
+export const OUTCOME_LOG_RV = 1;
+
 export interface OutcomeRecord {
   /**
    * GitHub issue URL — the legacy lookup key, and still the key for any row
@@ -86,6 +109,8 @@ export interface OutcomeRecord {
    * ingester-over-manual is blocked.
    */
   origin?: "manual" | "ingester";
+  /** Record version — see `OUTCOME_LOG_RV`. Absent on rows written before the chain. */
+  rv?: number;
 }
 
 /**
@@ -163,6 +188,13 @@ function parseOutcomeLog(logPath: string): {
       unkeyable.push({ line: i + 1, reason: "malformed-json", excerpt });
       continue;
     }
+    // ADR-0027 marker rows (`chain-start`, `rotation`) live in this file and
+    // carry `kind` and no data fields. They are not records and have no key
+    // BY DESIGN, so they must be skipped BEFORE the unkeyable accounting —
+    // otherwise every load reports a false defect on line 1 of a healthy
+    // ledger, and the operator-facing "your ledger has holes" signal drowns.
+    const kind = (r as { kind?: unknown }).kind;
+    if (kind === "chain-start" || kind === "rotation") continue;
     if (!r.disposition) {
       unkeyable.push({ line: i + 1, reason: "no-disposition", excerpt });
       continue;
@@ -303,8 +335,15 @@ export class OutcomeStore {
         "An outcome record needs a usable key — either `issueUrl` or a `ref` with a tool and an id. Refusing to write a record nothing can look up.",
       );
     }
-    const line = `${JSON.stringify(record)}\n`;
-    appendFileSync(this.logPath, line, "utf-8");
+    // Writer-owned `rv`, stamped after the caller's fields; `appendChained`
+    // then adds `iseq` / `prev` under the cross-process lock (ADR-0027). A
+    // failed append is counted in the write_failed sidecar and rethrown, so
+    // the contract callers already have — fs errors propagate — is unchanged.
+    appendChained(
+      this.logPath,
+      { ...record, rv: OUTCOME_LOG_RV } as Record<string, unknown>,
+      { mode: 0o600 },
+    );
     // Re-seed the shared cache from the post-write file state so this write
     // (and any concurrent writer's) is visible immediately to every
     // OutcomeStore instance pointed at this path — not just this one.

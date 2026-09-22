@@ -350,7 +350,26 @@
                     "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
                   },
                   "sandbox": {
-                    "type": "boolean",
+                    "oneOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "network": {
+                            "type": "boolean"
+                          },
+                          "shell": {
+                            "type": "boolean"
+                          },
+                          "mcpAccess": {
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ],
                     "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
                   },
                   "disallowedTools": {
@@ -836,7 +855,26 @@
                                   "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
                                 },
                                 "sandbox": {
-                                  "type": "boolean",
+                                  "oneOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "network": {
+                                          "type": "boolean"
+                                        },
+                                        "shell": {
+                                          "type": "boolean"
+                                        },
+                                        "mcpAccess": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    }
+                                  ],
                                   "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
                                 },
                                 "disallowedTools": {
@@ -1321,7 +1359,26 @@
                                       "description": "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p."
                                     },
                                     "sandbox": {
-                                      "type": "boolean",
+                                      "oneOf": [
+                                        {
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "network": {
+                                              "type": "boolean"
+                                            },
+                                            "shell": {
+                                              "type": "boolean"
+                                            },
+                                            "mcpAccess": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        }
+                                      ],
                                       "description": "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection)."
                                     },
                                     "disallowedTools": {

@@ -94,14 +94,22 @@ function setup(): {
     async ({ toolName, params, sessionId, onPending }) => {
       const tier = classifyTool(toolName);
       if (tier !== "high") return "bypass";
-      const { promise, callId } = queue.request({
+      const { promise, callId, approvedActionIdentity } = queue.request({
         toolName,
         params,
         tier,
         sessionId: sessionId ?? undefined,
       });
       onPending?.(callId);
-      return promise;
+      const decision = await promise;
+      return decision === "approved"
+        ? {
+            decision,
+            approvalId: callId,
+            approvedActionIdentity,
+            facts: { tier },
+          }
+        : decision;
     },
   );
 

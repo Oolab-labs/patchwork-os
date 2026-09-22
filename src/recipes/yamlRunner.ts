@@ -36,6 +36,10 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import {
+  approvalIdentityMatches,
+  executionEvidence,
+} from "../approvalIdentity.js";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
 import {
@@ -44,6 +48,24 @@ import {
   FLAG_ENFORCE_POLICY,
   isEnabled,
 } from "../featureFlags.js";
+import { computeEffectivePolicy } from "../governance/effectivePolicy.js";
+import { readKillSwitch } from "../governance/killSwitchPolicy.js";
+import {
+  activeProfile,
+  COMPAT_PROFILE,
+  resolveAgentContainment,
+} from "../governance/profile.js";
+import {
+  redactKnownSecrets,
+  registerEnvBlock,
+} from "../governance/secretValues.js";
+import { toolFactsFor } from "../governance/toolFacts.js";
+import {
+  isConnectorSource,
+  provenanceOf,
+  type UntrustedProvenance,
+  wrapUntrusted,
+} from "../governance/untrustedContent.js";
 import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { checkPolicy, loadPolicyFile } from "../policy.js";
@@ -66,8 +88,12 @@ import {
   type AgentExecutorDeps,
   type AgentResult,
   type AgentUsage,
+  stepSandboxRequest,
 } from "./agentExecutor.js";
-import { normaliseApprovalVerdict } from "./approvalRequest.js";
+import {
+  normaliseApprovalVerdict,
+  recipeApprovalIdentityMatches,
+} from "./approvalRequest.js";
 import { deriveBreakerKey, getCircuitBreaker } from "./circuitBreaker.js";
 import {
   expandFlatParallel,
@@ -169,8 +195,14 @@ export interface YamlStep {
     mcpAccess?: boolean;
     /** Tool allowlist enforced via --allowed-tools when `sandbox` is true. */
     tools?: string[];
-    /** Opt-in tool sandbox — drop --dangerously-skip-permissions, enforce allowlist. */
-    sandbox?: boolean;
+    /**
+     * Opt-in tool sandbox — drop --dangerously-skip-permissions, enforce allowlist.
+     * Under the governed profile containment is the DEFAULT; the object form
+     * requests an explicit, explainable widening (`policy explain` reports it).
+     */
+    sandbox?:
+      | boolean
+      | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
     /** Deny rules via --disallowed-tools in any mode. */
     disallowedTools?: string[];
     /**
@@ -646,7 +678,18 @@ export interface RunnerDeps {
    * carrying usage tokens (bridge wrappers, real adapters). The runner
    * normalises at the executor boundary — see PR2a.
    */
-  claudeFn?: (prompt: string, model: string) => Promise<string | AgentResult>;
+  claudeFn?: (
+    prompt: string,
+    model: string,
+    /**
+     * This slot was ALREADY an options bag on the Anthropic path, so the
+     * governed system prompt joins it rather than taking a positional third
+     * argument — a positional would have collided with `timeoutMs`/`maxTokens`.
+     * Governed-only: absent under compat, and the wrapper then omits the
+     * argument entirely so the call keeps its 2-arg shape.
+     */
+    opts?: { timeoutMs?: number; maxTokens?: number; systemPrompt?: string },
+  ) => Promise<string | AgentResult>;
   /** Optional Claude Code CLI caller for agent steps with driver: claude-code. */
   claudeCodeFn?: (
     prompt: string,
@@ -655,10 +698,19 @@ export interface RunnerDeps {
       sandbox?: boolean;
       allowedTools?: string[];
       disallowedTools?: string[];
+      /** Resolved governed containment (Phase 0); forwarded to the driver. */
+      containment?: import("../governance/profile.js").AgentContainment;
+      /** Governed-only; the impl keeps its own fallback for direct callers. */
+      systemPrompt?: string;
     },
   ) => Promise<string | AgentResult>;
   /** Optional local LLM caller (Ollama / LM Studio) for agent steps with driver: local or model: local. */
-  localFn?: (prompt: string, model: string) => Promise<string | AgentResult>;
+  localFn?: (
+    prompt: string,
+    model: string,
+    /** Governed-only; supplied by `executeAgent`, absent under compat. */
+    systemPrompt?: string,
+  ) => Promise<string | AgentResult>;
   /**
    * Optional provider driver invoker for agent steps with driver: openai|grok|gemini|codex.
    * Dispatches to src/drivers/* under the hood. If not provided, the runner will
@@ -669,6 +721,8 @@ export interface RunnerDeps {
     prompt: string,
     model: string | undefined,
     providerOptions?: Record<string, unknown>,
+    /** Governed-only, AFTER the optional options bag; see `agentExecutor`. */
+    systemPrompt?: string,
   ) => Promise<string | AgentResult>;
   /** Mock connector replays used by `patchwork recipe test`. */
   mockConnectors?: Partial<Record<string, MockToolConnector>>;
@@ -721,6 +775,13 @@ export interface RunnerDeps {
    * Unset/false → manual-only gating, byte-identical to pre-flip behaviour.
    */
   gateAutomatedRuns?: boolean;
+  /**
+   * Governance profile (src/governance/profile.ts) the orchestrator resolved
+   * for this run. Absent ⇒ compat, byte-identical to pre-profile behaviour.
+   * Read at the per-step consult through `computeEffectivePolicy`, the same
+   * calculation `patchwork policy explain` prints.
+   */
+  governance?: import("../governance/profile.js").GovernanceProfile;
   /**
    * Worker agent-step sandbox (worker.autonomy flag). When a worker owns the
    * recipe, this is the `--disallowed-tools` list its `agent` steps must inherit
@@ -870,6 +931,7 @@ export type StepDeps = Required<
     // M3 — approval gate runs in the run loop against `deps`, not per-step
     // StepDeps; keep it off StepDeps so it isn't forced Required here.
     | "requireApprovalFn"
+    | "governance"
     | "gateAutomatedRuns"
     // Agent-step sandbox is read in the agent branch against `deps`, not per-
     // step StepDeps; keep it off StepDeps so it isn't forced Required here.
@@ -936,6 +998,27 @@ export type StepDeps = Required<
    * Optional on purpose: a required field would force every call site to
    * supply something, and the tempting something is a no-budget executor.
    */
+  /**
+   * Render an LLM-facing prompt for ONE item of a `fan_out` agent iteration.
+   *
+   * `fan_out` builds its own per-item context and, before this existed, called
+   * the bare `render` — a second LLM-facing render path that bypassed what
+   * `renderAgentPrompt` does for every other agent step: secret redaction and
+   * the untrusted `wrap` hook.
+   *
+   * Injected rather than reimplemented, because `secretKeys`,
+   * `untrustedProvenance` and `envelopeActive` are closure locals of
+   * `runYamlRecipe`. The tool passes what IT owns — the template, the
+   * per-iteration context, the loop-variable name and its own step — and knows
+   * nothing about profiles, secret keys or provenance. A second copy of that
+   * knowledge is the drift the transport work removed.
+   */
+  renderAgentItemPrompt?: (
+    template: string,
+    iterCtx: RunContext,
+    loopVar: string,
+    step: unknown,
+  ) => string;
   runNestedAgent?: (input: {
     prompt: string;
     driver?: string;
@@ -1049,6 +1132,26 @@ const loadedPluginSpecs = new Set<string>();
  * the recipe tool registry. Errors per-spec are logged as warnings — never fatal.
  */
 export async function loadRecipeServers(specs: string[]): Promise<void> {
+  // Plugin policy runs BEFORE the already-loaded dedup and before any
+  // import: a file on disk may have arrived by any route (hand copy, an
+  // older install path, a fork's installer), so the runtime never trusts
+  // that something upstream validated it. Under compat every spec passes.
+  const {
+    evaluatePluginSpec,
+    pluginNotAllowlistedError,
+    policyInputFromConfig,
+  } = await import("../governance/pluginPolicy.js");
+  const { activeProfile } = await import("../governance/profile.js");
+  const policy = policyInputFromConfig(
+    activeProfile(),
+    loadPatchworkConfigSync(),
+  );
+  const verdicts = specs.map((s) => evaluatePluginSpec(s, policy));
+  const refused = verdicts.filter((v) => !v.allowed);
+  if (refused.length > 0) throw pluginNotAllowlistedError(refused);
+  const integrityFor = (spec: string): string | undefined =>
+    verdicts.find((v) => v.spec === spec.trim())?.entry?.integrity;
+
   const toLoad = specs.filter((s) => !loadedPluginSpecs.has(s));
   if (toLoad.length === 0) return;
 
@@ -1089,6 +1192,7 @@ export async function loadRecipeServers(specs: string[]): Promise<void> {
         [spec],
         minimalConfig,
         minimalLogger,
+        { integrity: integrityFor(spec) },
       );
       let toolCount = 0;
       for (const plugin of loaded) {
@@ -1106,6 +1210,9 @@ export async function loadRecipeServers(specs: string[]): Promise<void> {
       }
     } catch (err) {
       loadedPluginSpecs.delete(spec);
+      // An integrity mismatch is a policy refusal, not a load failure:
+      // halt rather than log-and-continue.
+      if (err instanceof Error && err.name === "PluginPolicyError") throw err;
       console.warn(
         `[recipe servers] failed to load "${spec}": ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -1301,12 +1408,107 @@ export async function runYamlRecipe(
   // Resolve recipe-level context blocks (type: env) into seed context via the
   // shared declared-keys allowlist (also used by the chained/replay paths).
   const envCtx: RunContext = declaredRecipeEnv(recipe);
+  // Phase 0: every declared env value is a known secret from here on, so
+  // value-based redaction can strip it from any string it is interpolated
+  // into (runs.jsonl, approval payloads, logs) — key-based redaction cannot.
+  registerEnvBlock(envCtx as Record<string, string>);
   // SECRETS-IN-VARS: track which ctx keys came from a `type: env` block so the
   // agent (LLM-facing) prompt can redact them. Their raw values still flow to
   // TOOL steps (an http header / DB password legitimately needs the secret),
   // but they must never reach the model verbatim — the secure default is
   // redaction. See PR body / docs/recipe-feature-investigation-2026-06-05.md.
   const secretKeys = new Set<string>(Object.keys(envCtx));
+  // Phase 0 step 10 — untrusted-content envelope. A SIDE map (never a ctx
+  // key, so `{{...}}` shapes do not change) from an `into:` key to the
+  // connector tool that produced it. Consulted only when an AGENT prompt is
+  // rendered; tool params, `expect` and the run log see the raw value.
+  const untrustedProvenance = new Map<string, UntrustedProvenance>();
+  const envelopeActive = (deps.governance ?? activeProfile()).untrustedEnvelope;
+  /**
+   * Origins collected during the LAST agent-prompt render.
+   *
+   * Filled by the `wrap` hook, which fires once per substitution and knows the
+   * root key at that moment — so this is what the renderer ACTUALLY
+   * interpolated, not what the template mentions. A key referenced behind a
+   * condition that did not fire contributes nothing, which is correct and is
+   * why this cannot be a scan of the template text.
+   *
+   * Cleared before each render rather than per step: a step may render more
+   * than once (a judge artefact, a revision), and each render's origins belong
+   * to the value that render produced.
+   */
+  let renderOrigins = new Set<string>();
+  const renderAgentPrompt = (template: string): string => {
+    renderOrigins = new Set<string>();
+    return render(
+      template,
+      redactSecretsForPrompt(ctx, secretKeys),
+      envelopeActive
+        ? {
+            wrap: (root, value) => {
+              const prov = untrustedProvenance.get(root);
+              if (prov === undefined) return undefined;
+              for (const o of prov.origins) renderOrigins.add(o);
+              return wrapUntrusted(value, prov);
+            },
+          }
+        : undefined,
+    );
+  };
+
+  /**
+   * The provenance source a fan_out loop variable inherits, if any.
+   *
+   * STRUCTURAL, not transitive. When `items` is written as exactly
+   * `{{someKey}}` (or `{{someKey.path}}`) and `someKey` already carries
+   * connector provenance, each item IS one member of that already-known
+   * connector result, so the loop variable inherits that source for this
+   * render. Read from the RAW step, because `params.items` has already been
+   * substituted by the time the tool runs and the reference is gone.
+   *
+   * Anything else returns undefined and NO envelope is applied: a computed
+   * expression, a literal list, or a key with no provenance entry (an
+   * `agent_output`, say). Inventing a source for those would make the later
+   * propagation work unmeasurable — the whole point of leaving them bare is
+   * that they stay visible as the population that still needs solving.
+   */
+  const fanOutItemsSource = (
+    step: unknown,
+  ): UntrustedProvenance | undefined => {
+    const raw = (step as { items?: unknown } | null)?.items;
+    if (typeof raw !== "string") return undefined;
+    const m = raw.trim().match(/^\{\{\s*([A-Za-z0-9_$]+)(?:\.[^}]*)?\s*\}\}$/);
+    const root = m?.[1];
+    return root === undefined ? undefined : untrustedProvenance.get(root);
+  };
+
+  const renderAgentItemPrompt = (
+    template: string,
+    iterCtx: RunContext,
+    loopVar: string,
+    step: unknown,
+  ): string => {
+    const inherited = fanOutItemsSource(step);
+    return render(
+      template,
+      redactSecretsForPrompt(iterCtx, secretKeys),
+      envelopeActive
+        ? {
+            wrap: (root, value) => {
+              // A key with its own provenance wins; otherwise the loop
+              // variable may inherit the items root's source. No other key
+              // gains anything.
+              const source =
+                untrustedProvenance.get(root) ??
+                (root === loopVar ? inherited : undefined);
+              return source === undefined
+                ? undefined
+                : wrapUntrusted(value, source);
+            },
+          }
+        : undefined,
+    );
+  };
 
   const recipeStartedAt = now.getTime();
   /**
@@ -1349,6 +1551,39 @@ export async function runYamlRecipe(
     // run that did not produce it. An absent id is recoverable; a confidently
     // wrong one is not.
     taskId: runTaskId,
+  };
+
+  /**
+   * The artefact a judge step reviews, prepared the way `renderAgentPrompt`
+   * prepares everything else it sends to a model.
+   *
+   * This block reads `ctx` DIRECTLY, so it bypassed the render path and with
+   * it three protections at once: secret redaction, closing-tag containment
+   * and the untrusted envelope. Redaction and containment apply in BOTH
+   * profiles — they are existing guarantees of the runner and of the
+   * `<artefact>` container, not governed features. The envelope is the actual
+   * profile distinction, gated here exactly as the render path gates its own.
+   */
+  const judgeArtefactBlock = (reviewsKey: string, value?: unknown): string => {
+    const redacted = redactSecretsForPrompt(ctx, secretKeys);
+    const artefact =
+      value !== undefined
+        ? value
+        : (redacted as Record<string, unknown>)[reviewsKey];
+    return buildJudgeArtefactBlock(
+      artefact,
+      envelopeActive
+        ? {
+            envelope: {
+              // Name the tool when provenance knows it; otherwise the step
+              // whose output this is. Either way the judge is told the
+              // artefact is data from somewhere, not an instruction.
+              source:
+                untrustedProvenance.get(reviewsKey) ?? `step:${reviewsKey}`,
+            },
+          }
+        : undefined,
+    );
   };
 
   // Merge the recipe's declared allowWrites with any caller-supplied
@@ -1606,7 +1841,10 @@ export async function runYamlRecipe(
   const emitStepDone = (stepIdForEmit: string): void => {
     const justPushed = stepResults[stepResults.length - 1];
     if (!justPushed) return;
-    const haltReason = justPushed.haltReason;
+    const haltReason =
+      justPushed.haltReason === undefined
+        ? undefined
+        : redactKnownSecrets(justPushed.haltReason);
     emit("recipe_step_done", {
       runSeq,
       recipeName: recipe.name,
@@ -1647,7 +1885,9 @@ export async function runYamlRecipe(
     // P0-5: carry the reviewed/judge step's opt-in tool sandbox into refine-loop
     // re-runs so a sandboxed step STAYS sandboxed across revisions/re-judges.
     sandboxOpts?: {
-      sandbox?: boolean;
+      sandbox?:
+        | boolean
+        | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
       tools?: string[];
       disallowedTools?: string[];
     },
@@ -1826,6 +2066,7 @@ export async function runYamlRecipe(
     }
     return { text: stripped, ok: true };
   };
+  stepDeps.renderAgentItemPrompt = renderAgentItemPrompt;
   stepDeps.runNestedAgent = runNestedAgent;
 
   /**
@@ -1903,8 +2144,7 @@ export async function runYamlRecipe(
         `<fix-list>\n${fixList.length > 0 ? fixList.map((f) => `- ${f}`).join("\n") : "- (no explicit fix list provided)"}\n</fix-list>\n` +
         `</revision-request>`;
       const revisionPrompt =
-        render(reviewedAgent.prompt, redactSecretsForPrompt(ctx, secretKeys)) +
-        revisionBlock;
+        renderAgentPrompt(reviewedAgent.prompt) + revisionBlock;
       // Quality-aware escalation: on the Nth revision, re-run the reviewed step
       // with the Nth more-capable candidate (`escalate[revisions]`) instead of
       // the base model — local/cheap first, escalate to cloud only when the
@@ -1969,8 +2209,13 @@ export async function runYamlRecipe(
       // judge reviews the STAGED draft, not ctx (which still holds the prior
       // accepted value).
       const reJudgePrompt =
-        render(agentCfg.prompt, redactSecretsForPrompt(ctx, secretKeys)) +
-        buildJudgeArtefactBlock(pendingRevised) +
+        renderAgentPrompt(agentCfg.prompt) +
+        // Same treatment as the first pass. The revised draft is passed
+        // explicitly (it is staged, not yet in ctx), but it is still a model
+        // output built from the same upstream material — a fix applied to the
+        // first-pass site only would leave the refine loop unprotected while
+        // every unit test passed.
+        judgeArtefactBlock(agentCfg.reviews ?? "", pendingRevised) +
         JUDGE_PROMPT_SUFFIX;
       const judged = await runAgentText(
         reJudgePrompt,
@@ -2274,27 +2519,103 @@ export async function runYamlRecipe(
       // lives inside that fn, it would also stop the evidence being written.
       // The tier half of the opt-out is applied by the caller, which builds the
       // worker gate with no tier fn (see `fireYamlRecipe`).
-      if (
-        deps.requireApprovalFn &&
-        (recipeTriggerKind === "manual" || deps.gateAutomatedRuns) &&
-        (recipe.requireApproval !== false || deps.gateAutomatedRuns === true)
-      ) {
-        const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
-        const verdict = normaliseApprovalVerdict(
-          await deps.requireApprovalFn({
-            toolId: approvalToolId,
-            tier: classifyTool(approvalToolId),
-            summary: step.agent
-              ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
-              : `tool ${approvalToolId}`,
-            params: step.agent
-              ? undefined
-              : resolveParamsForApproval(step, ctx),
-            // The join key onto this run's rows in the run log. Same const the
-            // run-log writes above, never a second expression.
-            runTaskId,
-            ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
+      //
+      // Phase 0 (governed profile): the predicate above is now computed by
+      // `computeEffectivePolicy` — the SAME function `patchwork policy
+      // explain` prints — so the explanation cannot drift from enforcement.
+      // Under compat the calculation reproduces the old predicate exactly.
+      const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
+      const governance = deps.governance ?? COMPAT_PROFILE;
+      const agentContainment = step.agent
+        ? resolveAgentContainment(
+            governance,
+            stepSandboxRequest({
+              ...(step.agent.sandbox !== undefined && {
+                sandbox: step.agent.sandbox,
+              }),
+              ...(step.agent.tools !== undefined && {
+                allowedTools: step.agent.tools,
+              }),
+              ...(step.agent.disallowedTools !== undefined && {
+                disallowedTools: step.agent.disallowedTools,
+              }),
+              ...(step.agent.mcpAccess !== undefined && {
+                mcpAccess: step.agent.mcpAccess,
+              }),
+            }),
+          )
+        : undefined;
+      const effective = computeEffectivePolicy({
+        profile: governance,
+        recipe: {
+          name: recipe.name,
+          ...(recipe.requireApproval !== undefined && {
+            requireApproval: recipe.requireApproval,
           }),
+        },
+        trigger: recipeTriggerKind,
+        tool: toolFactsFor(
+          approvalToolId,
+          agentContainment ? { containment: agentContainment } : undefined,
+        ),
+        killSwitch: readKillSwitch(governance),
+        gate: {
+          approvalFnInjected: deps.requireApprovalFn !== undefined,
+          workerGateInjected: deps.gateAutomatedRuns === true,
+        },
+      });
+      if (effective.final === "REFUSED") {
+        const refusing = effective.stages.find((s) => s.verdict === "REFUSE");
+        // Same wording the dispatch-level guard uses, so a halt reads the
+        // same wherever the switch caught it (and `haltCategory` regexes,
+        // dashboards and tests key on `kill_switch_blocked`).
+        const reason =
+          refusing?.stage === "kill_switch"
+            ? `kill_switch_blocked: step refused before dispatch — ${refusing.reason}`
+            : `policy refused step: ${refusing?.reason ?? "refused"}`;
+        runError = runError ?? reason;
+        haltAfterFailure = true;
+        const refId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+        stepResults.push({
+          id: refId,
+          tool: step.agent ? "agent" : step.tool,
+          status: "error",
+          error: reason,
+          haltReason: reason,
+          haltCategory:
+            refusing?.stage === "kill_switch"
+              ? "kill_switch"
+              : refusing?.stage === "tool_registration"
+                ? "unresolved_tool"
+                : "policy_denied",
+          durationMs: 0,
+        });
+        stepsRun++;
+        persistLiveStepResults();
+        emitStepDone(stepIdForEmit);
+        continue;
+      }
+      let stepApprovalEvidence:
+        | import("../approvalIdentity.js").ApprovalExecutionEvidence
+        | undefined;
+      let stepApprovalGrant:
+        | import("../approvalIdentity.js").ApprovalGrant
+        | undefined;
+      if (deps.requireApprovalFn && effective.consultsApproval) {
+        const approvalInput = {
+          toolId: approvalToolId,
+          tier: classifyTool(approvalToolId),
+          effective: effective.final,
+          summary: step.agent
+            ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
+            : `tool ${approvalToolId}`,
+          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
+          runTaskId,
+          recipeName: recipe.name,
+          ...(effectiveRunSignal && { signal: effectiveRunSignal }),
+        };
+        const verdict = normaliseApprovalVerdict(
+          await deps.requireApprovalFn(approvalInput),
         );
         if (!verdict.approved) {
           // Which refusal this was decides the sentence AND the category — an
@@ -2318,6 +2639,33 @@ export async function runYamlRecipe(
           emitStepDone(stepIdForEmit);
           continue;
         }
+        const dispatchApprovalInput = {
+          ...approvalInput,
+          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
+        };
+        if (!recipeApprovalIdentityMatches(verdict, dispatchApprovalInput)) {
+          const reason =
+            "approval_identity_mismatch: approved action changed before dispatch; no action taken";
+          runError = runError ?? reason;
+          haltAfterFailure = true;
+          stepResults.push({
+            id: step.into ?? step.agent?.into ?? `step_${stepsRun}`,
+            tool: step.agent ? "agent" : step.tool,
+            status: "error",
+            error: reason,
+            haltReason: reason,
+            haltCategory: "unknown",
+            durationMs: 0,
+          });
+          stepsRun++;
+          persistLiveStepResults();
+          emitStepDone(stepIdForEmit);
+          continue;
+        }
+        if (verdict.grant) {
+          stepApprovalGrant = verdict.grant;
+          stepApprovalEvidence = executionEvidence(verdict.grant);
+        }
       }
 
       // Handle agent steps separately
@@ -2327,13 +2675,13 @@ export async function runYamlRecipe(
         // PR3a: judge prompt convention. Append the structured-verdict
         // suffix and, when `reviews: <stepId>` is set, inject the
         // upstream step's output as an <artefact> block.
-        let renderedPrompt = render(
-          agentCfg.prompt,
-          redactSecretsForPrompt(ctx, secretKeys),
-        );
+        let renderedPrompt = renderAgentPrompt(agentCfg.prompt);
+        // Snapshot immediately: the judge-artefact render below re-enters the
+        // renderer and would otherwise overwrite this step's collected set.
+        const promptOrigins = new Set(renderOrigins);
         if (isJudge) {
           if (agentCfg.reviews) {
-            renderedPrompt += buildJudgeArtefactBlock(ctx[agentCfg.reviews]);
+            renderedPrompt += judgeArtefactBlock(agentCfg.reviews);
           }
           renderedPrompt += JUDGE_PROMPT_SUFFIX;
         }
@@ -2524,6 +2872,16 @@ export async function runYamlRecipe(
               } catch {
                 if (!isJudge) ctx[intoKey] = stripped;
               }
+              // Gaps 2+3: the value the model just produced inherits the
+              // origins its PROMPT was proven to carry. Written after the
+              // commit, so a step that produced nothing records nothing.
+              // `provenanceOf` returns undefined for an empty set — an agent
+              // fed no provenance-bearing key stays completely unmarked, and
+              // `derived` never stands in for an origin.
+              if (!isJudge && envelopeActive) {
+                const prov = provenanceOf(promptOrigins, true);
+                if (prov) untrustedProvenance.set(intoKey, prov);
+              }
               if (!isJudge) outputs.push(intoKey);
               // PR3a: parse + stash the judge verdict on the step result.
               // Augment-only: a `request_changes` verdict still yields
@@ -2693,14 +3051,38 @@ export async function runYamlRecipe(
               });
               try {
                 result = await Promise.race([
-                  executeStep(step, ctx, stepDeps),
+                  executeStep(
+                    step,
+                    ctx,
+                    stepDeps,
+                    stepApprovalEvidence,
+                    stepApprovalGrant
+                      ? {
+                          grant: stepApprovalGrant,
+                          runTaskId,
+                          recipeName: recipe.name,
+                        }
+                      : undefined,
+                  ),
                   timeoutPromise,
                 ]);
               } finally {
                 if (timer) clearTimeout(timer);
               }
             } else {
-              result = await executeStep(step, ctx, stepDeps);
+              result = await executeStep(
+                step,
+                ctx,
+                stepDeps,
+                stepApprovalEvidence,
+                stepApprovalGrant
+                  ? {
+                      grant: stepApprovalGrant,
+                      runTaskId,
+                      recipeName: recipe.name,
+                    }
+                  : undefined,
+              );
             }
             // Detect tool-level errors reported as JSON {ok: false, error: ...}
             if (result !== null) {
@@ -2922,6 +3304,16 @@ export async function runYamlRecipe(
           ctx[step.into] = result;
           if (step.tool) {
             applyToolOutputContext(step.tool, step.into, result, ctx);
+            // Record WHERE the value came from (side map, not ctx). Covers the
+            // `into` key and the `into.<field>` keys applyToolOutputContext
+            // derives from it, because `render` keys the lookup on the root.
+            if (envelopeActive && isConnectorSource(step.tool)) {
+              // Raw connector output: exactly one origin, not derived.
+              untrustedProvenance.set(step.into, {
+                origins: [step.tool],
+                derived: false,
+              });
+            }
           }
         }
         if (step.tool === "file.write" || step.tool === "file.append") {
@@ -3139,6 +3531,12 @@ export async function executeStep(
   step: YamlStep,
   ctx: RunContext,
   deps: StepDeps,
+  approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
+  approvalDispatch?: {
+    grant: import("../approvalIdentity.js").ApprovalGrant;
+    runTaskId: string;
+    recipeName: string;
+  },
 ): Promise<string | null> {
   const toolId = step.tool;
   if (!toolId) {
@@ -3188,6 +3586,22 @@ export async function executeStep(
         continue;
       }
       params[key] = deepRender(value, ctx);
+    }
+
+    if (
+      approvalDispatch &&
+      !approvalIdentityMatches(approvalDispatch.grant.approvedActionIdentity, {
+        toolName: toolId,
+        params,
+        sessionId: "recipe",
+        tier: classifyTool(toolId),
+        correlationId: approvalDispatch.runTaskId,
+        recipeName: approvalDispatch.recipeName,
+      })
+    ) {
+      throw new Error(
+        "approval_identity_mismatch: approved action changed at dispatch; no action taken",
+      );
     }
 
     // Deterministic policy check. Recipe/worker tool calls dispatch
@@ -3286,13 +3700,20 @@ export async function executeStep(
           tool.namespace,
           toolId.split(".")[1] ?? toolId,
           params,
-          async () => executeTool(toolId, { params, step, ctx, deps }),
+          async () =>
+            executeTool(toolId, {
+              params,
+              step,
+              ctx,
+              deps,
+              approvalEvidence,
+            }),
         ),
       );
     }
 
     return runAndRecordBreaker(() =>
-      executeTool(toolId, { params, step, ctx, deps }),
+      executeTool(toolId, { params, step, ctx, deps, approvalEvidence }),
     );
   }
 
@@ -3300,8 +3721,23 @@ export async function executeStep(
   return null;
 }
 
+/**
+ * Optional render hook. `wrap(root, value)` is consulted for every resolved
+ * reference with the ROOT context key it came from (`inbox` for `{{inbox}}`,
+ * `{{inbox.0.subject}}` and the derived flat key `inbox.subject` alike) and may
+ * replace the rendered text. Used by the untrusted-content envelope at the
+ * agent-prompt boundary; tool-param renders pass nothing.
+ */
+export interface RenderOptions {
+  wrap?: (root: string, value: string) => string | undefined;
+}
+
 /** Minimal `{{ expr }}` renderer — flat keys and dot-notation paths. */
-export function render(template: string, ctx: RunContext): string {
+export function render(
+  template: string,
+  ctx: RunContext,
+  opts?: RenderOptions,
+): string {
   return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
     const key = expr.trim();
     const coerce = (v: unknown): string => {
@@ -3309,8 +3745,14 @@ export function render(template: string, ctx: RunContext): string {
       if (typeof v === "object") return JSON.stringify(v);
       return String(v);
     };
+    const finish = (value: string): string => {
+      if (!opts?.wrap) return value;
+      const root = key.split(".")[0] ?? key;
+      const wrapped = opts.wrap(root, value);
+      return wrapped === undefined ? value : wrapped;
+    };
     // Fast path: flat key exists
-    if (Object.hasOwn(ctx, key)) return coerce(ctx[key]);
+    if (Object.hasOwn(ctx, key)) return finish(coerce(ctx[key]));
     // Dot-notation: resolve nested path into ctx values (JSON-parse string intermediates)
     const parts = key.split(".");
     // biome-ignore lint/suspicious/noExplicitAny: resolved values are dynamic JSON shapes
@@ -3332,11 +3774,7 @@ export function render(template: string, ctx: RunContext): string {
       const obj = val as Record<string, unknown>;
       val = Object.hasOwn(obj, part) ? obj[part] : undefined;
     }
-    return val == null
-      ? ""
-      : typeof val === "object"
-        ? JSON.stringify(val)
-        : String(val);
+    return val == null ? "" : finish(coerce(val));
   });
 }
 
@@ -3755,6 +4193,8 @@ function buildAgentExecutorDeps(
       sandbox?: boolean;
       allowedTools?: string[];
       disallowedTools?: string[];
+      /** Resolved governed containment (Phase 0); forwarded to the driver. */
+      containment?: import("../governance/profile.js").AgentContainment;
     },
   ) => Promise<string | AgentResult>,
   /**
@@ -3874,25 +4314,75 @@ function buildAgentExecutorDeps(
         // never block on observability
       }
     },
-    anthropicFn: async (prompt, model) =>
-      toAgentResult(await stepDeps.claudeFn(prompt, model)),
-    providerDriverFn: async (driver, prompt, model, providerOptions) =>
+    anthropicFn: async (prompt, model, systemPrompt) =>
+      toAgentResult(
+        // Keep the 2-arg shape when ungoverned — same reason as the provider
+        // wrapper below: mocks assert exact arity, and compat must not move.
+        systemPrompt === undefined
+          ? await stepDeps.claudeFn(prompt, model)
+          : await stepDeps.claudeFn(prompt, model, { systemPrompt }),
+      ),
+    providerDriverFn: async (
+      driver,
+      prompt,
+      model,
+      providerOptions,
+      systemPrompt,
+    ) =>
       toAgentResult(
         // Keep the 3-arg call shape when unconstrained (backward-compatible
         // with deps.providerDriverFn mocks that assert exact arity).
-        providerOptions
+        systemPrompt !== undefined
           ? await stepDeps.providerDriverFn(
               driver,
               prompt,
               model,
               providerOptions,
+              systemPrompt,
             )
-          : await stepDeps.providerDriverFn(driver, prompt, model),
+          : providerOptions
+            ? await stepDeps.providerDriverFn(
+                driver,
+                prompt,
+                model,
+                providerOptions,
+              )
+            : await stepDeps.providerDriverFn(driver, prompt, model),
       ),
+    // The orchestrator callback takes a boolean sandbox; the object form
+    // (a governed widening) has already been folded into `containment` by
+    // the executor, so only "is a sandbox requested" needs to travel here.
     claudeCliFn: async (prompt, opts) =>
-      toAgentResult(await claudeCliFn(prompt, opts)),
-    localFn: async (prompt, model) =>
-      toAgentResult(await stepDeps.localFn(prompt, model)),
+      toAgentResult(
+        await claudeCliFn(
+          prompt,
+          opts && {
+            ...(opts.mcpAccess !== undefined && { mcpAccess: opts.mcpAccess }),
+            ...(opts.sandbox !== undefined && {
+              sandbox:
+                opts.sandbox === true || typeof opts.sandbox === "object",
+            }),
+            ...(opts.allowedTools !== undefined && {
+              allowedTools: opts.allowedTools,
+            }),
+            ...(opts.disallowedTools !== undefined && {
+              disallowedTools: opts.disallowedTools,
+            }),
+            ...(opts.containment !== undefined && {
+              containment: opts.containment,
+            }),
+            ...(opts.systemPrompt !== undefined && {
+              systemPrompt: opts.systemPrompt,
+            }),
+          },
+        ),
+      ),
+    localFn: async (prompt, model, systemPrompt) =>
+      toAgentResult(
+        systemPrompt === undefined
+          ? await stepDeps.localFn(prompt, model)
+          : await stepDeps.localFn(prompt, model, systemPrompt),
+      ),
     probeClaudeCli: () => {
       if (runnerDeps.claudeFn !== undefined) return false;
       if (_claudeCliProbeCache !== undefined)
@@ -3943,13 +4433,35 @@ export function resolveClaudeBinary(): string {
   return ensureCmdShim("claude");
 }
 
+// Both constants now live in `governance/recipeSystemPrompt.ts` so
+// `agentExecutor` can resolve the governed one without importing this module
+// (the dependency runs the other way). Re-exported here so every existing
+// importer is unaffected.
+export {
+  RECIPE_SYSTEM_PROMPT_COMPAT,
+  RECIPE_SYSTEM_PROMPT_GOVERNED,
+} from "../governance/recipeSystemPrompt.js";
+
+import {
+  RECIPE_SYSTEM_PROMPT_COMPAT,
+  RECIPE_SYSTEM_PROMPT_GOVERNED,
+} from "../governance/recipeSystemPrompt.js";
+
 export function defaultClaudeCodeFn(
   prompt: string,
   opts?: {
     mcpAccess?: boolean;
-    sandbox?: boolean;
+    sandbox?:
+      | boolean
+      | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
     allowedTools?: string[];
     disallowedTools?: string[];
+    /**
+     * Resolved by `executeAgent` under the governed profile. Absent means
+     * "decide for yourself" (a direct caller), not "send nothing" — the
+     * fallback below covers that case.
+     */
+    systemPrompt?: string;
   },
 ): Promise<string> {
   const binary = resolveClaudeBinary();
@@ -3994,7 +4506,14 @@ export function defaultClaudeCodeFn(
     // had a bridge MCP entry in ~/.claude.json.
     "--strict-mcp-config",
     "--system-prompt",
-    "You are a helpful assistant processing a recipe task. Use ONLY the data explicitly provided in the user message — treat it as ground truth. Do not call tools to look up git history, emails, or any other information; all necessary data is already included.",
+    // Prefer what the executor resolved. The profile read below is a FALLBACK
+    // for callers that never pass through `executeAgent` (this function is
+    // exported and called directly), not a second governance decision — the
+    // executor's answer always wins when there is one.
+    opts?.systemPrompt ??
+      (activeProfile().untrustedEnvelope
+        ? RECIPE_SYSTEM_PROMPT_GOVERNED
+        : RECIPE_SYSTEM_PROMPT_COMPAT),
     "--no-session-persistence",
   ];
   if (opts?.sandbox === true && sandboxAllowed.length > 0) {
@@ -4216,7 +4735,7 @@ const DEFAULT_CLAUDE_MAX_TOKENS = 4096;
 export async function defaultClaudeFn(
   prompt: string,
   model: string,
-  opts?: { timeoutMs?: number; maxTokens?: number },
+  opts?: { timeoutMs?: number; maxTokens?: number; systemPrompt?: string },
 ): Promise<AgentResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey)
@@ -4244,6 +4763,24 @@ export async function defaultClaudeFn(
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
+        // Governed-only. Absent under compat, so the request body is
+        // byte-identical to what it was.
+        //
+        // NOTE: the user-content prefix below explains the older AUTHOR-LEVEL
+        // `<untrusted_data>` convention, which is real and in use — the
+        // recipe-generation prompt REQUIRES it of generated recipes
+        // (recipeOrchestration.ts:1990, with worked examples at :2021 and
+        // :2092) and four shipped recipe files carry it. The governed RUNTIME
+        // provenance envelope is a different thing: `<untrusted source="…">`,
+        // applied by `wrapUntrusted` to interpolated connector values.
+        //
+        // The two may coexist in one prompt — an author's outer
+        // `<untrusted_data>` block whose interpolated values each acquire the
+        // runtime envelope. Whether the author-level convention should
+        // converge on the runtime one is a separate compatibility decision:
+        // removing or renaming this sentence could weaken compat-mode recipes
+        // that rely on the hand-authored tags. Not a defect; an open question.
+        ...(opts?.systemPrompt !== undefined && { system: opts.systemPrompt }),
         messages: [
           {
             role: "user",
@@ -4304,6 +4841,12 @@ export async function defaultClaudeFn(
 export async function defaultLocalFn(
   prompt: string,
   model: string,
+  /**
+   * Resolved by `executeAgent` under the governed profile. Absent leaves the
+   * pre-existing empty system prompt in place — a direct caller under compat
+   * behaves exactly as before.
+   */
+  systemPrompt?: string,
 ): Promise<AgentResult> {
   try {
     const { createLocalAdapter } = await import("../adapters/local.js");
@@ -4344,7 +4887,11 @@ export async function defaultLocalFn(
       defaultModel: resolveLocalModel(model, cfg),
     });
     const result = await adapter.complete({
-      systemPrompt: "",
+      // Was a bare `""` — an explicit empty that read as a decision and could
+      // not be told apart from an omission. Under compat it still resolves to
+      // "" (changing that would be unrelated behaviour); under governed the
+      // executor's instruction arrives here like every other transport's.
+      systemPrompt: systemPrompt ?? "",
       messages: [{ role: "user", content: prompt }],
     });
     const text =
@@ -4379,6 +4926,8 @@ export function buildChainedDeps(
       sandbox?: boolean;
       allowedTools?: string[];
       disallowedTools?: string[];
+      /** Resolved governed containment (Phase 0); forwarded to the driver. */
+      containment?: import("../governance/profile.js").AgentContainment;
     },
   ) => Promise<string | AgentResult>,
   /**
@@ -4430,6 +4979,7 @@ export function buildChainedDeps(
   const executeTool = async (
     tool: string,
     params: Record<string, unknown>,
+    approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
   ): Promise<unknown> => {
     // R2 C-1 third-substitution-site coverage: the chained runner has its
     // own template-resolution path (`chainedRunner.ts:194-205`). By the
@@ -4458,7 +5008,7 @@ export function buildChainedDeps(
     // executeStep uses a RunContext for {{}} rendering — by the time executeTool
     // is called the chained runner has already resolved templates, so we pass
     // an empty context (no double-rendering).
-    const result = await executeStep(step, {}, stepDeps);
+    const result = await executeStep(step, {}, stepDeps, approvalEvidence);
     return result ?? "";
   };
 
@@ -4468,9 +5018,14 @@ export function buildChainedDeps(
     driver?: string,
     opts?: {
       mcpAccess?: boolean;
-      sandbox?: boolean;
+      sandbox?:
+        | boolean
+        | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
       allowedTools?: string[];
       disallowedTools?: string[];
+      /** Resolved governed containment (Phase 0); forwarded to the driver. */
+      containment?: import("../governance/profile.js").AgentContainment;
+      boundary?: import("./agentExecutor.js").AgentExecutorInput["boundary"];
     },
   ): Promise<AgentResult> => {
     // Surface the FULL AgentResult (text + usage + servedBy) so the chained
@@ -4493,6 +5048,7 @@ export function buildChainedDeps(
         ...(opts?.allowedTools !== undefined && {
           allowedTools: opts.allowedTools,
         }),
+        ...(opts?.boundary !== undefined && { boundary: opts.boundary }),
         // Worker.autonomy: single chokepoint for the CHAINED path — fold the
         // worker's agent-step deny list into every chained agent call so the
         // subprocess can't bypass the per-step gate (mirrors the flat branch).
@@ -4629,6 +5185,7 @@ export function buildChainedDeps(
     // Tier-1 #4 (audit 2026-06-22): forward the approval gate into the chained
     // path so it is no longer flat-only. Undefined when the bridge didn't
     // inject one (approvalGate == "off") — the chained gate then no-ops.
+    ...(runnerDeps.governance && { governance: runnerDeps.governance }),
     ...(runnerDeps.requireApprovalFn && {
       requireApprovalFn: runnerDeps.requireApprovalFn,
     }),
@@ -4664,7 +5221,11 @@ export async function dispatchRecipe(
       // keys reach the template context — NOT the full process.env. Parity with
       // the flat runner; prevents undeclared-secret exposure via {{env.X}}.
       env: {
-        ...declaredRecipeEnv(chainedRecipe),
+        ...(() => {
+          const env = declaredRecipeEnv(chainedRecipe);
+          registerEnvBlock(env);
+          return env;
+        })(),
         DATE: now.toISOString().slice(0, 10),
         TIME: now.toTimeString().slice(0, 5),
         // Built-in date/time tokens (parity with the flat runner ctx + lint).

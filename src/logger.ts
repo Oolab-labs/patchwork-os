@@ -1,3 +1,5 @@
+import { redactKnownSecrets } from "./governance/secretValues.js";
+
 export class Logger {
   private extraFields: Record<string, unknown> = {};
 
@@ -21,7 +23,10 @@ export class Logger {
     if (this.jsonl) {
       this.emitJsonl("info", msg);
     } else {
-      console.error(`[bridge ${this.ts()}] ${msg}`, ...args);
+      console.error(
+        redactKnownSecrets(`[bridge ${this.ts()}] ${msg}`),
+        ...args,
+      );
     }
   }
 
@@ -29,7 +34,10 @@ export class Logger {
     if (this.jsonl) {
       this.emitJsonl("warn", msg);
     } else {
-      console.error(`[bridge ${this.ts()}] WARN ${msg}`, ...args);
+      console.error(
+        redactKnownSecrets(`[bridge ${this.ts()}] WARN ${msg}`),
+        ...args,
+      );
     }
   }
 
@@ -37,7 +45,10 @@ export class Logger {
     if (this.jsonl) {
       this.emitJsonl("error", msg);
     } else {
-      console.error(`[bridge ${this.ts()}] ERROR ${msg}`, ...args);
+      console.error(
+        redactKnownSecrets(`[bridge ${this.ts()}] ERROR ${msg}`),
+        ...args,
+      );
     }
   }
 
@@ -46,7 +57,10 @@ export class Logger {
       if (this.jsonl) {
         this.emitJsonl("debug", msg);
       } else {
-        console.error(`[bridge ${this.ts()}] DEBUG ${msg}`, ...args);
+        console.error(
+          redactKnownSecrets(`[bridge ${this.ts()}] DEBUG ${msg}`),
+          ...args,
+        );
       }
     }
   }
@@ -59,13 +73,15 @@ export class Logger {
         event: type,
       };
       if (data) Object.assign(entry, data);
-      console.error(JSON.stringify(entry));
+      console.error(redactKnownSecrets(JSON.stringify(entry)));
     }
   }
 
   private emitJsonl(level: string, msg: string): void {
     console.error(
-      JSON.stringify({ ts: this.ts(), level, msg, ...this.extraFields }),
+      redactKnownSecrets(
+        JSON.stringify({ ts: this.ts(), level, msg, ...this.extraFields }),
+      ),
     );
   }
 }

@@ -30,12 +30,15 @@
  * known, decline to assert what is not.
  */
 
+import type { ResolvedDestinationFacts } from "../drivers/types.js";
 import {
   CLASSIFICATIONS,
   type Classification,
   classificationRank,
+  DEFAULT_CLASSIFICATION,
   type Destination,
 } from "./dataPolicy.js";
+import { resolveDestination } from "./destinationRegistry.js";
 
 /** Anything above `internal` is data an operator would not expect to travel. */
 const SENSITIVE_FLOOR: Classification = "personal";
@@ -49,6 +52,11 @@ export interface DestinationNote {
 
 export interface DescribedDestination {
   id: string;
+  /** The operator's configured type, retained even when runtime facts disagree. */
+  configuredType: "local" | "remote";
+  /** Effective locality derived with the runtime destination resolver. */
+  effectiveType: "local" | "remote" | "unknown";
+  /** @deprecated Use configuredType for configuration and effectiveType for locality. */
   type: "local" | "remote";
   /** Classifications this destination is cleared to receive, ordered. */
   cleared: Classification[];
@@ -89,6 +97,8 @@ export interface DescribedDestination {
 
 export interface DescribeOptions {
   notes?: Record<string, DestinationNote>;
+  /** Effective per-driver transport facts, captured with driver semantics. */
+  destinationFactsByDriver?: Map<string, ResolvedDestinationFacts>;
   /** Today, for staleness. Injected so the report is testable. */
   now?: Date;
   /** A note older than this many days is reported as stale. */
@@ -96,6 +106,42 @@ export interface DescribeOptions {
 }
 
 const DEFAULT_STALE_DAYS = 180;
+
+function effectiveTypeFor(
+  destination: Destination,
+  destinations: Destination[],
+  driversFor: Map<string, string[]>,
+  factsByDriver: Map<string, ResolvedDestinationFacts> | undefined,
+): DescribedDestination["effectiveType"] {
+  if (destination.type === "remote") return "remote";
+
+  const drivers = driversFor.get(destination.id) ?? [];
+  if (drivers.length === 0 || !factsByDriver) return "unknown";
+
+  let unknown = false;
+  for (const configuredDriver of drivers) {
+    const facts = factsByDriver.get(configuredDriver);
+    if (!facts) {
+      unknown = true;
+      continue;
+    }
+    const resolved = resolveDestination(
+      { destinations, driversFor, invalid: [] },
+      facts.driver,
+      destination.classifications[0] ?? DEFAULT_CLASSIFICATION,
+      facts,
+    );
+    if (resolved?.destination.type === "remote") return "remote";
+    if (
+      !resolved ||
+      resolved.destination.type !== "local" ||
+      resolved.destination.id !== destination.id
+    ) {
+      unknown = true;
+    }
+  }
+  return unknown ? "unknown" : "local";
+}
 
 export function describeDestinations(
   destinations: Destination[],
@@ -127,12 +173,20 @@ export function describeDestinations(
           (x) => x.type === "local" && x.classifications.includes(c),
         ),
       );
+    const effectiveType = effectiveTypeFor(
+      d,
+      destinations,
+      driversFor,
+      opts.destinationFactsByDriver,
+    );
     out.push({
       id: d.id,
+      configuredType: d.type,
+      effectiveType,
       type: d.type,
       cleared,
       drivers: driversFor.get(d.id) ?? [],
-      sendsSensitiveOffMachine: d.type === "remote" && sensitive,
+      sendsSensitiveOffMachine: effectiveType === "remote" && sensitive,
       approvable: d.approvable === true,
       approvalUnreachable:
         d.approvable === true && d.type === "remote" && localAcceptsAllRefused,
@@ -167,9 +221,12 @@ export function noteIsStale(
  * belong to the provider and change without warning.
  */
 export function disclosureFor(d: DescribedDestination): string {
-  return d.type === "local"
-    ? `stays on this machine`
-    : `LEAVES this machine over the network to "${d.id}"`;
+  const effectiveType = d.effectiveType ?? d.type;
+  if (effectiveType === "local") return `stays on this machine`;
+  if (effectiveType === "remote") {
+    return `LEAVES this machine over the network to "${d.id}"`;
+  }
+  return `cannot verify that this destination stays on this machine from the available runtime facts`;
 }
 
 export function formatDestinationsReport(
@@ -190,7 +247,11 @@ export function formatDestinationsReport(
   }
   L.push("");
   for (const d of described) {
-    L.push(`  ${d.id}  (${d.type})`);
+    const typeSummary =
+      d.effectiveType === d.configuredType
+        ? d.configuredType
+        : `${d.configuredType} configured; ${d.effectiveType} effective`;
+    L.push(`  ${d.id}  (${typeSummary})`);
     L.push(`      ${disclosureFor(d)}`);
     L.push(`      cleared for: ${d.cleared.join(", ") || "(nothing)"}`);
     if (d.drivers.length > 0) {

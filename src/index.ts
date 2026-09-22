@@ -291,6 +291,10 @@ const KNOWN_SUBCOMMANDS = [
   "pr-outcomes",
   "butler",
   "privacy",
+  // Phase 0 governed runtime: `profile` reads/sets the governance profile,
+  // `policy explain` prints the effective policy for a recipe.
+  "profile",
+  "policy",
   "doctor",
   "members",
   // Dispatched at `process.argv[2] === "tools"` (and `help`) but absent from
@@ -402,7 +406,9 @@ if (
       `  butler promote [--dry-run]                Fold grades into the trust ledger (flagged)\n\n` +
       `Safety\n` +
       `  kill-switch <engage|release|status>       Block / resume write-tier tools across bridges\n` +
-      `  panic [--reason "..."]                    Shorthand for kill-switch engage\n\n` +
+      `  panic [--reason "..."]                    Shorthand for kill-switch engage\n` +
+      `  profile [show|governed|compat]            Read or set the governance profile\n` +
+      `  policy explain <recipe> [tool]            Effective policy for a recipe, gate by gate\n\n` +
       `Daemon (no subcommand)\n` +
       `  --workspace <dir>                         Start the bridge in foreground\n` +
       `  --watch                                   Auto-restart supervisor\n` +
@@ -5050,7 +5056,6 @@ if (process.argv[2] === "pr-outcomes") {
     process.exit(0);
   }
   (async () => {
-    const { appendFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const { patchworkPath } = await import("./patchworkHome.js");
     const { execFileSync } = await import("node:child_process");
@@ -5060,6 +5065,7 @@ if (process.argv[2] === "pr-outcomes") {
       readObservations,
       summarise,
       formatLedgerSummary,
+      appendObservation,
     } = await import("./maintenance/prOutcomeLedger.js");
     type Obs = import("./maintenance/prOutcomeLedger.js").PrObservation;
 
@@ -5185,8 +5191,10 @@ if (process.argv[2] === "pr-outcomes") {
         existing,
         incoming,
       );
-      for (const o of toAppend)
-        appendFileSync(file, `${JSON.stringify(o)}\n`, { mode: 0o600 });
+      // Through the ledger's own writer (ADR-0027): locked, chained, and a
+      // failed append counted then sealed. It throws rather than swallowing,
+      // so a collection that recorded nothing exits 1 loudly below.
+      for (const o of toAppend) appendObservation(file, o);
       process.stdout.write(
         `[pr-outcomes] ${repo}: ${incoming.length} pull request(s) queried\n` +
           `  ${toAppend.length} appended (${firstSighting} seen for the first time)\n` +
@@ -5292,7 +5300,11 @@ if (process.argv[2] === "evidence") {
   const args = process.argv.slice(3);
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
-      "Usage: patchwork evidence [--dir <path>] [--json]\n\n" +
+      "Usage: patchwork evidence [verify] [--dir <path>] [--json]\n\n" +
+        "  verify        is every spine ledger internally intact? (ADR-0027) Checks the\n" +
+        "                per-row hash chain, the legacy-prefix commitment, the head sidecar\n" +
+        "                and unsealed write failures. Exits 1 on any break — the only form\n" +
+        "                of this verb that gates.\n\n" +
         "How much of the evidence spine can actually be joined: per ledger, how many\n" +
         "rows carry a run id (correlationId) out of how many rows, and how many runs\n" +
         "appear in more than one ledger.\n\n" +
@@ -5306,8 +5318,37 @@ if (process.argv[2] === "evidence") {
   }
   (async () => {
     try {
+      // Fail closed. Before this, `evidence check` — a plausible typo for the
+      // real `verify` — ran the plain coverage report and exited 0, telling an
+      // operator who asked about ledger integrity that everything was fine from
+      // a command that never looked. That is the exact incident this guard is
+      // named for, one token over.
+      const { rejectUnknownArgs } = await import("./cliArgs.js");
+      rejectUnknownArgs({
+        command: "evidence",
+        args,
+        subcommands: ["verify"],
+        valueFlags: ["--dir"],
+        flags: ["--json"],
+      });
       const dirIdx = args.indexOf("--dir");
       const dir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
+      if (args[0] === "verify") {
+        // ADR-0027. Unlike the bare verb this one GATES: exit 1 on any chain
+        // break, legacy mismatch, shortened file or unsealed write failure,
+        // with `ok: false` in the JSON so a cron job can act on it. Still
+        // prints positions and counts only, never a value.
+        const { verifyEvidenceChains, formatEvidenceVerify } = await import(
+          "./evidenceVerify.js"
+        );
+        const r = dir ? verifyEvidenceChains(dir) : verifyEvidenceChains();
+        process.stdout.write(
+          args.includes("--json")
+            ? `${JSON.stringify(r, null, 2)}\n`
+            : formatEvidenceVerify(r),
+        );
+        process.exit(r.ok ? 0 : 1);
+      }
       const { evidenceCoverage, formatEvidenceCoverage } = await import(
         "./evidenceCoverage.js"
       );
@@ -5857,7 +5898,9 @@ if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
         "                        ZERO bridges is HEALTHY — 'nothing is running' is\n" +
         "                        legitimate, and a check whose denominator is the\n" +
         "                        locks it found cannot see one that is absent.\n" +
-        "  --json                emit the raw report\n\n" +
+        "  --json                emit the raw report\n" +
+        "  --require-governed    ALSO exit 1 when the governance posture is NOT GOVERNED\n" +
+        "                        (the posture is always printed; see `patchwork profile`)\n\n" +
         "For workspace / git / lock-file / automation-policy checks, use\n" +
         "`patchwork doctor health`.\n",
     );
@@ -5916,14 +5959,96 @@ if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
       },
       ...(expectRunning !== undefined ? { expectRunning } : {}),
     });
+    // Phase 0: governance posture, read from runtime-effective state
+    // (src/governance/doctorReport.ts). Reported ALWAYS; it changes the exit
+    // code only with --require-governed, because `patchwork doctor && echo
+    // deployed` is a real shape and a compat install is a legitimate one.
+    const { formatGovernanceReport, governanceReport } = await import(
+      "./governance/doctorReport.js"
+    );
+    const governance = governanceReport();
+    const requireGoverned = args.includes("--require-governed");
     if (args.includes("--json")) {
       process.stdout.write(
-        `${JSON.stringify({ buildTimeMs, ...report }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            buildTimeMs,
+            ...report,
+            governance: {
+              profile: governance.profile.mode,
+              governed: governance.governed,
+              lines: governance.lines,
+              reasons: governance.reasons,
+            },
+          },
+          null,
+          2,
+        )}\n`,
       );
     } else {
-      process.stdout.write(`${formatFreshness(report, buildTimeMs)}\n`);
+      process.stdout.write(`${formatFreshness(report, buildTimeMs)}\n\n`);
+      process.stdout.write(`${formatGovernanceReport(governance)}\n`);
     }
-    process.exit(report.unhealthy ? 1 : 0);
+    process.exit(
+      report.unhealthy || (requireGoverned && !governance.governed) ? 1 : 0,
+    );
+  })();
+}
+
+if (process.argv[2] === "profile") {
+  (async () => {
+    const { runProfileCommand } = await import("./commands/profile.js");
+    const r = runProfileCommand(process.argv.slice(3));
+    (r.ok ? process.stdout : process.stderr).write(
+      r.text.endsWith("\n") ? r.text : `${r.text}\n`,
+    );
+    process.exit(r.exitCode);
+  })();
+}
+
+if (process.argv[2] === "policy") {
+  (async () => {
+    const args = process.argv.slice(3);
+    const verb = args[0];
+    if (
+      verb !== "explain" ||
+      args.includes("--help") ||
+      args.includes("-h") ||
+      !args[1]
+    ) {
+      process.stdout.write(
+        "Usage: patchwork policy explain <recipe|file.yaml> [tool] [--json]\n\n" +
+          "What can this recipe / worker / tool actually do right now, and why?\n" +
+          "Walks every gate in runtime order — kill switch, tool registration, worker\n" +
+          "authority, tool tier, trigger, privacy, standing permission — using the SAME\n" +
+          "decision functions the runner enforces with (src/governance/effectivePolicy.ts).\n" +
+          "Pass a tool id (or `agent`) to restrict to matching steps. Reads only.\n",
+      );
+      process.exit(verb === "explain" && !args[1] ? 2 : 0);
+    }
+    const { explainRecipePolicy, formatExplainReport } = await import(
+      "./commands/policyExplain.js"
+    );
+    const positional = args.slice(1).filter((a) => !a.startsWith("--"));
+    try {
+      const report = await explainRecipePolicy(positional[0] as string, {
+        ...(positional[1] && { tool: positional[1] }),
+      });
+      process.stdout.write(
+        args.includes("--json")
+          ? `${JSON.stringify(report, null, 2)}\n`
+          : `${formatExplainReport(report)}\n`,
+      );
+      const refused =
+        report.steps.some((s) => s.result.final === "REFUSED") ||
+        report.plugins.some((p) => !p.allowed);
+      process.exit(refused ? 1 : 0);
+    } catch (err) {
+      process.stderr.write(
+        `[policy] ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(2);
+    }
   })();
 }
 
@@ -6017,14 +6142,18 @@ if (process.argv[2] === "privacy") {
     // wiring deliberately keeps out of it, and would smuggle in "purpose"
     // ahead of the per-field labels ADR-0021 reserves it for.
     if (args[0] === "destinations") {
-      const { parseRegistry } = await import(
+      const { isLocalFamilyDriver, parseRegistry } = await import(
         "./privacy/destinationRegistry.js"
       );
       const { describeDestinations, formatDestinationsReport } = await import(
         "./privacy/describeDestinations.js"
       );
       const { loadConfig } = await import("./patchworkConfig.js");
+      const { resolveLocalEndpoint } = await import(
+        "./recipes/localSettings.js"
+      );
       const cfg = loadConfig() as {
+        localEndpoint?: string;
         privacy?: import("./privacy/destinationRegistry.js").PrivacyConfig & {
           notes?: Record<
             string,
@@ -6033,10 +6162,25 @@ if (process.argv[2] === "privacy") {
         };
       };
       const registry = parseRegistry(cfg.privacy);
+      const destinationFactsByDriver = new Map<
+        string,
+        import("./drivers/types.js").ResolvedDestinationFacts
+      >();
+      for (const drivers of registry.driversFor.values()) {
+        for (const driver of drivers) {
+          const facts = isLocalFamilyDriver(driver)
+            ? { driver, endpoint: resolveLocalEndpoint(cfg) }
+            : { driver };
+          destinationFactsByDriver.set(driver, Object.freeze(facts));
+        }
+      }
       const described = describeDestinations(
         registry.destinations,
         registry.driversFor,
-        { ...(cfg.privacy?.notes && { notes: cfg.privacy.notes }) },
+        {
+          destinationFactsByDriver,
+          ...(cfg.privacy?.notes && { notes: cfg.privacy.notes }),
+        },
       );
       if (args.includes("--json")) {
         process.stdout.write(`${JSON.stringify(described, null, 2)}\n`);

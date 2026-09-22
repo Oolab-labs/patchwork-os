@@ -41,6 +41,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ApprovalPersistence } from "../approvalPersistence.js";
 import { ApprovalQueue, type PendingApproval } from "../approvalQueue.js";
 import {
   BOUNDARY_RECEIPTS_BASENAME,
@@ -61,10 +62,16 @@ afterEach(() => {
 });
 
 function rowsOf(file: string): Array<Record<string, unknown>> {
-  return readFileSync(path.join(dir, file), "utf8")
-    .split("\n")
-    .filter((l) => l.trim())
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  return (
+    readFileSync(path.join(dir, file), "utf8")
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      // ADR-0027 marker rows (`chain-start`, `rotation`) live in the same file
+      // and carry `kind` and no data fields. They are not rows of the record
+      // type and are skipped here the way every production loader skips them.
+      .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+  );
 }
 
 /**
@@ -206,6 +213,31 @@ describe("approval request — every field reaches disk and comes back", () => {
     );
     expect(lost, "fields lost between the file and list()").toEqual([]);
   });
+
+  it("stamps the writer-owned fields on every event kind (ADR-0027)", () => {
+    // `rv`, `iseq` and `prev` are never caller input: the writer knows what it
+    // stamps, and the chain position is read from the file's tail. Checked on
+    // the decision row as well as the request, because a row kind the writer
+    // forgets to stamp is exactly the defect this file exists to catch.
+    const q = new ApprovalQueue({ persistDir: dir, ttlMs: 60_000 });
+    const { callId } = q.request(SENTINEL);
+    q.approve(callId);
+    const rows = rowsOf("approval_log.jsonl");
+    expect(rows.map((r) => r.kind)).toEqual(["request", "decision"]);
+    for (const row of rows) {
+      for (const k of ["rv", "iseq", "prev"]) {
+        expect(
+          Object.hasOwn(row as object, k),
+          `writer must stamp ${k} on ${String(row.kind)}`,
+        ).toBe(true);
+      }
+    }
+    // The restore path hands the event back whole, integrity fields included.
+    const [restored] = new ApprovalPersistence({
+      dir,
+    }).loadUnresolvedRequests();
+    expect(restored).toBeUndefined(); // decided — nothing to restore
+  });
 });
 
 describe("boundary receipt — every field survives the READ", () => {
@@ -224,6 +256,9 @@ describe("boundary receipt — every field survives the READ", () => {
     seq: 1,
     at: 1756600000000,
     rv: 1,
+    // ADR-0027 integrity fields — carried through the reader verbatim.
+    iseq: 1,
+    prev: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     correlationId: "yaml:sentinel:1756600000002",
     decision: "DENY",
     classification: "personal",

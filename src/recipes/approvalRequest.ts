@@ -14,6 +14,10 @@
  * site is a compile error until that site says which run it belongs to.
  */
 
+import {
+  type ApprovalGrant,
+  approvalIdentityMatches,
+} from "../approvalIdentity.js";
 import type { RiskTier } from "../riskTier.js";
 
 export interface ApprovalRequestInput {
@@ -37,6 +41,15 @@ export interface ApprovalRequestInput {
    * full approval TTL (L1).
    */
   signal?: AbortSignal;
+  /**
+   * The runner's effective-policy verdict for this step
+   * (src/governance/effectivePolicy.ts). When present, the tier gate defers
+   * to it: `HUMAN_APPROVAL_REQUIRED` queues regardless of the tier threshold
+   * and `ALLOW` passes. Absent ⇒ the fn applies its own threshold (compat
+   * callers and test doubles).
+   */
+  effective?: import("../governance/effectivePolicy.js").FinalVerdict;
+  recipeName?: string;
 }
 
 /**
@@ -55,6 +68,7 @@ export type ApprovalRefusal = "rejected" | "expired" | "cancelled";
 
 export interface ApprovalVerdict {
   approved: boolean;
+  grant?: ApprovalGrant;
   /**
    * OMITTED when the gate does not know which refusal this was — absence, not
    * a defaulted `"rejected"`. A gate that cannot say must not have a claim
@@ -80,4 +94,20 @@ export function normaliseApprovalVerdict(
   result: boolean | ApprovalVerdict,
 ): ApprovalVerdict {
   return typeof result === "boolean" ? { approved: result } : result;
+}
+
+/** Recompute the recipe action identity at the final dispatch boundary. */
+export function recipeApprovalIdentityMatches(
+  verdict: ApprovalVerdict,
+  input: ApprovalRequestInput,
+): boolean {
+  if (!verdict.grant) return true; // legacy/bypass test doubles carry no human grant
+  return approvalIdentityMatches(verdict.grant.approvedActionIdentity, {
+    toolName: input.toolId,
+    params: input.params ?? {},
+    sessionId: "recipe",
+    tier: input.tier,
+    correlationId: input.runTaskId,
+    recipeName: input.recipeName,
+  });
 }

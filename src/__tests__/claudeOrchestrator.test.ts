@@ -362,7 +362,8 @@ describe("ClaudeOrchestrator — persistence", () => {
       (t: { status: string }) => t.status === "pending",
     );
     expect(pending.length).toBeGreaterThanOrEqual(1);
-    expect(pending[0].prompt).toBe("stays-pending");
+    expect(pending[0].prompt).toBeUndefined();
+    expect(pending[0].promptPreview).toBe("stays-pending");
     void blocking;
   });
 
@@ -384,7 +385,8 @@ describe("ClaudeOrchestrator — persistence", () => {
       (t: { status: string }) => t.status === "interrupted",
     );
     expect(interrupted.length).toBe(1);
-    expect(interrupted[0].prompt).toBe("running-task");
+    expect(interrupted[0].prompt).toBeUndefined();
+    expect(interrupted[0].promptPreview).toBe("running-task");
 
     // cleanup
     orch.cancel(orch.list("running")[0]?.id ?? "");
@@ -402,7 +404,8 @@ describe("ClaudeOrchestrator — persistence", () => {
       (t: { status: string }) => t.status === "done",
     );
     expect(done.length).toBe(1);
-    expect(done[0].prompt).toBe("completed");
+    expect(done[0].prompt).toBeUndefined();
+    expect(done[0].promptPreview).toBe("completed");
   });
 
   // ── loadPersistedTasks ────────────────────────────────────────────────────

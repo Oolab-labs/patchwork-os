@@ -150,10 +150,14 @@ async function run(): Promise<Array<{ workspaceId?: string }>> {
     // Absent under an enforcing-only config, which is a valid state for this
     // helper rather than a failure — the receipt case asserts on its own file.
     try {
-      return readFileSync(join(home, "privacy_shadow.jsonl"), "utf-8")
-        .split("\n")
-        .filter(Boolean)
-        .map((l) => JSON.parse(l) as { workspaceId?: string });
+      return (
+        readFileSync(join(home, "privacy_shadow.jsonl"), "utf-8")
+          .split("\n")
+          .filter(Boolean)
+          .map((l) => JSON.parse(l) as { kind?: string; workspaceId?: string })
+          // ADR-0027 marker rows (`chain-start`, `rotation`) share the file; skip them like every production loader.
+          .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+      );
     } catch {
       return [];
     }

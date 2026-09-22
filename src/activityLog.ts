@@ -19,6 +19,7 @@ import {
   computeStats,
   computeWindowedStats,
 } from "./fp/activityAnalytics.js";
+import { redactKnownSecrets } from "./governance/secretValues.js";
 import { writeFileAtomic } from "./writeFileAtomic.js";
 
 function escapeLabelValue(s: string): string {
@@ -204,6 +205,10 @@ export class ActivityLog {
     status: "success" | "error",
     errorMessage?: string,
     sessionId?: string,
+    approvalEvidence?: Pick<
+      ActivityEntry,
+      "approvalId" | "approvedActionIdentity" | "approvalRevalidated"
+    >,
   ): void {
     const entry: ActivityEntry = {
       id: this.nextId++,
@@ -211,8 +216,14 @@ export class ActivityLog {
       tool,
       durationMs,
       status,
-      errorMessage,
+      // A tool error frequently quotes the request that failed — URL, body,
+      // header — so a secret interpolated into it lands here in clear text.
+      errorMessage:
+        errorMessage === undefined
+          ? undefined
+          : redactKnownSecrets(errorMessage),
       sessionId,
+      ...(approvalEvidence ?? {}),
     };
     this.entries.push(entry);
     this._appendToDisk("tool", entry);

@@ -9,6 +9,13 @@
  */
 
 import {
+  type AgentContainment,
+  activeProfile,
+  resolveAgentContainment,
+  type StepSandboxRequest,
+} from "../governance/profile.js";
+import { governedRecipeSystemPrompt } from "../governance/recipeSystemPrompt.js";
+import {
   type BoundaryDecision,
   type BoundaryOutcome,
   type Classification,
@@ -56,6 +63,13 @@ export interface AgentResult {
    * absent on results from callers that bypass `executeAgent`.
    */
   servedBy?: { driver: string; model?: string };
+  /**
+   * The containment `executeAgent` resolved for this call (Phase 0 step 6),
+   * so the runner can log it on the step receipt. Additive: absent on
+   * results from callers that bypass `executeAgent`, and absent on the
+   * anthropic / local API paths, which spawn nothing to contain.
+   */
+  containment?: AgentContainment;
 }
 
 export interface AgentExecutorDeps {
@@ -108,7 +122,17 @@ export interface AgentExecutorDeps {
     redactCategories?: string[];
     enforcing: boolean;
   }) => void;
-  anthropicFn: (prompt: string, model: string) => Promise<AgentResult>;
+  /**
+   * `systemPrompt` is supplied by `executeAgent` under the governed profile
+   * ONLY. Under compat it is omitted entirely, so the call keeps the exact
+   * 2-arg shape it always had — which is what lets the pre-existing
+   * exact-args assertions go on proving the old contract.
+   */
+  anthropicFn: (
+    prompt: string,
+    model: string,
+    systemPrompt?: string,
+  ) => Promise<AgentResult>;
   /** Handles openai, grok, gemini, gemini-api, codex — passes driver name through. */
   providerDriverFn: (
     driver: "openai" | "grok" | "gemini" | "gemini-api" | "codex",
@@ -117,17 +141,41 @@ export interface AgentExecutorDeps {
     /** Opaque per-call driver options (e.g. responseFormat for constrained
      * decoding). Forwarded to driver.run; drivers ignore keys they don't use. */
     providerOptions?: Record<string, unknown>,
+    /**
+     * Governed-only, and deliberately AFTER the already-optional
+     * `providerOptions`. A governed call with no options must therefore pass
+     * `undefined` in the 4th position explicitly, or the governance string
+     * lands where provider options are read.
+     */
+    systemPrompt?: string,
   ) => Promise<AgentResult>;
   claudeCliFn: (
     prompt: string,
     opts?: {
       mcpAccess?: boolean;
-      sandbox?: boolean;
+      sandbox?:
+        | boolean
+        | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
       allowedTools?: string[];
       disallowedTools?: string[];
+      /** Resolved containment — the runner MUST forward it to the driver as
+       * `ProviderTaskInput.containment` (or `providerOptions.containment`). */
+      containment?: AgentContainment;
+      /**
+       * Governed-only. The subprocess implementation keeps its own
+       * profile-gated fallback for callers that do not come through
+       * `executeAgent`, so this being absent means "decide for yourself", not
+       * "send nothing".
+       */
+      systemPrompt?: string;
     },
   ) => Promise<AgentResult>;
-  localFn: (prompt: string, model: string) => Promise<AgentResult>;
+  /** Governed-only trailing `systemPrompt`; see `anthropicFn`. */
+  localFn: (
+    prompt: string,
+    model: string,
+    systemPrompt?: string,
+  ) => Promise<AgentResult>;
   /** Returns true when the `claude` CLI is available on PATH. */
   probeClaudeCli: () => boolean;
   /** Reads ~/.patchwork/config; returns {} when absent. */
@@ -136,6 +184,46 @@ export interface AgentExecutorDeps {
     driver?: string;
     localModel?: string;
     localEndpoint?: string;
+  };
+}
+
+/** Object form of an agent step's `sandbox:` — explicit widenings. */
+export interface AgentSandboxRequest {
+  network?: boolean;
+  shell?: boolean;
+  mcpAccess?: boolean;
+}
+
+/**
+ * Pure: the step's declared fields → the request `resolveAgentContainment`
+ * consumes. Exported so the runner (which cannot import the executor's
+ * internals) and `policy explain` derive the SAME request from a step.
+ */
+export function stepSandboxRequest(input: {
+  sandbox?: boolean | AgentSandboxRequest;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  mcpAccess?: boolean;
+}): StepSandboxRequest {
+  const obj =
+    typeof input.sandbox === "object" && input.sandbox !== null
+      ? input.sandbox
+      : undefined;
+  return {
+    // Object form counts as an opt-in sandbox on the compat path too.
+    sandbox: input.sandbox === true || obj !== undefined,
+    ...(input.allowedTools !== undefined && {
+      allowedTools: input.allowedTools,
+    }),
+    ...(input.disallowedTools !== undefined && {
+      disallowedTools: input.disallowedTools,
+    }),
+    ...(obj?.network !== undefined && { network: obj.network }),
+    ...(obj?.shell !== undefined && { shell: obj.shell }),
+    // mcpAccess: the object form wins when it says so; else the legacy field.
+    ...((obj?.mcpAccess ?? input.mcpAccess) !== undefined && {
+      mcpAccess: obj?.mcpAccess ?? input.mcpAccess,
+    }),
   };
 }
 
@@ -150,8 +238,14 @@ export interface AgentExecutorInput {
    * Ignored by API drivers — they reach the bridge through other means.
    */
   mcpAccess?: boolean;
-  /** Opt-in tool sandbox — enforced argv on the subprocess path only. */
-  sandbox?: boolean;
+  /**
+   * Opt-in tool sandbox — enforced argv on the subprocess path only. The
+   * object form is a governed-profile widening request (network / shell /
+   * mcpAccess); see `resolveAgentContainment` in src/governance/profile.ts.
+   */
+  sandbox?:
+    | boolean
+    | { network?: boolean; shell?: boolean; mcpAccess?: boolean };
   /** Tool allowlist enforced via --allowed-tools when sandbox is true. */
   allowedTools?: string[];
   /** Deny rules via --disallowed-tools (any mode). */
@@ -461,6 +555,27 @@ function evaluateAgainst(
   });
 }
 
+/**
+ * Ceiling on the AUTHORED prompt an agent step may dispatch, in UTF-8 bytes.
+ *
+ * 96 KiB. One figure for every driver, deliberately: a per-driver ceiling makes
+ * the same recipe work or fail depending on which model answered, which is a
+ * property no author can reason about. The recipe gets one predictable limit.
+ *
+ * The number is chosen against the argv-bound path, which is the one with a
+ * hard ceiling rather than a policy: the Claude CLI receives the prompt as a
+ * single argv element, and Linux caps ONE argument at 128 KiB
+ * (`MAX_ARG_STRLEN`) regardless of how much total argv space is free. Above it
+ * `spawn` fails E2BIG — so an over-cap prompt is not "expensive", it is
+ * unrunnable on a Linux bridge while working on a developer's macOS box. 96 KiB
+ * leaves room for the system prompt, the flags and the environment without the
+ * author's budget having to know any of that.
+ *
+ * It is the AUTHOR's budget. The mandatory system/governance instruction is
+ * reserved separately and never counted against it — see `executeAgent`.
+ */
+export const MAX_AGENT_PROMPT_BYTES = 98_304;
+
 export async function executeAgent(
   input: AgentExecutorInput,
   deps: AgentExecutorDeps,
@@ -598,16 +713,64 @@ export async function executeAgent(
     });
   }
 
+  // ── PROMPT BYTE CAP ─────────────────────────────────────────────────────
+  // One byte-limit decision, after the prompt is fully composed and before any
+  // transport receives it. No driver implements its own cap: two places
+  // deciding this would drift, and the drift is silent — a prompt refused by
+  // one driver and dispatched by another is indistinguishable, from the
+  // recipe's side, from a flaky model.
+  //
+  // REFUSES; never truncates. Truncation would cut the tail of a rendered
+  // prompt, which is where the author's instructions sit once a large tool
+  // output has been interpolated above them — the model would then act on the
+  // data with no task, and the run would look successful. It can also sever the
+  // closing tag of an `<untrusted>` envelope this codebase put there.
+  //
+  // Measured on the AUTHORED prompt only. The governed instruction is 550 bytes
+  // against compat's 257, so charging the reservation to the author would
+  // shrink every recipe's allowance by 293 bytes the day an operator switched
+  // profile — a policy change quietly rewriting what recipes are allowed to
+  // say. Both figures are constants; neither is the author's to pay for.
+  //
+  // Placed AFTER the boundary so a refused dispatch still writes its privacy
+  // receipt, and a boundary refusal still wins: an over-cap prompt to a
+  // destination that may not receive it is a boundary event first.
+  const promptBytes = Buffer.byteLength(prompt, "utf8");
+  if (promptBytes > MAX_AGENT_PROMPT_BYTES) {
+    // Numbers FIRST. `stepObservation` truncates the matched fragment at 120
+    // characters, which already amputated the actionable half of the
+    // information-boundary message once. Never echo the prompt: this string
+    // reaches the run log, the halt summary and a push notification.
+    return {
+      text: `[agent step failed: prompt_too_large: ${promptBytes} bytes > ${MAX_AGENT_PROMPT_BYTES} byte limit — shorten the step's prompt or the tool output it interpolates]`,
+    };
+  }
+
+  // ── AGENT CONTAINMENT (Phase 0 step 6) ──────────────────────────────────
+  // One resolution, from the ACTIVE profile and the step's declared fields.
+  // Under compat with no `sandbox:` this is `{ enforced: false }` and the
+  // legacy keys below carry today's behaviour unchanged; it is forwarded to
+  // the driver only when enforced, so an unconstrained call keeps its shape.
+  const containment = resolveAgentContainment(
+    activeProfile(),
+    stepSandboxRequest({ sandbox, allowedTools, disallowedTools, mcpAccess }),
+  );
+  const legacySandbox: boolean | undefined =
+    sandbox === undefined
+      ? undefined
+      : sandbox === true || typeof sandbox === "object";
   const cliOpts =
     mcpAccess !== undefined ||
-    sandbox !== undefined ||
+    legacySandbox !== undefined ||
     allowedTools !== undefined ||
-    disallowedTools !== undefined
+    disallowedTools !== undefined ||
+    containment.enforced
       ? {
           ...(mcpAccess !== undefined && { mcpAccess }),
-          ...(sandbox !== undefined && { sandbox }),
+          ...(legacySandbox !== undefined && { sandbox: legacySandbox }),
           ...(allowedTools !== undefined && { allowedTools }),
           ...(disallowedTools !== undefined && { disallowedTools }),
+          ...(containment.enforced && { containment }),
         }
       : undefined;
 
@@ -622,9 +785,13 @@ export async function executeAgent(
     p: Promise<AgentResult>,
   ): Promise<AgentResult> => {
     const r = await p;
-    if (r.servedBy) return r;
+    const withContainment =
+      containment.enforced && r.containment === undefined
+        ? { ...r, containment }
+        : r;
+    if (withContainment.servedBy) return withContainment;
     return {
-      ...r,
+      ...withContainment,
       servedBy: {
         driver: resolvedDriver,
         ...(resolvedModel !== undefined ? { model: resolvedModel } : {}),
@@ -637,11 +804,21 @@ export async function executeAgent(
   // inside `resolveEffectiveDriver`, so there is exactly one place that decides
   // which driver serves a call — the condition for the boundary and the receipt
   // being able to name it truthfully.
+  // Governance decides the mandatory recipe instruction ONCE, here, and the
+  // transports only receive it. No driver reads `activeProfile()` — a second
+  // place deciding this is how the two would drift, and the drift is silent
+  // and permissive. Under compat this is undefined and every call below keeps
+  // the exact shape and arity it had before.
+  const governedPrompt = governedRecipeSystemPrompt();
+
   if (resolvedDriver === "anthropic") {
+    const anthropicModel = model ?? DEFAULT_MODEL;
     return stamp(
       "anthropic",
-      model ?? DEFAULT_MODEL,
-      deps.anthropicFn(prompt, model ?? DEFAULT_MODEL),
+      anthropicModel,
+      governedPrompt === undefined
+        ? deps.anthropicFn(prompt, anthropicModel)
+        : deps.anthropicFn(prompt, anthropicModel, governedPrompt),
     );
   }
   if (
@@ -653,27 +830,58 @@ export async function executeAgent(
   ) {
     // A worker-mandated sandbox on the codex driver overrides — never merges
     // with — the step's own providerOptions. See CODEX_WORKER_SANDBOX_LOCKDOWN.
-    const effectiveProviderOptions =
+    const baseProviderOptions =
       resolvedDriver === "codex" && enforceSandbox
         ? CODEX_WORKER_SANDBOX_LOCKDOWN
         : providerOptions;
+    // Gemini / Codex subprocess drivers read the containment from the
+    // providerOptions bag (`containmentFromInput`). Only attached when
+    // enforced so the common call keeps its 3-arg shape.
+    const effectiveProviderOptions =
+      containment.enforced &&
+      (resolvedDriver === "gemini" || resolvedDriver === "codex")
+        ? { ...(baseProviderOptions ?? {}), containment }
+        : baseProviderOptions;
     return stamp(
       resolvedDriver,
       model,
       // Only pass the 4th arg when set so the common (unconstrained) call keeps
       // its 3-arg shape — backward-compatible with callers/mocks.
-      effectiveProviderOptions
-        ? deps.providerDriverFn(
+      governedPrompt !== undefined
+        ? // `systemPrompt` sits AFTER the optional `providerOptions`, so an
+          // options-less governed call passes `undefined` in that slot
+          // explicitly rather than shifting the prompt into it.
+          deps.providerDriverFn(
             resolvedDriver,
             prompt,
             model,
             effectiveProviderOptions,
+            governedPrompt,
           )
-        : deps.providerDriverFn(resolvedDriver, prompt, model),
+        : effectiveProviderOptions
+          ? deps.providerDriverFn(
+              resolvedDriver,
+              prompt,
+              model,
+              effectiveProviderOptions,
+            )
+          : deps.providerDriverFn(resolvedDriver, prompt, model),
     );
   }
   if (resolvedDriver === "subprocess") {
-    return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
+    // The subprocess implementation used to be the one path that decided
+    // governance for itself. It now RECEIVES the executor's decision, and
+    // keeps its own fallback only for callers that never reach this seam.
+    return stamp(
+      "subprocess",
+      model,
+      deps.claudeCliFn(
+        prompt,
+        governedPrompt === undefined
+          ? cliOpts
+          : { ...(cliOpts ?? {}), systemPrompt: governedPrompt },
+      ),
+    );
   }
   if (resolvedDriver === "local") {
     // Resolve through the shared resolver, NOT `model ?? DEFAULT_MODEL`.
@@ -683,7 +891,13 @@ export async function executeAgent(
     // asked for while a config default answered, so an invalid run and a
     // valid one looked identical.
     const localModel = resolveLocalModel(model, deps.loadPatchworkConfig());
-    return stamp("local", localModel, deps.localFn(prompt, localModel));
+    return stamp(
+      "local",
+      localModel,
+      governedPrompt === undefined
+        ? deps.localFn(prompt, localModel)
+        : deps.localFn(prompt, localModel, governedPrompt),
+    );
   }
   // Unrecognised driver. Reached at the same point as before: the boundary has
   // already run and written its receipt (fail-closed to strictest remote for an

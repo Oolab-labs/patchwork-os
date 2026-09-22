@@ -127,8 +127,55 @@ function loadPatterns(p) {
     .filter((l) => l && !l.startsWith("#"));
 }
 
+/**
+ * Refuse an argument this gate cannot honour.
+ *
+ * `--message-file <path>` — the real flag is `--message` — matched neither
+ * branch below, fell through to the staged-diff default, scanned ~19 bytes of
+ * branch name and printed OK. The commit message it was pointed at was never
+ * read. This runs from a git hook, where nobody reads the output of a passing
+ * check, so the wrong flag name could have stood indefinitely.
+ *
+ * Deliberately a local copy of `src/cliArgs.ts` rather than an import: hooks
+ * run BEFORE any build, so a gate that imported from `dist/` would break on a
+ * clean clone. The echo rule is the part that must stay in step, and both sides
+ * have a test asserting a path-shaped argument is not echoed.
+ */
+function rejectUnknownArgs(argv) {
+  const VALUE_FLAGS = ["--message", "--text"];
+  const unknown = [];
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i];
+    if (VALUE_FLAGS.includes(tok)) {
+      i++; // its value follows and is not ours to judge
+      continue;
+    }
+    unknown.push(tok);
+  }
+  if (unknown.length === 0) return;
+
+  // A refusal reaches a terminal, scrollback and CI logs. This script exists to
+  // keep private strings out of published text and never prints a matched
+  // identifier — only an entry number — so it holds the same line here: a bare
+  // word or a flag is echoed, anything path-shaped is described.
+  const named = unknown
+    .map((t) =>
+      /^-{0,2}[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(t)
+        ? `'${t}'`
+        : "an argument that is not shown, because it may contain a private path",
+    )
+    .join(", ");
+  console.error(
+    `[private-ids] unrecognised ${unknown.length === 1 ? "argument" : "arguments"}: ${named}\n` +
+      `  accepted: --message <file> | --text <file> | (no arguments: staged diff + branch name)\n` +
+      `  NOTHING WAS SCANNED.`,
+  );
+  process.exit(2);
+}
+
 /** Sources to scan: `{ label, text }`. */
 function collectSources(argv) {
+  rejectUnknownArgs(argv);
   const msgIdx = argv.indexOf("--message");
   if (msgIdx !== -1) {
     const f = argv[msgIdx + 1];

@@ -56,10 +56,14 @@ function seedLedger(
 function ledgerRows(): Record<string, unknown>[] {
   const p = join(dir, "outcome-log.jsonl");
   try {
-    return readFileSync(p, "utf-8")
-      .split("\n")
-      .filter((l) => l.trim())
-      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    return (
+      readFileSync(p, "utf-8")
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l) as Record<string, unknown>)
+        // ADR-0027 marker rows (`chain-start`, `rotation`) are not records.
+        .filter((r) => r.kind !== "chain-start" && r.kind !== "rotation")
+    );
   } catch {
     return [];
   }

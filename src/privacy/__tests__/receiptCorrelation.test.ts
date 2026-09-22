@@ -95,10 +95,18 @@ type Receipt = {
 
 function readReceipts(): Receipt[] {
   try {
-    return readFileSync(join(home, "boundary_receipts.jsonl"), "utf-8")
-      .split("\n")
-      .filter(Boolean)
-      .map((l) => JSON.parse(l) as Receipt);
+    return (
+      readFileSync(join(home, "boundary_receipts.jsonl"), "utf-8")
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as Receipt)
+        // ADR-0027 marker rows share the file and are not receipts.
+        .filter(
+          (r) =>
+            (r as { kind?: string }).kind !== "chain-start" &&
+            (r as { kind?: string }).kind !== "rotation",
+        )
+    );
   } catch {
     return [];
   }
