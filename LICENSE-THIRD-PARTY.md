@@ -328,7 +328,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | asynckit | 0.4.0 | MIT |
 | base64-js | 1.5.1 | MIT |
 | bignumber.js | 9.3.1 | MIT |
-| body-parser | 1.20.6 | MIT |
+| body-parser | 1.20.8 | MIT |
 | body-parser/node_modules/debug | 2.6.9 | MIT |
 | buffer-equal-constant-time | 1.0.1 | BSD-3-Clause |
 | bytes | 3.1.2 | MIT |
@@ -364,7 +364,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | escape-html | 1.0.3 | MIT |
 | etag | 1.8.1 | MIT |
 | event-target-shim | 5.0.1 | MIT |
-| express | 4.22.2 | MIT |
+| express | 4.22.3 | MIT |
 | express-rate-limit | 8.5.2 | MIT |
 | express/node_modules/debug | 2.6.9 | MIT |
 | extend | 3.0.2 | MIT |
@@ -452,7 +452,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | proto3-json-serializer | 2.0.2 | Apache-2.0 |
 | protobufjs | 7.6.5 | BSD-3-Clause |
 | proxy-addr | 2.0.7 | MIT |
-| qs | 6.15.2 | BSD-3-Clause |
+| qs | 6.16.0 | BSD-3-Clause |
 | range-parser | 1.2.1 | MIT |
 | raw-body | 2.5.3 | MIT |
 | readable-stream | 3.6.2 | MIT |
@@ -470,7 +470,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | send/node_modules/ms | 2.1.3 | MIT |
 | serve-static | 1.16.3 | MIT |
 | setprototypeof | 1.2.0 | ISC |
-| side-channel | 1.1.0 | MIT |
+| side-channel | 1.1.1 | MIT |
 | side-channel-list | 1.0.1 | MIT |
 | side-channel-map | 1.0.1 | MIT |
 | side-channel-weakmap | 1.0.2 | MIT |
