@@ -350,6 +350,20 @@ describe("honesty when the bridge is unreachable", () => {
 });
 
 /** Every source healthy and empty — the genuine all-clear. */
+/**
+ * Undo offers now survive a reload, which means they survive a TEST unless it
+ * says otherwise — and an offer left by a previous case appeared on the next
+ * one's all-clear page as a third heading. Clearing here keeps each case
+ * describing only what it set up.
+ */
+beforeEach(() => {
+  try {
+    window.localStorage.clear();
+  } catch {
+    // Storage is not available in every environment; nothing to clear.
+  }
+});
+
 function stubAllEmpty() {
   vi.stubGlobal(
     "fetch",
@@ -582,5 +596,109 @@ describe("still exactly one announcer", () => {
     );
     const all = new Set<Element>([...explicit, ...implicit]);
     expect(all.size).toBe(1);
+  });
+});
+
+describe("memory: forget is reversible, erase is not", () => {
+  it("warns before erasing, and the warning says there is no undo", async () => {
+    render(<ButlerPage />);
+    const start = await screen.findAllByRole("button", {
+      name: /erase this for good/i,
+    });
+    fireEvent.click(start[0] as HTMLElement);
+
+    // The warning must precede the act — it is the only place it can change
+    // anyone's mind.
+    expect(await screen.findByText(/there is no undo/i)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /yes, erase it for good/i }),
+    ).toBeTruthy();
+    // And the safe choice is offered beside it, not buried.
+    expect(screen.getByRole("button", { name: /keep it/i })).toBeTruthy();
+  });
+
+  it("offers NO undo after an erasure", async () => {
+    // The store keeps a content-free husk; there is nothing to put back. An
+    // undo offered here would be a promise the API cannot keep.
+    render(<ButlerPage />);
+    const start = await screen.findAllByRole("button", {
+      name: /erase this for good/i,
+    });
+    fireEvent.click(start[0] as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: /yes, erase it for good/i }),);
+    await screen.findByText(/erased for good/i);
+    expect(screen.queryByRole("button", { name: /undo that/i })).toBeNull();
+  });
+
+  it("still offers an undo after a FORGET, which is reversible", async () => {
+    render(<ButlerPage />);
+    const forget = await screen.findAllByRole("button", {
+      name: /forget this about me/i,
+    });
+    fireEvent.click(forget[0] as HTMLElement);
+    expect(
+      await screen.findByRole("button", { name: /undo that/i }),
+    ).toBeTruthy();
+  });
+});
+
+describe("memory: an undo survives a reload", () => {
+  it("is still offered after the page is mounted again", async () => {
+    // The offer used to hold a closure, so a refresh destroyed it — and
+    // refreshing is exactly what somebody does when a page surprises them.
+    const first = render(<ButlerPage />);
+    const forget = await screen.findAllByRole("button", {
+      name: /forget this about me/i,
+    });
+    fireEvent.click(forget[0] as HTMLElement);
+    await screen.findByRole("button", { name: /undo that/i });
+    first.unmount();
+
+    render(<ButlerPage />);
+    expect(
+      await screen.findByRole("button", { name: /undo that/i }),
+    ).toBeTruthy();
+  });
+
+  it("withdraws an offer that no longer works, and says why", async () => {
+    // A persisted offer can outlive what it reverses. Pressing a button that
+    // silently does nothing is worse than being told.
+    // The bridge no longer has that tombstone — restored in another tab, or
+    // rotated away. Everything else answers normally.
+    stubWithFailure("restore", 404);
+    window.localStorage.setItem(
+      "patchwork.butler.undo.v1",
+      JSON.stringify([
+        {
+          id: "stale",
+          did: 'Removed "Timezone — Europe/London"',
+          path: "/api/bridge/butler/facts/999/restore",
+          said: "Put back",
+        },
+      ]),
+    );
+    render(<ButlerPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /undo that/i }),);
+    expect(
+      await screen.findByText(/may already have been put back/i),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /undo that/i })).toBeNull();
+  });
+});
+
+describe("memory: a fact reads as a labelled value", () => {
+  it("does not render the subject-predicate-object row shape", async () => {
+    const { container } = render(<ButlerPage />);
+    await screen.findByText("Push the release branch");
+    // "You — timezone: Europe/London" was the shape that made Home read like a
+    // database table.
+    expect(container.textContent ?? "").not.toMatch(/You — \w+:/);
+  });
+
+  it("says how long ago as well as the date", async () => {
+    render(<ButlerPage />);
+    expect(
+      await screen.findByText(/Recorded (today|yesterday|\d+ (days|weeks|months|years) ago), on /i),
+    ).toBeTruthy();
   });
 });

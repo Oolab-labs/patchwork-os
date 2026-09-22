@@ -54,6 +54,16 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-01 `feat/butler-memory` — Butler Memory. Facts read as a labelled value
+  (`Tasks default list — personal`) rather than `subject — predicate: object`; **no
+  sentence templates**, because predicates are operator-authored and unbounded and a
+  structural rule produces "Your diet.avoid is nuts". Age beside the date. Correct via
+  PATCH (append, keeps provenance — re-creating would stamp `user_chat` and promote a
+  merely-READ belief). **Erase is a different operation from Forget, not a stronger one**:
+  it blanks the content and keeps a husk, so no undo is offered and the warning says so
+  BEFORE it happens. Undo now survives a reload — the offer held a closure, which a
+  refresh destroyed, and refreshing is what somebody does when a page surprises them;
+  capped at 20, and a stale offer is withdrawn with its reason.
 - 2026-09-16 `codex/gate3d-cross-process-approval` — Gate 3D only: prevent restored non-owned approvals from capturing live callers, bind approval to the exact pre-redaction action identity, revalidate immediately before execution, and link execution records to the authorizing approval. No new ledger, distributed lock, cross-process CAS, policy redesign, deployment, or installation work. — Codex (gate3d-cross-process-approval worktree) PR #1602
 - 2026-09-16 `codex/gate3c-destination-truthfulness` — Gate 3C only: bind privacy enforcement, shadow observation, execution and decision records to the destination actually resolved for each dispatch, and report local/off-box destination truthfully. No policy redesign, routing change, deployment, or installation work. — Codex (gate3c-destination-truthfulness worktree) PR #1601
 - 2026-09-16 `codex/chained-data-policy-parity` — Gate 3B only: preserve each chained agent step's raw `data_policy` declaration through the chained runner and `buildChainedDeps()` into the existing shared information-boundary evaluator, with isolated production-path parity, shadow, concurrency, and nested-call regressions. No policy redesign, destination-resolution change, deployment, or installation work. — Codex (chained-data-policy-parity worktree) PR #1600

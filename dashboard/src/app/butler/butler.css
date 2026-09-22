@@ -370,8 +370,16 @@
   grid-template-columns: 1fr;
 }
 
+/* Side by side only when BOTH are summaries.
+ *
+ * A pair of one-line summaries is a place to look things up. A pair of working
+ * lists is not: a fact carries three actions, and long labels — which they must
+ * have, since a button has to name what it does — wrap to a line each in half a
+ * column, turning Memory into a wall of stacked controls. When there is
+ * something to work with, the section takes the full width it needs.
+ */
 @media (min-width: 62rem) {
-  .butlerReference {
+  .butlerReferencePaired {
     grid-template-columns: 1fr 1fr;
     align-items: start;
   }
@@ -410,4 +418,57 @@
 .butler h2,
 .butler h3 {
   color: var(--lp-fg);
+}
+
+/* ── A remembered fact ─────────────────────────────────────────────────────
+ *
+ * Term and value, not `subject — predicate: object`. The value is what a
+ * reader is checking, so it carries the weight; the term is the label. Both
+ * are text: the distinction survives greyscale and a screen reader reads them
+ * in the order they appear.
+ */
+.butlerTerm {
+  font-weight: 600;
+}
+.butlerAbout {
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+/* Correcting, and confirming an erasure. Indented under the row they belong
+ * to, so it is never ambiguous WHICH fact is about to change. */
+.butlerPanel {
+  margin: 0.9rem 0 0.2rem;
+  padding: 0.9rem 1rem;
+  border: 2px solid var(--lp-line-colour);
+  border-radius: 4px;
+}
+
+/* The erase confirmation is marked in words by its own sentence; the border
+ * is reinforcement, never the carrier. */
+.butlerPanelWarn {
+  border-color: var(--lp-danger);
+}
+
+.butlerLabel {
+  display: block;
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.butlerInput {
+  display: block;
+  width: 100%;
+  max-width: 34rem;
+  padding: 0.6rem 0.7rem;
+  font: inherit;
+  color: var(--lp-fg);
+  background: var(--lp-bg);
+  border: 2px solid var(--lp-line-colour);
+  border-radius: 3px;
+  margin: 0 0 0.8rem;
+}
+.butlerInput:focus-visible {
+  outline: 3px solid var(--lp-focus);
+  outline-offset: 2px;
 }
