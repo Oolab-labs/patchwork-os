@@ -1435,7 +1435,14 @@ export class Bridge {
         this.recipeOrchestration.wireServerFns();
         this.recipeScheduler = RecipeOrchestration.buildScheduler({
           recipesDir,
-          runRecipeFn: async (name) => this.server.runRecipeFn?.(name),
+          runRecipeFn: async (name, slotEpochMs) =>
+            this.server.runRecipeFn?.(
+              name,
+              undefined,
+              slotEpochMs !== undefined
+                ? { cronSlotEpochMs: slotEpochMs }
+                : undefined,
+            ),
           enqueue: (opts) => this.orchestrator?.enqueue(opts) ?? "",
           logger: this.logger,
         });

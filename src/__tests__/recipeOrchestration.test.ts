@@ -1,11 +1,13 @@
 /**
  * Tests for RecipeOrchestration — RED phase (module doesn't exist yet).
  */
+
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { patchworkPath } from "../patchworkHome.js";
+import { attemptLedgerDir } from "../recipes/runLedgers.js";
 
 // These imports will fail until src/recipeOrchestration.ts exists.
 let RecipeOrchestration: any;
@@ -482,7 +484,7 @@ describe("RecipeOrchestration", () => {
     expect(result).toMatchObject({ ok: false, error: "boom" });
   });
 
-  it("fireYamlRecipe() — deliveryId threads manualRunId + a fixed ledgerDir into the dispatch deps (webhook redelivery dedup)", async () => {
+  it("fireYamlRecipe() — deliveryId resolves to its OWN per-attempt store (webhook redelivery dedup + rollback)", async () => {
     const { dispatchRecipe } = await import("../recipes/yamlRunner.js");
     vi.mocked(dispatchRecipe).mockClear();
 
@@ -525,15 +527,24 @@ describe("RecipeOrchestration", () => {
       manualRunId?: string;
       ledgerDir?: string;
     };
-    expect(passedDeps.manualRunId).toBe("deadbeefdeadbeefdeadbeefdeadbeef");
-    // Compared against `patchworkPath`, not a literal `.patchwork` segment:
-    // the ledger dir now honours PATCHWORK_HOME (#1265), and under an override
-    // there is no `.patchwork` component at all. Asserting the old shape would
-    // fail precisely when the override works.
-    expect(passedDeps.ledgerDir).toBe(patchworkPath("webhook-effect-ledger"));
+    // The attempt id is derived from the delivery, so a redelivery resolves
+    // to the same store. The store is per-attempt (runLedgers.ts), not the
+    // old shared `webhook-effect-ledger` dir, whose capped rollback file let
+    // one delivery's pre-images be trimmed away by later deliveries.
+    // Compared via `patchworkPath` so PATCHWORK_HOME (#1265) is honoured.
+    expect(passedDeps.manualRunId).toBe(
+      "webhook-deadbeefdeadbeefdeadbeefdeadbeef",
+    );
+    expect(passedDeps.ledgerDir).toBe(
+      attemptLedgerDir(
+        patchworkPath("run-ledgers"),
+        "foo",
+        "webhook-deadbeefdeadbeefdeadbeefdeadbeef",
+      ),
+    );
   });
 
-  it("fireYamlRecipe() — omits manualRunId/ledgerDir when no deliveryId is given (scheduler/dashboard-fired runs)", async () => {
+  it("fireYamlRecipe() — a run with no deliveryId still gets its own fresh attempt store (INV-1)", async () => {
     const { dispatchRecipe } = await import("../recipes/yamlRunner.js");
     vi.mocked(dispatchRecipe).mockClear();
 
@@ -572,8 +583,16 @@ describe("RecipeOrchestration", () => {
       manualRunId?: string;
       ledgerDir?: string;
     };
-    expect(passedDeps.manualRunId).toBeUndefined();
-    expect(passedDeps.ledgerDir).toBeUndefined();
+    // Previously omitted, which left every scheduler/dashboard run with no
+    // rollback store — so its file writes were not honestly reversible.
+    expect(passedDeps.manualRunId).toMatch(/^once-/);
+    expect(passedDeps.ledgerDir).toBe(
+      attemptLedgerDir(
+        patchworkPath("run-ledgers"),
+        "foo",
+        passedDeps.manualRunId as string,
+      ),
+    );
   });
 
   it("buildScheduler() — returns a RecipeScheduler instance", () => {

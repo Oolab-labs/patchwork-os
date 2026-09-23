@@ -37,11 +37,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import {
-  assertRollbackNotWorsened,
-  reversibilityCeilingFor,
-  stepRollbackability,
-} from "./fileWriteRollbackability.js";
-import {
   approvalIdentityMatches,
   executionEvidence,
 } from "../approvalIdentity.js";
@@ -107,6 +102,11 @@ import {
 } from "./compoundSteps.js";
 import { FileRollbackLog } from "./fileRollback.js";
 import {
+  assertRollbackNotWorsened,
+  reversibilityCeilingFor,
+  stepRollbackability,
+} from "./fileWriteRollbackability.js";
+import {
   approvalHaltFor,
   categoriseHaltReason,
   type HaltCategory,
@@ -135,6 +135,7 @@ import {
 } from "./pricing/priceTable.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
+import { recordAttemptRun } from "./runLedgers.js";
 import { registerRun, unregisterRun } from "./runRegistry.js";
 import type { ErrorPolicy } from "./schema.js";
 import {
@@ -1533,6 +1534,15 @@ export async function runYamlRecipe(
    * edit to either.
    */
   const runTaskId = `yaml:${recipe.name}:${recipeStartedAt}`;
+  // Index this run into its attempt store so `recipe rollback --run` can find
+  // the pre-images by run identity (runLedgers.ts).
+  if (deps.ledgerDir && deps.manualRunId) {
+    recordAttemptRun(deps.ledgerDir, {
+      runTaskId,
+      recipeName: recipe.name,
+      attemptId: deps.manualRunId,
+    });
+  }
 
   const iso = now.toISOString();
   const ctx: RunContext = {
@@ -2554,12 +2564,16 @@ export async function runYamlRecipe(
       // NOW, before authority is decided. Re-checked in executeStep.
       const stepRollback = step.agent
         ? undefined
-        : stepRollbackability(approvalToolId, resolveParamsForApproval(step, ctx), {
-            workdir: stepDeps.workdir,
-            ...(stepDeps.fileRollbackLog && {
-              fileRollbackLog: stepDeps.fileRollbackLog,
-            }),
-          });
+        : stepRollbackability(
+            approvalToolId,
+            resolveParamsForApproval(step, ctx),
+            {
+              workdir: stepDeps.workdir,
+              ...(stepDeps.fileRollbackLog && {
+                fileRollbackLog: stepDeps.fileRollbackLog,
+              }),
+            },
+          );
       const stepReversibilityCeiling = reversibilityCeilingFor(stepRollback);
       const effective = computeEffectivePolicy({
         profile: governance,
@@ -4983,6 +4997,7 @@ export function buildChainedDeps(
   // `rv >= 1` while omitting a field registered as never legitimately absent,
   // which is a false claim made silently at the one site nobody re-checks.
   const runTaskIdRef: { current?: string } = {};
+  let attemptRunRecorded = false;
   const stepDeps = resolveStepDeps(
     runnerDeps,
     recipeName !== undefined ? { recipeName } : undefined,
@@ -5217,13 +5232,32 @@ export function buildChainedDeps(
 
   return {
     executeTool,
-    assessRollback: (toolId: string, params: Record<string, unknown>) =>
-      stepRollbackability(toolId, params, {
+    assessRollback: (toolId: string, params: Record<string, unknown>) => {
+      const r = stepRollbackability(toolId, params, {
         workdir: stepDeps.workdir,
         ...(stepDeps.fileRollbackLog && {
           fileRollbackLog: stepDeps.fileRollbackLog,
         }),
-      }),
+      });
+      // Index the chained run into its attempt store the first time it
+      // touches a rollback-backed tool (the run id is set by then).
+      if (
+        r !== undefined &&
+        !attemptRunRecorded &&
+        runnerDeps.ledgerDir &&
+        runnerDeps.manualRunId &&
+        recipeName !== undefined &&
+        runTaskIdRef.current
+      ) {
+        attemptRunRecorded = true;
+        recordAttemptRun(runnerDeps.ledgerDir, {
+          runTaskId: runTaskIdRef.current,
+          recipeName,
+          attemptId: runnerDeps.manualRunId,
+        });
+      }
+      return r;
+    },
     executeAgent,
     loadNestedRecipe,
     // The cell `runChainedRecipe` fills with this run's `taskId`. See above.

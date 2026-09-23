@@ -246,6 +246,36 @@ describe("RecipeScheduler", () => {
     expect(ran).toEqual(["scheduled-yaml"]);
   });
 
+  it("passes the cron slot to runYaml so the run gets a stable attempt store", () => {
+    writeFileSync(
+      path.join(tmp, "slotted.yaml"),
+      [
+        "name: slotted",
+        "trigger:",
+        "  type: cron",
+        "  at: '@every 1m'",
+        "steps:",
+        "  - tool: file.write",
+        "    path: /tmp/out.txt",
+        "    content: ok",
+        "",
+      ].join("\n"),
+    );
+    const seen: Array<[string, number | undefined]> = [];
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      claim: { claimsDir: path.join(tmp, "claims") },
+      runYaml: async (name, slot) => {
+        seen.push([name, slot]);
+      },
+    });
+    scheduler.start();
+    const slot = Date.parse("2026-09-23T09:00:00Z");
+    scheduler.fireForTest("slotted", slot);
+    expect(seen).toEqual([["slotted", slot]]);
+  });
+
   // ─── inflight guard ─ audit 2026-05-17 ─────────────────────────────────────
   // A cron tick that fires while a previous run of the same recipe is
   // still in flight must skip — otherwise side effects (gh comments,

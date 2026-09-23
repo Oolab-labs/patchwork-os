@@ -37,7 +37,11 @@ export type SchedulerEnqueue = (opts: {
   triggerSource: string;
 }) => string;
 
-export type SchedulerRunYaml = (name: string) => Promise<void>;
+/** `slotEpochMs` is the cron slot, when there is one (see runLedgers.ts). */
+export type SchedulerRunYaml = (
+  name: string,
+  slotEpochMs?: number,
+) => Promise<void>;
 
 export interface ScheduledRecipe {
   name: string;
@@ -486,7 +490,7 @@ export class RecipeScheduler {
       const runYaml = this.opts.runYaml;
       dispatch = () => {
         this.inflight.add(name);
-        runYaml(name)
+        runYaml(name, slotEpochMs)
           .catch((err) => {
             this.opts.logger?.warn?.(
               `[scheduler] YAML recipe "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,

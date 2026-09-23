@@ -25,8 +25,10 @@
  */
 
 import {
+  accessSync,
   appendFileSync,
   existsSync,
+  constants as fsConstants,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -44,6 +46,14 @@ export interface FileRollbackLogOptions {
   /** `deriveScopeKey(recipeName, manualRunId)` — composed by the caller. */
   scopeKey: string;
   logger?: Logger;
+  /**
+   * Hard cap on `file_rollback.jsonl`. A capture that would exceed it is
+   * REFUSED (the write it guards is then refused too), and new paths assess
+   * `unavailable`. Nothing is ever trimmed: silently discarding an earlier
+   * pre-image while still calling the run rollback-able is INV-1 again, one
+   * layer down.
+   */
+  maxBytes?: number;
 }
 
 interface RollbackRow {
@@ -69,8 +79,8 @@ interface RollbackRow {
 }
 
 const LOG_FILENAME = "file_rollback.jsonl";
-const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB — same posture as WriteEffectLedger
-const MAX_PERSIST_LINES = 10_000;
+/** Per-store cap. A store is one attempt under `run-ledgers/` (runLedgers.ts). */
+const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 
 /** See WriteEffectLedger's `assertSafeLedgerDir` — identical rationale. */
 function assertSafeDir(dir: string): void {
@@ -234,6 +244,9 @@ export class FileRollbackLog {
   private readonly scopeKey: string;
   private readonly file: string;
   private readonly logger?: Logger;
+  private readonly maxBytes: number;
+  /** False when the store directory could not be created or written. */
+  private readonly usable: boolean;
 
   constructor(opts: FileRollbackLogOptions) {
     assertSafeDir(opts.dir);
@@ -241,13 +254,18 @@ export class FileRollbackLog {
     this.scopeKey = opts.scopeKey;
     this.file = path.join(opts.dir, LOG_FILENAME);
     this.logger = opts.logger;
+    this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+    let usable = true;
     try {
       mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+      accessSync(this.dir, fsConstants.W_OK);
     } catch (err) {
+      usable = false;
       this.logger?.warn?.(
         `[file-rollback] could not create ${this.dir}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+    this.usable = usable;
     // Resuming an attempt (retry of the same manualRunId) must not
     // re-capture a path already snapshotted — the pre-image on disk is the
     // true "before this attempt began" state; a mid-retry re-capture would
@@ -309,9 +327,14 @@ export class FileRollbackLog {
   assess(absPath: string): Rollbackability {
     const prior = this.captured.get(absPath);
     if (prior !== undefined) return prior ? "uncertain" : "confirmed";
-    return inspectRollbackState(absPath).kind === "uncertain"
-      ? "uncertain"
-      : "confirmed";
+    // No store, or no room for a new pre-image: nothing would record it.
+    if (!this.usable) return "unavailable";
+    const state = inspectRollbackState(absPath);
+    if (state.kind === "uncertain") return "uncertain";
+    // Would THIS pre-image fit? If not, the capture will be refused, so the
+    // write cannot be rolled back and must not be decided as if it could.
+    if (!this.fits(state)) return "unavailable";
+    return "confirmed";
   }
 
   private append(row: RollbackRow): boolean {
@@ -324,24 +347,13 @@ export class FileRollbackLog {
       // atomic replace: that writer's row is silently overwritten by the
       // rotated content and permanently lost, with no error anywhere.
       withFileLockSync(this.file, () => {
-        try {
-          const st = statSync(this.file);
-          if (st.size > MAX_PERSIST_BYTES) this.rotateLocked();
-        } catch (err) {
-          const code = (err as NodeJS.ErrnoException).code;
-          if (code !== "ENOENT") throw err;
+        const line = `${JSON.stringify(row)}\n`;
+        if (this.currentSize() + Buffer.byteLength(line) > this.maxBytes) {
+          throw new Error(
+            `rollback store full (${this.maxBytes} bytes) — pre-image NOT recorded; the write it guards will be refused`,
+          );
         }
-        try {
-          appendFileSync(this.file, `${JSON.stringify(row)}\n`, {
-            mode: 0o600,
-          });
-        } catch (appendErr) {
-          const code = (appendErr as NodeJS.ErrnoException).code;
-          if (code !== "ENOENT") throw appendErr;
-          appendFileSync(this.file, `${JSON.stringify(row)}\n`, {
-            mode: 0o600,
-          });
-        }
+        appendFileSync(this.file, line, { mode: 0o600 });
       });
       return true;
     } catch (err) {
@@ -352,34 +364,25 @@ export class FileRollbackLog {
     }
   }
 
-  /**
-   * Trim the log to the most recent MAX_PERSIST_LINES lines. Trims across
-   * ALL scopes in the file (same tradeoff WriteEffectLedger accepts) — a
-   * long-lived ledger dir shared by many attempts rotates as one file.
-   * MUST be called from inside `append`'s `withFileLockSync` — the
-   * read-modify-write here is only race-safe under that lock.
-   */
-  private rotateLocked(): void {
+  private currentSize(): number {
     try {
-      const raw = readFileSync(this.file, "utf-8");
-      let lines = raw.split("\n").filter((l) => l.trim());
-      if (lines.length > MAX_PERSIST_LINES) {
-        lines = lines.slice(-MAX_PERSIST_LINES);
-      }
-      writeFileAtomicSync(
-        this.file,
-        lines.length > 0 ? `${lines.join("\n")}\n` : "",
-        {
-          mode: 0o600,
-        },
-      );
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") return;
-      this.logger?.warn?.(
-        `[file-rollback] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      return statSync(this.file).size;
+    } catch {
+      return 0;
     }
+  }
+
+  private fits(state: RollbackState): boolean {
+    const row: RollbackRow = {
+      scopeKey: this.scopeKey,
+      path: "",
+      hadContent: state.kind === "existing-text",
+      content: state.kind === "existing-text" ? state.content : null,
+      recordedAt: Date.now(),
+    };
+    // Path length is added separately; 4 KiB covers any real path.
+    const estimate = Buffer.byteLength(JSON.stringify(row)) + 4096;
+    return this.currentSize() + estimate <= this.maxBytes;
   }
 
   /** Pre-images captured for this scope, in capture order. */
