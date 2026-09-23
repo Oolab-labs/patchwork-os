@@ -1714,11 +1714,11 @@ export class RecipeOrchestration {
     seedContext?: Record<string, string>;
     /**
      * Stable per-delivery identity (webhook redelivery only — see
-     * `server.webhookFn`'s doc comment). When set, disk-backs this run's
-     * write-effect ledger so a redelivered webhook can't double-execute
-     * writes a prior (possibly crashed-mid-run) delivery already made.
-     * Scheduler/dashboard-fired runs never pass this — there's no "same
-     * logical event, redelivered" case for those triggers.
+     * `server.webhookFn`'s doc comment). It determines the run's logical
+     * attempt, so a redelivered webhook resolves to the same attempt store
+     * (runLedgers.ts) and can't double-execute writes a prior (possibly
+     * crashed-mid-run) delivery already made. Other automated runs get an
+     * attempt from their cron slot or a fresh id instead.
      */
     deliveryId?: string;
     /** The cron slot this run fills, when fired by the scheduler. */
@@ -1903,12 +1903,6 @@ export class RecipeOrchestration {
       ...(gateAutomatedRuns && { gateAutomatedRuns: true }),
       ...(agentDisallowedTools && { agentDisallowedTools }),
       ...(workerId && { workerId }),
-      // Webhook redelivery dedup — see fireYamlRecipe's `deliveryId` doc
-      // comment. Disk-backs the write-effect ledger under a fixed shared
-      // directory (scoped internally by a hash of recipeName+deliveryId,
-      // per idempotencyKey.ts's deriveScopeKey) so a sender's retried
-      // delivery can't double-execute writes a crashed-mid-run prior
-      // delivery already made.
       // Every automated run is a logical ATTEMPT with its own durable store
       // (runLedgers.ts): the rollback pre-images INV-1 needs, and the
       // write-effect ledger. `manualRunId` carries the attempt id — the name
