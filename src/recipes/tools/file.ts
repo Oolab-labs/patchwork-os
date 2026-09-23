@@ -16,7 +16,29 @@ import { assertWriteAllowed } from "../../featureFlags.js";
 import { resolveRecipePath } from "../resolveRecipePath.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
 
-function jailedPath(p: string, workspace: string, write: boolean): string {
+/**
+ * When the run HAS a rollback log, a write whose pre-image row never reached
+ * disk is refused: the run was promised an undo that would not exist. (No log
+ * at all is a different, honest state — `unavailable` — decided before the
+ * gate; see src/recipes/fileWriteRollbackability.ts.)
+ */
+function capturePreImageOrRefuse(
+  log: import("../fileRollback.js").FileRollbackLog | undefined,
+  absPath: string,
+): void {
+  if (!log) return;
+  if (!log.capturePreImage(absPath).persisted) {
+    throw new Error(
+      `rollback_preimage_not_persisted: could not record the pre-image of ${absPath}; no write performed`,
+    );
+  }
+}
+
+export function jailedPath(
+  p: string,
+  workspace: string,
+  write: boolean,
+): string {
   return resolveRecipePath(p, { workspace, write });
 }
 
@@ -96,7 +118,7 @@ registerTool({
     assertWriteAllowed("file.write");
     const p = jailedPath(params.path as string, deps.workdir, true);
     const content = params.content as string;
-    deps.fileRollbackLog?.capturePreImage(p);
+    capturePreImageOrRefuse(deps.fileRollbackLog, p);
     ensureDir(p);
     deps.writeFile(p, content);
     return JSON.stringify({
@@ -152,7 +174,7 @@ registerTool({
     if (when && !evalCondition(when, (ctx ?? {}) as Record<string, unknown>)) {
       return null;
     }
-    deps.fileRollbackLog?.capturePreImage(p);
+    capturePreImageOrRefuse(deps.fileRollbackLog, p);
     ensureDir(p);
     deps.appendFile(p, content);
     return JSON.stringify({

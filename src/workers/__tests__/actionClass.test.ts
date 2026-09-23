@@ -514,3 +514,32 @@ describe("CRM + infrastructure writes (#1311 batch 4 — the last 17)", () => {
     expect(allowlist.allow).toEqual([]);
   });
 });
+
+describe("classifyActionClass reversibilityCeiling (instance-derived, lower-only)", () => {
+  it("lowers fs-write to irreversible when rollback is not confirmed", () => {
+    const ac = classifyActionClass(
+      "file.write",
+      { path: "a.md" },
+      { reversibilityCeiling: "irreversible" },
+    );
+    expect(ac.reversibility).toBe("irreversible");
+    expect(ac.key).toBe(`fs-write:irreversible:${ac.blastTier}`);
+  });
+
+  it("absent ceiling is byte-identical to the old classification", () => {
+    expect(classifyActionClass("file.write", { path: "a.md" }, {})).toEqual(
+      classifyActionClass("file.write", { path: "a.md" }),
+    );
+  });
+
+  it("can never RAISE reversibility", () => {
+    expect(
+      classifyActionClass("slackPostMessage", {}, { reversibilityCeiling: "reversible" })
+        .reversibility,
+    ).toBe("irreversible");
+    expect(
+      classifyActionClass("gitPush", {}, { reversibilityCeiling: "reversible" })
+        .reversibility,
+    ).toBe("compensable");
+  });
+});

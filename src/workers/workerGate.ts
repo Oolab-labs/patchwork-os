@@ -8,6 +8,7 @@ import {
   AGENT_STEP_TOOL,
   classifyActionClass,
   knownActionTools,
+  type Reversibility,
 } from "./actionClass.js";
 import { type ContextRisk, contextRiskCeiling } from "./contextRisk.js";
 import {
@@ -246,6 +247,12 @@ export interface AutonomyDecisionOpts {
    * gate, so forbidding is entirely opt-in.
    */
   forbidRules?: readonly ForbidRule[];
+  /**
+   * Instance reversibility established before this decision (e.g. a
+   * `file.write` whose rollback is not confirmed ⇒ "irreversible"). Lower-only,
+   * passed to `classifyActionClass`. Absent ⇒ byte-identical to before.
+   */
+  reversibilityCeiling?: Reversibility;
 }
 
 /**
@@ -317,7 +324,13 @@ export function decideWorkerAction(
   store: WorkerLevelStore,
   opts?: AutonomyDecisionOpts,
 ): WorkerGateDecision {
-  const ac = classifyActionClass(toolName, params);
+  const ac = classifyActionClass(
+    toolName,
+    params,
+    opts?.reversibilityCeiling
+      ? { reversibilityCeiling: opts.reversibilityCeiling }
+      : undefined,
+  );
   const owned = ownsAction(worker, ac);
   const earnedLevel = (store.getState(worker.id, ac.key)?.level ??
     0) as TrustLevel;

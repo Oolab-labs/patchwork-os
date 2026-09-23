@@ -39,6 +39,10 @@ import {
   resolveProfile,
 } from "../governance/profile.js";
 import { toolFactsFor } from "../governance/toolFacts.js";
+import {
+  explainRollbackability,
+  reversibilityCeilingFor,
+} from "../recipes/fileWriteRollbackability.js";
 import { loadConfig } from "../patchworkConfig.js";
 import { patchworkPath } from "../patchworkHome.js";
 import { stepSandboxRequest } from "../recipes/agentExecutor.js";
@@ -206,9 +210,13 @@ export async function explainRecipePolicy(
           }),
         )
       : undefined;
+    // INV-1: same instance ceiling the runner applies (no run ⇒ no rollback
+    // log ⇒ an fs write is not reversible).
+    const ceiling = reversibilityCeilingFor(explainRollbackability(toolId));
     const tool = toolFactsFor(
       toolId,
       containment ? { containment } : undefined,
+      ceiling ? { reversibilityCeiling: ceiling } : undefined,
     );
 
     let worker: WorkerFacts | undefined;
@@ -218,8 +226,13 @@ export async function explainRecipePolicy(
         toolId,
         undefined,
         workerCtx.store,
-        workerCtx.forbidRules.length > 0
-          ? { forbidRules: workerCtx.forbidRules }
+        workerCtx.forbidRules.length > 0 || ceiling
+          ? {
+              ...(workerCtx.forbidRules.length > 0 && {
+                forbidRules: workerCtx.forbidRules,
+              }),
+              ...(ceiling && { reversibilityCeiling: ceiling }),
+            }
           : undefined,
       );
       const resolved = resolveGateOutcome(decision, undefined);

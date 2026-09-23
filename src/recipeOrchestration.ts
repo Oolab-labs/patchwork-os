@@ -345,10 +345,13 @@ export async function buildWorkerAutonomyGate(
         input.toolId,
         input.params,
         store,
-        contextRisk || forbidRules.length > 0
+        contextRisk || forbidRules.length > 0 || input.reversibilityCeiling
           ? {
               ...(contextRisk ? { contextRisk } : {}),
               ...(forbidRules.length > 0 ? { forbidRules } : {}),
+              ...(input.reversibilityCeiling
+                ? { reversibilityCeiling: input.reversibilityCeiling }
+                : {}),
             }
           : undefined,
       );

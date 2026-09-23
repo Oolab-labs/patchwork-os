@@ -37,6 +37,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import {
+  assertRollbackNotWorsened,
+  reversibilityCeilingFor,
+  stepRollbackability,
+} from "./fileWriteRollbackability.js";
+import {
   approvalIdentityMatches,
   executionEvidence,
 } from "../approvalIdentity.js";
@@ -2545,6 +2550,17 @@ export async function runYamlRecipe(
             }),
           )
         : undefined;
+      // INV-1: a file write is reversible only if its rollback is confirmed
+      // NOW, before authority is decided. Re-checked in executeStep.
+      const stepRollback = step.agent
+        ? undefined
+        : stepRollbackability(approvalToolId, resolveParamsForApproval(step, ctx), {
+            workdir: stepDeps.workdir,
+            ...(stepDeps.fileRollbackLog && {
+              fileRollbackLog: stepDeps.fileRollbackLog,
+            }),
+          });
+      const stepReversibilityCeiling = reversibilityCeilingFor(stepRollback);
       const effective = computeEffectivePolicy({
         profile: governance,
         recipe: {
@@ -2557,6 +2573,9 @@ export async function runYamlRecipe(
         tool: toolFactsFor(
           approvalToolId,
           agentContainment ? { containment: agentContainment } : undefined,
+          stepReversibilityCeiling
+            ? { reversibilityCeiling: stepReversibilityCeiling }
+            : undefined,
         ),
         killSwitch: readKillSwitch(governance),
         gate: {
@@ -2610,6 +2629,9 @@ export async function runYamlRecipe(
             ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
             : `tool ${approvalToolId}`,
           params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
+          ...(stepReversibilityCeiling && {
+            reversibilityCeiling: stepReversibilityCeiling,
+          }),
           runTaskId,
           recipeName: recipe.name,
           ...(effectiveRunSignal && { signal: effectiveRunSignal }),
@@ -3063,6 +3085,7 @@ export async function runYamlRecipe(
                           recipeName: recipe.name,
                         }
                       : undefined,
+                    stepRollback,
                   ),
                   timeoutPromise,
                 ]);
@@ -3082,6 +3105,7 @@ export async function runYamlRecipe(
                       recipeName: recipe.name,
                     }
                   : undefined,
+                stepRollback,
               );
             }
             // Detect tool-level errors reported as JSON {ok: false, error: ...}
@@ -3537,6 +3561,8 @@ export async function executeStep(
     runTaskId: string;
     recipeName: string;
   },
+  /** Rollbackability the authority decision was made on (INV-1). */
+  rollbackAtDecision?: import("./fileRollback.js").Rollbackability,
 ): Promise<string | null> {
   const toolId = step.tool;
   if (!toolId) {
@@ -3603,6 +3629,11 @@ export async function executeStep(
         "approval_identity_mismatch: approved action changed at dispatch; no action taken",
       );
     }
+
+    // INV-1: the consequence facts must still be the ones authority was
+    // granted on. A write decided as rollback-confirmed that can no longer be
+    // rolled back is refused, not silently downgraded.
+    assertRollbackNotWorsened(toolId, params, deps, rollbackAtDecision);
 
     // Deterministic policy check. Recipe/worker tool calls dispatch
     // in-process via toolRegistry.executeTool and NEVER pass through
@@ -4980,6 +5011,7 @@ export function buildChainedDeps(
     tool: string,
     params: Record<string, unknown>,
     approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
+    rollbackAtDecision?: import("./fileRollback.js").Rollbackability,
   ): Promise<unknown> => {
     // R2 C-1 third-substitution-site coverage: the chained runner has its
     // own template-resolution path (`chainedRunner.ts:194-205`). By the
@@ -5008,7 +5040,14 @@ export function buildChainedDeps(
     // executeStep uses a RunContext for {{}} rendering — by the time executeTool
     // is called the chained runner has already resolved templates, so we pass
     // an empty context (no double-rendering).
-    const result = await executeStep(step, {}, stepDeps, approvalEvidence);
+    const result = await executeStep(
+      step,
+      {},
+      stepDeps,
+      approvalEvidence,
+      undefined,
+      rollbackAtDecision,
+    );
     return result ?? "";
   };
 
@@ -5178,6 +5217,13 @@ export function buildChainedDeps(
 
   return {
     executeTool,
+    assessRollback: (toolId: string, params: Record<string, unknown>) =>
+      stepRollbackability(toolId, params, {
+        workdir: stepDeps.workdir,
+        ...(stepDeps.fileRollbackLog && {
+          fileRollbackLog: stepDeps.fileRollbackLog,
+        }),
+      }),
     executeAgent,
     loadNestedRecipe,
     // The cell `runChainedRecipe` fills with this run's `taskId`. See above.

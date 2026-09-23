@@ -188,7 +188,10 @@ steps:
     );
     expect(finals["file.read"]).toBe("ALLOW");
     expect(finals.agent).toBe("ALLOW"); // contained
-    expect(finals["file.write"]).toBe("ALLOW"); // reversible write flows
+    // INV-1: this is a CRON recipe, which never has a rollback log, so the
+    // write cannot be undone and is not reversible. It used to explain as
+    // "reversible write flows" — the claim the runner now refuses to make.
+    expect(finals["file.write"]).toBe("HUMAN_APPROVAL_REQUIRED");
     expect(finals["http.post"]).toBe("HUMAN_APPROVAL_REQUIRED"); // irreversible write asks
     const text = formatExplainReport(gov);
     expect(text).toMatch(/TRIGGER: CRON/);

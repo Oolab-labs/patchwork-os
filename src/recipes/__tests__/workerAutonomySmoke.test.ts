@@ -16,8 +16,10 @@
  * `ApprovalQueue` singleton.
  *
  * Asserts the five links of the chain the live dogfood depends on:
- *   A. the `github.create_issue` step GATES (compensable + unearned L4) while
- *      the reversible steps (git.log_since / agent / file.write) flow un-gated;
+ *   A. the `github.create_issue` step GATES (compensable + unearned L4), and so
+ *      does the `file.write` (INV-1: an automated run has no rollback log, so
+ *      the write is NOT reversible), while the reversible steps
+ *      (git.log_since / agent) flow un-gated;
  *   B. on approval the gated step EXECUTES (connector called, step `success`);
  *   C. the run is PERSISTED to `runs.jsonl`;
  *   D. the trust replay ATTRIBUTES that run to the test-guardian worker and
@@ -273,11 +275,16 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
     );
     unsub();
 
-    // --- A. only the compensable github.create_issue step was GATED --------
+    // --- A. the issue write AND the unrollbackable file.write were GATED ---
+    // file.write used to flow here as `fs-write:reversible`. It was not: this
+    // automated run has no rollback log, so nothing could restore the file.
+    // Its rollback is now assessed before the decision (INV-1) and an
+    // unconfirmed write classifies irreversible, which an unearned worker
+    // must ask for.
     expect(
-      [...queuedTools],
-      "exactly the issue write is gated; reversible steps flow",
-    ).toEqual(["github.create_issue"]);
+      [...queuedTools].sort(),
+      "the issue write and the unrollbackable file.write gate; reversible steps flow",
+    ).toEqual(["file.write", "github.create_issue"]);
 
     // --- B. the gated step EXECUTED once approved --------------------------
     expect(createIssueMock).toHaveBeenCalledTimes(1);
@@ -328,7 +335,7 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
         ?.assignee,
     ).toBeUndefined();
 
-    // The reversible file.write actually landed the triage note UNDER the temp
+    // The (approved) file.write actually landed the triage note UNDER the temp
     // home — proves step C's side-effect ran AND that `~/` expanded to tmpHome
     // (hermeticity guard; review #smoke-review F3). If HOME expansion ever
     // broke, this fails loudly instead of polluting the real ~/.patchwork.

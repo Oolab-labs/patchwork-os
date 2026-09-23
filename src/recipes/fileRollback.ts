@@ -138,13 +138,98 @@ function readRows(
 }
 
 /**
+ * Whether a write can honestly be undone. Only `confirmed` earns reversible
+ * treatment in the autonomy gate and the governed profile:
+ *   - `confirmed`   a rollback log is present and the pre-image is (or was) a
+ *                   losslessly captured text file, or the path did not exist
+ *                   (undo = delete);
+ *   - `uncertain`   a log is present but the pre-image cannot be captured
+ *                   faithfully (symlink, unreadable, non-utf-8 bytes);
+ *   - `unavailable` there is no rollback log at all, so nothing will record
+ *                   the prior state. Automated runs are in this state today.
+ */
+export type Rollbackability = "confirmed" | "uncertain" | "unavailable";
+
+export interface CaptureResult {
+  rollbackability: Exclude<Rollbackability, "unavailable">;
+  /** False when the pre-image row could not be written to disk. */
+  persisted: boolean;
+}
+
+/**
+ * The ONE inspection of a path's pre-write state. Both the pre-authorisation
+ * assessment and the pre-image capture call this, so there is a single
+ * definition of what can be rolled back. Never follows a symlink.
+ */
+export type RollbackState =
+  | { kind: "existing-text"; content: string }
+  | { kind: "absent" }
+  | { kind: "uncertain"; reason: string };
+
+export function inspectRollbackState(absPath: string): RollbackState {
+  try {
+    const st = lstatSync(absPath);
+    if (st.isSymbolicLink()) {
+      // Refuse to READ through a symlink (never trust an attacker-chosen
+      // target's content as the pre-image) — but the write DOES go through
+      // it, so this is not "absent" either.
+      return { kind: "uncertain", reason: "path is a symlink" };
+    }
+    // Bytes first, then verify a LOSSLESS utf-8 round-trip: a binary file
+    // decoded as utf-8 gets U+FFFD substitutions, and writing that back on
+    // rollback would corrupt it. The log is JSONL, so it carries text only.
+    const buf = readFileSync(absPath);
+    const decoded = buf.toString("utf-8");
+    if (Buffer.from(decoded, "utf-8").equals(buf)) {
+      return { kind: "existing-text", content: decoded };
+    }
+    return {
+      kind: "uncertain",
+      reason: "content is not losslessly representable as utf-8",
+    };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return { kind: "absent" };
+    // EACCES, EPERM, EISDIR... the file may exist with real content we could
+    // not read. Never conflate that with "did not exist".
+    return {
+      kind: "uncertain",
+      reason: `could not read: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+/** `unavailable` when no rollback log is wired for this run. */
+export function assessRollbackability(
+  absPath: string,
+  log: FileRollbackLog | undefined,
+): Rollbackability {
+  return log ? log.assess(absPath) : "unavailable";
+}
+
+const ROLLBACKABILITY_RANK: Record<Rollbackability, number> = {
+  confirmed: 2,
+  uncertain: 1,
+  unavailable: 0,
+};
+
+/** True when `now` is strictly less rollback-able than `atDecision`. */
+export function rollbackabilityWorsened(
+  atDecision: Rollbackability,
+  now: Rollbackability,
+): boolean {
+  return ROLLBACKABILITY_RANK[now] < ROLLBACKABILITY_RANK[atDecision];
+}
+
+/**
  * Per-attempt log of file pre-images. Constructed once per recipe run
  * (mirrors WriteEffectLedger's disk mode) and threaded through StepDeps as
  * `fileRollbackLog`; `file.write` / `file.append` call `capturePreImage`
  * before writing.
  */
 export class FileRollbackLog {
-  private readonly captured = new Set<string>();
+  /** path → whether its FIRST captured row was uncertain. */
+  private readonly captured = new Map<string, boolean>();
   private readonly dir: string;
   private readonly scopeKey: string;
   private readonly file: string;
@@ -168,87 +253,68 @@ export class FileRollbackLog {
     // true "before this attempt began" state; a mid-retry re-capture would
     // silently narrow what rollback can undo.
     for (const row of readRows(this.file, this.scopeKey, this.logger)) {
-      this.captured.add(row.path);
+      if (!this.captured.has(row.path)) {
+        this.captured.set(row.path, row.uncertain === true);
+      }
     }
   }
 
   /**
-   * Snapshot `absPath`'s current content before a write. No-op if this path
-   * was already captured earlier in the same scope. Best-effort: a snapshot
-   * failure is logged but never blocks the write it's guarding — losing
-   * rollback capability for one path is preferable to failing the run.
+   * Snapshot `absPath`'s current content before a write, using the SAME
+   * inspection `assess` uses. No-op if this path was already captured earlier
+   * in the same scope — the first pre-image is what rollback replays.
+   *
+   * Returns what it established, so a caller that was authorised on the
+   * assumption of a confirmed rollback can refuse the write when that
+   * assumption did not hold (`persisted: false` means the row never reached
+   * disk, so there is nothing to roll back from).
    */
-  capturePreImage(absPath: string): void {
-    if (this.captured.has(absPath)) return;
-    this.captured.add(absPath);
-    let hadContent = false;
-    let content: string | null = null;
-    let uncertain = false;
-    try {
-      const st = lstatSync(absPath);
-      if (st.isSymbolicLink()) {
-        // Refuse to READ through a symlink (avoid trusting an
-        // attacker-controlled symlink target's content as the pre-image),
-        // but the subsequent file.write/file.append DOES write through it
-        // — mutating whatever the symlink points at. So this is NOT safe
-        // to record as "didn't exist": mark it `uncertain` so rollback
-        // reports a failure instead of deleting the symlink and claiming
-        // a false "restored to prior state" while the real target's
-        // original content is permanently unrecoverable.
-        uncertain = true;
-        this.logger?.warn?.(
-          `[file-rollback] ${absPath} is a symlink — pre-image not captured, rollback for this path will fail loudly instead of guessing`,
-        );
-      } else {
-        // Read as bytes first and verify a LOSSLESS utf-8 round-trip
-        // before trusting a string capture. A binary file (image,
-        // archive, etc.) decoded via readFileSync(path, "utf-8") silently
-        // replaces invalid byte sequences with U+FFFD — capturing that
-        // and writing it back on rollback would permanently corrupt the
-        // file instead of restoring it. JSONL (this log's own format)
-        // can only carry text anyway, so a genuinely binary pre-image
-        // has no lossless representation here — mark uncertain rather
-        // than pretend to capture it.
-        const buf = readFileSync(absPath);
-        const decoded = buf.toString("utf-8");
-        if (Buffer.from(decoded, "utf-8").equals(buf)) {
-          content = decoded;
-          hadContent = true;
-        } else {
-          uncertain = true;
-          this.logger?.warn?.(
-            `[file-rollback] ${absPath} is not losslessly representable as utf-8 (binary content) — pre-image not captured, rollback for this path will fail loudly instead of corrupting it`,
-          );
-        }
-      }
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") {
-        // Genuinely did not exist — hadContent: false is correct and safe;
-        // rollback deleting it later is the right undo.
-      } else {
-        // Some other failure (EACCES, EPERM, ...) — the file may well
-        // exist with real content we simply couldn't read. Do NOT
-        // conflate this with ENOENT's "didn't exist": mark uncertain so
-        // rollback fails loudly instead of silently unlinking a file that
-        // existed all along.
-        uncertain = true;
-        this.logger?.warn?.(
-          `[file-rollback] could not snapshot ${absPath}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+  capturePreImage(absPath: string): CaptureResult {
+    const prior = this.captured.get(absPath);
+    if (prior !== undefined) {
+      return {
+        rollbackability: prior ? "uncertain" : "confirmed",
+        persisted: true,
+      };
     }
-    this.append({
+    const state = inspectRollbackState(absPath);
+    const uncertain = state.kind === "uncertain";
+    if (state.kind === "uncertain") {
+      this.logger?.warn?.(
+        `[file-rollback] ${absPath}: ${state.reason} — pre-image not captured, rollback for this path will fail loudly instead of guessing`,
+      );
+    }
+    const persisted = this.append({
       scopeKey: this.scopeKey,
       path: absPath,
-      hadContent,
-      content,
+      hadContent: state.kind === "existing-text",
+      content: state.kind === "existing-text" ? state.content : null,
       recordedAt: Date.now(),
       ...(uncertain && { uncertain }),
     });
+    // Only remember the capture once it is durable: an unpersisted row must
+    // not make a later write in the same run look already-covered.
+    if (persisted) this.captured.set(absPath, uncertain);
+    return {
+      rollbackability: uncertain ? "uncertain" : "confirmed",
+      persisted,
+    };
   }
 
-  private append(row: RollbackRow): void {
+  /**
+   * Read-only: could a write to `absPath` right now be rolled back by this log?
+   * A path already captured this scope answers from its FIRST row (that is the
+   * pre-image rollback replays), not from the file as it is today.
+   */
+  assess(absPath: string): Rollbackability {
+    const prior = this.captured.get(absPath);
+    if (prior !== undefined) return prior ? "uncertain" : "confirmed";
+    return inspectRollbackState(absPath).kind === "uncertain"
+      ? "uncertain"
+      : "confirmed";
+  }
+
+  private append(row: RollbackRow): boolean {
     try {
       // Cross-process lock (ADR-0007-style torn-row guard, same primitive
       // runLog.ts/workerGateDecisionLog.ts use) around the WHOLE check+
@@ -277,10 +343,12 @@ export class FileRollbackLog {
           });
         }
       });
+      return true;
     } catch (err) {
       this.logger?.warn?.(
         `[file-rollback] append failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+      return false;
     }
   }
 

@@ -18,6 +18,7 @@ import {
   COMPAT_PROFILE,
   resolveAgentContainment,
 } from "../governance/profile.js";
+import { reversibilityCeilingFor } from "./fileWriteRollbackability.js";
 import { toolFactsFor } from "../governance/toolFacts.js";
 import {
   isConnectorSource,
@@ -273,6 +274,8 @@ export type ToolExecutor = (
   tool: string,
   params: Record<string, unknown>,
   approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
+  /** Rollbackability the authority decision was made on (INV-1). */
+  rollbackAtDecision?: import("./fileRollback.js").Rollbackability,
 ) => Promise<unknown>;
 
 /**
@@ -314,6 +317,15 @@ export interface ExecutionDeps {
    */
   runTaskIdRef?: { current?: string };
   executeTool: ToolExecutor;
+  /**
+   * INV-1: decision-time rollbackability of a rollback-backed file step
+   * (`undefined` for any other tool). Supplied by `buildChainedDeps`, which
+   * owns the run's rollback log. Absent ⇒ no instance ceiling.
+   */
+  assessRollback?: (
+    toolId: string,
+    params: Record<string, unknown>,
+  ) => import("./fileRollback.js").Rollbackability | undefined;
   executeAgent: AgentExecutor;
   loadNestedRecipe: (
     name: string,
@@ -814,6 +826,12 @@ export async function executeChainedStep(
     // interactive case (see the comment above), so it is evaluated as a
     // "manual" trigger; under compat that reproduces the old predicate.
     const governance = deps.governance ?? COMPAT_PROFILE;
+    // INV-1: rollbackability BEFORE authority; re-checked at dispatch.
+    const stepRollback =
+      !step.agent && step.tool && deps.assessRollback
+        ? deps.assessRollback(step.tool, resolved)
+        : undefined;
+    const stepReversibilityCeiling = reversibilityCeilingFor(stepRollback);
     const effective =
       depth === 0 && (step.agent || step.tool)
         ? computeEffectivePolicy({
@@ -850,6 +868,9 @@ export async function executeChainedStep(
                     ),
                   }
                 : undefined,
+              stepReversibilityCeiling
+                ? { reversibilityCeiling: stepReversibilityCeiling }
+                : undefined,
             ),
             killSwitch: readKillSwitch(governance),
             gate: {
@@ -883,6 +904,9 @@ export async function executeChainedStep(
         effective: effective.final,
         summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
         params: step.agent ? undefined : (resolved as Record<string, unknown>),
+        ...(stepReversibilityCeiling && {
+          reversibilityCeiling: stepReversibilityCeiling,
+        }),
         ...(options.signal && { signal: options.signal }),
         runTaskId: ctx.runTaskId ?? "",
         recipeName: recipe.name,
@@ -1191,9 +1215,16 @@ export async function executeChainedStep(
         };
       }
       let result: unknown = await raceStepTimeout(
-        stepApprovalEvidence
-          ? deps.executeTool(step.tool, resolved, stepApprovalEvidence)
-          : deps.executeTool(step.tool, resolved),
+        stepRollback !== undefined
+          ? deps.executeTool(
+              step.tool,
+              resolved,
+              stepApprovalEvidence,
+              stepRollback,
+            )
+          : stepApprovalEvidence
+            ? deps.executeTool(step.tool, resolved, stepApprovalEvidence)
+            : deps.executeTool(step.tool, resolved),
         step.timeout_ms,
         step.id,
         options.signal,

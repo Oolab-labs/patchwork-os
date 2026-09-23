@@ -69,6 +69,27 @@ describe("decideWorkerAction", () => {
     expect(d.effectiveLevel).toBe(0);
   });
 
+  it("GATES the same fs-write when its rollback is NOT confirmed (INV-1 ceiling)", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    const ungated = decideWorkerAction(
+      w,
+      "file.write",
+      { path: "a.md" },
+      new WorkerLevelStore(),
+    );
+    expect(ungated.action).toBe("allow");
+    const d = decideWorkerAction(
+      w,
+      "file.write",
+      { path: "a.md" },
+      new WorkerLevelStore(),
+      { reversibilityCeiling: "irreversible" },
+    );
+    expect(d.action).toBe("gate");
+    expect(d.reversibility).toBe("irreversible");
+    expect(d.classKey).toMatch(/^fs-write:irreversible:/);
+  });
+
   it("GATES a compensable/irreversible action the worker has not earned", () => {
     const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
     const d = decideWorkerAction(w, "gitPush", {}, new WorkerLevelStore());
