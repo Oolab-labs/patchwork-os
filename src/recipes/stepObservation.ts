@@ -40,8 +40,8 @@
 // ---------------------------------------------------------------------------
 
 import {
-  isSensitiveKeyName,
   redactKnownSecretsDeep,
+  redactSensitiveKeysDeep,
 } from "../governance/secretValues.js";
 
 export interface SilentFailMatch {
@@ -221,40 +221,6 @@ export function redactSecretsForPrompt<T extends Record<string, string>>(
   return out as T;
 }
 
-function isSensitiveKey(key: string): boolean {
-  // Strip separators so one pattern covers every spelling a caller might use.
-  // `api_key`, `api-key`, `apiKey` and `API_KEY` all normalise to `apikey`.
-  return isSensitiveKeyName(key);
-}
-
-/**
- * Walk a value and replace any property whose key matches a sensitive
- * pattern. Arrays + nested objects walked recursively. Cycles handled by
- * tracking seen objects. Non-objects pass through unchanged.
- */
-function redactSensitive(
-  value: unknown,
-  seen = new WeakSet<object>(),
-): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (seen.has(value as object)) return "[circular]";
-  seen.add(value as object);
-
-  if (Array.isArray(value)) {
-    return value.map((v) => redactSensitive(v, seen));
-  }
-
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (isSensitiveKey(k)) {
-      out[k] = REDACTED;
-    } else {
-      out[k] = redactSensitive(v, seen);
-    }
-  }
-  return out;
-}
-
 /**
  * Capture a value for inclusion in `RunStepResult`. Returns undefined if
  * the value is `undefined` (don't bloat the log row for steps that
@@ -271,7 +237,7 @@ export function captureForRunlog(value: unknown): unknown | undefined {
     // Key-based first (cheap, structural), then VALUE-based: a secret that
     // was interpolated into a URL, a JSON body string or an error message
     // has no sensitive key left to match, and only the registry can see it.
-    redacted = redactKnownSecretsDeep(redactSensitive(value));
+    redacted = redactKnownSecretsDeep(redactSensitiveKeysDeep(value));
   } catch {
     return { error: "[capture-redact-failed]" };
   }

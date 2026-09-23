@@ -54,6 +54,35 @@ export const SENSITIVE_KEY_PATTERNS: readonly string[] = [
   "accesstoken",
 ];
 
+/** Marker for a value removed because its KEY names a secret. */
+export const SENSITIVE_KEY_REDACTED = "[REDACTED]";
+
+/**
+ * Replace every property whose KEY names a secret (`authorization`, `api_key`,
+ * `password`, …) with `[REDACTED]`, recursively. Structural and cheap; it cannot
+ * see a secret interpolated into a string — `redactKnownSecretsDeep` covers that.
+ * Never feed its output into an identity hash: two different secrets redact to
+ * the same text.
+ */
+export function redactSensitiveKeysDeep(
+  value: unknown,
+  seen = new WeakSet<object>(),
+): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value as object)) return "[circular]";
+  seen.add(value as object);
+  if (Array.isArray(value)) {
+    return value.map((v) => redactSensitiveKeysDeep(v, seen));
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = isSensitiveKeyName(k)
+      ? SENSITIVE_KEY_REDACTED
+      : redactSensitiveKeysDeep(v, seen);
+  }
+  return out;
+}
+
 export function isSensitiveKeyName(key: string): boolean {
   const normalised = key.toLowerCase().replace(/[-_\s.]/g, "");
   for (const pattern of SENSITIVE_KEY_PATTERNS) {

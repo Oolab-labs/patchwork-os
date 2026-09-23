@@ -16,6 +16,7 @@
 
 import {
   type ApprovalGrant,
+  approvalIdentityDigestsMatch,
   approvalIdentityMatches,
 } from "../approvalIdentity.js";
 import type { RiskTier } from "../riskTier.js";
@@ -24,7 +25,21 @@ export interface ApprovalRequestInput {
   toolId: string;
   tier: RiskTier;
   summary?: string;
+  /**
+   * DISPLAY-SAFE params: key- and value-redacted (and size-capped). An approval
+   * callback — production or custom — never receives a raw secret. The raw
+   * dispatch params never cross this boundary; `proposedActionIdentity` carries
+   * their binding instead.
+   */
   params?: Record<string, unknown>;
+  /**
+   * Opaque identity digest of the action as it will ACTUALLY be dispatched —
+   * computed by the runner from the raw dispatch params before redaction. Two
+   * actions differing only in a secret share `params` but never this digest.
+   * Named "proposed": nobody has approved it yet. Absent for agent steps and for
+   * callers that predate it (the queue then computes identity from `params`).
+   */
+  proposedActionIdentity?: string;
   /**
    * Instance reversibility established before this decision — set for a
    * rollback-backed file write whose rollback is NOT confirmed ("irreversible").
@@ -109,6 +124,14 @@ export function recipeApprovalIdentityMatches(
   input: ApprovalRequestInput,
 ): boolean {
   if (!verdict.grant) return true; // legacy/bypass test doubles carry no human grant
+  // The runner supplies the digest of the raw dispatch params; `params` here is
+  // redacted and must never be re-hashed as if it were the action.
+  if (input.proposedActionIdentity !== undefined) {
+    return approvalIdentityDigestsMatch(
+      verdict.grant.approvedActionIdentity,
+      input.proposedActionIdentity,
+    );
+  }
   return approvalIdentityMatches(verdict.grant.approvedActionIdentity, {
     toolName: input.toolId,
     params: input.params ?? {},

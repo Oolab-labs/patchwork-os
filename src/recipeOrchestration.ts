@@ -212,7 +212,12 @@ export async function makeRecipeApprovalFn(
         },
         // L1: abort the wait if the run is cancelled (→ "cancelled" → halt)
         // instead of blocking for the full approval TTL.
-        { signal: input.signal },
+        {
+          signal: input.signal,
+          ...(input.proposedActionIdentity !== undefined && {
+            proposedActionIdentity: input.proposedActionIdentity,
+          }),
+        },
       );
     const decision = await promise;
     // Carry WHICH refusal this was to the runner. The queue distinguishes
@@ -513,12 +518,17 @@ export async function buildWorkerAutonomyGate(
       // label a branch that has never fired on any real run.
       if (outcome === "refuse") return false;
       // gate → queue for human approval; fail-closed on reject / expire / cancel
-      const { promise } = queue.request(
+      const { promise, callId, approvedActionIdentity } = queue.request(
         {
           toolName: input.toolId,
           params: input.params ?? {},
           tier: input.tier,
-          sessionId: `worker:${worker.id}`,
+          // "recipe", NOT `worker:<id>`: sessionId is part of the approved-action
+          // identity, and the runner revalidates with "recipe". A worker label
+          // here made every worker-approved action unmatchable once a grant was
+          // returned. The worker is still named by the Decision Record
+          // (`workerId`), the summary below, and `recipeName` + `correlationId`.
+          sessionId: "recipe",
           summary: `${worker.name} (${decision.classKey}): ${decision.reason}`,
           // recipeName propagates to the ActivityLog decision row so the shadow
           // observer can distinguish worker-gate approvals from plain Claude-
@@ -529,12 +539,32 @@ export async function buildWorkerAutonomyGate(
           // reachable from each other, or the queue is evidence of nothing.
           correlationId: input.runTaskId,
         },
-        { signal: input.signal }, // L1: cancel the wait when the run aborts
+        {
+          signal: input.signal, // L1: cancel the wait when the run aborts
+          ...(input.proposedActionIdentity !== undefined && {
+            proposedActionIdentity: input.proposedActionIdentity,
+          }),
+        },
       );
       // `decision` is already the worker-gate decision in this scope.
       const queueDecision = await promise;
+      // Return a GRANT, never a bare approval. Without one the runner's identity
+      // check treats the verdict as a legacy/bypass double and skips
+      // revalidation, so the approved action could change before dispatch.
       return queueDecision === "approved"
-        ? { approved: true }
+        ? {
+            approved: true,
+            grant: {
+              decision: "approved",
+              approvalId: callId,
+              approvedActionIdentity,
+              facts: {
+                tier: input.tier,
+                correlationId: input.runTaskId,
+                recipeName,
+              },
+            },
+          }
         : { approved: false, refusal: queueDecision };
     };
   } catch {

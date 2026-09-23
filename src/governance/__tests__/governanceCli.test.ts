@@ -255,6 +255,8 @@ describe("recipe run --local under the governed profile", () => {
     const fnYes = yes.requireApprovalFn as NonNullable<
       typeof yes.requireApprovalFn
     >;
+    // "yes" returns a GRANT bound to the action as shown, never a bare `true`:
+    // a grant-less approval would skip the runner's final identity check.
     expect(
       await fnYes({
         toolId: "http.post",
@@ -262,7 +264,7 @@ describe("recipe run --local under the governed profile", () => {
         runTaskId: "t",
         effective: "HUMAN_APPROVAL_REQUIRED",
       }),
-    ).toBe(true);
+    ).toMatchObject({ approved: true, grant: { decision: "approved" } });
     const no = await resolveLocalGovernance(undefined, {
       isTTY: true,
       ask: async () => "",

@@ -66,6 +66,29 @@ export function computeApprovedActionIdentity(
     .digest("hex");
 }
 
+/** True for a well-formed action identity digest (64 lowercase hex chars). */
+export function isActionIdentityDigest(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+/**
+ * Constant-time comparison of two precomputed identity digests. Used where the
+ * identity was computed from RAW facts that the comparing code must not see
+ * (e.g. an approval callback that only receives redacted params).
+ */
+export function approvalIdentityDigestsMatch(
+  expected: string,
+  actual: string,
+): boolean {
+  if (!isActionIdentityDigest(expected) || !isActionIdentityDigest(actual)) {
+    return false;
+  }
+  return timingSafeEqual(
+    Buffer.from(expected, "hex"),
+    Buffer.from(actual, "hex"),
+  );
+}
+
 export function approvalIdentityMatches(
   expected: string,
   actualFacts: ApprovedActionFacts,

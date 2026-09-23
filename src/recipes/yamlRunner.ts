@@ -38,6 +38,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import {
   approvalIdentityMatches,
+  computeApprovedActionIdentity,
   executionEvidence,
 } from "../approvalIdentity.js";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
@@ -2566,7 +2567,7 @@ export async function runYamlRecipe(
         ? undefined
         : stepRollbackability(
             approvalToolId,
-            resolveParamsForApproval(step, ctx),
+            resolveDispatchParamsSafe(step, ctx),
             {
               workdir: stepDeps.workdir,
               ...(stepDeps.fileRollbackLog && {
@@ -2635,6 +2636,11 @@ export async function runYamlRecipe(
         | import("../approvalIdentity.js").ApprovalGrant
         | undefined;
       if (deps.requireApprovalFn && effective.consultsApproval) {
+        // What is EXECUTED and HASHED (raw) is not what an approval callback
+        // may SEE (redacted). The digest carries the raw binding across.
+        const rawApprovalParams = step.agent
+          ? undefined
+          : resolveDispatchParamsSafe(step, ctx);
         const approvalInput = {
           toolId: approvalToolId,
           tier: classifyTool(approvalToolId),
@@ -2642,7 +2648,17 @@ export async function runYamlRecipe(
           summary: step.agent
             ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
             : `tool ${approvalToolId}`,
-          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
+          params: rawApprovalParams && displayApprovalParams(rawApprovalParams),
+          ...(rawApprovalParams && {
+            proposedActionIdentity: computeApprovedActionIdentity({
+              toolName: approvalToolId,
+              params: rawApprovalParams,
+              sessionId: "recipe",
+              tier: classifyTool(approvalToolId),
+              correlationId: runTaskId,
+              recipeName: recipe.name,
+            }),
+          }),
           ...(stepReversibilityCeiling && {
             reversibilityCeiling: stepReversibilityCeiling,
           }),
@@ -2675,9 +2691,22 @@ export async function runYamlRecipe(
           emitStepDone(stepIdForEmit);
           continue;
         }
+        const rawAtRevalidation = step.agent
+          ? undefined
+          : resolveDispatchParamsSafe(step, ctx);
         const dispatchApprovalInput = {
           ...approvalInput,
-          params: step.agent ? undefined : resolveParamsForApproval(step, ctx),
+          params: rawAtRevalidation && displayApprovalParams(rawAtRevalidation),
+          ...(rawAtRevalidation && {
+            proposedActionIdentity: computeApprovedActionIdentity({
+              toolName: approvalToolId,
+              params: rawAtRevalidation,
+              sessionId: "recipe",
+              tier: classifyTool(approvalToolId),
+              correlationId: runTaskId,
+              recipeName: recipe.name,
+            }),
+          }),
         };
         if (!recipeApprovalIdentityMatches(verdict, dispatchApprovalInput)) {
           const reason =
@@ -3618,15 +3647,7 @@ export async function executeStep(
     // `fan_out`) whose `{{item.*}}` placeholders must be rendered per-iter
     // with the loop variable in scope, not pre-rendered against the outer
     // ctx (which would resolve them to empty strings).
-    const params: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(step)) {
-      if (key === "tool" || key === "agent" || key === "into") continue;
-      if (key === "do") {
-        params[key] = value;
-        continue;
-      }
-      params[key] = deepRender(value, ctx);
-    }
+    const params = resolveDispatchParams(step, ctx);
 
     if (
       approvalDispatch &&
@@ -3848,18 +3869,58 @@ export function render(
  * Falls back to the raw step if rendering throws — an approval prompt that
  * shows something is better than a run that dies building one.
  */
-function resolveParamsForApproval(
+/**
+ * The exact tool-call params a step dispatches with — the ONE representation used
+ * for approval identity, both revalidations and the dispatch itself. Raw values:
+ * never redacted or truncated here, because two different secrets would redact to
+ * the same text and an unchanged secret would stop matching. Redaction for display
+ * and persistence happens at the approval queue (`redactApprovalParamsForDisplay`).
+ *
+ * `tool`/`agent`/`into` are runner directives, not tool params. `do` is left raw:
+ * it carries a nested sub-step template (used by `fan_out`) whose `{{item.*}}`
+ * placeholders must be rendered per-iteration with the loop variable in scope.
+ */
+function resolveDispatchParams(
+  step: Record<string, unknown>,
+  ctx: RunContext,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(step)) {
+    if (key === "tool" || key === "agent" || key === "into") continue;
+    params[key] = key === "do" ? value : deepRender(value, ctx);
+  }
+  return params;
+}
+
+/**
+ * The representation an approval callback may SEE: key- and value-redacted and
+ * size-capped. Never hashed as the action — see `proposedActionIdentity`.
+ */
+function displayApprovalParams(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  return (captureForRunlog(raw) ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * `resolveDispatchParams` for the pre-dispatch seams (rollback assessment,
+ * approval request, first revalidation), which must not throw. On a render
+ * failure it falls back to the unrendered params; the dispatch render then fails
+ * the step, and an approval of the fallback cannot match anything that runs.
+ */
+function resolveDispatchParamsSafe(
   step: Record<string, unknown>,
   ctx: RunContext,
 ): Record<string, unknown> {
   try {
-    const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(step)) {
-      out[key] = key === "do" ? value : deepRender(value, ctx);
-    }
-    return (captureForRunlog(out) ?? out) as Record<string, unknown>;
+    return resolveDispatchParams(step, ctx);
   } catch {
-    return step;
+    const raw: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(step)) {
+      if (key === "tool" || key === "agent" || key === "into") continue;
+      raw[key] = value;
+    }
+    return raw;
   }
 }
 

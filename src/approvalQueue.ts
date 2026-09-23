@@ -4,11 +4,15 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
-import { computeApprovedActionIdentity } from "./approvalIdentity.js";
+import {
+  computeApprovedActionIdentity,
+  isActionIdentityDigest,
+} from "./approvalIdentity.js";
 import { ApprovalPersistence } from "./approvalPersistence.js";
 import {
   redactKnownSecrets,
   redactKnownSecretsDeep,
+  redactSensitiveKeysDeep,
 } from "./governance/secretValues.js";
 import type { ActorSnapshot } from "./identity/approverFromSession.js";
 import type { Logger } from "./logger.js";
@@ -426,7 +430,17 @@ export class ApprovalQueue {
       PendingApproval,
       "callId" | "requestedAt" | "expiresAt" | "owned"
     >,
-    opts: { withToken?: boolean; signal?: AbortSignal } = {},
+    opts: {
+      withToken?: boolean;
+      signal?: AbortSignal;
+      /**
+       * Identity digest precomputed by the caller from the RAW action it will
+       * dispatch, when `input.params` is already redacted (recipe approvals).
+       * Used as the action identity AND the in-flight dedup key, so two actions
+       * differing only in a secret never collapse. Never stored or persisted.
+       */
+      proposedActionIdentity?: string;
+    } = {},
   ): {
     callId: string;
     approvalToken?: string;
@@ -438,15 +452,26 @@ export class ApprovalQueue {
     // notification. Restored entries are deliberately absent from the
     // inflight index: they have no waiting caller and must never be rebound
     // to a new process after restart (ADR-0018).
-    const approvedActionIdentity = computeApprovedActionIdentity({
-      toolName: input.toolName,
-      params: input.params,
-      sessionId: input.sessionId,
-      tier: input.tier,
-      correlationId: input.correlationId,
-      recipeName: input.recipeName,
-    });
-    const inflightKey = approvalInflightKey(input);
+    if (
+      opts.proposedActionIdentity !== undefined &&
+      !isActionIdentityDigest(opts.proposedActionIdentity)
+    ) {
+      throw new Error("proposedActionIdentity must be a 64-char hex digest");
+    }
+    const approvedActionIdentity =
+      opts.proposedActionIdentity ??
+      computeApprovedActionIdentity({
+        toolName: input.toolName,
+        params: input.params,
+        sessionId: input.sessionId,
+        tier: input.tier,
+        correlationId: input.correlationId,
+        recipeName: input.recipeName,
+      });
+    const inflightKey =
+      opts.proposedActionIdentity !== undefined
+        ? `identity:${opts.proposedActionIdentity}`
+        : approvalInflightKey(input);
     // Value-based secret redaction at the ONE point where the record is
     // built: everything downstream — the live entry, `list()`, the dashboard
     // modal, push/webhook payloads and the durable `approval_log.jsonl` —
@@ -457,7 +482,7 @@ export class ApprovalQueue {
     // after redaction. Only the redacted record is retained or persisted.
     input = {
       ...input,
-      params: redactKnownSecretsDeep(input.params) as Record<string, unknown>,
+      params: redactApprovalParamsForDisplay(input.params),
       ...(input.summary !== undefined && {
         summary: redactKnownSecrets(input.summary),
       }),
@@ -808,6 +833,23 @@ let singleton: ApprovalQueue | undefined;
  * resolved `config.approvalTimeouts` before any other code path can reach a
  * bare `getApprovalQueue()`, so the configured timeouts always win.
  */
+/**
+ * The ONE redaction boundary for approval display and persistence: key-based
+ * (`authorization`, `api_key`, …) then registered-value redaction. Applied only to
+ * what the queue keeps, shows, notifies or persists — never to identity input.
+ * The approved-action identity is computed from the caller's RAW params before
+ * this runs, so two different secrets display identically yet never share an
+ * identity, and an unchanged secret still matches at dispatch.
+ */
+export function redactApprovalParamsForDisplay(
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  return redactKnownSecretsDeep(redactSensitiveKeysDeep(params)) as Record<
+    string,
+    unknown
+  >;
+}
+
 export function getApprovalQueue(opts?: {
   ttlMs?: Partial<Record<RiskTier, number>>;
   persistDir?: string;

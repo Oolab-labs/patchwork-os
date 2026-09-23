@@ -4,6 +4,7 @@
  * Implements the A2 CLI UX milestone for recipe authoring.
  */
 
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -15,6 +16,7 @@ import {
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { computeApprovedActionIdentity } from "../approvalIdentity.js";
 import "../recipes/tools/index.js";
 import { loadFixtureLibrary } from "../connectors/fixtureLibrary.js";
 import { MockConnector } from "../connectors/mockConnector.js";
@@ -1224,11 +1226,40 @@ export async function resolveLocalGovernance(
       );
       return { approved: false, refusal: "rejected" };
     }
+    // Bind the identity BEFORE the prompt: a "yes" approves the action as it was
+    // when shown, so a change while the prompt is pending fails revalidation.
+    // The runner's digest of the raw dispatch params when present; otherwise the
+    // same hash the runner falls back to (e.g. the chained runner, whose
+    // callback params are the dispatch params).
+    const approvedActionIdentity =
+      input.proposedActionIdentity ??
+      computeApprovedActionIdentity({
+        toolName: input.toolId,
+        params: input.params ?? {},
+        sessionId: "recipe",
+        tier: input.tier,
+        correlationId: input.runTaskId,
+        recipeName: input.recipeName,
+      });
     const answer = await ask(
       `[recipe run] approve ${input.summary ?? input.toolId} (${input.tier} tier)? [y/N] `,
     );
+    // A grant, never a bare `true`: a grant-less approval skips the runner's
+    // final identity check entirely.
     return /^y(es)?$/i.test(answer.trim())
-      ? true
+      ? {
+          approved: true,
+          grant: {
+            decision: "approved",
+            approvalId: `cli-${randomUUID()}`,
+            approvedActionIdentity,
+            facts: {
+              tier: input.tier,
+              correlationId: input.runTaskId,
+              recipeName: input.recipeName,
+            },
+          },
+        }
       : { approved: false, refusal: "rejected" };
   };
   return { governance: profile, requireApprovalFn };

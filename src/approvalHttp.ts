@@ -985,7 +985,7 @@ export function enqueueApprovalWithDispatch(
    * it through here must not silently drop that, or a cancelled run would
    * hold a step open for up to the tier's timeout.
    */
-  opts: { signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal; proposedActionIdentity?: string } = {},
 ): {
   callId: string;
   approvedActionIdentity: string;
@@ -1018,6 +1018,9 @@ export function enqueueApprovalWithDispatch(
       {
         withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic,
         ...(opts.signal !== undefined && { signal: opts.signal }),
+        ...(opts.proposedActionIdentity !== undefined && {
+          proposedActionIdentity: opts.proposedActionIdentity,
+        }),
       },
     );
   recordApprovalPrompted();

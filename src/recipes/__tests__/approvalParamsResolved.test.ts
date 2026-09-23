@@ -52,10 +52,13 @@ function deps(extra: Partial<RunnerDeps> = {}): RunnerDeps {
 
 describe("approval payload shows the resolved write", () => {
   it("renders templates before asking a human to approve", async () => {
-    const seen: Array<Record<string, unknown> | undefined> = [];
+    // Located by `toolId`: the approval payload is the exact DISPATCH params,
+    // which (correctly) no longer carry the runner directive `tool`.
+    const seen: Array<{ toolId: string; params?: Record<string, unknown> }> =
+      [];
     const requireApprovalFn = vi.fn(
-      async (i: { params?: Record<string, unknown> }) => {
-        seen.push(i.params);
+      async (i: { toolId: string; params?: Record<string, unknown> }) => {
+        seen.push({ toolId: i.toolId, params: i.params });
         return true;
       },
     );
@@ -98,7 +101,7 @@ describe("approval payload shows the resolved write", () => {
       }),
     );
 
-    const writeApproval = seen.find((p) => p?.tool === "file.write");
+    const writeApproval = seen.find((p) => p.toolId === "file.write")?.params;
     expect(writeApproval).toBeDefined();
     expect(writeApproval?.content).toBe("Descale the coffee machine");
     // The raw placeholder must not survive into what a person is shown.
@@ -106,10 +109,13 @@ describe("approval payload shows the resolved write", () => {
   });
 
   it("redacts secrets that only appear once the template is resolved", async () => {
-    const seen: Array<Record<string, unknown> | undefined> = [];
+    // Located by `toolId`: the approval payload is the exact DISPATCH params,
+    // which (correctly) no longer carry the runner directive `tool`.
+    const seen: Array<{ toolId: string; params?: Record<string, unknown> }> =
+      [];
     const requireApprovalFn = vi.fn(
-      async (i: { params?: Record<string, unknown> }) => {
-        seen.push(i.params);
+      async (i: { toolId: string; params?: Record<string, unknown> }) => {
+        seen.push({ toolId: i.toolId, params: i.params });
         return true;
       },
     );
@@ -140,7 +146,9 @@ describe("approval payload shows the resolved write", () => {
       secret_value: "NOT-A-REAL-CREDENTIAL-SUPERSECRET",
     });
 
-    const payload = JSON.stringify(seen.find((p) => p?.tool === "file.write"));
+    const payload = JSON.stringify(
+      seen.find((p) => p.toolId === "file.write")?.params,
+    );
     expect(payload).not.toContain("SUPERSECRET");
   });
 });

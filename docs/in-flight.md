@@ -53,7 +53,10 @@ verified (which is how this line came to be written).
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 
+
 ## Recently closed (informal log, prune periodically)
+
+- 2026-09-23 `fix/approval-identity-dispatch-binding` — approval identity must bind the exact raw dispatched params on every human-approved path: one shared dispatch-param representation for identity, revalidation and dispatch; ApprovalQueue as the single key+value redaction boundary for display/persistence; worker gate returns a binding grant. Touches yamlRunner approval/dispatch, approvalQueue, recipeOrchestration worker gate. — landed via private security advisory GHSA-888g-53g6-4874
 
 - 2026-09-23 `fix/fs-write-rollbackability` — fs-write is reversible only with a CONFIRMED rollback pre-image, assessed before the worker gate / governed profile / policy explain and re-checked before the write (refuse if it worsened). Touches the autonomy gate (actionClass, workerGate), both runners, toolFacts, policyExplain, fileRollback. Companion commit gives every automated attempt its own rollback store (runLedgers.ts) so ordinary text writes stay reversible, plus `recipe rollback --run`. — merged as #1605
 
