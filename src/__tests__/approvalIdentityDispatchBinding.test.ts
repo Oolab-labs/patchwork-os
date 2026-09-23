@@ -22,7 +22,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeApprovalRequest } from "../approvalHttp.js";
 import {
   type ApprovalGrant,
@@ -541,11 +541,10 @@ autonomyCeiling: 4
 });
 
 describe("local CLI approval (governed, no bridge) carries the binding too", () => {
-  const savedHome = process.env.PATCHWORK_HOME;
   let home: string;
   beforeEach(() => {
     home = mkdtempSync(path.join(os.tmpdir(), "bind-cli-"));
-    process.env.PATCHWORK_HOME = home;
+    vi.stubEnv("PATCHWORK_HOME", home);
     writeFileSync(
       path.join(home, "config.json"),
       JSON.stringify({ model: "claude", profile: "governed" }),
@@ -554,7 +553,7 @@ describe("local CLI approval (governed, no bridge) carries the binding too", () 
     _resetActiveProfileForTesting();
   });
   afterEach(() => {
-    process.env.PATCHWORK_HOME = savedHome;
+    vi.unstubAllEnvs();
     clearConfigCache();
     _resetActiveProfileForTesting();
     rmSync(home, { recursive: true, force: true });
