@@ -25,7 +25,10 @@ import {
   findMissingConnectors,
 } from "../recipes/connectorPreflight.js";
 import type { RollbackResult } from "../recipes/fileRollback.js";
-import { rollbackFileWrites } from "../recipes/fileRollback.js";
+import {
+  FileRollbackLog,
+  rollbackFileWrites,
+} from "../recipes/fileRollback.js";
 import {
   HALT_CATEGORY_HINTS,
   HALT_CATEGORY_LABELS,
@@ -37,6 +40,7 @@ import {
   normalizeRecipeForRuntime,
 } from "../recipes/migrations/index.js";
 import { tryResolveRecipePath } from "../recipes/resolveRecipePath.js";
+import { findAttemptByRun, runLedgersRoot } from "../recipes/runLedgers.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
 import { projectCost } from "../recipes/simulation/costProjector.js";
 import {
@@ -2725,6 +2729,72 @@ export function runRecipeRollback(
     dir: ledgerDir,
     scopeKey: deriveScopeKey(recipeName, attemptId),
   });
+}
+
+function resolveRunStore(
+  recipeName: string,
+  runTaskId: string,
+  root: string,
+): { dir: string; attemptId: string } {
+  const found = findAttemptByRun(root, runTaskId);
+  if (!found) {
+    throw new Error(
+      `no rollback store for run ${runTaskId}: it expired (attempt stores are kept 14 days) or was never recorded. ` +
+        "The run may have been reversible when it executed; rollback is no longer available now.",
+    );
+  }
+  if (found.recipeName !== recipeName) {
+    throw new Error(
+      `run ${runTaskId} belongs to recipe "${found.recipeName}", not "${recipeName}"`,
+    );
+  }
+  return { dir: found.dir, attemptId: found.attemptId };
+}
+
+/** What `recipe rollback --run` would do, without doing it. */
+export function planRecipeRollbackByRun(
+  recipeName: string,
+  runTaskId: string,
+  opts: { root?: string } = {},
+): { restore: string[]; remove: string[]; cannot: string[] } {
+  const { dir, attemptId } = resolveRunStore(
+    recipeName,
+    runTaskId,
+    opts.root ?? runLedgersRoot(),
+  );
+  const log = new FileRollbackLog({
+    dir,
+    scopeKey: deriveScopeKey(recipeName, attemptId),
+  });
+  const plan = {
+    restore: [] as string[],
+    remove: [] as string[],
+    cannot: [] as string[],
+  };
+  for (const row of log.rows()) {
+    if (row.uncertain) plan.cannot.push(row.path);
+    else if (row.hadContent) plan.restore.push(row.path);
+    else plan.remove.push(row.path);
+  }
+  return plan;
+}
+
+/**
+ * `patchwork recipe rollback <name> --run <taskId>` — undo an automated run's
+ * file writes by RUN identity. The operator never needs a ledger path: the run
+ * is resolved to its attempt store under `run-ledgers/` (runLedgers.ts).
+ */
+export function runRecipeRollbackByRun(
+  recipeName: string,
+  runTaskId: string,
+  opts: { root?: string } = {},
+): RollbackResult {
+  const { dir, attemptId } = resolveRunStore(
+    recipeName,
+    runTaskId,
+    opts.root ?? runLedgersRoot(),
+  );
+  return runRecipeRollback(recipeName, attemptId, dir);
 }
 
 /** Human-readable rendering of a RollbackResult for CLI output. */

@@ -13,6 +13,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
+  explainRollbackability,
+  reversibilityCeilingFor,
+} from "../../recipes/fileWriteRollbackability.js";
+import {
   type RunnerDeps,
   runYamlRecipe,
   type YamlRecipe,
@@ -331,7 +335,20 @@ describe("preview equals enforcement (flat runner)", () => {
                 ...(requireApproval !== undefined && { requireApproval }),
               },
               trigger,
-              tool: toolFactsFor(t.toolId),
+              // The runner here has no rollback log (no --ledger-dir), which
+              // is exactly what `policy explain` assumes — both must derive
+              // the same instance ceiling, or explain prints ALLOW for a
+              // file.write the runner gates.
+              tool: toolFactsFor(
+                t.toolId,
+                undefined,
+                (() => {
+                  const c = reversibilityCeilingFor(
+                    explainRollbackability(t.toolId),
+                  );
+                  return c ? { reversibilityCeiling: c } : undefined;
+                })(),
+              ),
               killSwitch: KS_OFF,
               gate: { approvalFnInjected: injected, workerGateInjected: false },
             });

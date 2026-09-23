@@ -7,13 +7,17 @@
 
 import { getTool } from "../recipes/toolRegistry.js";
 import { classifyTool } from "../riskTier.js";
-import { classifyActionClass } from "../workers/actionClass.js";
+import {
+  classifyActionClass,
+  type Reversibility,
+} from "../workers/actionClass.js";
 import type { ToolFacts } from "./effectivePolicy.js";
 import type { AgentContainment } from "./profile.js";
 
 export function toolFactsFor(
   toolId: string,
   agent?: { containment: AgentContainment } | undefined,
+  instance?: { reversibilityCeiling?: Reversibility },
 ): ToolFacts {
   if (toolId === "agent") {
     return {
@@ -47,6 +51,15 @@ export function toolFactsFor(
     tierDeclared: !(reg as { fromPlugin?: boolean }).fromPlugin,
     isWrite: reg.isWrite,
     registered: true,
-    reversibility: classifyActionClass(toolId, {}).reversibility,
+    // Instance ceiling (lower-only): a file write whose rollback is not
+    // confirmed is not reversible here either, or the governed profile would
+    // exempt it from "gate every non-reversible write".
+    reversibility: classifyActionClass(
+      toolId,
+      {},
+      instance?.reversibilityCeiling
+        ? { reversibilityCeiling: instance.reversibilityCeiling }
+        : undefined,
+    ).reversibility,
   };
 }

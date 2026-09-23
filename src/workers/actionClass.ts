@@ -468,7 +468,12 @@ const REVERSIBILITY_BY_DOMAIN: Record<string, Reversibility> = {
   "vcs-remote": "compensable", // close PR — lossy but possible
   "vcs-push": "compensable", // force-revert / reflog — lossy but possible
   "vcs-merge": "compensable", // git revert on main — painful but recoverable
-  "fs-write": "reversible", // transactions + WriteEffectLedger
+  // Reversible ONLY with a confirmed rollback pre-image. The domain default is
+  // the best case; callers pass `reversibilityCeiling` per instance, and an
+  // unconfirmed write classifies irreversible. (The old justification here,
+  // "transactions + WriteEffectLedger", was wrong: WriteEffectLedger is in-run
+  // duplicate suppression, not undo.)
+  "fs-write": "reversible",
   "fs-read": "reversible",
   shell: "irreversible", // arbitrary side effects — assume unrecoverable
   messaging: "irreversible", // a sent message can't be unsent reliably
@@ -668,9 +673,29 @@ function resolveUnknownDomain(
   }
 }
 
+/** Lower-is-stricter ordering; a ceiling may only move DOWN this list. */
+const REVERSIBILITY_RANK: Record<Reversibility, number> = {
+  reversible: 2,
+  compensable: 1,
+  irreversible: 0,
+};
+
+export interface ClassifyOpts {
+  /**
+   * Instance-derived ceiling on reversibility: what THIS action can actually be
+   * undone as, established before authority is granted. It can only LOWER the
+   * domain's reversibility, never raise it — the same never-widen rule as the
+   * gate's context ceiling. Used for `fs-write`, which is reversible only when
+   * a rollback log has confirmed it can restore the pre-image
+   * (src/recipes/fileRollback.ts `assessRollbackability`).
+   */
+  reversibilityCeiling?: Reversibility;
+}
+
 export function classifyActionClass(
   toolName: string,
   params?: Record<string, unknown>,
+  opts?: ClassifyOpts,
 ): ActionClass {
   const builtIn = DOMAIN_BY_TOOL[toolName];
   const resolved =
@@ -680,10 +705,16 @@ export function classifyActionClass(
   // not already define. An unrecognised domain stays "irreversible" — the same
   // fail-closed default an unmapped tool gets, so a typo in operator config
   // narrows autonomy rather than widening it.
-  const reversibility =
+  const declared =
     REVERSIBILITY_BY_DOMAIN[domain] ??
     (builtIn === undefined ? resolved?.reversibility : undefined) ??
     "irreversible";
+  const ceiling = opts?.reversibilityCeiling;
+  const reversibility: Reversibility =
+    ceiling !== undefined &&
+    REVERSIBILITY_RANK[ceiling] < REVERSIBILITY_RANK[declared]
+      ? ceiling
+      : declared;
   const blastTier = classifyTool(toolName);
   // Instance-derived facet. Without it the key is a pure function of the tool
   // NAME, so a trivial instance and a catastrophic one share a trust cell and

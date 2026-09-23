@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -276,23 +277,40 @@ describe("FileRollbackLog directory safety", () => {
   });
 });
 
-describe("FileRollbackLog rotation", () => {
-  it("rotates the log once it exceeds the size cap, preserving the most recent rows", () => {
-    const log = new FileRollbackLog({ dir: ledgerDir, scopeKey: "s1" });
-    // Force append()'s size check to trip: capture one huge pre-image
-    // (content alone exceeds the 1MB cap), then a second capture triggers
-    // the pre-append statSync check that calls rotate().
-    const bigPath = path.join(workDir, "big.md");
-    writeFileSync(bigPath, "x".repeat(1_100_000));
-    log.capturePreImage(bigPath);
+describe("FileRollbackLog capacity — full degrades loudly, never trims", () => {
+  it("refuses a capture that would exceed the cap and keeps every earlier row", () => {
+    const log = new FileRollbackLog({
+      dir: ledgerDir,
+      scopeKey: "s1",
+      maxBytes: 400,
+    });
+    const first = path.join(workDir, "first.md");
+    writeFileSync(first, "a".repeat(100));
+    expect(log.capturePreImage(first).persisted).toBe(true);
 
-    const smallPath = path.join(workDir, "small.md");
-    writeFileSync(smallPath, "small");
-    log.capturePreImage(smallPath);
+    const big = path.join(workDir, "big.md");
+    writeFileSync(big, "b".repeat(1000));
+    expect(log.capturePreImage(big).persisted).toBe(false);
 
-    // Rotation trims to MAX_PERSIST_LINES but both rows still fit (well
-    // under 10k lines) — both must survive the rotation.
-    const rows = log.rows().map((r) => r.path);
-    expect(rows.sort()).toEqual([bigPath, smallPath].sort());
+    // Nothing was trimmed: the earlier pre-image is still there to undo with.
+    expect(log.rows().map((r) => r.path)).toEqual([first]);
+    // The already-captured path stays rollback-able; a new one does not.
+    expect(log.assess(first)).toBe("confirmed");
+    // A pre-image that will not fit is not rollback-able — decided up front.
+    expect(log.assess(big)).toBe("unavailable");
   });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "a store directory that cannot be written assesses unavailable",
+    () => {
+      const ro = path.join(workDir, "ro");
+      mkdirSync(ro, { mode: 0o500 });
+      try {
+        const log = new FileRollbackLog({ dir: ro, scopeKey: "s1" });
+        expect(log.assess(path.join(workDir, "x.md"))).toBe("unavailable");
+      } finally {
+        chmodSync(ro, 0o700);
+      }
+    },
+  );
 });

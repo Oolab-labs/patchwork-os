@@ -794,6 +794,7 @@ export interface RecipeRouteDeps {
     | ((
         name: string,
         vars?: Record<string, string>,
+        attempt?: { cronSlotEpochMs?: number },
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null;
   /**

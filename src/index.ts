@@ -3613,7 +3613,11 @@ if (process.argv[2] === "recipe" && process.argv[3] === "fmt") {
 if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
   const args = process.argv.slice(4);
   const usage =
-    "Usage: patchwork recipe rollback <name> --attempt <id> --ledger-dir <path> [--json]\n\n" +
+    "Usage: patchwork recipe rollback <name> --run <taskId> [--dry-run] [--json]\n" +
+    "       patchwork recipe rollback <name> --attempt <id> --ledger-dir <path> [--json]\n\n" +
+    "--run resolves an automated run (its taskId from `patchwork recipe runs` /\n" +
+    "the dashboard) to its own attempt store; --dry-run lists what would be\n" +
+    "restored or deleted without changing anything.\n\n" +
     "Undoes a recipe attempt's file.write/file.append side effects by restoring\n" +
     "each touched file to its pre-run content (or deleting it, if the run\n" +
     "created it). <name> must match the recipe's declared `name:` — not the\n" +
@@ -3634,6 +3638,8 @@ if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
   // "nothing to roll back" instead of a clear usage error.
   let attemptId: string | undefined;
   let ledgerDir: string | undefined;
+  let runTaskId: string | undefined;
+  const dryRun = args.includes("--dry-run");
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -3645,12 +3651,67 @@ if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
       ledgerDir = args[++i];
       continue;
     }
-    if (arg === "--json" || arg === "--help" || arg === "-h") continue;
+    if (arg === "--run") {
+      runTaskId = args[++i];
+      continue;
+    }
+    if (
+      arg === "--json" ||
+      arg === "--dry-run" ||
+      arg === "--help" ||
+      arg === "-h"
+    )
+      continue;
     if (arg !== undefined) positional.push(arg);
   }
   const recipeName = positional[0];
 
-  if (
+  if (recipeName && positional.length === 1 && runTaskId !== undefined) {
+    if (!runTaskId || runTaskId.startsWith("--") || attemptId || ledgerDir) {
+      process.stderr.write(usage);
+      process.exit(1);
+    }
+    const taskId = runTaskId;
+    (async () => {
+      try {
+        const {
+          planRecipeRollbackByRun,
+          runRecipeRollbackByRun,
+          formatRollbackReport,
+        } = await import("./commands/recipe.js");
+        if (dryRun) {
+          const plan = planRecipeRollbackByRun(recipeName, taskId);
+          if (wantJson) {
+            process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
+          } else {
+            const lines = [
+              `Rollback plan for run ${taskId} (${recipeName}) — nothing changed:`,
+              ...plan.restore.map((p) => `  restore  ${p}`),
+              ...plan.remove.map((p) => `  delete   ${p}`),
+              ...plan.cannot.map(
+                (p) => `  CANNOT   ${p} (pre-image uncertain)`,
+              ),
+            ];
+            if (lines.length === 1) lines.push("  (no file writes recorded)");
+            process.stdout.write(`${lines.join("\n")}\n`);
+          }
+          process.exit(0);
+        }
+        const result = runRecipeRollbackByRun(recipeName, taskId);
+        process.stdout.write(
+          wantJson
+            ? `${JSON.stringify(result, null, 2)}\n`
+            : `${formatRollbackReport(recipeName, taskId, result)}\n`,
+        );
+        process.exit(result.failed.length > 0 ? 1 : 0);
+      } catch (err) {
+        process.stderr.write(
+          `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(1);
+      }
+    })();
+  } else if (
     !recipeName ||
     positional.length > 1 ||
     !attemptId ||
@@ -3660,33 +3721,32 @@ if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
   ) {
     process.stderr.write(usage);
     process.exit(1);
-  }
-
-  (async () => {
-    try {
-      const { runRecipeRollback, formatRollbackReport } = await import(
-        "./commands/recipe.js"
-      );
-      const result = runRecipeRollback(
-        recipeName,
-        attemptId,
-        path.resolve(ledgerDir),
-      );
-      if (wantJson) {
-        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      } else {
-        process.stdout.write(
-          `${formatRollbackReport(recipeName, attemptId, result)}\n`,
+  } else {
+    const name = recipeName;
+    const attempt = attemptId;
+    const dir = ledgerDir;
+    (async () => {
+      try {
+        const { runRecipeRollback, formatRollbackReport } = await import(
+          "./commands/recipe.js"
         );
+        const result = runRecipeRollback(name, attempt, path.resolve(dir));
+        if (wantJson) {
+          process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        } else {
+          process.stdout.write(
+            `${formatRollbackReport(name, attempt, result)}\n`,
+          );
+        }
+        process.exit(result.failed.length > 0 ? 1 : 0);
+      } catch (err) {
+        process.stderr.write(
+          `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(1);
       }
-      process.exit(result.failed.length > 0 ? 1 : 0);
-    } catch (err) {
-      process.stderr.write(
-        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
-      process.exit(1);
-    }
-  })();
+    })();
+  }
 }
 
 // Patchwork: `patchwork recipe record <file.yaml>` — execute live and record connector fixtures.

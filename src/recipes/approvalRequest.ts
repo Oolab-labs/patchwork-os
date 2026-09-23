@@ -26,6 +26,13 @@ export interface ApprovalRequestInput {
   summary?: string;
   params?: Record<string, unknown>;
   /**
+   * Instance reversibility established before this decision — set for a
+   * rollback-backed file write whose rollback is NOT confirmed ("irreversible").
+   * Lower-only. The worker gate folds it into the action class; absent ⇒ the
+   * domain's reversibility, exactly as before.
+   */
+  reversibilityCeiling?: import("../workers/actionClass.js").Reversibility;
+  /**
    * The run's identity, verbatim as written to `runs.jsonl` / `run_steps.jsonl`
    * — `taskId`, never `seq`.
    *

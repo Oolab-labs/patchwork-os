@@ -21,6 +21,11 @@ import {
 import { summariseHalts } from "./recipes/haltCategory.js";
 import { summariseJudgments } from "./recipes/judgeSummary.js";
 import type { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
+import {
+  attemptStoreFor,
+  gcRunLedgers,
+  runLedgersRoot,
+} from "./recipes/runLedgers.js";
 import type {
   SchedulerEnqueue,
   SchedulerOptions,
@@ -70,6 +75,18 @@ import { currentWorkspaceId } from "./workspaceId.js";
 // cron) must share the same timeout so task budgets are consistent regardless
 // of trigger path. Previously the webhook path used 600_000ms (10 min) while
 // all others used 1_800_000ms (30 min).
+/** Whole-run retention for attempt stores (runLedgers.ts). */
+const RUN_LEDGER_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+let lastRunLedgerGcAt = 0;
+function maybeGcRunLedgers(root: string): void {
+  const now = Date.now();
+  if (now - lastRunLedgerGcAt < 60 * 60 * 1000) return;
+  lastRunLedgerGcAt = now;
+  // A store touched within the window is never collected, which covers any
+  // run in flight (runs last minutes; the window is two weeks).
+  gcRunLedgers(root, { retentionMs: RUN_LEDGER_RETENTION_MS, now });
+}
+
 export const RECIPE_TASK_TIMEOUT_MS = 1_800_000;
 
 /**
@@ -345,10 +362,13 @@ export async function buildWorkerAutonomyGate(
         input.toolId,
         input.params,
         store,
-        contextRisk || forbidRules.length > 0
+        contextRisk || forbidRules.length > 0 || input.reversibilityCeiling
           ? {
               ...(contextRisk ? { contextRisk } : {}),
               ...(forbidRules.length > 0 ? { forbidRules } : {}),
+              ...(input.reversibilityCeiling
+                ? { reversibilityCeiling: input.reversibilityCeiling }
+                : {}),
             }
           : undefined,
       );
@@ -644,6 +664,7 @@ export interface BuildSchedulerDeps {
   recipesDir: string;
   runRecipeFn: (
     name: string,
+    slotEpochMs?: number,
   ) => Promise<{ ok: boolean; error?: string } | undefined>;
   enqueue: SchedulerEnqueue;
   logger: { info?: (s: string) => void; warn?: (s: string) => void };
@@ -664,8 +685,8 @@ export class RecipeOrchestration {
     return new RecipeScheduler({
       recipesDir: deps.recipesDir,
       enqueue: deps.enqueue,
-      runYaml: async (name) => {
-        const result = await deps.runRecipeFn(name);
+      runYaml: async (name, slotEpochMs) => {
+        const result = await deps.runRecipeFn(name, slotEpochMs);
         if (result && !result.ok) {
           throw new Error(result.error ?? "unknown error");
         }
@@ -1225,6 +1246,7 @@ export class RecipeOrchestration {
     server.runRecipeFn = async (
       name: string,
       vars?: Record<string, string>,
+      attempt?: { cronSlotEpochMs?: number },
     ) => {
       // #605: kill-switch gate. Recipe execution is the largest write
       // surface the bridge exposes (Claude subprocess + tool calls);
@@ -1365,6 +1387,9 @@ export class RecipeOrchestration {
         triggerSourceSuffix: `recipe:${name}`,
         logLabel: `"${name}"`,
         seedContext: effectiveVars,
+        ...(attempt?.cronSlotEpochMs !== undefined && {
+          cronSlotEpochMs: attempt.cronSlotEpochMs,
+        }),
       });
     };
   }
@@ -1689,13 +1714,15 @@ export class RecipeOrchestration {
     seedContext?: Record<string, string>;
     /**
      * Stable per-delivery identity (webhook redelivery only — see
-     * `server.webhookFn`'s doc comment). When set, disk-backs this run's
-     * write-effect ledger so a redelivered webhook can't double-execute
-     * writes a prior (possibly crashed-mid-run) delivery already made.
-     * Scheduler/dashboard-fired runs never pass this — there's no "same
-     * logical event, redelivered" case for those triggers.
+     * `server.webhookFn`'s doc comment). It determines the run's logical
+     * attempt, so a redelivered webhook resolves to the same attempt store
+     * (runLedgers.ts) and can't double-execute writes a prior (possibly
+     * crashed-mid-run) delivery already made. Other automated runs get an
+     * attempt from their cron slot or a fresh id instead.
      */
     deliveryId?: string;
+    /** The cron slot this run fills, when fired by the scheduler. */
+    cronSlotEpochMs?: number;
   }): Promise<{ ok: boolean; taskId?: string; name?: string; error?: string }> {
     if (!this.deps.recipeOrchestrator) {
       return { ok: false, error: "recipe orchestrator unavailable" };
@@ -1841,6 +1868,26 @@ export class RecipeOrchestration {
     // Independent of FLAG_WORKER_AUTONOMY — see resolveWorkerIdForRecipe's
     // doc comment. Feeds executeStep's per-worker allowedTools policy check.
     const workerId = await resolveWorkerIdForRecipe(opts.name);
+    const ledgersRoot = runLedgersRoot();
+    maybeGcRunLedgers(ledgersRoot);
+    const { attemptId, ledgerDir: attemptDir } = attemptStoreFor(
+      opts.name,
+      {
+        ...(opts.deliveryId !== undefined && { deliveryId: opts.deliveryId }),
+        ...(opts.cronSlotEpochMs !== undefined && {
+          cronSlotEpochMs: opts.cronSlotEpochMs,
+        }),
+      },
+      ledgersRoot,
+    );
+    if (!attemptDir) {
+      this.deps.logger?.warn?.(
+        `[recipes] ${opts.logLabel}: attempt store unavailable — file writes in this run cannot be rolled back and will be gated as irreversible`,
+      );
+    }
+    const attemptStore = attemptDir
+      ? { manualRunId: attemptId, ledgerDir: attemptDir }
+      : {};
     const runnerDeps = {
       workdir: this.deps.workdir,
       governance: profile,
@@ -1856,16 +1903,15 @@ export class RecipeOrchestration {
       ...(gateAutomatedRuns && { gateAutomatedRuns: true }),
       ...(agentDisallowedTools && { agentDisallowedTools }),
       ...(workerId && { workerId }),
-      // Webhook redelivery dedup — see fireYamlRecipe's `deliveryId` doc
-      // comment. Disk-backs the write-effect ledger under a fixed shared
-      // directory (scoped internally by a hash of recipeName+deliveryId,
-      // per idempotencyKey.ts's deriveScopeKey) so a sender's retried
-      // delivery can't double-execute writes a crashed-mid-run prior
-      // delivery already made.
-      ...(opts.deliveryId && {
-        manualRunId: opts.deliveryId,
-        ledgerDir: patchworkPath("webhook-effect-ledger"),
-      }),
+      // Every automated run is a logical ATTEMPT with its own durable store
+      // (runLedgers.ts): the rollback pre-images INV-1 needs, and the
+      // write-effect ledger. `manualRunId` carries the attempt id — the name
+      // is historical; for a webhook it is derived from the delivery, so a
+      // redelivery resolves to the same store and cannot double-execute
+      // writes a crashed prior delivery made. If the store cannot be created
+      // NO ledger is passed, so every file write assesses `unavailable` and is
+      // gated as irreversible — never a shared or temporary fallback.
+      ...attemptStore,
     };
     // Pass the bridge's long-lived RecipeRunLog so chainedRunner can flip the
     // run from `running` → terminal in-place via startRun/completeRun. The

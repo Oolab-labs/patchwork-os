@@ -466,6 +466,8 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((
         name: string,
         vars?: Record<string, string>,
+        /** Logical-attempt facts (the cron slot) — see runLedgers.ts. */
+        attempt?: { cronSlotEpochMs?: number },
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null = null;
   /**

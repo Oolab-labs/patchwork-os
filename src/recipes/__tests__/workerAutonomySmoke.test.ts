@@ -17,7 +17,9 @@
  *
  * Asserts the five links of the chain the live dogfood depends on:
  *   A. the `github.create_issue` step GATES (compensable + unearned L4) while
- *      the reversible steps (git.log_since / agent / file.write) flow un-gated;
+ *      the reversible steps (git.log_since / agent / file.write) flow un-gated.
+ *      file.write is reversible ONLY because the run has a per-attempt rollback
+ *      store (`attemptStoreFor`, exactly as fireYamlRecipe builds it — INV-1);
  *   B. on approval the gated step EXECUTES (connector called, step `success`);
  *   C. the run is PERSISTED to `runs.jsonl`;
  *   D. the trust replay ATTRIBUTES that run to the test-guardian worker and
@@ -80,6 +82,7 @@ import {
   getWorkerShadowData,
   loadWorkerTrustForRecipe,
 } from "../../workers/runWorkerShadow.js";
+import { attemptStoreFor } from "../runLedgers.js";
 import {
   type RunnerDeps,
   runYamlRecipe,
@@ -170,9 +173,20 @@ function makeDeps(
   requireApprovalFn: RunnerDeps["requireApprovalFn"],
   claudeCodeFn?: RunnerDeps["claudeCodeFn"],
 ): RunnerDeps {
+  // The per-attempt rollback store, chosen exactly as fireYamlRecipe does for
+  // a cron tick (runLedgers.ts). Without it file.write is irreversible (INV-1).
+  const store = attemptStoreFor(
+    RECIPE_NAME,
+    { cronSlotEpochMs: Date.parse("2026-06-29T09:00:00Z") },
+    path.join(patchworkDir, "run-ledgers"),
+  );
   return {
     now: () => new Date("2026-06-29T09:00:00Z"),
     workdir: tmpHome,
+    ...(store.ledgerDir && {
+      manualRunId: store.attemptId,
+      ledgerDir: store.ledgerDir,
+    }),
     logDir: patchworkDir,
     runLog,
     // Persist to the injected runLog (temp patchworkDir, never homedir) — the
@@ -274,6 +288,9 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
     unsub();
 
     // --- A. only the compensable github.create_issue step was GATED --------
+    // file.write flows because the run's attempt store confirmed its rollback
+    // (without the store it would be irreversible and gated — see
+    // fileWriteAuthorityRollback.test.ts).
     expect(
       [...queuedTools],
       "exactly the issue write is gated; reversible steps flow",
