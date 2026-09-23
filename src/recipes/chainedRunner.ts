@@ -18,7 +18,6 @@ import {
   COMPAT_PROFILE,
   resolveAgentContainment,
 } from "../governance/profile.js";
-import { reversibilityCeilingFor } from "./fileWriteRollbackability.js";
 import { toolFactsFor } from "../governance/toolFacts.js";
 import {
   isConnectorSource,
@@ -38,6 +37,7 @@ import {
   buildDependencyGraph,
   executeWithDependencies,
 } from "./dependencyGraph.js";
+import { reversibilityCeilingFor } from "./fileWriteRollbackability.js";
 import {
   approvalHaltFor,
   categoriseHaltReason,

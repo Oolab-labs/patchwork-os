@@ -534,8 +534,11 @@ describe("classifyActionClass reversibilityCeiling (instance-derived, lower-only
 
   it("can never RAISE reversibility", () => {
     expect(
-      classifyActionClass("slackPostMessage", {}, { reversibilityCeiling: "reversible" })
-        .reversibility,
+      classifyActionClass(
+        "slackPostMessage",
+        {},
+        { reversibilityCeiling: "reversible" },
+      ).reversibility,
     ).toBe("irreversible");
     expect(
       classifyActionClass("gitPush", {}, { reversibilityCeiling: "reversible" })

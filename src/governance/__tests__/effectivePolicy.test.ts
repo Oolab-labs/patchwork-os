@@ -8,14 +8,14 @@
  * inputs. A calculation that drifts from the runner fails here.
  */
 
-import {
-  explainRollbackability,
-  reversibilityCeilingFor,
-} from "../../recipes/fileWriteRollbackability.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import {
+  explainRollbackability,
+  reversibilityCeilingFor,
+} from "../../recipes/fileWriteRollbackability.js";
 import {
   type RunnerDeps,
   runYamlRecipe,

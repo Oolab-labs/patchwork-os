@@ -39,13 +39,13 @@ import {
   resolveProfile,
 } from "../governance/profile.js";
 import { toolFactsFor } from "../governance/toolFacts.js";
+import { loadConfig } from "../patchworkConfig.js";
+import { patchworkPath } from "../patchworkHome.js";
+import { stepSandboxRequest } from "../recipes/agentExecutor.js";
 import {
   explainRollbackability,
   reversibilityCeilingFor,
 } from "../recipes/fileWriteRollbackability.js";
-import { loadConfig } from "../patchworkConfig.js";
-import { patchworkPath } from "../patchworkHome.js";
-import { stepSandboxRequest } from "../recipes/agentExecutor.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import "../recipes/tools/index.js";
 
