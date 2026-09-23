@@ -52,9 +52,10 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- 2026-09-23 `fix/fs-write-rollbackability` — fs-write is reversible only with a CONFIRMED rollback pre-image, assessed before the worker gate / governed profile / policy explain and re-checked before the write (refuse if it worsened). Touches the autonomy gate (actionClass, workerGate), both runners, toolFacts, policyExplain, fileRollback. Companion commit gives every automated attempt its own rollback store (runLedgers.ts) so ordinary text writes stay reversible, plus `recipe rollback --run`.
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-09-23 `fix/fs-write-rollbackability` — fs-write is reversible only with a CONFIRMED rollback pre-image, assessed before the worker gate / governed profile / policy explain and re-checked before the write (refuse if it worsened). Touches the autonomy gate (actionClass, workerGate), both runners, toolFacts, policyExplain, fileRollback. Companion commit gives every automated attempt its own rollback store (runLedgers.ts) so ordinary text writes stay reversible, plus `recipe rollback --run`. — merged as #1605
 
 - 2026-09-01 `feat/butler-memory` — Butler Memory. Facts read as a labelled value
   (`Tasks default list — personal`) rather than `subject — predicate: object`; **no
