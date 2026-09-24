@@ -50,6 +50,8 @@ verified (which is how this line came to be written).
 
 ## Active
 
+- 2026-09-24 `fix/replay-never-live` — refuse mocked replay with incomplete capture at preflight, runner and dispatch boundaries; keep live calls at zero — Codex (Repair 2)
+
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 

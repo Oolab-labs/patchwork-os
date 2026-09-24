@@ -1570,9 +1570,10 @@ export function tryHandleRecipeRoute(
 
   // POST /runs/:seq/replay — VD-4 mocked replay. Re-runs the recipe with all
   // tool/agent execution intercepted to return captured outputs from the
-  // original run. No external IO, no side effects. Real-mode replay is not
-  // exposed here yet — must ship separately with confirmation UX +
-  // kill-switch interaction.
+  // original run. Evidence-only: a step with no usable capture REFUSES the
+  // replay (409, `replay_refused_unmocked_step`) — it is never run live
+  // (src/recipes/replayBoundary.ts). Real-mode replay is not exposed here —
+  // must ship separately with confirmation UX + kill-switch interaction.
   const runReplayMatch =
     req.method === "POST"
       ? /^\/runs\/(\d+)\/replay$/.exec(parsedUrl.pathname)
@@ -1589,6 +1590,12 @@ export function tryHandleRecipeRoute(
         const result = await deps.runReplayFn(seq);
         if (result.error === "run_not_found") {
           res.writeHead(404, { "Content-Type": "application/json" });
+        } else if (result.error?.startsWith("replay_refused_unmocked_step")) {
+          // Replay boundary (src/recipes/replayBoundary.ts): the original
+          // run lacks a usable capture for one or more steps, so the replay
+          // was refused before anything ran. A conflict with the evidence,
+          // not a server fault — body carries `unmockedSteps`.
+          res.writeHead(409, { "Content-Type": "application/json" });
         } else if (!result.ok) {
           res.writeHead(500, { "Content-Type": "application/json" });
         } else {

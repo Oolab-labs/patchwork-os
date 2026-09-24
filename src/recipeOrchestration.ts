@@ -1005,9 +1005,10 @@ export class RecipeOrchestration {
 
     // VD-4 mocked replay: load the original run, re-parse its recipe
     // from disk (so a later edit replays against the new logic), and
-    // re-fire through chainedRunner with `mockedOutputs` populated from
-    // the captured per-step `output` (VD-2). No external IO; no side
-    // effects.
+    // re-fire through the matching runner with `mockedOutputs` populated
+    // from the captured per-step `output` (VD-2). Evidence-only: a step
+    // with no usable capture refuses the whole replay
+    // (`replay_refused_unmocked_step`) — see src/recipes/replayBoundary.ts.
     server.runReplayFn = async (seq: number) => {
       if (!this.deps.recipeRunLog) {
         return { ok: false, error: "run_log_unavailable" };
@@ -1032,8 +1033,10 @@ export class RecipeOrchestration {
         const triggerType = (
           recipeYaml as { trigger?: { type?: string } } | undefined
         )?.trigger?.type;
-        // Reuse the orchestrator's claudeCodeFn for any step that falls
-        // through to real execution (unmocked steps — caller is told).
+        // The orchestrator's claudeCodeFn is supplied for type parity with a
+        // live run only. Under replay it is UNREACHABLE: the replay
+        // entrypoints set `replayOnly`, and `buildAgentExecutorDeps` throws
+        // before any driver is selected (replayBoundary.ts, layer 3).
         const orch = this.deps.getOrchestrator();
         const claudeCodeFn = async (
           prompt: string,
@@ -1069,11 +1072,9 @@ export class RecipeOrchestration {
           });
           return agentTextFromTask(task);
         };
-        // Resolve the owning worker (if any) so replayed steps that fall
-        // through to real execution still get the per-worker allowedTools
-        // policy check in executeStep — a replay that skipped this would
-        // let a restricted worker's recipe call tools outside its
-        // allowedTools list during replay even though a live run couldn't.
+        // Resolve the owning worker (if any). No replayed step can reach
+        // `executeStep`'s dispatch any more (replayBoundary.ts), but the
+        // governed-profile refusal below still keys off worker ownership.
         const workerId = await resolveWorkerIdForRecipe(recipeName);
         const { activeProfile: replayActiveProfile } = await import(
           "./governance/profile.js"
@@ -1101,10 +1102,12 @@ export class RecipeOrchestration {
           workdir: this.deps.workdir,
           claudeCodeFn,
           ...(workerId && { workerId }),
-          // Phase 0: a replay executes every step the original run did not
-          // capture, so it is governed like a manual run — same profile,
-          // same tier gate. (The worker gate is NOT rebuilt here: replay
-          // has no live trust context. Recorded as a known gap.)
+          // Phase 0: governed like a manual run — same profile, same tier
+          // gate — even though, since the replay boundary landed, no step
+          // can execute live under replay. Kept so the gate's own bookkeeping
+          // (and the worker-owned refusal above) stays byte-identical. (The
+          // worker gate is NOT rebuilt here: replay has no live trust
+          // context.)
           governance: replayProfile,
           ...(replayApprovalFn && { requireApprovalFn: replayApprovalFn }),
         };
