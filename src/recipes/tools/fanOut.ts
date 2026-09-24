@@ -28,6 +28,10 @@ import { FLAG_CIRCUIT_BREAKER, isEnabled } from "../../featureFlags.js";
 import { deriveBreakerKey, getCircuitBreaker } from "../circuitBreaker.js";
 import { isReturnValueFailure } from "../idempotencyKey.js";
 import { executeTool, hasTool, registerTool } from "../toolRegistry.js";
+import {
+  isUncertainOutcome,
+  markUncertainOutcome,
+} from "../uncertainOutcome.js";
 import type { RunContext } from "../yamlRunner.js";
 
 /** Coerce `items` param into an array. Accepts an array directly, or a JSON-array string. */
@@ -375,9 +379,13 @@ registerTool({
         aggregate.push({ index: i, ok: false, error: msg });
         report(i, false, msg);
         if (onIterError === "halt") {
-          throw new Error(
+          const halt = new Error(
             `fan_out: iter ${i} failed (on_iter_error=halt): ${msg}`,
           );
+          // The envelope must carry the inner tool's uncertainty, or the
+          // step-level `retry` re-runs the whole fan_out and iter 0's write
+          // goes out again.
+          throw isUncertainOutcome(err) ? markUncertainOutcome(halt) : halt;
         }
       }
     }

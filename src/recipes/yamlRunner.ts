@@ -166,6 +166,7 @@ import type {
 } from "../privacy/dataPolicy.js";
 import type { PrivacyConfig } from "../privacy/destinationRegistry.js";
 import { recordPrivacyShadow } from "../privacy/shadowLog.js";
+import { isUncertainOutcome } from "./uncertainOutcome.js";
 
 /**
  * Bundled-templates directory used as a third allowed root for nested-recipe
@@ -3063,6 +3064,10 @@ export async function runYamlRecipe(
       const retryCount = Math.max(0, step.retry ?? recipe.on_error?.retry ?? 0);
       const retryDelayMs =
         step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
+      // Attempts actually made. The halt sentence used to say "after N+1
+      // attempts" from the CONFIGURED count, so a step that stopped after
+      // one attempt on purpose (timeout, uncertain delivery) claimed three.
+      let attemptsMade = 0;
       let result: string | null = null;
       let stepError: string | undefined;
       // Bug (2): distinguish a HARD tool error (a thrown error or a
@@ -3077,6 +3082,7 @@ export async function runYamlRecipe(
       let stepErrorIsSilentFail = false;
       let thrownError: string | undefined;
       let thrownErrorCode: string | undefined;
+      let thrownOutcomeUncertain = false;
       // Flight-recorder mocked replay: short-circuit BEFORE executing the
       // tool. The step still flows through transform/expect/ctx-commit
       // below (driven by `result`), so a replay shows how the recipe's
@@ -3089,10 +3095,12 @@ export async function runYamlRecipe(
           if (attempt > 0) {
             await new Promise((r) => setTimeout(r, retryDelayMs));
           }
+          attemptsMade++;
           stepError = undefined;
           stepErrorIsSilentFail = false;
           thrownError = undefined;
           thrownErrorCode = undefined;
+          thrownOutcomeUncertain = false;
           try {
             // Slice (sandbox-alternative): per-step wall-clock timeout via
             // Promise.race. The underlying tool keeps running in the
@@ -3186,9 +3194,16 @@ export async function runYamlRecipe(
             // without scraping the message string.
             const code = (err as { code?: unknown })?.code;
             if (typeof code === "string") thrownErrorCode = code;
+            thrownOutcomeUncertain = isUncertainOutcome(err);
             result = null;
           }
           if (!stepError && !thrownError) break;
+          // The write MAY have reached its destination (http.post past its
+          // sent boundary, or a fan_out / nested step wrapping one). Another
+          // attempt needs an affirmative basis that it is safe, and "no
+          // response" is the opposite of one. Same shape as the timeout
+          // rule below; checked first because it is the stronger fact.
+          if (thrownOutcomeUncertain) break;
           // Audit 2026-06-10 recipe-runners-2: do NOT retry on a step_timeout.
           // The timed-out attempt's underlying tool call keeps running in the
           // background (Promise.race only abandons the wait, it does not cancel
@@ -3215,7 +3230,9 @@ export async function runYamlRecipe(
 
       if (thrownError) {
         const retryNote =
-          retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
+          retryCount > 0
+            ? ` after ${attemptsMade} attempt${attemptsMade === 1 ? "" : "s"}`
+            : "";
         stepResults.push({
           id: stepId,
           tool: step.tool,
@@ -3226,7 +3243,9 @@ export async function runYamlRecipe(
           haltCategory:
             thrownErrorCode === "kill_switch_blocked"
               ? "kill_switch"
-              : "tool_threw",
+              : thrownOutcomeUncertain
+                ? "delivery_unverified"
+                : "tool_threw",
           durationMs: Date.now() - stepStart,
         });
         if (!failOpen) {
@@ -3241,7 +3260,9 @@ export async function runYamlRecipe(
         const finalStatus =
           result === null ? "skipped" : stepError ? "error" : "ok";
         const retryNote =
-          retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
+          retryCount > 0
+            ? ` after ${attemptsMade} attempt${attemptsMade === 1 ? "" : "s"}`
+            : "";
         // Outcome attribution: capture the filed-issue URL on github.create_issue
         // steps so trust-replay can look up the issue's eventual disposition in
         // the outcome store (confirmed/junk/unknown). Takes priority over the
@@ -3445,6 +3466,10 @@ export async function runYamlRecipe(
         tool: s.tool,
         status: s.status,
         error: s.error,
+        // Declared on StepResult and RunStepResult, and until now copied by
+        // neither projection — so `err.code` never reached disk. Carried so
+        // the trust fold can read `outcome_uncertain` from the row itself.
+        ...(s.errorCode ? { errorCode: s.errorCode } : {}),
         ...(s.haltReason ? { haltReason: s.haltReason } : {}),
         ...(s.haltCategory ? { haltCategory: s.haltCategory } : {}),
         ...(s.judgeVerdict ? { judgeVerdict: s.judgeVerdict } : {}),

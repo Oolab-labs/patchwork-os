@@ -74,6 +74,35 @@ describe("categoriseHaltReason", () => {
     expect(categoriseHaltReason("rate-limit exceeded")).toBe("rate_limited");
   });
 
+  it("recognises delivery_unverified ahead of network_error and step_timeout", () => {
+    // The lost-response case arrives wrapped in exactly the words the
+    // network_error matcher looks for ("fetch failed", ECONNRESET), and a
+    // hang past the tool timeout could read as a timeout. Our own token
+    // must win: the remedy is "look at the destination", not "check
+    // connectivity" or "bump timeout_ms".
+    expect(
+      categoriseHaltReason(
+        'Tool "http.post" in step "post" threw after 1 attempt: outcome_uncertain: http.post: request was sent to POST http://example.test/j but no usable response arrived — the write may have been applied; not retried: fetch failed',
+      ),
+    ).toBe("delivery_unverified");
+    expect(
+      categoriseHaltReason(
+        'Tool "http.post" in step "post" reported an error: outcome_uncertain: … ECONNRESET',
+      ),
+    ).toBe("delivery_unverified");
+    expect(
+      categoriseHaltReason(
+        'Tool "fan_out" in step "batch" threw: outcome_uncertain: fan_out: iter 0 failed (on_iter_error=halt): outcome_uncertain: … This operation was aborted',
+      ),
+    ).toBe("delivery_unverified");
+    // A refused connection carries no token and stays where it was.
+    expect(
+      categoriseHaltReason(
+        'Tool "http.post" in step "post" threw after 3 attempts: http.post: request failed: fetch failed',
+      ),
+    ).toBe("network_error");
+  });
+
   it("recognises network_error halts (transport-level)", () => {
     expect(
       categoriseHaltReason(

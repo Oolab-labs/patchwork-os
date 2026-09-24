@@ -476,3 +476,73 @@ describe("completion contracts (run-level expect)", () => {
     expect(decision.fold).toBe(false);
   });
 });
+
+describe("delivered-but-unverified writes (uncertainOutcome.ts)", () => {
+  // An http.post whose request was handed to the socket and got no usable
+  // response. The runners refuse to retry it; the fold must WITHHOLD it —
+  // it is not a success, and a lost response is not evidence the worker is
+  // unreliable either. Both the structured code (flat rows) and the message
+  // token (chained rows carry no code) must be recognised.
+  const base = { tool: "http.post", status: "error" as const };
+  const opts = { now: 10_000, windowMs: DEFAULT_DURABILITY_WINDOW_MS };
+
+  it("withholds on the structured errorCode (flat-runner row)", () => {
+    expect(
+      foldOutcome(
+        { ...base, errorCode: "outcome_uncertain", error: "fetch failed" },
+        1000,
+        opts,
+      ),
+    ).toEqual({ fold: false });
+  });
+
+  it("withholds on the message token alone (chained-runner row, no code)", () => {
+    expect(
+      foldOutcome(
+        {
+          ...base,
+          error:
+            "outcome_uncertain: http.post: request was sent to POST http://example.test/x but no usable response arrived: terminated",
+        },
+        1000,
+        opts,
+      ),
+    ).toEqual({ fold: false });
+  });
+
+  it("withholds when only the haltReason carries it (legacy projection)", () => {
+    expect(
+      foldOutcome(
+        {
+          ...base,
+          haltReason:
+            'Tool "http.post" in step "post" threw: outcome_uncertain: sent, no response',
+        },
+        1000,
+        opts,
+      ),
+    ).toEqual({ fold: false });
+  });
+
+  it("still PENALISES an ordinary transport failure (nothing reached the target)", () => {
+    expect(
+      foldOutcome(
+        { ...base, error: "http.post: request failed: fetch failed" },
+        1000,
+        opts,
+      ),
+    ).toEqual({ fold: true, good: false });
+  });
+
+  it("never withholds a SUCCESS on the marker's account", () => {
+    // A row cannot be both ok and uncertain; if one ever were, the rule is
+    // scoped to error rows so it cannot silently zero a reversible success.
+    expect(
+      foldOutcome(
+        { tool: "file.write", status: "ok", error: "outcome_uncertain: x" },
+        1000,
+        opts,
+      ),
+    ).toEqual({ fold: true, good: true });
+  });
+});

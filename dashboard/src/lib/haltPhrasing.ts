@@ -69,6 +69,12 @@ export function ownerHaltPhrase(
         sentence: `It couldn't reach ${svc}. This is usually temporary.`,
         fix: "wait",
       };
+    case "delivery_unverified":
+      return {
+        sentence: `It sent something to ${svc} but never heard back, so that change may already be there. It didn't try again — check ${svc} before re-running.`,
+        fix: "open-trace",
+        fixLabel: "See what was sent",
+      };
     case "budget_exceeded":
       return {
         sentence: "It hit its spending limit for this run.",
