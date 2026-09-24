@@ -67,6 +67,13 @@ export interface RunStepResult {
   status: "ok" | "skipped" | "error";
   error?: string;
   /**
+   * Structured error code from the throw site (`err.code`), flat-runner rows
+   * only — the chained runner records no code. Already persisted (the flat
+   * `StepResult` is written as-is); declared here so readers such as the
+   * trust fold can consult it without a cast.
+   */
+  errorCode?: string;
+  /**
    * One-sentence human-actionable halt reason. Populated only for error
    * rows; present for runs produced by yamlRunner from this version
    * onward. Older runs.jsonl rows round-trip unchanged. See StepResult in

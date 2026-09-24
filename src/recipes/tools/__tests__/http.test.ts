@@ -19,7 +19,9 @@ vi.mock("undici", () => {
   return {
     // biome-ignore lint/complexity/useArrowFunction: must be constructable with `new` — vitest 4 runs the mock impl as a constructor
     Agent: vi.fn().mockImplementation(function () {
-      return {};
+      // `compose` is what http.ts uses to observe the sent boundary; the
+      // mocked fetch never dispatches, so the composed view is inert here.
+      return { compose: () => ({}) };
     }),
     fetch: mockFetch,
   };

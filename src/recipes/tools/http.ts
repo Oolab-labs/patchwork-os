@@ -11,7 +11,7 @@
  */
 
 import dns from "node:dns/promises";
-import { Agent, fetch as undiciFetch } from "undici";
+import { Agent, type Dispatcher, fetch as undiciFetch } from "undici";
 import {
   assertWriteAllowed,
   FLAG_BLOCK_RECIPE_ALLOW_PRIVATE,
@@ -27,6 +27,7 @@ import {
   safeFetch,
 } from "../../ssrfGuard.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { UncertainOutcomeError } from "../uncertainOutcome.js";
 
 // Custom dispatcher pinning DNS resolution to IPv4. Node's Happy-Eyeballs
 // implementation (autoSelectFamily) is documented to flip families after
@@ -46,6 +47,41 @@ const httpAgent = new Agent({
   keepAliveTimeout: 5_000,
   keepAliveMaxTimeout: 10_000,
 });
+
+/**
+ * The "sent" boundary. A per-request view over the shared agent whose ONLY
+ * job is to record whether undici ever handed this request to a socket.
+ *
+ * undici invokes the handler's `onConnect` immediately before it writes the
+ * request to the connection — pooled or fresh, it fires per request. Nothing
+ * observable from `fetch`'s rejection distinguishes "refused before a byte
+ * left" from "accepted, then the response died": both arrive as
+ * `TypeError: fetch failed`, and the abort from our own timer arrives the
+ * same way whether the connect stalled or the target swallowed the write.
+ * So the boundary is recorded on the way OUT rather than inferred from the
+ * error on the way back.
+ *
+ * Deliberately `onConnect` and not `onBodySent`: once headers are on the
+ * wire the target may already be acting on them (a 100-continue server, or
+ * one that ignores the body), so "sent" means "handed to the socket", not
+ * "body fully flushed". Anything that fails after this point is treated as
+ * uncertain; a connect stall that our timer aborts before `onConnect` stays
+ * an ordinary (retriable) failure, because nothing reached the target.
+ */
+function trackedDispatcher(): { dispatcher: Dispatcher; sent: () => boolean } {
+  let sent = false;
+  const dispatcher = httpAgent.compose(
+    (dispatch) => (opts, handler) =>
+      dispatch(opts, {
+        ...handler,
+        onConnect(abort) {
+          sent = true;
+          handler.onConnect?.(abort);
+        },
+      }),
+  );
+  return { dispatcher, sent: () => sent };
+}
 
 registerTool({
   id: "http.post",
@@ -159,6 +195,11 @@ registerTool({
     assertWriteAllowed("http.post");
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const tracked = trackedDispatcher();
+    // Names the destination without the body or the query string: the halt
+    // sentence is rendered on the dashboard, in `patchwork halts` and in the
+    // trust ledger's neighbourhood, and a write body is not for any of them.
+    const destination = `${method} ${parsed.origin}${parsed.pathname}`;
     // Use undici.fetch directly (not global fetch) so we can pass the custom
     // dispatcher with Happy-Eyeballs tuning. Global fetch's type doesn't
     // expose `dispatcher`, but they're the same implementation underneath.
@@ -173,7 +214,7 @@ registerTool({
           body,
           headers,
           signal: ctrl.signal,
-          dispatcher: httpAgent,
+          dispatcher: tracked.dispatcher,
         },
         {
           allowPrivate,
@@ -201,14 +242,36 @@ registerTool({
           `http.post: refusing to reach private/loopback host: ${err.message}${hint}`,
         );
       }
-      throw new Error(
-        `http.post: request failed: ${(err as Error).message ?? String(err)}`,
-      );
+      const detail = (err as Error).message ?? String(err);
+      // Past the sent boundary the target may hold the write. Preserve the
+      // failure (it is still a failure) and preserve the uncertainty; do
+      // NOT let it read as "nothing happened", which is what every retry
+      // loop would otherwise conclude from a generic transport error.
+      if (tracked.sent()) {
+        throw new UncertainOutcomeError(
+          `http.post: request was sent to ${destination} but no usable response arrived — the write may have been applied; not retried: ${detail}`,
+          { cause: err },
+        );
+      }
+      throw new Error(`http.post: request failed: ${detail}`);
     } finally {
       clearTimeout(timer);
     }
 
-    const text = await res.text();
+    // Headers arrived, so the target certainly received the request: a body
+    // that dies mid-read (`terminated`) is the same uncertain outcome as a
+    // response that never arrived, and used to escape as a bare transport
+    // error from this very line.
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      const detail = (err as Error).message ?? String(err);
+      throw new UncertainOutcomeError(
+        `http.post: request was sent to ${destination} and answered ${res.status}, but the response body could not be read — the write may have been applied; not retried: ${detail}`,
+        { cause: err },
+      );
+    }
     return JSON.stringify({
       status: res.status,
       ok: res.ok,

@@ -120,6 +120,10 @@ function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
         tool: s.tool,
         status: s.status,
         haltReason: s.haltReason,
+        // Carried so the fold can WITHHOLD a delivered-but-unverified write
+        // (uncertainOutcome.ts) instead of counting it as a failure.
+        ...(typeof s.error === "string" ? { error: s.error } : {}),
+        ...(typeof s.errorCode === "string" ? { errorCode: s.errorCode } : {}),
         // Carry the step inputs: the action-class key bands value-bearing
         // actions by magnitude, so dropping these files every outcome under
         // the widest band and inverts the protection (#1267 read-side only).

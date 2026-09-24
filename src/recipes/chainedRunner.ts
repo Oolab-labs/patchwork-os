@@ -71,6 +71,11 @@ import type {
   TemplateEvaluateOptions,
 } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
+import {
+  isUncertainOutcome,
+  markUncertainOutcome,
+  OUTCOME_UNCERTAIN_TOKEN,
+} from "./uncertainOutcome.js";
 import { evaluateWhen } from "./whenGuard.js";
 // TYPE-ONLY on purpose. `yamlRunner` imports this module dynamically to break
 // the cycle (see `loadRecipeServers` below); a value import here would close
@@ -1023,8 +1028,21 @@ export async function executeChainedStep(
           ),
         ),
       ];
+      // A child step that may have delivered its write must surface here as
+      // the same fact, or the PARENT's retry re-runs the whole child and the
+      // write goes out again. The child's summary string ("1 step(s)
+      // failed") carries no marker, so read the step errors themselves.
+      const childUncertain = [...childResult.stepResults.values()].some((r) =>
+        isUncertainOutcome(r.error),
+      );
       return {
         success: !childResult.errorMessage,
+        ...(childResult.errorMessage && childUncertain
+          ? {
+              error: `${OUTCOME_UNCERTAIN_TOKEN} nested recipe "${recipeRef}": ${childResult.errorMessage} — a write inside it may have been applied; not retried`,
+              outcome: "uncertain" as const,
+            }
+          : {}),
         data: {
           recipe: recipeRef,
           childSummary: childRegistry.summary(),
@@ -1284,7 +1302,11 @@ export async function executeChainedStep(
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    return { success: false, error: msg };
+    return {
+      success: false,
+      error: msg,
+      ...(isUncertainOutcome(error) ? { outcome: "uncertain" as const } : {}),
+    };
   }
 }
 
@@ -1293,6 +1315,13 @@ interface StepExecResult {
   skipped?: boolean;
   data?: unknown;
   error?: string;
+  /**
+   * The failure happened AFTER a write may have reached its destination
+   * (see uncertainOutcome.ts). Structured rather than read back out of
+   * `error`, because `withRetry` decides on it and a decision made by
+   * scraping a message is one wrapper away from being wrong.
+   */
+  outcome?: "uncertain";
   /** VD-2: forwarded from `executeChainedStep` so the runner can capture
    *  what params actually flew at the tool/agent. */
   resolvedParams?: unknown;
@@ -1339,6 +1368,12 @@ async function withRetry(
     }
     last = await fn();
     if (last.success) return last;
+    // Delivered-but-unverified: the write may already be applied. Not a
+    // retry-eligible failure — uncertainty is not a basis for another
+    // attempt. Checked before the timeout rule because it is the stronger
+    // fact (a timeout past the sent boundary arrives already marked).
+    if (last.outcome === "uncertain" || isUncertainOutcome(last.error))
+      return last;
     // Audit 2026-06-10 recipe-runners-2: do NOT retry on a step_timeout. The
     // timed-out attempt's tool/agent call keeps running in the background
     // (raceStepTimeout only abandons the wait, it does not cancel the call);
@@ -1906,7 +1941,12 @@ export async function runChainedRecipe(
 
     // Optional steps must not propagate failure to the executor
     if (!effectiveSuccess) {
-      throw new Error(result.error ?? `Step ${stepId} failed`);
+      const failure = new Error(result.error ?? `Step ${stepId} failed`);
+      // Keep the marker on the Error the executor records, so a parent
+      // recipe reading `stepResults` sees the fact and not just the text.
+      throw result.outcome === "uncertain"
+        ? markUncertainOutcome(failure)
+        : failure;
     }
   };
 

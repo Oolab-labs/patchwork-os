@@ -1,4 +1,5 @@
 import { categoriseHaltReason } from "../recipes/haltCategory.js";
+import { isUncertainOutcome } from "../recipes/uncertainOutcome.js";
 import {
   AGENT_STEP_TOOL,
   classifyActionClass,
@@ -65,6 +66,10 @@ export interface RunRecord {
     /** Persisted halt reason — used to tell a worker failure apart from a
      * human approval decision (the latter is not trust evidence; see L2). */
     haltReason?: string;
+    /** Raw step error, when the row carries one (chained rows have no code). */
+    error?: string;
+    /** Structured error code from the throw site (flat runner rows). */
+    errorCode?: string;
     /**
      * Captured tool output for outcome attribution. Only populated for
      * github.create_issue steps (contains `{url, issueNumber}`). Used by
@@ -149,7 +154,10 @@ export function isDurableSuccess(
 }
 
 /** A single step reduced to what the outcome fold needs. */
-type FoldStep = Pick<RunRecord["steps"][number], "tool" | "status" | "output">;
+type FoldStep = Pick<
+  RunRecord["steps"][number],
+  "tool" | "status" | "output" | "error" | "errorCode" | "haltReason"
+>;
 
 /**
  * The durable-outcome fold decision for one step — the SINGLE source of truth
@@ -248,6 +256,14 @@ export function foldOutcome(
   // something about a model call, not about whether this worker can be
   // trusted with a side effect. Neither credit nor penalty.
   if (step.tool === AGENT_STEP_TOOL) return { fold: false };
+  // Delivered-but-unverified (uncertainOutcome.ts): the write may have been
+  // applied and nobody knows. Neither credit — it is not a success — nor
+  // penalty — a lost response says something about the transport, not about
+  // whether this worker can be trusted with a side effect. Same shape as the
+  // agent-step and unkeyable rules: withholding only ever removes evidence.
+  if (step.status === "error" && isUncertainOutcome(step)) {
+    return { fold: false };
+  }
   if (step.status !== "ok") return { fold: true, good: false };
   // Success. Without a wall-clock, keep the prior status-only fold (back-compat).
   if (opts.now === undefined) return { fold: true, good: true };

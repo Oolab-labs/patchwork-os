@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-09-24 `fix/no-resend-on-uncertain-write` — a write whose response was lost, died mid-body or timed out after dispatch is `outcome_uncertain`: preserved as a failure, never resent by `retry`, withheld in the trust fold, halt category `delivery_unverified`. One shared marker (`src/recipes/uncertainOutcome.ts`) checked by flat, chained and fan_out. Touches http.post, both runners, fanOut, haltCategory (bridge + dashboard), shadowObserver.
+
 
 
 ## Recently closed (informal log, prune periodically)

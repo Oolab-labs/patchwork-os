@@ -40,6 +40,15 @@ export type HaltCategory =
   /** Per-step wall-clock `timeout_ms` exceeded (sandbox-alternative slice). */
   | "step_timeout"
   /**
+   * A write was handed to the transport and no usable response came back
+   * (response lost, body died mid-read, target hung past the tool timeout).
+   * The step FAILED, and the write MAY have been applied — both facts, kept
+   * apart from `network_error`, whose remedy ("check connectivity") assumes
+   * nothing reached the service. The runners refuse to retry it; the
+   * operator has to look at the destination before re-running by hand.
+   */
+  | "delivery_unverified"
+  /**
    * Opt-in judge→refine loop exhausted its `max_revisions` budget and the
    * judge still returned `request_changes` with `on_exhausted: "halt"`.
    */
@@ -125,6 +134,7 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   prompt_too_large: "prompt too large",
   expect_failed: "expect failed",
   step_timeout: "step timeout",
+  delivery_unverified: "delivered, outcome unverified",
   judge_revisions_exhausted: "judge revisions exhausted",
   auth_failure: "auth failure",
   rate_limited: "rate limited",
@@ -160,6 +170,8 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
     "shorten the step prompt, or the tool output it interpolates — nothing was sent",
   expect_failed: "inspect assertion vs actual output",
   step_timeout: "bump timeout_ms or speed up step",
+  delivery_unverified:
+    "the write was sent and may have landed — check the destination before re-running; it was deliberately not retried",
   judge_revisions_exhausted:
     "raise max_revisions, refine the prompt, or set on_exhausted: proceed",
   auth_failure: "reconnect from /connections",
@@ -215,6 +227,12 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   // revisions`). Must precede the generic `Agent step ... threw` matcher.
   if (/did not approve after \d+ revision/i.test(reason))
     return "judge_revisions_exhausted";
+  // Delivered-but-unverified. The token is OURS (uncertainOutcome.ts), not a
+  // transport phrase; it must precede `network_error`, whose ECONNRESET /
+  // "fetch failed" alternatives are exactly the words a lost response
+  // arrives wrapped in, and precede `step_timeout`, because a timeout past
+  // the sent boundary is the same fact and is stamped as such.
+  if (/outcome_uncertain/i.test(reason)) return "delivery_unverified";
   // Must precede the `^Tool ... threw` matcher: timeouts surface wrapped
   // inside the tool-threw envelope (`Tool "x" in step "y" threw: step_timeout: ...`).
   if (/step_timeout/i.test(reason)) return "step_timeout";
