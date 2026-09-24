@@ -50,13 +50,13 @@ verified (which is how this line came to be written).
 
 ## Active
 
-- 2026-09-24 `fix/replay-never-live` — refuse mocked replay with incomplete capture at preflight, runner and dispatch boundaries; keep live calls at zero — Codex (Repair 2)
-
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-09-24 `fix/replay-never-live` — mocked replay refuses incomplete capture before dispatch in preflight, both runners and the shared seam; zero live calls — Codex (Repair 2), PR #1608
 
 - 2026-09-24 `fix/no-resend-on-uncertain-write` — a write whose response was lost, died mid-body or timed out after dispatch is `outcome_uncertain`: preserved as a failure, never resent by `retry`, withheld in the trust fold, halt category `delivery_unverified`. One shared marker (`src/recipes/uncertainOutcome.ts`) checked by flat, chained and fan_out. Touches http.post, both runners, fanOut, haltCategory (bridge + dashboard), shadowObserver. — #1607
 
