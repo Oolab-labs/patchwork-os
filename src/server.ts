@@ -18,8 +18,10 @@ import {
   routeApprovalRequest,
 } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
+import { getButlerOpenLoopStore } from "./butler/openLoopSharedStore.js";
 import { StandingPermissionStore } from "./butler/permissionStore.js";
 import { getButlerFactStore } from "./butler/sharedStore.js";
+import { tryHandleButlerOpenLoopRoute } from "./butlerOpenLoopRoutes.js";
 import { tryHandleButlerRoute } from "./butlerRoutes.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
 import {
@@ -37,6 +39,7 @@ import { renderDashboardHtml } from "./dashboard.js";
 import { isLoopbackOrPrivateEndpoint } from "./drivers/local/index.js";
 import {
   EnvLockedFlagError,
+  FLAG_BUTLER_OPEN_LOOPS,
   getEnvLockedValue,
   isEnabled,
   isEnvLockedFor,
@@ -1804,6 +1807,19 @@ export class Server extends EventEmitter<ServerEvents> {
           // whole-file read, so a grant made by another process is visible
           // immediately.
           permissionStoreFn: () => new StandingPermissionStore(),
+        })
+      ) {
+        return;
+      }
+
+      // ── Butler Loose Ends routes (experimental, default off) ─────────────
+      // Mounted after the same Bearer-token gate as Butler facts. The store is
+      // separate from ButlerFactStore because errands/promises are temporary
+      // open loops, not durable beliefs about the user.
+      if (
+        tryHandleButlerOpenLoopRoute(req, res, parsedUrl, {
+          storeFn: () => getButlerOpenLoopStore(),
+          enabledFn: () => isEnabled(FLAG_BUTLER_OPEN_LOOPS),
         })
       ) {
         return;
