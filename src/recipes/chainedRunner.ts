@@ -56,6 +56,7 @@ import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
 import type { RouteCandidate } from "./pricing/costRouter.js";
 import { loadPriceTable, type PriceTable } from "./pricing/priceTable.js";
+import { replayRefusalMessage } from "./replayBoundary.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import { registerRun, unregisterRun } from "./runRegistry.js";
@@ -216,11 +217,20 @@ export interface RunOptions {
    * map instead of calling the real executor. Pure-mocked: no external
    * IO, no side effects. Used by `POST /runs/:seq/replay`.
    *
-   * If a step's id is NOT in the map, the runner falls through to real
-   * execution — callers wanting strict mocked-only mode pre-populate
-   * every step the recipe will visit.
+   * If a step's id is NOT in the map and `replayOnly` is unset, the runner
+   * falls through to real execution (the simulator relies on this with
+   * stub deps). Under `replayOnly` — which every replay entrypoint sets —
+   * such a step is REFUSED instead; see `replayBoundary.ts`.
    */
   mockedOutputs?: Map<string, unknown>;
+  /**
+   * Mocked-replay boundary (`replayBoundary.ts`, layer 2). When true, a
+   * step absent from `mockedOutputs` fails with
+   * `replay_refused_unmocked_step` rather than reaching `executeTool` /
+   * `executeAgent` / a nested recipe. Propagates to nested runs via the
+   * `...options` spread. Set by `replayMockedRun`; never for a live run.
+   */
+  replayOnly?: boolean;
   /**
    * Override the prefix used in the run log's `taskId`. Default is
    * `chained` → `chained:<recipeName>:<startTs>`. Replay sets this to
@@ -784,6 +794,26 @@ export async function executeChainedStep(
     return {
       success: true,
       data: mockedData,
+      resolvedParams: resolved,
+    };
+  }
+
+  // Replay boundary (replayBoundary.ts, layer 2): under `replayOnly` a step
+  // with no capture is refused HERE, before the budget check, the approval
+  // gate and dispatch — none of those may turn missing evidence into
+  // permission to run. Layer 3 (the `executeStep` seam inside the deps that
+  // `buildChainedDeps` builds) still holds if this line is ever bypassed.
+  if (options.replayOnly === true) {
+    return {
+      success: false,
+      error: replayRefusalMessage(
+        [step.id],
+        step.agent
+          ? "agent step"
+          : step.tool
+            ? `tool ${step.tool}`
+            : "nested recipe",
+      ),
       resolvedParams: resolved,
     };
   }

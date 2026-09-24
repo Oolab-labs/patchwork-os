@@ -182,7 +182,10 @@ describe("runChainedRecipe — mockedOutputs interception", () => {
     expect(result.context.s2).toBe(JSON.stringify({ mocked: 2 }));
   });
 
-  it("falls through to real execution for steps NOT in the mocked map", async () => {
+  // Fallthrough is still legal for a NON-replay caller (the simulator drives
+  // the runner with stub deps + a partial map). Every replay entrypoint sets
+  // `replayOnly`, under which the next test applies instead.
+  it("falls through to real execution for steps NOT in the mocked map (replayOnly unset)", async () => {
     const deps = realDeps();
     const mocked = new Map<string, unknown>([["s1", "MOCKED_S1"]]);
     const result = await runChainedRecipe(
@@ -195,6 +198,23 @@ describe("runChainedRecipe — mockedOutputs interception", () => {
     expect(deps.executeTool).toHaveBeenCalledTimes(1);
     expect(result.context.s1).toBe("MOCKED_S1");
     expect(result.context.s2).toBe("REAL_RESULT");
+  });
+
+  it("REPLAY BOUNDARY: under replayOnly a step NOT in the mocked map is refused, never dispatched", async () => {
+    const deps = realDeps();
+    const mocked = new Map<string, unknown>([["s1", "MOCKED_S1"]]);
+    const result = await runChainedRecipe(
+      recipe(),
+      opts({ mockedOutputs: mocked, replayOnly: true }),
+      deps,
+    );
+    expect(result.success).toBe(false);
+    expect(deps.executeTool).not.toHaveBeenCalled();
+    expect(deps.executeAgent).not.toHaveBeenCalled();
+    expect(result.context.s1).toBe("MOCKED_S1");
+    expect(String(result.stepResults.get("s2")?.error)).toMatch(
+      /replay_refused_unmocked_step/,
+    );
   });
 
   it("re-applies transforms on top of mocked outputs", async () => {
@@ -339,6 +359,11 @@ describe("replayMockedRun", () => {
       deps: replayDeps,
     });
     expect(result.unmockedSteps).toEqual(["s1"]);
+    // Replay boundary: refused before any run — not run live.
+    expect(result.ok).toBe(false);
+    expect(result.newSeq).toBeUndefined();
+    expect(result.error).toMatch(/^replay_refused_unmocked_step/);
+    expect(replayDeps.runLog.query()).toHaveLength(0);
   });
 
   it("passes sourcePath through to the run options when provided", async () => {
@@ -588,9 +613,14 @@ describe("replayFlatMockedRun", () => {
       deps: replayDeps,
     });
     expect(result.unmockedSteps).toEqual(["s1"]);
+    // Replay boundary: refused before any run — not run live.
+    expect(result.ok).toBe(false);
+    expect(result.newSeq).toBeUndefined();
+    expect(result.error).toMatch(/^replay_refused_unmocked_step/);
+    expect(replayDeps.runLog.query()).toHaveLength(0);
   });
 
-  it("REGRESSION: never mocks a positional (auto-generated) step id — always falls through to real execution", async () => {
+  it("REGRESSION: never mocks a positional (auto-generated) step id — the replay is refused (never run live)", async () => {
     // Bug found in session-review: `step.into ?? "step_${n}"` fallback ids
     // are purely positional ("the 4th step THIS run executed"), not
     // stable across a recipe edit that adds/removes/reorders steps before
@@ -615,5 +645,7 @@ describe("replayFlatMockedRun", () => {
       deps: replayDeps,
     });
     expect(result.unmockedSteps).toEqual(["step_0"]);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/^replay_refused_unmocked_step/);
   });
 });

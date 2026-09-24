@@ -134,6 +134,7 @@ import {
   type PriceTable,
   costUsd as priceCostUsd,
 } from "./pricing/priceTable.js";
+import { ReplayIncompleteError } from "./replayBoundary.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import { recordAttemptRun } from "./runLedgers.js";
@@ -825,6 +826,17 @@ export interface RunnerDeps {
    * sites below). Unset for a normal (non-replay) run.
    */
   mockedOutputs?: Map<string, string>;
+  /**
+   * Mocked-replay boundary (see `replayBoundary.ts`). When true, the run is
+   * EVIDENCE-ONLY: a step whose id is absent from `mockedOutputs` is refused
+   * with `replay_refused_unmocked_step` instead of dispatched, and the
+   * dispatch seam itself (`executeStep`, `buildAgentExecutorDeps`) throws
+   * `ReplayIncompleteError` before any tool or agent is invoked. Set by
+   * `replayFlatMockedRun` / `replayMockedRun`; never for a live run. Absent
+   * ⇒ the historical fallthrough (a step not in the map runs for real),
+   * which the simulator (`simulateMockedRun.ts`) relies on with stub deps.
+   */
+  replayOnly?: boolean;
 }
 
 export interface RunResult {
@@ -954,9 +966,14 @@ export type StepDeps = Required<
     // `deps`, not per-step StepDeps; keep it off StepDeps so it isn't
     // forced Required here.
     | "mockedOutputs"
+    // Optional on StepDeps too (declared explicitly below) — a replay marker
+    // must never be a required field every test StepDeps has to fill.
+    | "replayOnly"
   >
 > & {
   workdir: string;
+  /** See `RunnerDeps.replayOnly`. Copied by `resolveStepDeps`. */
+  replayOnly?: boolean;
   logDir?: string;
   recordFixturesDir?: string;
   runLog?: RecipeRunLog;
@@ -2775,6 +2792,13 @@ export async function runYamlRecipe(
         // `RunBudget.reconcile` records a fail-open warning per driver per
         // run and continues.
         try {
+          // Replay boundary (replayBoundary.ts, layer 2). Flat agent steps
+          // capture no `output`, so under replay there is never a mock for
+          // one — refuse here rather than let the catch below be the first
+          // to hear about it from the seam.
+          if (deps.replayOnly === true) {
+            throw new ReplayIncompleteError([stepId], "agent step");
+          }
           // Phase 4: opt-in cost-aware routing. No-op (returns preferred) when
           // the step has no `downshift` list or no USD cap is set.
           const routed = resolveRouting(
@@ -3090,6 +3114,18 @@ export async function runYamlRecipe(
       // itself is skipped. See RunnerDeps.mockedOutputs's doc comment.
       if (deps.mockedOutputs?.has(stepId)) {
         result = deps.mockedOutputs.get(stepId) ?? null;
+      } else if (deps.replayOnly === true) {
+        // Replay boundary (replayBoundary.ts, layer 2): no capture for this
+        // step ⇒ refuse, never dispatch. Recorded as a thrown step error so
+        // the existing halt/fail-open bookkeeping below applies unchanged;
+        // no retry, because there is nothing to retry against.
+        const refusal = new ReplayIncompleteError(
+          [stepId],
+          `tool ${step.tool ?? "?"}`,
+        );
+        thrownError = refusal.message;
+        thrownErrorCode = refusal.code;
+        result = null;
       } else {
         for (let attempt = 0; attempt <= retryCount; attempt++) {
           if (attempt > 0) {
@@ -3635,6 +3671,16 @@ export async function executeStep(
   const toolId = step.tool;
   if (!toolId) {
     return null;
+  }
+
+  // Replay boundary (replayBoundary.ts, layer 3). A mocked replay's StepDeps
+  // carry `replayOnly`; reaching this seam under replay means no capture
+  // short-circuited the step upstream, so the ONLY correct outcome is to
+  // refuse. Checked before the registry lookup, the approval gate and the
+  // policy check on purpose: none of those may convert "no evidence" into
+  // "permitted to run".
+  if (deps.replayOnly === true) {
+    throw new ReplayIncompleteError([step.into ?? toolId], `tool ${toolId}`);
   }
 
   // Check if tool is registered in the new registry
@@ -4231,6 +4277,10 @@ function resolveStepDeps(
         : new WriteEffectLedger(),
     workerId: deps.workerId,
     recipeName: scope?.recipeName,
+    // Replay boundary marker rides on StepDeps so the dispatch seam
+    // (`executeStep`, `buildAgentExecutorDeps`) can refuse without the run
+    // loop's help. Only ever set by the replay entrypoints.
+    ...(deps.replayOnly === true && { replayOnly: true }),
     // Ephemeral rollback — same disk-availability gating as writeEffectLedger
     // above (deliberately: both share the operator's --ledger-dir/--attempt
     // inputs). No in-memory fallback: rollback only makes sense as a
@@ -4340,6 +4390,12 @@ function buildAgentExecutorDeps(
    */
   runTaskId?: string,
 ): AgentExecutorDeps {
+  // Replay boundary (replayBoundary.ts, layer 3) — the single place agent
+  // executor deps are built for every dispatch site in this runner, so a
+  // replay's StepDeps can never hand a driver to an agent step.
+  if (stepDeps.replayOnly === true) {
+    throw new ReplayIncompleteError(["agent"], "agent step");
+  }
   const claudeCliFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
   return {
     // ── ADR-0021 information boundary ───────────────────────────────────────
@@ -5414,6 +5470,8 @@ export async function dispatchRecipe(
       runLog: deps.chainedOptions?.runLog,
       activityLog: deps.chainedOptions?.activityLog,
       mockedOutputs: deps.chainedOptions?.mockedOutputs,
+      ...((deps.replayOnly === true ||
+        deps.chainedOptions?.replayOnly === true) && { replayOnly: true }),
       taskIdPrefix: deps.chainedOptions?.taskIdPrefix,
       // Parity (#850): forward the run-level budget, price table, and
       // cancellation signal that the chained runner honours. Without these the
