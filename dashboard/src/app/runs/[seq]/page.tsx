@@ -970,17 +970,22 @@ export default function RunDetailPage() {
       };
       if (!res.ok || !data.ok) {
         setReplayState("error");
-        setReplayMessage(data.error ?? `HTTP ${res.status}`);
+        // 409 replay_refused_unmocked_step: the bridge refused BEFORE running
+        // anything because these steps have no usable capture. Say so in
+        // words — the raw error string is long and names the same steps.
+        setReplayMessage(
+          data.unmockedSteps?.length
+            ? `Replay refused — ${data.unmockedSteps.length} step${data.unmockedSteps.length === 1 ? " has" : "s have"} no usable captured output (${data.unmockedSteps.join(", ")}). Nothing was run.`
+            : (data.error ?? `HTTP ${res.status}`),
+        );
         return;
       }
       setReplayState("done");
-      const warnSuffix = data.unmockedSteps?.length
-        ? ` (${data.unmockedSteps.length} step${data.unmockedSteps.length === 1 ? "" : "s"} ran without mocked output: ${data.unmockedSteps.join(", ")})`
-        : "";
+      // A successful replay is fully mocked by construction — the bridge
+      // refuses (409) rather than running any step live, so there is no
+      // "ran without mocked output" caveat to append any more.
       setReplayMessage(
-        data.newSeq
-          ? `Replayed as run #${data.newSeq}${warnSuffix}`
-          : `Replay queued${warnSuffix}`,
+        data.newSeq ? `Replayed as run #${data.newSeq}` : "Replay queued",
       );
     } catch (e) {
       setReplayState("error");
