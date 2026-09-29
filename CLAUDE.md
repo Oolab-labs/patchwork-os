@@ -608,8 +608,10 @@ and inferred-tier writes queue, unregistered tools halt, a recipe's
   `sendHttpRequest` both use it.
 - **Known remaining bypasses are listed in the ADR.** Replay rebuilds the tier
   gate but deliberately not the worker gate — nothing dispatches under replay, and
-  a replay row is marked `replay: true` and never folds as trust evidence; the envelope does not reach `fan_out` items,
-  nested child outputs or automation-hook prompts; there is no prompt size cap.
+  a replay row is marked `replay: true` and never folds as trust evidence; the envelope now reaches `fan_out` items (only when
+  `items` is exactly `{{key}}`), nested child outputs (unioned per step) and
+  agent output derived from enveloped inputs, while automation-hook prompts use
+  their own nonce-delimited container by design; there is no prompt size cap.
   `recipe test` is offline (an unmocked tool or unstubbed agent driver is
   refused with `test_refused_unmocked_step`, never run live) and `recipe
   record` is governed like `recipe run --local` (`resolveLocalGovernance`).
