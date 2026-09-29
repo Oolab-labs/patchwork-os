@@ -136,7 +136,15 @@ The same order is what `policy explain` prints.
 - Per-tool `assertWriteAllowed` calls inside individual connector tools, and
   four direct `isWriteKillSwitchActive()` reads in `server.ts` /
   `recipeRoutes.ts`, are behind `executeTool` and not profile-aware.
-- `recipe test` / `recipe record` fixture runs are not gated.
+- `recipe test` is offline rather than gated (closed 2026-09-29): a flat step
+  whose tool has no fixture mock (other than the stub-served reads `file.read`,
+  `git.log_since`, `git.stale_branches`, `diagnostics.get`) is refused at
+  `executeStep` with `test_refused_unmocked_step`, and an agent driver the test
+  did not stub refuses instead of reaching a live model. `recipe record` runs
+  connectors live and is governed exactly as `recipe run --local`
+  (`resolveLocalGovernance`: profile, terminal approval, worker gate, so the
+  policy matrix and kill switch apply). Still open: `record`'s approval, like
+  `run --local`'s, is asked on the terminal, and fails closed with no TTY.
 - No prompt size cap.
 
 ## Alternatives rejected

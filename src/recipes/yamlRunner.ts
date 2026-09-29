@@ -140,6 +140,7 @@ import {
 import {
   type ReplayedFailure,
   ReplayIncompleteError,
+  TestModeRefusalError,
 } from "./replayBoundary.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
@@ -857,6 +858,15 @@ export interface RunnerDeps {
    * which the simulator (`simulateMockedRun.ts`) relies on with stub deps.
    */
   replayOnly?: boolean;
+  /**
+   * `recipe test` boundary (see `replayBoundary.ts`, `TestModeRefusalError`).
+   * When true the run is OFFLINE: `executeStep` refuses any tool that has no
+   * entry in `mockConnectors` (except the read tools served wholly by injected
+   * stub deps, `TEST_STUBBED_TOOLS`), and an agent driver fn that was not
+   * injected resolves to a refusal instead of the live default. Set by
+   * `runTest`; never for a live run.
+   */
+  testOnly?: boolean;
 }
 
 export interface RunResult {
@@ -990,11 +1000,14 @@ export type StepDeps = Required<
     // Optional on StepDeps too (declared explicitly below) — a replay marker
     // must never be a required field every test StepDeps has to fill.
     | "replayOnly"
+    | "testOnly"
   >
 > & {
   workdir: string;
   /** See `RunnerDeps.replayOnly`. Copied by `resolveStepDeps`. */
   replayOnly?: boolean;
+  /** See `RunnerDeps.testOnly`. Copied by `resolveStepDeps`. */
+  testOnly?: boolean;
   logDir?: string;
   recordFixturesDir?: string;
   runLog?: RecipeRunLog;
@@ -3750,6 +3763,18 @@ export async function runYamlRecipe(
   };
 }
 
+/**
+ * Tools `recipe test` may run without a fixture: reads whose only effect goes
+ * through a dep `runTest` stubs (`readFile`, `gitLogSince`,
+ * `gitStaleBranches`, `getDiagnostics`). Everything else needs a mock.
+ */
+const TEST_STUBBED_TOOLS: ReadonlySet<string> = new Set([
+  "file.read",
+  "git.log_since",
+  "git.stale_branches",
+  "diagnostics.get",
+]);
+
 export async function executeStep(
   step: YamlStep,
   ctx: RunContext,
@@ -3776,6 +3801,16 @@ export async function executeStep(
   // "permitted to run".
   if (deps.replayOnly === true) {
     throw new ReplayIncompleteError([step.into ?? toolId], `tool ${toolId}`);
+  }
+  // `recipe test` boundary: only a mocked tool, or a read tool served wholly
+  // by injected stub deps, may run. Checked before the registry lookup for the
+  // same reason as replay: a missing fixture must never become a live call.
+  if (
+    deps.testOnly === true &&
+    !deps.mockConnectors?.[toolId] &&
+    !TEST_STUBBED_TOOLS.has(toolId)
+  ) {
+    throw new TestModeRefusalError([step.into ?? toolId], `tool ${toolId}`);
   }
 
   // Check if tool is registered in the new registry
@@ -4237,6 +4272,13 @@ function refuseLiveModel(which: string): never {
   );
 }
 
+/** An agent driver fn that refuses: `recipe test` never reaches a live model. */
+function refuseInTest(which: string): () => Promise<never> {
+  return async () => {
+    throw new TestModeRefusalError(["agent"], `agent driver ${which}`);
+  };
+}
+
 function resolveStepDeps(
   deps: RunnerDeps,
   scope?: { recipeName: string },
@@ -4291,20 +4333,30 @@ function resolveStepDeps(
     fetchFn: deps.fetchFn ?? (globalThis.fetch as FetchFn),
     claudeFn:
       deps.claudeFn ??
-      (liveModelGuardActive() && process.env.ANTHROPIC_API_KEY
-        ? () => refuseLiveModel("defaultClaudeFn (Anthropic API)")
-        : defaultClaudeFn),
+      (deps.testOnly === true
+        ? refuseInTest("claude (Anthropic API)")
+        : liveModelGuardActive() && process.env.ANTHROPIC_API_KEY
+          ? () => refuseLiveModel("defaultClaudeFn (Anthropic API)")
+          : defaultClaudeFn),
     claudeCodeFn:
       deps.claudeCodeFn ??
-      (liveModelGuardActive()
-        ? () => refuseLiveModel("defaultClaudeCodeFn (claude CLI subprocess)")
-        : defaultClaudeCodeFn),
+      (deps.testOnly === true
+        ? refuseInTest("claude-code (CLI subprocess)")
+        : liveModelGuardActive()
+          ? () => refuseLiveModel("defaultClaudeCodeFn (claude CLI subprocess)")
+          : defaultClaudeCodeFn),
     localFn:
       deps.localFn ??
-      (liveModelGuardActive()
-        ? () => refuseLiveModel("defaultLocalFn (LOCAL_ENDPOINT)")
-        : defaultLocalFn),
-    providerDriverFn: deps.providerDriverFn ?? makeProviderDriverFn(),
+      (deps.testOnly === true
+        ? refuseInTest("local (LOCAL_ENDPOINT)")
+        : liveModelGuardActive()
+          ? () => refuseLiveModel("defaultLocalFn (LOCAL_ENDPOINT)")
+          : defaultLocalFn),
+    providerDriverFn:
+      deps.providerDriverFn ??
+      (deps.testOnly === true
+        ? refuseInTest("provider driver")
+        : makeProviderDriverFn()),
     mockConnectors: deps.mockConnectors ?? {},
     recordFixturesDir: deps.recordFixturesDir,
     allowWrites: deps.allowWrites ?? [],
@@ -4348,6 +4400,7 @@ function resolveStepDeps(
     // (`executeStep`, `buildAgentExecutorDeps`) can refuse without the run
     // loop's help. Only ever set by the replay entrypoints.
     ...(deps.replayOnly === true && { replayOnly: true }),
+    ...(deps.testOnly === true && { testOnly: true }),
     // Ephemeral rollback — same disk-availability gating as writeEffectLedger
     // above (deliberately: both share the operator's --ledger-dir/--attempt
     // inputs). No in-memory fallback: rollback only makes sense as a
