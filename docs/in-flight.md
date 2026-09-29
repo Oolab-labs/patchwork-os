@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-29 `fix/private-ids-clone-exclude` — private-identifier gate refuses a staged file matched by the clone-local `.git/info/exclude` (a forced add), and no longer prints the `--text` filename; neither path nor pattern is echoed. Touches the gate script + its test only.
+
 - 2026-09-24 `fix/replay-never-live` — mocked replay refuses incomplete capture before dispatch in preflight, both runners and the shared seam; zero live calls — Codex (Repair 2), PR #1608
 
 - 2026-09-24 `fix/no-resend-on-uncertain-write` — a write whose response was lost, died mid-body or timed out after dispatch is `outcome_uncertain`: preserved as a failure, never resent by `retry`, withheld in the trust fold, halt category `delivery_unverified`. One shared marker (`src/recipes/uncertainOutcome.ts`) checked by flat, chained and fan_out. Touches http.post, both runners, fanOut, haltCategory (bridge + dashboard), shadowObserver. — #1607
