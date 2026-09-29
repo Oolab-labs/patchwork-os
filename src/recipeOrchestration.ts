@@ -285,10 +285,13 @@ export async function buildWorkerAutonomyGate(
   },
 ): Promise<ApprovalFn | null> {
   try {
-    const { isEnabled, FLAG_WORKER_AUTONOMY } = await import(
-      "./featureFlags.js"
+    // Governed profile OR the flag — the one predicate doctor and `policy
+    // explain` also call, so the report cannot say ENFORCED while this is off.
+    const { activeProfile } = await import("./governance/profile.js");
+    const { workerGateEnabled } = await import(
+      "./governance/workerAuthority.js"
     );
-    if (!isEnabled(FLAG_WORKER_AUTONOMY)) return null;
+    if (!workerGateEnabled(activeProfile())) return null;
 
     const { loadWorkerTrustForRecipe } = await import(
       "./workers/runWorkerShadow.js"
@@ -593,10 +596,13 @@ export async function buildWorkerAgentDisallowedTools(
   pluginTools?: readonly string[],
 ): Promise<string[] | null> {
   try {
-    const { isEnabled, FLAG_WORKER_AUTONOMY } = await import(
-      "./featureFlags.js"
+    // Governed profile OR the flag — the one predicate doctor and `policy
+    // explain` also call, so the report cannot say ENFORCED while this is off.
+    const { activeProfile } = await import("./governance/profile.js");
+    const { workerGateEnabled } = await import(
+      "./governance/workerAuthority.js"
     );
-    if (!isEnabled(FLAG_WORKER_AUTONOMY)) return null;
+    if (!workerGateEnabled(activeProfile())) return null;
 
     const { loadWorkerTrustForRecipe } = await import(
       "./workers/runWorkerShadow.js"

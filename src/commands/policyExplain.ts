@@ -121,11 +121,10 @@ export async function explainRecipePolicy(
       "../recipeOrchestration.js"
     );
     workerId = await resolveWorkerIdForRecipe(name, opts.workersDir);
-    const { isEnabled, FLAG_WORKER_AUTONOMY } = await import(
-      "../featureFlags.js"
+    const { workerGateEnabled } = await import(
+      "../governance/workerAuthority.js"
     );
-    const gateActive =
-      profile.workerAuthority || isEnabled(FLAG_WORKER_AUTONOMY);
+    const gateActive = workerGateEnabled(profile);
     if (workerId && gateActive) {
       const { loadWorkerTrustForRecipe } = await import(
         "../workers/runWorkerShadow.js"

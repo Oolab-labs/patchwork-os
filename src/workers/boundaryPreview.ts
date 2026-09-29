@@ -17,7 +17,8 @@
  * boundary rather than a missing one.
  */
 
-import { FLAG_WORKER_AUTONOMY, isEnabled } from "../featureFlags.js";
+import { activeProfile } from "../governance/profile.js";
+import { workerGateEnabled } from "../governance/workerAuthority.js";
 import { type ForbidRule, parseForbidRules } from "./forbidPolicy.js";
 import {
   type ActionBoundary,
@@ -34,8 +35,9 @@ export interface WorkerBoundary {
   recipeName: string;
   boundary: ActionBoundary;
   /**
-   * False when the worker-autonomy flag is off. The boundary is still computed
-   * and still correct as a statement of policy — but nothing is enforcing it,
+   * False when the worker gate is not in force (`workerGateEnabled`: the
+   * governed profile, or the worker-autonomy flag under compat). The boundary
+   * is still computed and still correct as a statement of policy — but nothing is enforcing it,
    * and a screen that does not say so would imply protection that is not
    * running. The caller must surface this.
    */
@@ -99,6 +101,8 @@ export function boundaryForRecipe(
     // operator asking "what may this worker do?" while the flag is off should
     // get the answer AND be told it is not being enforced — hiding the boundary
     // would leave them with no information at all, which is worse.
-    autonomyFlagEnabled: isEnabled(FLAG_WORKER_AUTONOMY),
+    // Same predicate the runtime gate builders call — a governed profile
+    // enforces the boundary even with the flag unset.
+    autonomyFlagEnabled: workerGateEnabled(activeProfile()),
   };
 }

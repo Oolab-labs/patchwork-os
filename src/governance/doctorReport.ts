@@ -13,11 +13,7 @@
  */
 
 import { readdirSync } from "node:fs";
-import {
-  FLAG_ENFORCE_POLICY,
-  FLAG_WORKER_AUTONOMY,
-  isEnabled,
-} from "../featureFlags.js";
+import { FLAG_ENFORCE_POLICY, isEnabled } from "../featureFlags.js";
 import { loadConfig } from "../patchworkConfig.js";
 import { patchworkPath } from "../patchworkHome.js";
 import { parseRegistry } from "../privacy/destinationRegistry.js";
@@ -28,6 +24,7 @@ import {
 } from "./pluginPolicy.js";
 import { type GovernanceProfile, resolveProfile } from "./profile.js";
 import { secretValueCount } from "./secretValues.js";
+import { workerGateEnabled } from "./workerAuthority.js";
 
 export interface GovernanceLine {
   key: string;
@@ -133,11 +130,11 @@ export function governanceReport(
       : "cron / webhook / file-watch / git-hook recipes bypass approval",
   });
 
-  // 4. Worker authority — live flag if we are the bridge, else profile-derived.
+  // 4. Worker authority — the SAME predicate the runtime gate builders call
+  // (`workerGateEnabled`), live or not: the profile turns it on under
+  // governed, the flag is the only switch under compat.
   const flagOn = opts.isFlagOn ?? isEnabled;
-  const workerOn = opts.live
-    ? flagOn(FLAG_WORKER_AUTONOMY)
-    : profile.workerAuthority || flagOn(FLAG_WORKER_AUTONOMY);
+  const workerOn = workerGateEnabled(profile, flagOn);
   const policyOn = opts.live
     ? flagOn(FLAG_ENFORCE_POLICY)
     : profile.policyEnforce || flagOn(FLAG_ENFORCE_POLICY);
