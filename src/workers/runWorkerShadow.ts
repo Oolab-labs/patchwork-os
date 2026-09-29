@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { patchworkHome } from "../patchworkHome.js";
-import { MAX_PERSIST_LINES } from "../runLog.js";
+import { isReplayRun, MAX_PERSIST_LINES } from "../runLog.js";
 import { createRecipeRunLog } from "../runStore/createRunLog.js";
 import { classifyActionClass } from "./actionClass.js";
 import { deriveActionKey } from "./actionRef.js";
@@ -107,7 +107,13 @@ function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
     for (const r of [...archived, ...live]) {
       merged.set(r.taskId ? `task:${r.taskId}` : `seq:${r.seq}`, r);
     }
-    const rows = Array.from(merged.values());
+    // A mocked replay is not evidence. It dispatched nothing, yet its row
+    // carries the original's `ok` steps and captured outputs (issue URLs
+    // included), so folding it would let re-running yesterday's evidence
+    // manufacture trust — and credit an outcome confirmed for the ORIGINAL
+    // filing once more per replay. Withheld here, the single funnel every
+    // trust reader (gate, dial, backtest, pending confirmations) goes through.
+    const rows = Array.from(merged.values()).filter((r) => !isReplayRun(r));
     return rows.map((r) => ({
       recipeName: r.recipeName,
       at: r.doneAt ?? r.startedAt ?? r.createdAt,

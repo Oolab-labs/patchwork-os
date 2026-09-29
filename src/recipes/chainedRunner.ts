@@ -1757,6 +1757,8 @@ export async function runChainedRecipe(
         ...(options.parentSeq !== undefined && {
           parentSeq: options.parentSeq,
         }),
+        // Marks the row so trust replay never folds it (runLog isReplayRun).
+        ...(options.replayOnly === true && { replay: true }),
       });
     } catch {
       // Non-fatal — run-log failures must never break recipe execution.

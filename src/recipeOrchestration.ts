@@ -1136,24 +1136,26 @@ export class RecipeOrchestration {
           });
           return agentTextFromTask(task);
         };
-        // Resolve the owning worker (if any). No replayed step can reach
-        // `executeStep`'s dispatch any more (replayBoundary.ts), but the
-        // governed-profile refusal below still keys off worker ownership.
+        // Resolve the owning worker (if any), for the runner's per-worker
+        // policy scope only — no replayed step can reach `executeStep`'s
+        // dispatch (replayBoundary.ts).
         const workerId = await resolveWorkerIdForRecipe(recipeName);
         const { activeProfile: replayActiveProfile } = await import(
           "./governance/profile.js"
         );
         const replayProfile = replayActiveProfile();
-        // A replay cannot rebuild the worker gate (no live trust context),
-        // so under governed a worker-owned recipe is REFUSED rather than
-        // replayed with fewer gates than the live run had — a forbid must
-        // not be reachable by re-running yesterday's evidence.
-        if (replayProfile.mode === "governed" && workerId) {
-          return {
-            ok: false,
-            error: "replay_refused_worker_owned_under_governed",
-          };
-        }
+        // Worker-owned recipes ARE replayable under governed, and the worker
+        // gate is deliberately NOT built here (ADR-0026, "Known remaining
+        // bypasses"). They used to be refused because a replay with fewer
+        // gates than the live run could reach a `forbids` action. That
+        // rationale died with the replay boundary: every step returns its
+        // captured output, replays its recorded failure, or is refused, so
+        // there is no action for the gate to decide — and running it anyway
+        // would append Decision Records for actions that never happened.
+        // The one remaining way a replay could touch the worker's standing is
+        // as trust EVIDENCE; its run row is stamped `replay: true` by the
+        // runner and excluded from the fold (runLog.ts `isReplayRun`,
+        // workers/runWorkerShadow.ts `readRuns`).
         const replayGate: "off" | "high" | "all" =
           replayProfile.mode === "governed"
             ? replayProfile.approvalGate
@@ -1169,9 +1171,8 @@ export class RecipeOrchestration {
           // Phase 0: governed like a manual run — same profile, same tier
           // gate — even though, since the replay boundary landed, no step
           // can execute live under replay. Kept so the gate's own bookkeeping
-          // (and the worker-owned refusal above) stays byte-identical. (The
-          // worker gate is NOT rebuilt here: replay has no live trust
-          // context.)
+          // stays byte-identical. (The worker gate is deliberately NOT built
+          // here — see the comment above `replayProfile`.)
           governance: replayProfile,
           ...(replayApprovalFn && { requireApprovalFn: replayApprovalFn }),
         };

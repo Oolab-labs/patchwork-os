@@ -347,6 +347,8 @@ describe("replayMockedRun", () => {
     });
     const run = replayDeps.runLog.query()[0];
     expect(run?.taskId).toMatch(/^replay:42:daily:\d+$/);
+    // Explicit marker the worker-trust fold excludes on (runLog isReplayRun).
+    expect(run?.replay).toBe(true);
   });
 
   it("reports unmockedSteps when a step in the original run has no captured output", async () => {
