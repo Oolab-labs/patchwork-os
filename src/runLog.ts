@@ -573,6 +573,35 @@ export class RecipeRunLog {
     return [...byTask.values()];
   }
 
+  /**
+   * The run with this `taskId` — a run's real identity (unique, unlike
+   * `seq`; see `getAllBySeq`). Memory first (it holds this process's live
+   * status), then disk. `null` when no such run is recorded.
+   */
+  getByTaskId(taskId: string): RecipeRun | null {
+    this.syncFromDisk();
+    const inMem = this.runs.find((r) => r.taskId === taskId);
+    if (inMem) return inMem;
+    let raw = "";
+    try {
+      raw = readFileSync(this.file, "utf-8");
+    } catch {
+      return null;
+    }
+    let found: RecipeRun | null = null;
+    for (const line of raw.split("\n")) {
+      if (!line) continue;
+      try {
+        const parsed = JSON.parse(line) as RecipeRun;
+        // Last row wins: an upserted run's later row carries its final state.
+        if (parsed.taskId === taskId) found = parsed;
+      } catch {
+        // skip malformed line — never let one bad row break lookup
+      }
+    }
+    return found;
+  }
+
   /** Return seqs of all in-memory runs whose parentSeq matches this seq. */
   getChildSeqs(parentSeq: number): number[] {
     this.syncFromDisk();

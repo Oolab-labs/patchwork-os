@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-29 `fix/run-identity-routes` — `/runs/by-task/:taskId` (+ `/replay`, `/plan`) address a run by its real identity; replay by a seq that names several runs refuses (409 `ambiguous_seq`); detail by seq lists `sameSeqTaskIds`. Touches recipeRoutes, recipeOrchestration, server, runLog `getByTaskId`.
+
 - 2026-09-29 `fix/run-identity-cancel` — `POST /runs/:seq/cancel` refuses (409) a seq that names more than one running run in the shared log, and `?taskId=` pins a cancel to one run; the registry records each run's `taskId`; dashboard cancel sends it where the row has it. Touches runRegistry, runLog `getAllBySeq`, recipeRoutes, server/recipeOrchestration wiring, both runners, dashboard `useCancelRun` + callers.
 
 - 2026-09-29 `fix/chained-worker-gate` — `buildChainedDeps` now forwards `gateAutomatedRuns`, so a worker-owned chained recipe can no longer opt out of the worker gate with `requireApproval: false` (the flat runner already refused). Touches yamlRunner `buildChainedDeps` + a chainedRunner doc comment.

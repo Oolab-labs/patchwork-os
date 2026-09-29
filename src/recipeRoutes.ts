@@ -594,6 +594,16 @@ export async function fetchFollowingRedirectsSafely(
   throw new Error("Too many redirects installing recipe");
 }
 
+/** Result of a mocked replay (VD-4), by seq or by taskId. */
+export interface ReplayFnResult {
+  ok: boolean;
+  newSeq?: number;
+  unmockedSteps?: string[];
+  error?: string;
+  /** On `ambiguous_seq`: every run recorded under the seq. */
+  taskIds?: string[];
+}
+
 export interface RecipeRouteDeps {
   setRecipeTrustFn:
     | ((name: string, level: string) => { ok: boolean; error?: string })
@@ -790,13 +800,12 @@ export interface RecipeRouteDeps {
   pendingConfirmationsFn:
     | (() => import("./workers/runWorkerShadow.js").PendingConfirmation[])
     | null;
-  runReplayFn:
-    | ((seq: number) => Promise<{
-        ok: boolean;
-        newSeq?: number;
-        unmockedSteps?: string[];
-        error?: string;
-      }>)
+  runReplayFn: ((seq: number) => Promise<ReplayFnResult>) | null;
+  /** Replay the run with this `taskId` — exact, unlike a seq. */
+  runReplayByTaskFn?: ((taskId: string) => Promise<ReplayFnResult>) | null;
+  /** The run with this `taskId`, shaped like `runDetailFn`'s result. */
+  runDetailByTaskFn?:
+    | ((taskId: string) => Record<string, unknown> | null)
     | null;
   runRecipeFn:
     | ((
@@ -847,6 +856,62 @@ function fireOnRecipesChanged(deps: RecipeRouteDeps): void {
  *
  * Must be called AFTER bearer-auth — none of these routes are public.
  */
+/**
+ * The replay response, shared by `/runs/:seq/replay` and
+ * `/runs/by-task/:taskId/replay` so the two cannot drift.
+ */
+function writeReplayResult(res: ServerResponse, result: ReplayFnResult): void {
+  if (result.error === "run_not_found") {
+    res.writeHead(404, { "Content-Type": "application/json" });
+  } else if (
+    result.error === "ambiguous_seq" ||
+    result.error?.startsWith("replay_refused_unmocked_step")
+  ) {
+    // 409 either way — a conflict with the evidence, not a server fault:
+    // `ambiguous_seq` means the seq names more than one run (body carries
+    // `taskIds`; replay by taskId instead); the replay boundary
+    // (src/recipes/replayBoundary.ts) means the original run lacks a usable
+    // capture, so nothing ran (body carries `unmockedSteps`).
+    res.writeHead(409, { "Content-Type": "application/json" });
+  } else if (!result.ok) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+  } else {
+    res.writeHead(200, { "Content-Type": "application/json" });
+  }
+  res.end(JSON.stringify(result));
+}
+
+/** The dry-run plan for the recipe that produced `run`. Shared by seq/taskId routes. */
+async function writePlanForRun(
+  res: ServerResponse,
+  deps: RecipeRouteDeps,
+  run: Record<string, unknown> | null,
+): Promise<void> {
+  if (!run) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "run_not_found" }));
+    return;
+  }
+  if (!deps.runPlanFn) {
+    res.writeHead(503, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "plan_unavailable" }));
+    return;
+  }
+  // Guard: recipeName may be absent on runs created before the field was
+  // added (audit LOW #36). An unsafe cast + immediate .replace() would
+  // throw TypeError — return 404 instead.
+  if (!run.recipeName) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "recipe_name_missing" }));
+    return;
+  }
+  // triggerSource appends ":agent" suffix — strip before file lookup
+  const recipeName = (run.recipeName as string).replace(/:agent$/, "");
+  const plan = await deps.runPlanFn(recipeName);
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ plan }));
+}
+
 export function tryHandleRecipeRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1556,6 +1621,73 @@ export function tryHandleRecipeRoute(
     return true;
   }
 
+  // /runs/by-task/:taskId[/replay|/plan] — the same three operations as the
+  // seq routes below, addressed by the run's real identity. A seq is only
+  // unique per bridge (RecipeRunLog.getAllBySeq); a taskId names one run.
+  // The taskId is URL-encoded by the caller (it contains `:`).
+  const byTaskMatch = /^\/runs\/by-task\/([^/]+)(\/replay|\/plan)?$/.exec(
+    parsedUrl.pathname,
+  );
+  if (byTaskMatch?.[1]) {
+    let taskId: string;
+    try {
+      taskId = decodeURIComponent(byTaskMatch[1]);
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "invalid_task_id" }));
+      return true;
+    }
+    const op = byTaskMatch[2];
+    if (op === undefined && req.method === "GET") {
+      try {
+        const run = deps.runDetailByTaskFn?.(taskId) ?? null;
+        res.writeHead(run ? 200 : 404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(run ? { run } : { error: "not_found" }));
+      } catch (err) {
+        respond500(res, err);
+      }
+      return true;
+    }
+    if (op === "/replay" && req.method === "POST") {
+      void (async () => {
+        try {
+          if (!deps.runReplayByTaskFn) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "replay_unavailable" }));
+            return;
+          }
+          writeReplayResult(res, await deps.runReplayByTaskFn(taskId));
+        } catch (err) {
+          respond500(res, err, "runs/by-task replay");
+        }
+      })();
+      return true;
+    }
+    if (op === "/plan" && req.method === "GET") {
+      void (async () => {
+        try {
+          await writePlanForRun(
+            res,
+            deps,
+            deps.runDetailByTaskFn?.(taskId) ?? null,
+          );
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code === "ENOENT" || code === "RECIPE_NOT_FOUND") {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Run not found" }));
+          } else {
+            respond500(res, err, "runs/by-task plan");
+          }
+        }
+      })();
+      return true;
+    }
+    res.writeHead(405, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "method_not_allowed" }));
+    return true;
+  }
+
   // GET /runs/:seq — single run detail (includes stepResults if present)
   const runDetailMatch =
     req.method === "GET" ? /^\/runs\/(\d+)$/.exec(parsedUrl.pathname) : null;
@@ -1567,8 +1699,19 @@ export function tryHandleRecipeRoute(
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "not_found" }));
       } else {
+        // A seq can name several runs; this route shows the first it meets.
+        // Say so, with every candidate, so the page can offer a choice and
+        // link by taskId instead of silently showing a different run.
+        const sameSeq = deps.runsBySeqFn?.(seq) ?? [];
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ run }));
+        res.end(
+          JSON.stringify({
+            run,
+            ...(sameSeq.length > 1 && {
+              sameSeqTaskIds: sameSeq.map((r) => r.taskId),
+            }),
+          }),
+        );
       }
     } catch (err) {
       respond500(res, err);
@@ -1595,21 +1738,7 @@ export function tryHandleRecipeRoute(
           res.end(JSON.stringify({ error: "replay_unavailable" }));
           return;
         }
-        const result = await deps.runReplayFn(seq);
-        if (result.error === "run_not_found") {
-          res.writeHead(404, { "Content-Type": "application/json" });
-        } else if (result.error?.startsWith("replay_refused_unmocked_step")) {
-          // Replay boundary (src/recipes/replayBoundary.ts): the original
-          // run lacks a usable capture for one or more steps, so the replay
-          // was refused before anything ran. A conflict with the evidence,
-          // not a server fault — body carries `unmockedSteps`.
-          res.writeHead(409, { "Content-Type": "application/json" });
-        } else if (!result.ok) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-        } else {
-          res.writeHead(200, { "Content-Type": "application/json" });
-        }
-        res.end(JSON.stringify(result));
+        writeReplayResult(res, await deps.runReplayFn(seq));
       } catch (err) {
         respond500(res, err, "runs/:seq detail");
       }
@@ -1680,30 +1809,7 @@ export function tryHandleRecipeRoute(
     const seq = Number.parseInt(runPlanMatch[1], 10);
     void (async () => {
       try {
-        const run = deps.runDetailFn?.(seq) ?? null;
-        if (!run) {
-          res.writeHead(404, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "run_not_found" }));
-          return;
-        }
-        if (!deps.runPlanFn) {
-          res.writeHead(503, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "plan_unavailable" }));
-          return;
-        }
-        // Guard: recipeName may be absent on runs created before the field was
-        // added (audit LOW #36). An unsafe cast + immediate .replace() would
-        // throw TypeError — return 404 instead.
-        if (!run.recipeName) {
-          res.writeHead(404, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "recipe_name_missing" }));
-          return;
-        }
-        // triggerSource appends ":agent" suffix — strip before file lookup
-        const recipeName = (run.recipeName as string).replace(/:agent$/, "");
-        const plan = await deps.runPlanFn(recipeName);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ plan }));
+        await writePlanForRun(res, deps, deps.runDetailFn?.(seq) ?? null);
       } catch (err) {
         // #605: classify by error code, not message substring.
         // Previously `msg.includes("not found")` would mis-map any
