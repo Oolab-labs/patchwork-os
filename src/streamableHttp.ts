@@ -21,8 +21,9 @@ import type { ActivityLog } from "./activityLog.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { Config } from "./config.js";
 import type { ExtensionClient } from "./extensionClient.js";
-import { FLAG_ENFORCE_POLICY, isEnabled } from "./featureFlags.js";
 import type { FileLock } from "./fileLock.js";
+import { policyEnforcementEnabled } from "./governance/policyEnforcement.js";
+import { activeProfile } from "./governance/profile.js";
 import type { Logger } from "./logger.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import type { PluginWatcher } from "./pluginWatcher.js";
@@ -954,7 +955,7 @@ export class StreamableHttpHandler {
         // bypasses unconditionally for gate "off" once the policy check
         // clears, so installing this handler unconditionally costs
         // nothing on the trust-gate side while closing the policy gap.
-        if (isEnabled(FLAG_ENFORCE_POLICY)) {
+        if (policyEnforcementEnabled(activeProfile())) {
           const loaded = loadPolicyFile(this.config.workspace);
           if (!loaded.ok) {
             this.logger.warn?.(`[policy] ${loaded.error}`);

@@ -13,7 +13,7 @@
  */
 
 import { readdirSync } from "node:fs";
-import { FLAG_ENFORCE_POLICY, isEnabled } from "../featureFlags.js";
+import { isEnabled } from "../featureFlags.js";
 import { loadConfig } from "../patchworkConfig.js";
 import { patchworkPath } from "../patchworkHome.js";
 import { parseRegistry } from "../privacy/destinationRegistry.js";
@@ -22,6 +22,7 @@ import {
   policyInputFromConfig,
   scanInstalledRecipePlugins,
 } from "./pluginPolicy.js";
+import { policyEnforcementEnabled } from "./policyEnforcement.js";
 import { type GovernanceProfile, resolveProfile } from "./profile.js";
 import { secretValueCount } from "./secretValues.js";
 import { workerGateEnabled } from "./workerAuthority.js";
@@ -135,9 +136,8 @@ export function governanceReport(
   // governed, the flag is the only switch under compat.
   const flagOn = opts.isFlagOn ?? isEnabled;
   const workerOn = workerGateEnabled(profile, flagOn);
-  const policyOn = opts.live
-    ? flagOn(FLAG_ENFORCE_POLICY)
-    : profile.policyEnforce || flagOn(FLAG_ENFORCE_POLICY);
+  // Same predicate as every runtime policy check (policyEnforcement.ts).
+  const policyOn = policyEnforcementEnabled(profile, flagOn);
   push({
     key: "workerAuthority",
     label: "Worker authority",

@@ -26,13 +26,10 @@ import { DecisionTraceLog } from "./decisionTraceLog.js";
 import { createDriver } from "./drivers/index.js";
 import { getLocalEmbedFn } from "./embeddings/index.js";
 import { ExtensionClient } from "./extensionClient.js";
-import {
-  FLAG_ENFORCE_POLICY,
-  isEnabled,
-  lockKillSwitchEnv,
-  watchFlags,
-} from "./featureFlags.js";
+import { lockKillSwitchEnv, watchFlags } from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
+import { policyEnforcementEnabled } from "./governance/policyEnforcement.js";
+import { activeProfile } from "./governance/profile.js";
 import { registerBridgeToken } from "./governance/secretValues.js";
 import { createApproverResolver } from "./identity/approverFromSession.js";
 import {
@@ -488,9 +485,10 @@ export class Bridge {
           // bypassed entirely (e.g. a reversible read of a forbidden
           // path) — trust level and policy are separate axes; no amount
           // of earned trust unlocks a policy-forbidden action. Gated
-          // behind FLAG_ENFORCE_POLICY (default off) — see its doc
+          // behind policyEnforcementEnabled: governed, or FLAG_ENFORCE_POLICY under
+          // compat (default off) — see its doc
           // comment in featureFlags.ts.
-          if (isEnabled(FLAG_ENFORCE_POLICY)) {
+          if (policyEnforcementEnabled(activeProfile())) {
             const loaded = loadPolicyFile(this.config.workspace);
             if (!loaded.ok) {
               // Fail-closed: a malformed patchwork.policy.yml must never
