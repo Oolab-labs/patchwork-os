@@ -5429,6 +5429,11 @@ export function buildChainedDeps(
     ...(runnerDeps.requireApprovalFn && {
       requireApprovalFn: runnerDeps.requireApprovalFn,
     }),
+    // Forwarded with the fn it describes. Without it the chained runner sees
+    // `workerGateInjected: false` and honours a recipe's own
+    // `requireApproval: false`, so a worker-owned chained recipe could switch
+    // off the worker gate with one boolean — which the flat runner refuses.
+    ...(runnerDeps.gateAutomatedRuns === true && { gateAutomatedRuns: true }),
   };
 }
 

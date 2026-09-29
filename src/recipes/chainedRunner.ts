@@ -377,8 +377,9 @@ export interface ExecutionDeps {
   requireApprovalFn?: import("./approvalRequest.js").ApprovalFn;
   /**
    * Set exactly when `buildWorkerAutonomyGate` returned a fn, i.e. when
-   * `requireApprovalFn` IS the worker gate rather than the tier gate. Spread in
-   * from the flat runner's deps, which the chained path already receives whole.
+   * `requireApprovalFn` IS the worker gate rather than the tier gate. Forwarded
+   * explicitly by `buildChainedDeps` (yamlRunner.ts) alongside that fn — it was
+   * once assumed to arrive by spread, and did not.
    *
    * Load-bearing for one reason: a recipe's own `requireApproval: false` must
    * not be able to switch off the machinery that governs it. The flag suppresses
