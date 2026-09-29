@@ -10,14 +10,16 @@
  * checked against `fan_out` and its step params instead of the child tool and
  * the params it is actually called with.
  *
- * Runs whenever FLAG_ENFORCE_POLICY is on, independent of whether a worker owns
+ * Runs whenever `policyEnforcementEnabled` holds (governed, or FLAG_ENFORCE_POLICY
+ * under compat), independent of whether a worker owns
  * the recipe: `checkPolicy`'s base rules (forbiddenPaths / allowedNetworkHosts
  * / allowedCommands) apply to every tool call regardless of workerId; only its
  * 4th check (per-worker allowedTools) needs one, and that check no-ops when
  * workerId is undefined. Deny is fail-closed on a malformed policy file.
  */
 
-import { FLAG_ENFORCE_POLICY, isEnabled } from "../featureFlags.js";
+import { policyEnforcementEnabled } from "../governance/policyEnforcement.js";
+import { activeProfile } from "../governance/profile.js";
 import { checkPolicy, loadPolicyFile } from "../policy.js";
 
 /** Throws a `policy_denied`-coded Error when the policy refuses the call. */
@@ -26,7 +28,7 @@ export function enforceToolPolicy(
   params: Record<string, unknown>,
   deps: { workdir: string; workerId?: string },
 ): void {
-  if (!isEnabled(FLAG_ENFORCE_POLICY)) return;
+  if (!policyEnforcementEnabled(activeProfile())) return;
   const loaded = loadPolicyFile(deps.workdir);
   if (!loaded.ok) {
     const err = new Error(`policy_denied: ${loaded.error}`);

@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-29 `fix/governed-policy-enforce` — the governed profile now enforces `patchwork.policy.yml` at runtime via one predicate (`policyEnforcementEnabled`) shared by the recipe tool check, the WebSocket and HTTP gates and `doctor`; an env/flags override can no longer switch it off while doctor says ENFORCED. Touches toolPolicyCheck, bridge, streamableHttp, doctorReport, new `governance/policyEnforcement.ts`.
+
 - 2026-09-29 `fix/windows-teardown-console` — stop Windows CI flaking green runs with "Closing rpc while onUserConsoleLog was pending": `Server.close()` cancels its deferred /restart and /shutdown triggers, `OrchestratorBridge` gains an awaitable `stop()`, and three test files await full shutdown. Touches server.ts, orchestratorBridge.ts, restart/cancellation/orchestratorBridge.integration tests.
 
 - 2026-09-29 `docs/licensing-control-plane-bsl` — LICENSING.md said the control-plane licence was not settled; it is BSL 1.1 (converts to MIT). Removes the resolved `TODO(owner)`. Docs only.
