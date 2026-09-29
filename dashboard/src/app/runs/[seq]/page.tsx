@@ -17,6 +17,7 @@ import {
   type HaltCategory,
 } from "@/lib/haltCategory";
 import { diffForStep, previewMockedReplay } from "@/lib/registryDiff";
+import { replayFailureMessage } from "@/lib/replayMessage";
 import {
   type JudgeVerdict,
   JudgeVerdictPill,
@@ -980,14 +981,7 @@ export default function RunDetailPage() {
       };
       if (!res.ok || !data.ok) {
         setReplayState("error");
-        // 409 replay_refused_unmocked_step: the bridge refused BEFORE running
-        // anything because these steps have no usable capture. Say so in
-        // words — the raw error string is long and names the same steps.
-        setReplayMessage(
-          data.unmockedSteps?.length
-            ? `Replay refused — ${data.unmockedSteps.length} step${data.unmockedSteps.length === 1 ? " has" : "s have"} no usable captured output (${data.unmockedSteps.join(", ")}). Nothing was run.`
-            : (data.error ?? `HTTP ${res.status}`),
-        );
+        setReplayMessage(replayFailureMessage(res.status, data));
         return;
       }
       setReplayState("done");

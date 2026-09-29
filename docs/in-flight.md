@@ -56,6 +56,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-29 `fix/replay-followups` — mocked replay reproduces a recorded step failure (no output) as the same failure without dispatch instead of refusing the whole replay; the dashboard no longer says "Nothing was run" when a 409 carries `newSeq`; agent-step replay refusals name the step id. Touches `replayRun.ts`, `replayBoundary.ts`, both runners, `registryDiff.ts`, new `dashboard/src/lib/replayMessage.ts`.
 - 2026-09-29 `fix/local-worker-gate` — `patchwork recipe run --local` now applies the owning worker's gate (forbids, trust ramp, decision record) as a bridge run does, asking gated actions on the terminal via a new `askHuman` option instead of the approval queue. Touches `commands/recipe.ts` `resolveLocalGovernance`, `buildWorkerAutonomyGate`.
 - 2026-09-29 `fix/worker-trust-patchwork-home` — worker trust (the gate's trust loader, `workers shadow`/`backtest`, pending confirmations) and the price-table override now honour PATCHWORK_HOME; `audit-patchwork-home` also catches a home resolved through a variable, which is how these slipped past an empty ratchet. Touches `workers/runWorkerShadow.ts`, `recipes/pricing/priceTable.ts`, the audit script.
 

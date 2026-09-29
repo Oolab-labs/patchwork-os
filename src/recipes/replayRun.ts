@@ -50,7 +50,12 @@ import type {
   RunOptions,
 } from "./chainedRunner.js";
 import { runChainedRecipe } from "./chainedRunner.js";
-import { isReplayRefusal, replayRefusalMessage } from "./replayBoundary.js";
+import {
+  isReplayRefusal,
+  type ReplayedFailure,
+  recordedFailure,
+  replayRefusalMessage,
+} from "./replayBoundary.js";
 import type { RunnerDeps, RunResult, YamlRecipe } from "./yamlRunner.js";
 import {
   buildChainedDeps,
@@ -93,13 +98,22 @@ export interface ReplayResult {
  */
 export function buildMockedOutputs(originalRun: RecipeRun): {
   outputs: Map<string, unknown>;
+  failures: Map<string, ReplayedFailure>;
   unmocked: string[];
 } {
   const outputs = new Map<string, unknown>();
+  const failures = new Map<string, ReplayedFailure>();
   const unmocked: string[] = [];
   for (const step of originalRun.stepResults ?? []) {
     if (step.status === "skipped") continue;
     const out = step.output;
+    // A recorded failure is evidence: replay it as the same failure, never
+    // dispatch. Only when nothing was captured — an error step that DID
+    // capture an output replays from that output like any other step.
+    if (step.status === "error" && out === undefined) {
+      failures.set(step.id, recordedFailure(step));
+      continue;
+    }
     if (out === undefined) {
       unmocked.push(step.id);
       continue;
@@ -112,7 +126,38 @@ export function buildMockedOutputs(originalRun: RecipeRun): {
     }
     outputs.set(step.id, out);
   }
-  return { outputs, unmocked };
+  return { outputs, failures, unmocked };
+}
+
+/**
+ * A replay that reproduced the original run's recorded failure(s) — and
+ * nothing else went wrong — is a FAITHFUL replay, so it reports `ok`. The
+ * run itself still ends failed (`result` carries that); `ok` answers "did
+ * the replay do what the evidence says", not "did the recipe succeed".
+ *
+ * An errored step counts as faithful when it is a replayed failure, or when
+ * the original run did not complete it either (a dependent step the chained
+ * runner fails as "upstream step failed" was `skipped` in the original).
+ * At least one replayed failure must be present, so a recipe edit that
+ * breaks a previously-green run never reads as `ok`.
+ */
+function onlyReplayedFailures(
+  erroredStepIds: readonly string[],
+  failures: ReadonlyMap<string, ReplayedFailure>,
+  originalRun: RecipeRun,
+): boolean {
+  if (failures.size === 0 || erroredStepIds.length === 0) return false;
+  const notCompletedOriginally = new Set(
+    (originalRun.stepResults ?? [])
+      .filter((s) => s.status !== "ok")
+      .map((s) => s.id),
+  );
+  return (
+    erroredStepIds.some((id) => failures.has(id)) &&
+    erroredStepIds.every(
+      (id) => failures.has(id) || notCompletedOriginally.has(id),
+    )
+  );
 }
 
 function isTruncatedCapture(out: unknown): boolean {
@@ -156,7 +201,7 @@ export async function replayMockedRun(opts: {
   deps: ReplayDeps;
 }): Promise<ReplayResult> {
   const { originalRun, recipe, sourcePath, deps } = opts;
-  const { outputs, unmocked } = buildMockedOutputs(originalRun);
+  const { outputs, failures, unmocked } = buildMockedOutputs(originalRun);
 
   // Layer 1 — preflight. Explanatory: names every unmockable step at once.
   if (unmocked.length > 0) {
@@ -191,6 +236,7 @@ export async function replayMockedRun(opts: {
     runLog: deps.runLog,
     ...(deps.activityLog !== undefined && { activityLog: deps.activityLog }),
     mockedOutputs: outputs,
+    mockedFailures: failures,
     // Layer 2 — a step the preflight missed (e.g. one the edited recipe
     // added) is refused in the runner's step loop, never dispatched.
     replayOnly: true,
@@ -209,7 +255,16 @@ export async function replayMockedRun(opts: {
     const refused = refusedStepIds(
       [...result.stepResults].map(([id, r]) => ({ id, error: r.error })),
     );
-    const ok = result.success && refused.length === 0;
+    const ok =
+      refused.length === 0 &&
+      (result.success ||
+        onlyReplayedFailures(
+          [...result.stepResults]
+            .filter(([, r]) => r.error !== undefined)
+            .map(([id]) => id),
+          failures,
+          originalRun,
+        ));
     const error =
       refused.length > 0 ? replayRefusalMessage(refused) : result.errorMessage;
     return {
@@ -257,9 +312,11 @@ const POSITIONAL_STEP_ID = /^step_\d+$/;
  */
 export function buildFlatMockedOutputs(originalRun: RecipeRun): {
   outputs: Map<string, string>;
+  failures: Map<string, ReplayedFailure>;
   unmocked: string[];
 } {
   const outputs = new Map<string, string>();
+  const failures = new Map<string, ReplayedFailure>();
   const unmocked: string[] = [];
   for (const step of originalRun.stepResults ?? []) {
     if (step.status === "skipped") continue;
@@ -271,6 +328,12 @@ export function buildFlatMockedOutputs(originalRun: RecipeRun): {
       continue;
     }
     const out = step.output;
+    // See buildMockedOutputs: a recorded failure replays as that failure.
+    // After the positional-id rule, which is about identity, not evidence.
+    if (step.status === "error" && out === undefined) {
+      failures.set(step.id, recordedFailure(step));
+      continue;
+    }
     if (out === undefined) {
       unmocked.push(step.id);
       continue;
@@ -281,7 +344,7 @@ export function buildFlatMockedOutputs(originalRun: RecipeRun): {
     }
     outputs.set(step.id, typeof out === "string" ? out : JSON.stringify(out));
   }
-  return { outputs, unmocked };
+  return { outputs, failures, unmocked };
 }
 
 export interface FlatReplayResult {
@@ -320,7 +383,7 @@ export async function replayFlatMockedRun(opts: {
   deps: ReplayDeps;
 }): Promise<FlatReplayResult> {
   const { originalRun, recipe, deps } = opts;
-  const { outputs, unmocked } = buildFlatMockedOutputs(originalRun);
+  const { outputs, failures, unmocked } = buildFlatMockedOutputs(originalRun);
 
   // Layer 1 — preflight.
   if (unmocked.length > 0) {
@@ -337,6 +400,7 @@ export async function replayFlatMockedRun(opts: {
       runLog: deps.runLog,
       ...(deps.activityLog !== undefined && { activityLog: deps.activityLog }),
       mockedOutputs: outputs,
+      mockedFailures: failures,
       // Layers 2 + 3 — refused in the step loop, and the StepDeps built from
       // these RunnerDeps throw at the dispatch seam.
       replayOnly: true,
@@ -346,7 +410,16 @@ export async function replayFlatMockedRun(opts: {
     const recent = deps.runLog.query({ recipe: recipe.name, limit: 5 });
     const newRun = recent.find((r) => r.createdAt >= originalRun.doneAt);
     const refused = refusedStepIds(result.stepResults);
-    const ok = !result.errorMessage && refused.length === 0;
+    const ok =
+      refused.length === 0 &&
+      (!result.errorMessage ||
+        onlyReplayedFailures(
+          result.stepResults
+            .filter((s) => s.status === "error")
+            .map((s) => s.id),
+          failures,
+          originalRun,
+        ));
     const error =
       refused.length > 0 ? replayRefusalMessage(refused) : result.errorMessage;
     return {

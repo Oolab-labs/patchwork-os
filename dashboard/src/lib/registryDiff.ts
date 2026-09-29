@@ -52,6 +52,12 @@ const POSITIONAL_STEP_ID = /^step_\d+$/;
  */
 export interface ReplayPreflight {
   mocked: string[];
+  /**
+   * Subset of `mocked`: steps that failed in the original run with no
+   * captured output. They replay as the same recorded failure, dispatching
+   * nothing — the bridge's `failures` map in `buildMockedOutputs`.
+   */
+  failures: string[];
   unmocked: Array<{
     id: string;
     tool?: string;
@@ -63,6 +69,7 @@ export function previewMockedReplay(
   steps: StepForReplayPreflight[],
 ): ReplayPreflight {
   const mocked: string[] = [];
+  const failures: string[] = [];
   const unmocked: ReplayPreflight["unmocked"] = [];
   for (const s of steps) {
     if (s.status === "skipped") continue; // skipped steps aren't replayed
@@ -72,6 +79,11 @@ export function previewMockedReplay(
         ...(s.tool !== undefined && { tool: s.tool }),
         reason: "positional-id",
       });
+      continue;
+    }
+    if (s.status === "error" && s.output === undefined) {
+      mocked.push(s.id);
+      failures.push(s.id);
       continue;
     }
     if (s.output === undefined) {
@@ -92,7 +104,7 @@ export function previewMockedReplay(
     }
     mocked.push(s.id);
   }
-  return { mocked, unmocked };
+  return { mocked, failures, unmocked };
 }
 
 export interface RegistryDiff {
