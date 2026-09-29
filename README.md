@@ -47,7 +47,7 @@ Run `patchwork doctor` to see what is enforced on your machine right now. Trust 
 | Recipe plugins (`servers:`) | load only if listed in `plugins.allow` | any entry loads, in-process |
 | A tool nothing is registered under | the run **halts** | the step is skipped |
 | Kill switch (`patchwork panic`) | available; **fails closed** if its state is unreadable | available; fails open |
-| Worker autonomy ramp | needs `PATCHWORK_FLAG_WORKER_AUTONOMY=1` (and `--driver subprocess`) | same |
+| Worker autonomy ramp | **on** for worker-owned recipes (runs need a driver, e.g. `--driver subprocess`) | off unless `PATCHWORK_FLAG_WORKER_AUTONOMY=1` (same driver requirement) |
 | Telemetry | **off** | **off**; opt in explicitly ([details](#telemetry)) |
 
 Under `compat`, a fresh bridge is an automation runtime, and it becomes a decision layer when you switch the gate on. Everything above about "stops and asks you first" describes the gate when it is on.
