@@ -45,6 +45,7 @@ import {
   listFlags,
   setFlag,
 } from "./featureFlags.js";
+import { readKillSwitch } from "./governance/killSwitchPolicy.js";
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
 import { tryHandleInboxRoute } from "./inboxRoutes.js";
@@ -1944,7 +1945,8 @@ export class Server extends EventEmitter<ServerEvents> {
         // toggle — users will reasonably read "writes blocked" as
         // covering both. Refuse with 423 Locked; the /kill-switch
         // endpoint itself is the only way out and is not gated.
-        if (isWriteKillSwitchActive()) {
+        // Profile-aware: governed refuses on an unreadable state (ADR-0026).
+        if (readKillSwitch().engaged) {
           res.writeHead(423, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
@@ -2609,9 +2611,17 @@ export class Server extends EventEmitter<ServerEvents> {
       // contexts that don't wire the callback still get the log line.
       if (parsedUrl.pathname === "/kill-switch") {
         if (req.method === "GET") {
-          const engaged = isWriteKillSwitchActive();
+          // Same reading the write gates use, so status never says
+          // "released" while governed writes are being refused on an
+          // unreadable state. `state` is added only for a degraded read, so
+          // a clean response is unchanged.
+          const ks = readKillSwitch();
+          const engaged = ks.engaged;
           const locked = isEnvLockedFor(KILL_SWITCH_WRITES);
           const body: Record<string, unknown> = { engaged, locked };
+          if (ks.reason !== "engaged" && ks.reason !== "released") {
+            body.state = ks.reason;
+          }
           if (locked) {
             const lockedValue = getEnvLockedValue(KILL_SWITCH_WRITES);
             body.lockedValue = lockedValue;
@@ -2911,8 +2921,8 @@ export class Server extends EventEmitter<ServerEvents> {
         if (req.method === "POST") {
           // Kill-switch gate — telemetry prefs are config writes too.
           // GET stays open so operators can verify state during an
-          // incident.
-          if (isWriteKillSwitchActive()) {
+          // incident. Profile-aware (ADR-0026).
+          if (readKillSwitch().engaged) {
             res.writeHead(423, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({

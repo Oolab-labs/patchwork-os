@@ -152,9 +152,14 @@ The same order is what `policy explain` prints.
     gap in the envelope; a different container.
 - API drivers receive the envelope in the user prompt; only the subprocess and
   no-bridge paths receive the governed system-prompt sentence.
-- Per-tool `assertWriteAllowed` calls inside individual connector tools, and
-  four direct `isWriteKillSwitchActive()` reads in `server.ts` /
-  `recipeRoutes.ts`, are behind `executeTool` and not profile-aware.
+- ~~Per-tool `assertWriteAllowed` and direct `isWriteKillSwitchActive()` reads
+  in `server.ts` / `recipeRoutes.ts` are not profile-aware.~~ Closed:
+  `assertWriteAllowed` consults a refusal hook `killSwitchPolicy.ts` registers
+  at load (governed + unreadable ⇒ `kill_switch_blocked`; compat unchanged),
+  and the `/settings`, telemetry-prefs and recipe-install gates plus the
+  `GET /kill-switch` and copilot status reads use `readKillSwitch()`. The one
+  remaining direct read is the `POST /kill-switch` idempotence compare, which
+  gates nothing; `killSwitchProfileAware.test.ts` pins the allowlist.
 - `recipe test` is offline rather than gated (closed 2026-09-29): a flat step
   whose tool has no fixture mock (other than the stub-served reads `file.read`,
   `git.log_since`, `git.stale_branches`, `diagnostics.get`) is refused at

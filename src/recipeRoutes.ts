@@ -40,12 +40,12 @@ import {
   type CopilotRecipeRef,
   parseCopilotIntent,
 } from "./copilot/parseIntent.js";
-import { isWriteKillSwitchActive } from "./featureFlags.js";
 import {
   consumeToken,
   refillBucket,
   type TokenBucketState,
 } from "./fp/tokenBucket.js";
+import { readKillSwitch } from "./governance/killSwitchPolicy.js";
 import {
   PLUGIN_NOT_ALLOWLISTED,
   pluginSpecsOfYaml,
@@ -2768,7 +2768,7 @@ export function tryHandleRecipeRoute(
               : undefined,
           killSwitchEngaged:
             intent.kind === "kill_switch_status"
-              ? isWriteKillSwitchActive()
+              ? readKillSwitch().engaged
               : undefined,
         });
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -2868,7 +2868,8 @@ export function tryHandleRecipeRoute(
     // flips the `kill-switch.writes` flag, this previously kept writing
     // anyway — a latent trust gap. Returns 503 with a code the
     // dashboard can match against to render the right banner.
-    if (isWriteKillSwitchActive()) {
+    // Profile-aware: governed refuses on an unreadable state (ADR-0026).
+    if (readKillSwitch().engaged) {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
