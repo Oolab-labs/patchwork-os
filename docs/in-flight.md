@@ -58,6 +58,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 - 2026-09-29 `fix/private-ids-clone-exclude` — private-identifier gate refuses a staged file matched by the clone-local `.git/info/exclude` (a forced add), and no longer prints the `--text` filename; neither path nor pattern is echoed. Touches the gate script + its test only.
 
+- 2026-09-29 `fix/row6-http-refusal` — a non-2xx `http.post` is a failed step (`http_rejected` for a 4xx from the posted URL, `http_unverified` otherwise), never auto-retried (shared `mustNotRetryWrite` with #1607), withheld in the trust fold. One classifier (`src/recipes/tools/httpOutcome.ts`) for both runners, both replay paths, fan_out and the fold. Touches both runners, fanOut, http.post, haltCategory (bridge + dashboard), shadowObserver. — PR #1610
+
 - 2026-09-24 `fix/replay-never-live` — mocked replay refuses incomplete capture before dispatch in preflight, both runners and the shared seam; zero live calls — Codex (Repair 2), PR #1608
 
 - 2026-09-24 `fix/no-resend-on-uncertain-write` — a write whose response was lost, died mid-body or timed out after dispatch is `outcome_uncertain`: preserved as a failure, never resent by `retry`, withheld in the trust fold, halt category `delivery_unverified`. One shared marker (`src/recipes/uncertainOutcome.ts`) checked by flat, chained and fan_out. Touches http.post, both runners, fanOut, haltCategory (bridge + dashboard), shadowObserver. — #1607
