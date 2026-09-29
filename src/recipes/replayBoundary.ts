@@ -96,3 +96,28 @@ export function recordedFailure(step: {
     ...(step.errorCode !== undefined && { errorCode: step.errorCode }),
   };
 }
+
+/**
+ * `recipe test` boundary — the same rule as replay, for a different source of
+ * evidence. A test run is driven by FIXTURES and injected stubs; a step whose
+ * tool has no mock (or whose agent driver was not injected) is refused at the
+ * dispatch seam rather than run live. Before this existed, `executeStep` fell
+ * through to real execution for any tool without a mock connector, so
+ * `recipe test` could write files, POST to the network or call a model.
+ */
+export const TEST_REFUSED_UNMOCKED_STEP = "test_refused_unmocked_step";
+
+/** Typed refusal thrown at the dispatch seam under `testOnly`. */
+export class TestModeRefusalError extends Error {
+  readonly code = TEST_REFUSED_UNMOCKED_STEP;
+  readonly stepIds: readonly string[];
+  constructor(stepIds: readonly string[], detail?: string) {
+    const list = stepIds.length > 0 ? stepIds.join(", ") : "(unknown step)";
+    const suffix = detail ? ` (${detail})` : "";
+    super(
+      `${TEST_REFUSED_UNMOCKED_STEP}: recipe test cannot execute step(s) without a mock or fixture — ${list}${suffix}. Test runs are offline; nothing was dispatched.`,
+    );
+    this.name = "TestModeRefusalError";
+    this.stepIds = stepIds;
+  }
+}

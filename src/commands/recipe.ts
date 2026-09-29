@@ -2748,7 +2748,12 @@ export interface RecipeRecordResult {
 
 export async function runRecord(
   recipePath: string,
-  options: { fixturesDir?: string; deps?: Partial<RunnerDeps> } = {},
+  options: {
+    fixturesDir?: string;
+    deps?: Partial<RunnerDeps>;
+    /** Terminal seam for governed approvals — see `resolveLocalGovernance`. */
+    io?: { isTTY?: boolean; ask?: (question: string) => Promise<string> };
+  } = {},
 ): Promise<RecipeRecordResult> {
   const lint = runLint(recipePath);
   const issues = [...lint.issues];
@@ -2763,8 +2768,19 @@ export async function runRecord(
       recordedFixtures = getRequiredFixtureNamespaces(
         recipe.steps as Array<Record<string, unknown>>,
       );
+      // `record` runs connectors LIVE (it captures their responses), so it
+      // is governed exactly like `recipe run --local`: same profile, same
+      // terminal approval gate, same worker gate when a worker owns the
+      // recipe. Policy matrix and kill switch then apply inside the runner
+      // as they do for any governed run. Under compat nothing is injected.
+      const localGovernance = await resolveLocalGovernance(
+        options.deps,
+        options.io ?? {},
+        recipe.name,
+      );
       const run = await runYamlRecipe(recipe, {
         ...options.deps,
+        ...localGovernance,
         recordFixturesDir: resolvedFixturesDir,
       });
       stepsRun = run.stepsRun;
@@ -3014,6 +3030,9 @@ export async function runTest(
         );
         const run = await runYamlRecipe(recipe, {
           testMode: true,
+          // Offline boundary: a tool with no fixture, or an agent driver not
+          // stubbed below, is refused rather than run live.
+          testOnly: true,
           mockConnectors,
           readFile: (filePath) => readFileSync(filePath, "utf-8"),
           writeFile: () => {},
@@ -3025,6 +3044,7 @@ export async function runTest(
           claudeFn: async () => "[mock agent output]",
           claudeCodeFn: async () => "[mock agent output]",
           providerDriverFn: async () => "[mock agent output]",
+          localFn: async () => "[mock agent output]",
         });
         stepsRun = run.stepsRun;
         outputs = run.outputs;
