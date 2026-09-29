@@ -150,8 +150,12 @@ The same order is what `policy explain` prints.
     they use nonce-delimited `untrustedBlock` containers
     (`src/fp/automationUtils.ts`, rationale in `untrustedContent.ts`). Not a
     gap in the envelope; a different container.
-- API drivers receive the envelope in the user prompt; only the subprocess and
-  no-bridge paths receive the governed system-prompt sentence.
+- The governed system-prompt sentence (`UNTRUSTED_SYSTEM_INSTRUCTION`) now
+  reaches every API driver (closed 2026-09-29): `anthropic` as the `system`
+  field, `local` / `openai` / `grok` / `gemini-api` as a system message
+  (`makeProviderDriverFn` previously dropped it). Still open: the `gemini` and
+  `codex` CLI subprocess drivers have no system-prompt channel and ignore
+  `ProviderTaskInput.systemPrompt`, so they receive the envelope without it.
 - ~~Per-tool `assertWriteAllowed` and direct `isWriteKillSwitchActive()` reads
   in `server.ts` / `recipeRoutes.ts` are not profile-aware.~~ Closed:
   `assertWriteAllowed` consults a refusal hook `killSwitchPolicy.ts` registers
@@ -169,7 +173,15 @@ The same order is what `policy explain` prints.
   (`resolveLocalGovernance`: profile, terminal approval, worker gate, so the
   policy matrix and kill switch apply). Still open: `record`'s approval, like
   `run --local`'s, is asked on the terminal, and fails closed with no TTY.
-- No prompt size cap.
+- Prompt size caps are per path, not one cap. `executeAgent` refuses an
+  authored prompt over `MAX_AGENT_PROMPT_BYTES` (96 KiB,
+  `src/recipes/agentExecutor.ts:577`, checked at ~L739), which covers flat,
+  chained and `fan_out` agent steps (all dispatch through `_executeAgent`).
+  The `runClaudeTask` tool caps at 32 KiB (`src/tools/runClaudeTask.ts:10`)
+  and automation-hook prompts are truncated at 32,768 chars
+  (`src/fp/automationUtils.ts:7`). `ClaudeOrchestrator.enqueue`
+  (`src/claudeOrchestrator.ts:526`) itself has no cap, so other enqueue
+  callers (recipe orchestration, scheduler, resume) are uncapped.
 
 ## Alternatives rejected
 
