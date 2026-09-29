@@ -27,6 +27,7 @@
 import { FLAG_CIRCUIT_BREAKER, isEnabled } from "../../featureFlags.js";
 import { deriveBreakerKey, getCircuitBreaker } from "../circuitBreaker.js";
 import { isReturnValueFailure } from "../idempotencyKey.js";
+import { enforceToolPolicy } from "../toolPolicyCheck.js";
 import { executeTool, hasTool, registerTool } from "../toolRegistry.js";
 import {
   isUncertainOutcome,
@@ -259,16 +260,42 @@ registerTool({
     // the same promise on every iteration adds async overhead for each item.
     const { render } = await import("../yamlRunner.js");
 
-    for (let i = 0; i < items.length; i++) {
+    // Build per-iter ctx clone. Bind the loop variable as the raw item
+    // (objects get JSON-stringified by `render`'s value coercion at use
+    // sites; dot-notation `{{row.id}}` works because render JSON-parses
+    // string intermediates).
+    const iterContextFor = (i: number): RunContext => {
       const item = items[i];
-      // Build per-iter ctx clone. Bind the loop variable as the raw item
-      // (objects get JSON-stringified by `render`'s value coercion at use
-      // sites; dot-notation `{{row.id}}` works because render JSON-parses
-      // string intermediates).
       const iterCtx: RunContext = { ...ctx };
       iterCtx[loopVar] = typeof item === "string" ? item : JSON.stringify(item);
       iterCtx[`${loopVar}_index`] = String(i);
       iterCtx[`${loopVar}_total`] = String(items.length);
+      return iterCtx;
+    };
+    const renderInnerParams = (
+      iterCtx: RunContext,
+    ): Record<string, unknown> => {
+      const innerParams: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(doObj)) {
+        if (k === "tool") continue;
+        innerParams[k] = deepRenderForIter(v, iterCtx, render);
+      }
+      return innerParams;
+    };
+
+    // patchwork.policy.yml, per CHILD call and BEFORE the first dispatch.
+    // Children go straight to executeTool, so executeStep's check only ever
+    // saw `fan_out` and the step's own params. Checking every item up front
+    // means a denied item stops the batch before any of it has run, rather
+    // than after the items ahead of it already have (toolPolicyCheck.ts).
+    if (!agentCfg) {
+      for (let i = 0; i < items.length; i++) {
+        enforceToolPolicy(toolId, renderInnerParams(iterContextFor(i)), deps);
+      }
+    }
+
+    for (let i = 0; i < items.length; i++) {
+      const iterCtx = iterContextFor(i);
 
       // Agent iteration: render the prompt against this item's context and
       // run it through the injected executor, which owns budget admission and
@@ -328,11 +355,7 @@ registerTool({
         continue;
       }
 
-      const innerParams: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(doObj)) {
-        if (k === "tool") continue;
-        innerParams[k] = deepRenderForIter(v, iterCtx, render);
-      }
+      const innerParams = renderInnerParams(iterCtx);
 
       // Circuit breaker — fan_out calls executeTool DIRECTLY, bypassing
       // executeStep's own breaker check/record (that logic lives in the
