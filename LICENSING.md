@@ -67,14 +67,14 @@ A third repository, `patchwork-multitenant`, is also MIT. Its scope is frozen to
 infrastructure — tenant provisioning, reverse proxy, container plumbing. No
 governance feature will be added to it.
 
-**Licence terms for `patchwork-control-plane` are not settled.** ADR-0019
-records an intent toward BSL 1.1 or similar — a licence that converts to an open
-licence after a term — but the specific licence, version and term are not
-decided.
+**`patchwork-control-plane` is licensed under the Business Source License 1.1**
+(the intent ADR-0019 recorded). Production use is permitted except offering it
+to third parties as a hosted or managed service, and each version converts to
+the MIT License four years after it is first publicly distributed, or on the
+Change Date stated in its licence file if that is sooner.
 
-> `TODO(owner):` confirm the licence, version and conversion term for
-> `patchwork-control-plane` before it is published. Until it is published,
-> nothing outside this repository and `patchwork-multitenant` exists to license.
+It is not yet published. Until it is, nothing outside this repository and
+`patchwork-multitenant` is available to license.
 
 ---
 
