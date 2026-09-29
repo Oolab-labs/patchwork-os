@@ -127,10 +127,29 @@ The same order is what `policy explain` prints.
 ## Known remaining bypasses (recorded, not hidden)
 
 - The worker gate is not built on the replay path, deliberately, and worker-owned recipes ARE replayable under governed (the former `replay_refused_worker_owned_under_governed` refusal is gone). Replay is evidence-only (`replayBoundary.ts`): every step returns its captured output, replays its recorded failure, or refuses the whole replay, so there is no action for the gate to decide and running it would write Decision Records for actions that never happened. The remaining risk — a replay row folding as trust evidence — is closed by the `replay: true` run marker, which the trust fold excludes (`isReplayRun`).
-- The untrusted envelope is applied to flat and chained agent prompts, not to
-  `fan_out` per-item prompts, nested-recipe child outputs, agent output derived
-  from connector data, judge `reviews:` blocks, or orchestrator automation-hook
-  prompts.
+- The untrusted envelope. Re-verified 2026-09-29 — four of the five surfaces
+  this entry used to list were already covered, each by a test that fails when
+  its hunk is reverted:
+  - `fan_out` per-item prompts: covered on the flat runner via the injected
+    `renderAgentItemPrompt` (`yamlRunner.ts` `fanOutItemsSource`); tested in
+    `fanOutItemPrompts.test.ts` and `provenancePropagation.test.ts`. The
+    chained runner injects no `runNestedAgent`, so a chained `fan_out` agent
+    sub-step is REFUSED rather than rendered unenveloped. STILL OPEN: the loop
+    variable inherits provenance only when `items` is exactly `{{key}}` /
+    `{{key.path}}`; a computed or literal `items` expression gets no envelope.
+  - Nested-recipe child outputs (chained): the child registry's origins are
+    unioned onto the parent step as `derivedOrigins`. Coarse by design — a
+    parent reference to any part of `steps.<sub>.data` is attributed to every
+    origin proven anywhere in the child.
+  - Agent output derived from connector data: an agent step's output inherits
+    the origins its prompt was PROVEN to interpolate (flat and chained,
+    `derived: true`). This is structural propagation, not semantic taint
+    tracking through the model; anything beyond it remains a design question.
+  - Judge `reviews:` blocks: enveloped (`judgeArtefactBlock`).
+  - Orchestrator automation-hook prompts: NOT the tag envelope, deliberately —
+    they use nonce-delimited `untrustedBlock` containers
+    (`src/fp/automationUtils.ts`, rationale in `untrustedContent.ts`). Not a
+    gap in the envelope; a different container.
 - API drivers receive the envelope in the user prompt; only the subprocess and
   no-bridge paths receive the governed system-prompt sentence.
 - Per-tool `assertWriteAllowed` calls inside individual connector tools, and
