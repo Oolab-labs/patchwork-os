@@ -57,6 +57,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 ## Recently closed (informal log, prune periodically)
 
 - 2026-09-29 `fix/local-worker-gate` — `patchwork recipe run --local` now applies the owning worker's gate (forbids, trust ramp, decision record) as a bridge run does, asking gated actions on the terminal via a new `askHuman` option instead of the approval queue. Touches `commands/recipe.ts` `resolveLocalGovernance`, `buildWorkerAutonomyGate`.
+- 2026-09-29 `fix/worker-trust-patchwork-home` — worker trust (the gate's trust loader, `workers shadow`/`backtest`, pending confirmations) and the price-table override now honour PATCHWORK_HOME; `audit-patchwork-home` also catches a home resolved through a variable, which is how these slipped past an empty ratchet. Touches `workers/runWorkerShadow.ts`, `recipes/pricing/priceTable.ts`, the audit script.
 
 - 2026-09-29 `fix/governed-policy-enforce` — the governed profile now enforces `patchwork.policy.yml` at runtime via one predicate (`policyEnforcementEnabled`) shared by the recipe tool check, the WebSocket and HTTP gates and `doctor`; an env/flags override can no longer switch it off while doctor says ENFORCED. Touches toolPolicyCheck, bridge, streamableHttp, doctorReport, new `governance/policyEnforcement.ts`.
 

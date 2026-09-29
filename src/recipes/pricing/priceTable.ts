@@ -21,8 +21,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { patchworkHome } from "../../patchworkHome.js";
 
 /** USD per 1,000,000 tokens, split by input vs output. */
 export interface ModelPrice {
@@ -81,11 +81,11 @@ const MS_PER_DAY = 86_400_000;
 /** Resolve the override file path per the precedence rule (or undefined). */
 function resolveOverridePath(
   env: NodeJS.ProcessEnv,
-  homeDir: string,
+  patchworkDir: string,
 ): string | undefined {
   const envPath = env.PATCHWORK_PRICE_TABLE;
   if (typeof envPath === "string" && envPath.trim()) return envPath.trim();
-  const filePath = join(homeDir, ".patchwork", "prices.json");
+  const filePath = join(patchworkDir, "prices.json");
   return existsSync(filePath) ? filePath : undefined;
 }
 
@@ -111,8 +111,12 @@ export function loadPriceTable(
   opts: { env?: NodeJS.ProcessEnv; homeDir?: string } = {},
 ): PriceTable {
   const env = opts.env ?? process.env;
-  const homeDir = opts.homeDir ?? homedir();
-  const overridePath = resolveOverridePath(env, homeDir);
+  // An injected homeDir keeps its historical meaning (tests); otherwise the
+  // Patchwork home, which honours PATCHWORK_HOME like every other state file.
+  const patchworkDir = opts.homeDir
+    ? join(opts.homeDir, ".patchwork")
+    : patchworkHome();
+  const overridePath = resolveOverridePath(env, patchworkDir);
   if (!overridePath) return BUILTIN_PRICE_TABLE;
 
   try {
