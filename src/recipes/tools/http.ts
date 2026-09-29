@@ -138,6 +138,11 @@ registerTool({
     properties: {
       status: { type: "number" },
       ok: { type: "boolean" },
+      redirected: {
+        type: "boolean",
+        description:
+          "Present (true) only when a redirect was followed: the status then describes the redirect target, not the request that was posted.",
+      },
       body: { type: "string" },
     },
   },
@@ -206,6 +211,7 @@ registerTool({
     // The connection is pinned to the address resolved here (IPv4 to match
     // the dispatcher), so undici never re-resolves the name.
     let res: Response;
+    let redirects = 0;
     try {
       const result = await safeFetch(
         parsed,
@@ -230,6 +236,7 @@ registerTool({
         },
       );
       res = result.response;
+      redirects = result.redirects;
     } catch (err) {
       if (err instanceof OutboundHttpError) {
         const hint =
@@ -275,6 +282,9 @@ registerTool({
     return JSON.stringify({
       status: res.status,
       ok: res.ok,
+      // Only when it happened, so the common shape is unchanged. A 303 turns
+      // the POST into a GET, so a final 4xx then says nothing about the write.
+      ...(redirects > 0 && { redirected: true }),
       body: text.length > 8192 ? `${text.slice(0, 8192)}…[truncated]` : text,
     });
   },

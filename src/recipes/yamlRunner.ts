@@ -153,6 +153,11 @@ import {
   hasTool,
   registerPluginTools,
 } from "./toolRegistry.js";
+import {
+  classifyHttpStepResult,
+  httpFailureEvidence,
+  isHttpFailureFromTool,
+} from "./tools/httpOutcome.js";
 import { evaluateWhen } from "./whenGuard.js";
 import { resolveWorkspaceRoot } from "./workspaceRoot.js";
 import "./tools/index.js";
@@ -167,7 +172,7 @@ import type {
 } from "../privacy/dataPolicy.js";
 import type { PrivacyConfig } from "../privacy/destinationRegistry.js";
 import { recordPrivacyShadow } from "../privacy/shadowLog.js";
-import { isUncertainOutcome } from "./uncertainOutcome.js";
+import { isUncertainOutcome, mustNotRetryWrite } from "./uncertainOutcome.js";
 
 /**
  * Bundled-templates directory used as a third allowed root for nested-recipe
@@ -3114,6 +3119,15 @@ export async function runYamlRecipe(
       // itself is skipped. See RunnerDeps.mockedOutputs's doc comment.
       if (deps.mockedOutputs?.has(stepId)) {
         result = deps.mockedOutputs.get(stepId) ?? null;
+        // A replayed http.post response is interpreted exactly as a live one,
+        // including a response captured before httpOutcome existed: it reads
+        // the `status` the tool has always returned. This branch sends
+        // nothing. (A step with no usable capture is never run live under
+        // replay: it is refused below; see replayBoundary.ts.)
+        if (result !== null) {
+          const httpFailure = classifyHttpStepResult(step.tool, result);
+          if (httpFailure) stepError = httpFailure.message;
+        }
       } else if (deps.replayOnly === true) {
         // Replay boundary (replayBoundary.ts, layer 2): no capture for this
         // step ⇒ refuse, never dispatch. Recorded as a thrown step error so
@@ -3206,6 +3220,12 @@ export async function runYamlRecipe(
                 /* non-JSON result is fine */
               }
             }
+            // http.post reports a refusal as `{status, ok: false, body}` with no
+            // `error`, which the convention above cannot see. See httpOutcome.
+            if (!stepError && result !== null) {
+              const httpFailure = classifyHttpStepResult(step.tool, result);
+              if (httpFailure) stepError = httpFailure.message;
+            }
             // Silent-fail detection: tools that return string placeholders
             // (`(git branches unavailable)`, `[agent step skipped: ...]`)
             // or empty list-tool error shapes (`{count:0,error:"..."}`)
@@ -3239,7 +3259,11 @@ export async function runYamlRecipe(
           // attempt needs an affirmative basis that it is safe, and "no
           // response" is the opposite of one. Same shape as the timeout
           // rule below; checked first because it is the stronger fact.
-          if (thrownOutcomeUncertain) break;
+          if (
+            mustNotRetryWrite(step.tool, thrownError, thrownOutcomeUncertain) ||
+            mustNotRetryWrite(step.tool, stepError)
+          )
+            break;
           // Audit 2026-06-10 recipe-runners-2: do NOT retry on a step_timeout.
           // The timed-out attempt's underlying tool call keeps running in the
           // background (Promise.race only abandons the wait, it does not cancel
@@ -3343,9 +3367,12 @@ export async function runYamlRecipe(
         // by key; passed a raw string it's a structural no-op, so a tool
         // whose JSON output legitimately contains a `token`/`password`
         // field would otherwise be written to runs.jsonl unredacted.
+        // A failed http.post keeps its captured `status` and `body` too: they
+        // are the evidence of what the target said, and replay needs them.
         if (
           stepOutput === undefined &&
-          finalStatus === "ok" &&
+          (finalStatus === "ok" ||
+            isHttpFailureFromTool(step.tool, stepError)) &&
           result !== null
         ) {
           let toCapture: unknown = result;
@@ -3354,7 +3381,11 @@ export async function runYamlRecipe(
           } catch {
             /* not JSON — capture the raw string as-is */
           }
-          stepOutput = captureForRunlog(toCapture);
+          stepOutput = captureForRunlog(
+            isHttpFailureFromTool(step.tool, stepError)
+              ? httpFailureEvidence(toCapture)
+              : toCapture,
+          );
         }
         stepResults.push({
           id: stepId,
@@ -3364,7 +3395,9 @@ export async function runYamlRecipe(
           ...(finalStatus === "error" && stepError
             ? {
                 haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" reported an error${retryNote}: ${stepError}`,
-                haltCategory: "tool_error" as HaltCategory,
+                haltCategory: isHttpFailureFromTool(step.tool, stepError)
+                  ? categoriseHaltReason(stepError)
+                  : ("tool_error" as HaltCategory),
               }
             : {}),
           ...(stepOutput !== undefined ? { output: stepOutput } : {}),

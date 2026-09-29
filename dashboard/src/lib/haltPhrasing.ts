@@ -148,6 +148,22 @@ export function ownerHaltPhrase(
         fix: "open-trace",
         fixLabel: "See what happened",
       };
+    case "http_rejected":
+      return {
+        sentence:
+          "A service it sent a request to turned the request down, so it stopped without trying again.",
+        fix: "open-trace",
+        fixLabel: "See what happened",
+      };
+    case "http_unverified":
+      // Must not say "nothing changed": a server error can arrive after the
+      // change was made. The owner has to look at the other system.
+      return {
+        sentence:
+          "A service it sent a request to reported an error, so it stopped without trying again. Check that service before re-running: the change may or may not have gone through.",
+        fix: "open-trace",
+        fixLabel: "See what happened",
+      };
     case "run_level":
       return {
         sentence: "It couldn't start — something in its setup needs fixing.",

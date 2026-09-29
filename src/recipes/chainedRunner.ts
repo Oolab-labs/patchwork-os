@@ -73,8 +73,14 @@ import type {
 } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 import {
+  classifyHttpStepResult,
+  httpFailureEvidence,
+  isHttpFailureFromTool,
+} from "./tools/httpOutcome.js";
+import {
   isUncertainOutcome,
   markUncertainOutcome,
+  mustNotRetryWrite,
   OUTCOME_UNCERTAIN_TOKEN,
 } from "./uncertainOutcome.js";
 import { evaluateWhen } from "./whenGuard.js";
@@ -639,6 +645,8 @@ export async function executeChainedStep(
   skipped?: boolean;
   data?: unknown;
   error?: string;
+  /** This step received a failed HTTP write response. */
+  writeRetryUnsafe?: boolean;
   /** VD-2: resolved params after template substitution — captured by the
    *  runner for the dashboard's per-step view. */
   resolvedParams?: unknown;
@@ -780,6 +788,20 @@ export async function executeChainedStep(
   // what makes mocked replay useful for debugging template wiring.
   if (options.mockedOutputs?.has(step.id)) {
     let mockedData: unknown = options.mockedOutputs.get(step.id);
+    // A replayed http.post response is interpreted exactly as a live one,
+    // including one captured before httpOutcome existed. This branch sends
+    // nothing. (A step with no usable capture is not mocked and runs for
+    // real; see replayRun.ts.)
+    const replayedHttpFailure = classifyHttpStepResult(step.tool, mockedData);
+    if (replayedHttpFailure) {
+      return {
+        success: false,
+        writeRetryUnsafe: true,
+        error: replayedHttpFailure.message,
+        data: mockedData,
+        resolvedParams: resolved,
+      };
+    }
     if (step.transform) {
       try {
         mockedData = applyTransform(
@@ -1065,8 +1087,20 @@ export async function executeChainedStep(
       const childUncertain = [...childResult.stepResults.values()].some((r) =>
         isUncertainOutcome(r.error),
       );
+      const childFailures = childResult.errorMessage
+        ? [...childResult.stepResults.values()].filter((r) => !r.success)
+        : [];
+      const childHttpFailure = childFailures.find(
+        (r) => r.httpFailure === true && r.tolerated !== true,
+      )?.error?.message;
+      const childUnsafeWrite = childFailures.some(
+        (r) => r.httpFailure === true,
+      );
       return {
         success: !childResult.errorMessage,
+        ...(!childUncertain &&
+          childHttpFailure !== undefined && { error: childHttpFailure }),
+        ...(childUnsafeWrite && { writeRetryUnsafe: true }),
         ...(childResult.errorMessage && childUncertain
           ? {
               error: `${OUTCOME_UNCERTAIN_TOKEN} nested recipe "${recipeRef}": ${childResult.errorMessage} — a write inside it may have been applied; not retried`,
@@ -1292,6 +1326,18 @@ export async function executeChainedStep(
           /* non-JSON result is fine */
         }
       }
+      // http.post reports a refusal as `{status, ok: false, body}` with no
+      // `error`, which the convention above cannot see. See httpOutcome.
+      const httpFailure = classifyHttpStepResult(step.tool, result);
+      if (httpFailure) {
+        return {
+          success: false,
+          writeRetryUnsafe: true,
+          error: httpFailure.message,
+          data: result,
+          resolvedParams: resolved,
+        };
+      }
       const toolSilentFail =
         step.silentFailDetection !== false ? detectSilentFail(result) : null;
       if (toolSilentFail) {
@@ -1336,12 +1382,16 @@ export async function executeChainedStep(
       success: false,
       error: msg,
       ...(isUncertainOutcome(error) ? { outcome: "uncertain" as const } : {}),
+      ...(isHttpFailureFromTool(step.tool, msg)
+        ? { writeRetryUnsafe: true }
+        : {}),
     };
   }
 }
 
 interface StepExecResult {
   success: boolean;
+  writeRetryUnsafe?: boolean;
   skipped?: boolean;
   data?: unknown;
   error?: string;
@@ -1402,7 +1452,10 @@ async function withRetry(
     // retry-eligible failure — uncertainty is not a basis for another
     // attempt. Checked before the timeout rule because it is the stronger
     // fact (a timeout past the sent boundary arrives already marked).
-    if (last.outcome === "uncertain" || isUncertainOutcome(last.error))
+    if (
+      last.outcome === "uncertain" ||
+      mustNotRetryWrite(undefined, last.error, last.writeRetryUnsafe)
+    )
       return last;
     // Audit 2026-06-10 recipe-runners-2: do NOT retry on a step_timeout. The
     // timed-out attempt's tool/agent call keeps running in the background
@@ -1413,6 +1466,7 @@ async function withRetry(
     // true cancel needs an AbortSignal threaded through every tool/connector,
     // which is out of scope; refusing to retry on timeout is the safe contract.
     if (last.error?.startsWith("step_timeout:")) return last;
+
     // Do not retry cancelled steps — the run was aborted intentionally.
     if (last.error?.startsWith("step_cancelled:")) return last;
   }
@@ -1424,6 +1478,10 @@ export interface ChainedStepRunResult {
   skipped?: boolean;
   durationMs?: number;
   error?: Error;
+  /** The step failed on an HTTP answer (http.post, or a fan_out of it). */
+  httpFailure?: boolean;
+  /** The failure was tolerated (`optional` / fail-open) and did not end the run. */
+  tolerated?: boolean;
 }
 
 export interface ChainedRunResult {
@@ -1709,6 +1767,14 @@ export async function runChainedRecipe(
     stepMap.set(stepId, { ...step, id: stepId });
   }
 
+  /** Step id → message, for http.post failures a step tolerated. */
+  const toleratedHttpFailures = new Map<string, string>();
+  /** Steps that failed on an HTTP answer, tolerated or not. */
+  const httpFailedSteps = new Set<string>();
+  const toleratedError = (id: string): Error | undefined => {
+    const message = toleratedHttpFailures.get(id);
+    return message === undefined ? undefined : new Error(message);
+  };
   const stepTimings = new Map<
     string,
     { durationMs: number; skipped?: boolean }
@@ -1785,7 +1851,8 @@ export async function runChainedRecipe(
 
   const wrappedOnStepComplete =
     broadcastActivity && broadcastSeq !== undefined
-      ? (stepId: string, error?: Error) => {
+      ? (stepId: string, rawError?: Error) => {
+          const error = rawError ?? toleratedError(stepId);
           const ts = Date.now();
           const startedAt = stepStartTimes.get(stepId);
           try {
@@ -1821,7 +1888,10 @@ export async function runChainedRecipe(
           }
           options.onStepComplete?.(stepId, error);
         }
-      : options.onStepComplete;
+      : options.onStepComplete
+        ? (stepId: string, rawError?: Error) =>
+            options.onStepComplete?.(stepId, rawError ?? toleratedError(stepId))
+        : undefined;
 
   // Execute with dependency tracking
   // Run-level cancellation. The top-level run (depth 0) registers its own
@@ -1902,6 +1972,15 @@ export async function runChainedRecipe(
       recipeFallback === "log_only" || recipeFallback === "deliver_original";
     const isOptional = step.optional === true || recipeFallbackFailOpen;
     const effectiveSuccess = result.success || isOptional;
+    // The run may continue past a tolerated http.post failure, but the step
+    // must not be recorded as a successful action. Scoped to HTTP failures:
+    // other tools' tolerated failures keep their existing recording.
+    const httpFailed =
+      !result.success && isHttpFailureFromTool(step.tool, result.error);
+    if (httpFailed) httpFailedSteps.add(stepId);
+    if (httpFailed && isOptional) {
+      toleratedHttpFailures.set(stepId, result.error ?? "");
+    }
 
     if (!result.success && recipeFallbackFailOpen && !step.optional) {
       console.warn(
@@ -1917,7 +1996,7 @@ export async function runChainedRecipe(
         ? "skipped"
         : result.success
           ? "success"
-          : isOptional
+          : isOptional && !httpFailed
             ? "success"
             : "error",
       data: result.data,
@@ -1957,7 +2036,9 @@ export async function runChainedRecipe(
         }
         capturedStepData.set(stepId, {
           resolvedParams: captureForRunlog(result.resolvedParams),
-          output: captureForRunlog(result.data),
+          output: captureForRunlog(
+            httpFailed ? httpFailureEvidence(result.data) : result.data,
+          ),
           registrySnapshot: captureForRunlog(snapshot) as
             | Record<string, unknown>
             | undefined,
@@ -1999,8 +2080,17 @@ export async function runChainedRecipe(
   let failed = 0;
   for (const [id, result] of stepResults) {
     const timing = stepTimings.get(id);
+    const tolerated = toleratedHttpFailures.get(id);
     enrichedResults.set(id, {
       ...result,
+      // Recorded as a failed step; not counted in `failed`, so the run still
+      // finishes `done` (with step errors), as it does in the flat runner.
+      ...(tolerated !== undefined && {
+        success: false,
+        error: new Error(tolerated),
+        tolerated: true,
+      }),
+      ...(httpFailedSteps.has(id) && { httpFailure: true }),
       skipped: timing?.skipped,
       durationMs: timing?.durationMs,
     });
