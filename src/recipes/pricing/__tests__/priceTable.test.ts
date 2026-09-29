@@ -81,6 +81,24 @@ describe("costUsd", () => {
 });
 
 describe("loadPriceTable precedence", () => {
+  it("reads prices.json from PATCHWORK_HOME when no homeDir is injected", () => {
+    const saved = process.env.PATCHWORK_HOME;
+    process.env.PATCHWORK_HOME = tmp;
+    try {
+      writeFileSync(
+        join(tmp, "prices.json"),
+        JSON.stringify({
+          prices: { "example-model": { input: 7, output: 7 } },
+        }),
+      );
+      const t = loadPriceTable({ env: {} });
+      expect(t.prices["example-model"]).toEqual({ input: 7, output: 7 });
+    } finally {
+      if (saved === undefined) delete process.env.PATCHWORK_HOME;
+      else process.env.PATCHWORK_HOME = saved;
+    }
+  });
+
   it("returns the built-in table when no override exists", () => {
     const t = loadPriceTable({ env: {}, homeDir: tmp });
     expect(t.prices).toEqual(BUILTIN_PRICE_TABLE.prices);

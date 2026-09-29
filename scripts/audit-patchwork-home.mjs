@@ -44,6 +44,26 @@ const ALLOWLIST = "scripts/audit-patchwork-home-allowlist.json";
 const HARDCODED = /homedir\(\)\s*,\s*["']\.patchwork["']/;
 
 /**
+ * The same resolution through a variable:
+ *
+ *     const home = os.homedir();
+ *     const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
+ *
+ * HARDCODED is blind to it, and four functions in src/workers/runWorkerShadow.ts
+ * (the worker gate's trust loader among them) sat in exactly that shape with the
+ * ratchet reporting EMPTY. Flags a name assigned from `homedir()` that is later
+ * joined with ".patchwork" in the same file.
+ */
+function hasIndirectHomeJoin(code) {
+  const assigned = /\b(?:const|let|var)\s+(\w+)\s*=\s*[^;\n]*\bhomedir\(\)/g;
+  for (const m of code.matchAll(assigned)) {
+    const join = new RegExp(`join\\(\\s*${m[1]}\\s*,\\s*["']\\.patchwork["']`);
+    if (join.test(code)) return true;
+  }
+  return false;
+}
+
+/**
  * The helper itself. It must resolve the path by hand — that is its entire job,
  * including `legacyPatchworkHome()`, which exists precisely to name the OLD
  * location. Listing it on the ratchet would be recording the implementation as
@@ -144,7 +164,7 @@ for (const file of trackedSources()) {
   // reported a clean ratchet over it — so "0 on the ratchet" was measuring the
   // spelling, not the property. Found while converting the last three files,
   // by reading the code the gate had cleared rather than trusting the count.
-  if (HARDCODED.test(code)) {
+  if (HARDCODED.test(code) || hasIndirectHomeJoin(code)) {
     offenders.add(file);
   }
 }

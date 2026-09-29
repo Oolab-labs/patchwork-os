@@ -215,7 +215,8 @@ export function getWorkerShadowData(
   opts: RunWorkerShadowOpts = {},
 ): WorkerShadowData {
   const home = os.homedir();
-  const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
+  // PATCHWORK_HOME-aware, like every other ledger reader (patchworkHome.ts).
+  const patchworkDir = opts.patchworkDir ?? patchworkHome();
   const ideDir = opts.ideDir ?? path.join(home, ".claude", "ide");
   const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
 
@@ -298,8 +299,8 @@ export function loadWorkerTrustForRecipe(
   recipeName: string,
   opts: RunWorkerShadowOpts = {},
 ): RecipeWorkerTrust | null {
-  const home = os.homedir();
-  const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
+  // PATCHWORK_HOME-aware, like every other ledger reader (patchworkHome.ts).
+  const patchworkDir = opts.patchworkDir ?? patchworkHome();
   const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
 
   const cacheKey = `${patchworkDir}|${workersDir}|${recipeName}`;
@@ -423,8 +424,8 @@ export function runWorkerShadowReport(opts: RunWorkerShadowOpts = {}): string {
  * would it have diverged" artifact. See backtest.ts.
  */
 export function runWorkerBacktest(opts: RunWorkerShadowOpts = {}): string {
-  const home = os.homedir();
-  const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
+  // PATCHWORK_HOME-aware, like every other ledger reader (patchworkHome.ts).
+  const patchworkDir = opts.patchworkDir ?? patchworkHome();
   const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
   const workers = loadWorkersFromDir(workersDir);
   if (!workers.length) {
@@ -529,8 +530,8 @@ function deriveFilingTitle(
 export function computePendingConfirmations(
   opts: RunWorkerShadowOpts = {},
 ): PendingConfirmation[] {
-  const home = os.homedir();
-  const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
+  // PATCHWORK_HOME-aware, like every other ledger reader (patchworkHome.ts).
+  const patchworkDir = opts.patchworkDir ?? patchworkHome();
   const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
   // Same PATCHWORK_HOME-aware resolver the write path uses (see slice #3), so
   // the queue reflects exactly what a confirm would write.
