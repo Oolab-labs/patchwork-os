@@ -31,16 +31,26 @@ Three ideas, one runtime:
 
 Version `1.2.0-beta.x`. The decision layer, recipes, connectors and IDE bridge all work and are dogfooded daily, but interfaces still move between betas and some surfaces are rougher than others. Pin an exact version if you are building on it.
 
-**The safety features are opt-in, not the default.** This matters more than any other line in this README:
+**Whether the safety features are on depends on how you installed.** This matters more than any other line in this README:
 
-| Feature | Default | Turn it on with |
+- **New install:** `patchwork-os init` on a machine with no `~/.patchwork/config.json` writes `profile: governed`. The gate is on from the first run.
+- **Existing install:** upgrading never changes your profile. An existing config stays as it is; opt in with `patchwork profile governed` and restart the bridge.
+- **No config at all** (starting the bridge without `init`): the `compat` profile, where nothing is gated.
+
+Run `patchwork doctor` to see what is enforced on your machine right now. Trust its output over this table.
+
+| Feature | `governed` (new `init`) | `compat` (existing config, or none) |
 |---|---|---|
-| Approval queue | **off** (`approvalGate: "off"`) | `--approval-gate high` or `all` |
-| Worker autonomy gate | **off** | `PATCHWORK_FLAG_WORKER_AUTONOMY=1` (needs `--driver subprocess`) |
-| Kill switch | available always | `patchwork panic` |
-| Telemetry | **off** | opt in explicitly ([details](#telemetry)) |
+| Approval queue | **on** at `high`, for automated triggers (cron, webhook, file-watch, git-hook) as well as manual runs | **off** unless `--approval-gate high` or `all`, and then manual runs only |
+| Non-reversible writes | ask for approval whatever their tier | follow the tier threshold |
+| Agent steps | **contained**: read-only tools, no network or shell | full access unless a step sets `sandbox: true` |
+| Recipe plugins (`servers:`) | load only if listed in `plugins.allow` | any entry loads, in-process |
+| A tool nothing is registered under | the run **halts** | the step is skipped |
+| Kill switch (`patchwork panic`) | available; **fails closed** if its state is unreadable | available; fails open |
+| Worker autonomy ramp | needs `PATCHWORK_FLAG_WORKER_AUTONOMY=1` (and `--driver subprocess`) | same |
+| Telemetry | **off** | **off**; opt in explicitly ([details](#telemetry)) |
 
-Install Patchwork and nothing is gated until you say so. A fresh install is an automation runtime, and it becomes a decision layer when you switch the gate on. Everything above about "stops and asks you first" describes what the gate does once enabled — not what happens out of the box.
+Under `compat`, a fresh bridge is an automation runtime, and it becomes a decision layer when you switch the gate on. Everything above about "stops and asks you first" describes the gate when it is on.
 
 ## The loop
 
