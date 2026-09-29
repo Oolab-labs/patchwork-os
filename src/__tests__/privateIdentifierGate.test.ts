@@ -14,7 +14,7 @@
  */
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -99,6 +99,15 @@ describe("blocks denylisted identifiers", () => {
     expect(r.status).toBe(1);
     expect(r.out).not.toContain("AcmeConfidentialCo");
     expect(r.out).toMatch(/entry #\d+/);
+  });
+
+  it("does not reveal a denylisted identifier through the scanned filename", () => {
+    const sensitivePath = path.join(dir, "AcmeConfidentialCo.txt");
+    writeFileSync(sensitivePath, "AcmeConfidentialCo");
+
+    const r = run(["--text", sensitivePath]);
+    expect(r.status).toBe(1);
+    expect(r.out).not.toContain("AcmeConfidentialCo");
   });
 });
 
@@ -186,6 +195,37 @@ describe("refuses to run if the denylist itself is committed", () => {
       expect(r.status).toBe(2);
       expect(r.out).toContain("FATAL");
       expect(r.out).toContain("git rm --cached");
+    },
+  );
+});
+
+describe("blocks files protected only by the clone-local exclude", () => {
+  it.skipIf(process.platform === "win32")(
+    "refuses a forced add without printing the private path or pattern",
+    () => {
+      const fakeBin = path.join(dir, "bin");
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(
+        path.join(fakeBin, "git"),
+        `#!/bin/sh
+case "$1" in
+  ls-files) exit 0 ;;
+  diff)
+    case "$*" in
+      *--name-only*) printf 'src/private-work.test.ts\\0' ;;
+      *) printf '' ;;
+    esac ;;
+  rev-parse) printf 'main\\n' ;;
+  check-ignore) printf '.git/info/exclude:12:*private-work*\\tsrc/private-work.test.ts\\n' ;;
+esac
+`,
+      );
+      execFileSync("chmod", ["+x", path.join(fakeBin, "git")]);
+
+      const r = run([], { PATH: `${fakeBin}:${process.env.PATH}` });
+      expect(r.status).toBe(1);
+      expect(r.out).toContain("clone-local exclude");
+      expect(r.out).not.toContain("private-work");
     },
   );
 });

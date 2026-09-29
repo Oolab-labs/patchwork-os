@@ -192,7 +192,10 @@ function collectSources(argv) {
       console.error("[private-ids] --text requires a file path");
       process.exit(2);
     }
-    return [{ label: f, text: read(f) }];
+    // The filename itself may contain a denylisted identifier. Keep the label
+    // generic so a blocked report cannot disclose it through terminal or CI
+    // output.
+    return [{ label: "text file", text: read(f) }];
   }
 
   const sources = [];
@@ -224,9 +227,63 @@ function read(f) {
   }
 }
 
+/**
+ * A forced add can put a file protected by this clone's private exclude into
+ * the index. Refuse that state without echoing either the path or the matching
+ * exclude pattern into logs.
+ */
+function assertNoCloneLocalExcludedFilesStaged(argv) {
+  if (argv.includes("--message") || argv.includes("--text")) return;
+
+  let stagedPaths;
+  try {
+    stagedPaths = git([
+      "diff",
+      "--cached",
+      "--name-only",
+      "-z",
+      "--diff-filter=ACMR",
+    ])
+      .split("\0")
+      .filter(Boolean);
+  } catch {
+    return; // not a git repo / git unavailable — other paths report that
+  }
+
+  let excludedCount = 0;
+  for (const stagedPath of stagedPaths) {
+    let match = "";
+    try {
+      match = git(["check-ignore", "--no-index", "-v", "--", stagedPath]);
+    } catch {
+      continue; // exit 1 means the path is not ignored
+    }
+
+    const source = match.split(":", 1)[0].replaceAll("\\", "/");
+    if (
+      source === ".git/info/exclude" ||
+      source.endsWith("/.git/info/exclude")
+    ) {
+      excludedCount += 1;
+    }
+  }
+
+  if (excludedCount > 0) {
+    console.error(
+      `\n[private-ids] BLOCKED — ${excludedCount} staged file(s) match the clone-local exclude.\n\n` +
+        `  Remove them from the index before committing. Paths and patterns are\n` +
+        `  deliberately not printed because they may contain private identifiers.\n`,
+    );
+    process.exit(1);
+  }
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 assertDenylistNotTracked();
+
+const argv = process.argv.slice(2);
+assertNoCloneLocalExcludedFilesStaged(argv);
 
 const denylistPath = resolveDenylistPath();
 if (!denylistPath) {
@@ -257,7 +314,7 @@ if (patterns.length === 0) {
   process.exit(process.env.PATCHWORK_DENYLIST_REQUIRED === "1" ? 1 : 0);
 }
 
-const sources = collectSources(process.argv.slice(2));
+const sources = collectSources(argv);
 const lowered = patterns.map((p) => p.toLowerCase());
 const hits = [];
 let scannedBytes = 0;
