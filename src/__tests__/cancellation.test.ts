@@ -10,12 +10,14 @@ let server: Server | null = null;
 let transport: McpTransport | null = null;
 let wsClient: WebSocket | null = null;
 
-afterEach(() => {
+afterEach(async () => {
   if (wsClient && wsClient.readyState === WebSocket.OPEN) {
     wsClient.close();
   }
   wsClient = null;
-  server?.close();
+  // Await: close() resolves only after every connection's close handler
+  // (which logs) has run, so nothing writes to console after teardown.
+  await server?.close();
   server = null;
   transport = null;
 });

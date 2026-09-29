@@ -40,6 +40,9 @@ const servers: Server[] = [];
 const clients: ChildBridgeClient[] = [];
 const registries: ChildBridgeRegistry[] = [];
 const orchServers: Server[] = [];
+// Full OrchestratorBridge instances own their own Server; stop them before
+// the test's socket closures can log after teardown.
+const orchBridges: OrchestratorBridge[] = [];
 
 afterEach(async () => {
   for (const ws of openedClients) {
@@ -52,6 +55,9 @@ afterEach(async () => {
 
   for (const r of registries) r.stop();
   registries.length = 0;
+
+  for (const o of orchBridges) await o.stop();
+  orchBridges.length = 0;
 
   for (const s of [...servers, ...orchServers]) {
     await s.close();
@@ -854,6 +860,7 @@ describe("OrchestratorBridge lazy tool exposure: switchWorkspace swaps tool list
       fixedToken: freshToken,
     };
     const orch = new OrchestratorBridge(freshConfig);
+    orchBridges.push(orch);
     await orch.start();
 
     const ws = await connectMcpClient(freshPort, freshToken);

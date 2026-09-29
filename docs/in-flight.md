@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-29 `fix/windows-teardown-console` — stop Windows CI flaking green runs with "Closing rpc while onUserConsoleLog was pending": `Server.close()` cancels its deferred /restart and /shutdown triggers, `OrchestratorBridge` gains an awaitable `stop()`, and three test files await full shutdown. Touches server.ts, orchestratorBridge.ts, restart/cancellation/orchestratorBridge.integration tests.
+
 - 2026-09-29 `docs/licensing-control-plane-bsl` — LICENSING.md said the control-plane licence was not settled; it is BSL 1.1 (converts to MIT). Removes the resolved `TODO(owner)`. Docs only.
 
 - 2026-09-29 `fix/run-identity-dashboard` — run links carry `?task=<taskId>` (`runHref`) where the source row has one; the run page loads, replays and plans through `/runs/by-task/*` when it does, and offers a choice when a bare seq is shared. Dashboard only.
