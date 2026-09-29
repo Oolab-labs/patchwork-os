@@ -18,6 +18,7 @@
  */
 
 import {
+  _registerProfileWriteRefusal,
   KillSwitchFileMissingAfterLoadError,
   KillSwitchStateUnreadableError,
   readWriteKillSwitchForPolicy,
@@ -93,3 +94,19 @@ export function _setKillSwitchReaderForTesting(
 ): void {
   reader = fn ?? readWriteKillSwitchForPolicy;
 }
+
+/**
+ * Make `assertWriteAllowed` (the ~40 per-tool connector guards) profile-aware.
+ * Only the cases where the policy is STRICTER than the legacy cached read are
+ * returned — i.e. a governed profile refusing on an unreadable state. Every
+ * other reading returns null, so the legacy decision and its message stand
+ * and compat is byte-identical.
+ */
+_registerProfileWriteRefusal((operation) => {
+  const profile = activeProfile();
+  if (!profile.killSwitchFailClosed) return null;
+  const r = readKillSwitch(profile);
+  return r.reason === "unreadable_fail_closed"
+    ? killSwitchMessage(r, operation)
+    : null;
+});

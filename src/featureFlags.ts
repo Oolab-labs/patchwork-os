@@ -653,7 +653,39 @@ export function readWriteKillSwitchForPolicy(): boolean {
  * a generic `tool_threw`) and the dashboard pill row can flag it
  * distinctly from real tool failures.
  */
+/**
+ * Profile-aware refusal hook, registered by `governance/killSwitchPolicy.ts`
+ * at module load. It lives behind a registration rather than an import
+ * because killSwitchPolicy imports this module — importing it back would be a
+ * cycle.
+ *
+ * Returns a refusal message when the governed policy refuses a write the
+ * legacy read would have allowed (an UNREADABLE state under a fail-closed
+ * profile), or null to fall through to the legacy decision.
+ *
+ * Default (never registered) is null ⇒ the legacy decision, byte-identical to
+ * before. That is the correct default: the governed profile is only ever
+ * activated by code that loads the governance modules (bridge startup,
+ * `executeTool`, transport all import killSwitchPolicy), so a process that
+ * never loaded the policy cannot be running governed, and must keep compat
+ * behaviour rather than start refusing on a read error nobody configured it
+ * to treat as fatal.
+ */
+let profileWriteRefusal: ((operation: string) => string | null) | null = null;
+
+export function _registerProfileWriteRefusal(
+  fn: ((operation: string) => string | null) | null,
+): void {
+  profileWriteRefusal = fn;
+}
+
 export function assertWriteAllowed(operation: string): void {
+  const refusal = profileWriteRefusal?.(operation) ?? null;
+  if (refusal !== null) {
+    const err = new Error(refusal);
+    (err as Error & { code?: string }).code = "kill_switch_blocked";
+    throw err;
+  }
   if (isWriteKillSwitchActive()) {
     const err = new Error(
       `Write operation blocked by kill switch: ${operation}. ` +
