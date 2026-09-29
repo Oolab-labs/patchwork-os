@@ -549,7 +549,6 @@ export class RecipeRunLog {
   getAllBySeq(seq: number): RecipeRun[] {
     this.syncFromDisk();
     const byTask = new Map<string, RecipeRun>();
-    for (const r of this.runs) if (r.seq === seq) byTask.set(r.taskId, r);
     let raw = "";
     try {
       raw = readFileSync(this.file, "utf-8");
@@ -560,14 +559,17 @@ export class RecipeRunLog {
       if (!line) continue;
       try {
         const parsed = JSON.parse(line) as RecipeRun;
-        // Memory wins: it holds the live status of this process's own runs.
-        if (parsed.seq === seq && !byTask.has(parsed.taskId)) {
-          byTask.set(parsed.taskId, parsed);
-        }
+        // A run is appended once when it starts and again when it finishes,
+        // so the LAST row for a taskId carries its current status; keeping
+        // the first would report a long-finished run as still running.
+        if (parsed.seq === seq) byTask.set(parsed.taskId, parsed);
       } catch {
         // skip malformed line — never let one bad row break lookup
       }
     }
+    // Memory wins over disk: it holds the live status of this process's own
+    // runs, including any row not yet flushed.
+    for (const r of this.runs) if (r.seq === seq) byTask.set(r.taskId, r);
     return [...byTask.values()];
   }
 

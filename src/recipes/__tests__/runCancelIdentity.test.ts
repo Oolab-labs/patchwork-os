@@ -16,7 +16,9 @@
  * must be precise names the run by its `taskId`.
  */
 import { EventEmitter } from "node:events";
+import { writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeSandbox } from "../../__tests__/phase0/_harness.js";
 import { RecipeOrchestration } from "../../recipeOrchestration.js";
@@ -193,5 +195,46 @@ describe("run identity: seq is not unique across bridges", () => {
         .map((r) => r.taskId)
         .sort(),
     ).toEqual(["yaml:example-x:1", "yaml:example-y:1"]);
+  });
+
+  it("a run finished long ago is read at its final status, not its first row", () => {
+    // The log appends a run when it starts and again when it finishes. With a
+    // memory cap of 1 the older run is on disk only, so this exercises the
+    // disk path: its LAST row (done) must win over its first (running).
+    const base = {
+      recipeName: "example-y",
+      trigger: "cron",
+      createdAt: 1,
+      startedAt: 1,
+    };
+    const rows = [
+      { ...base, seq: 7, taskId: "yaml:example-y:1", status: "running" },
+      {
+        ...base,
+        seq: 7,
+        taskId: "yaml:example-y:1",
+        status: "done",
+        doneAt: 2,
+        durationMs: 1,
+      },
+      {
+        ...base,
+        recipeName: "example-x",
+        seq: 7,
+        taskId: "yaml:example-x:1",
+        status: "running",
+        createdAt: 3,
+        startedAt: 3,
+      },
+    ];
+    writeFileSync(
+      path.join(sandbox.dir, "runs.jsonl"),
+      `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`,
+    );
+    const log = new RecipeRunLog({ dir: sandbox.dir, memoryCap: 1 });
+    const finished = log
+      .getAllBySeq(7)
+      .find((r) => r.taskId === "yaml:example-y:1");
+    expect(finished?.status, "not reported as still running").toBe("done");
   });
 });
