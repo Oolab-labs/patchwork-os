@@ -63,3 +63,36 @@ export function isReplayRefusal(err: unknown): boolean {
         : undefined;
   return msg !== undefined && msg.startsWith(REPLAY_REFUSED_UNMOCKED_STEP);
 }
+
+/**
+ * A step that FAILED in the original run. Its recorded error is evidence,
+ * so a replay reproduces the same failure at that step instead of refusing
+ * the whole replay — and, like every other replayed step, dispatches
+ * nothing. Built by `buildMockedOutputs` / `buildFlatMockedOutputs`.
+ */
+export interface ReplayedFailure {
+  error: string;
+  errorCode?: string;
+}
+
+/**
+ * Used when the original run recorded `status: "error"` but no error text.
+ * Missing text still reduces what can be replayed — the step fails — and
+ * never becomes a reason to run it live.
+ */
+export const REPLAYED_FAILURE_NO_TEXT =
+  "replayed recorded failure (no error text captured)";
+
+/** The replayed failure for a recorded error step with no captured output. */
+export function recordedFailure(step: {
+  error?: string;
+  errorCode?: string;
+}): ReplayedFailure {
+  return {
+    error:
+      typeof step.error === "string" && step.error.length > 0
+        ? step.error
+        : REPLAYED_FAILURE_NO_TEXT,
+    ...(step.errorCode !== undefined && { errorCode: step.errorCode }),
+  };
+}

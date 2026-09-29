@@ -262,3 +262,23 @@ describe("changeCount", () => {
     expect(changeCount({ added: {}, modified: [], removed: [] })).toBe(0);
   });
 });
+
+// Mirrors buildMockedOutputs / buildFlatMockedOutputs (src/recipes/replayRun.ts):
+// an error step with no output replays as its recorded failure; the
+// positional-id rule still wins; an OK step with no output still refuses.
+describe("previewMockedReplay — recorded failures", () => {
+  it("classifies an error step with no output as a replayed failure, not unmocked", () => {
+    const out = previewMockedReplay([
+      { id: "fetch", status: "ok", output: { ok: true } },
+      { id: "send", status: "error" },
+      { id: "step_2", status: "error" },
+      { id: "late", status: "ok" },
+    ]);
+    expect(out.mocked).toEqual(["fetch", "send"]);
+    expect(out.failures).toEqual(["send"]);
+    expect(out.unmocked).toEqual([
+      { id: "step_2", reason: "positional-id" },
+      { id: "late", reason: "no-capture" },
+    ]);
+  });
+});

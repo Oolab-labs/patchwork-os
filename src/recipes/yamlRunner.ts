@@ -137,7 +137,10 @@ import {
   type PriceTable,
   costUsd as priceCostUsd,
 } from "./pricing/priceTable.js";
-import { ReplayIncompleteError } from "./replayBoundary.js";
+import {
+  type ReplayedFailure,
+  ReplayIncompleteError,
+} from "./replayBoundary.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import { recordAttemptRun } from "./runLedgers.js";
@@ -836,6 +839,14 @@ export interface RunnerDeps {
    */
   mockedOutputs?: Map<string, string>;
   /**
+   * Recorded FAILURES for a mocked replay (see `ReplayedFailure` in
+   * `replayBoundary.ts`). A step whose id is here failed in the original run
+   * with no captured output; under replay it fails again with the recorded
+   * error — no retry, no dispatch — and the existing halt / fail-open
+   * bookkeeping applies unchanged. Built by `replayFlatMockedRun`.
+   */
+  mockedFailures?: Map<string, ReplayedFailure>;
+  /**
    * Mocked-replay boundary (see `replayBoundary.ts`). When true, the run is
    * EVIDENCE-ONLY: a step whose id is absent from `mockedOutputs` is refused
    * with `replay_refused_unmocked_step` instead of dispatched, and the
@@ -975,6 +986,7 @@ export type StepDeps = Required<
     // `deps`, not per-step StepDeps; keep it off StepDeps so it isn't
     // forced Required here.
     | "mockedOutputs"
+    | "mockedFailures"
     // Optional on StepDeps too (declared explicitly below) — a replay marker
     // must never be a required field every test StepDeps has to fill.
     | "replayOnly"
@@ -1919,6 +1931,9 @@ export async function runYamlRecipe(
   // agent step would. It returns `{ value, ok }`; `ok: false` signals a
   // failed / silent-fail / empty agent response — the caller stops the loop
   // and treats it as exhausted (we don't re-judge a non-result).
+  // The agent step currently executing, for replay refusals raised from the
+  // refine-loop / nested-agent helpers below (they do not take a step id).
+  let currentAgentStepId: string | undefined;
   const runAgentText = async (
     prompt: string,
     driver: string | undefined,
@@ -1976,7 +1991,13 @@ export async function runYamlRecipe(
         ...(providerOptions && { providerOptions }),
         ...(dataPolicy !== undefined && { boundary: { dataPolicy } }),
       },
-      buildAgentExecutorDeps(stepDeps, deps, undefined, runTaskId),
+      buildAgentExecutorDeps(
+        stepDeps,
+        deps,
+        undefined,
+        runTaskId,
+        currentAgentStepId,
+      ),
     );
     runBudget.reconcile(
       // Prefer the driver executeAgent actually resolved+ran; fall back to
@@ -2080,7 +2101,13 @@ export async function runYamlRecipe(
           boundary: { dataPolicy: input.dataPolicy },
         }),
       },
-      buildAgentExecutorDeps(stepDeps, deps, undefined, runTaskId),
+      buildAgentExecutorDeps(
+        stepDeps,
+        deps,
+        undefined,
+        runTaskId,
+        currentAgentStepId,
+      ),
     );
     runBudget.reconcile(
       agentReturn.servedBy?.driver ?? input.driver ?? "auto",
@@ -2380,6 +2407,7 @@ export async function runYamlRecipe(
       // cap is set; never disturbs injected (unit-test) price tables.
       runBudget.refreshPrices();
       const stepIdForEmit = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+      currentAgentStepId = stepIdForEmit;
       const stepTs = Date.now();
       stepStartTs.set(stepIdForEmit, stepTs);
       emit("recipe_step_start", {
@@ -2815,6 +2843,12 @@ export async function runYamlRecipe(
           // capture no `output`, so under replay there is never a mock for
           // one — refuse here rather than let the catch below be the first
           // to hear about it from the seam.
+          // A recorded agent failure replays as that failure (thrown so the
+          // catch below records it exactly as the original halt did).
+          const replayedAgentFailure = deps.mockedFailures?.get(stepId);
+          if (replayedAgentFailure !== undefined) {
+            throw new Error(replayedAgentFailure.error);
+          }
           if (deps.replayOnly === true) {
             throw new ReplayIncompleteError([stepId], "agent step");
           }
@@ -2875,7 +2909,13 @@ export async function runYamlRecipe(
                 boundary: { dataPolicy: agentCfg.data_policy },
               }),
             },
-            buildAgentExecutorDeps(stepDeps, deps, undefined, runTaskId),
+            buildAgentExecutorDeps(
+              stepDeps,
+              deps,
+              undefined,
+              runTaskId,
+              stepId,
+            ),
           );
           agentResult = agentReturn.text;
           runBudget.reconcile(
@@ -3131,7 +3171,15 @@ export async function runYamlRecipe(
       // below (driven by `result`), so a replay shows how the recipe's
       // wiring behaves against captured evidence — only the tool call
       // itself is skipped. See RunnerDeps.mockedOutputs's doc comment.
-      if (deps.mockedOutputs?.has(stepId)) {
+      const replayedFailure = deps.mockedFailures?.get(stepId);
+      if (replayedFailure !== undefined) {
+        // The original run recorded this step as FAILED with no output. That
+        // record is the evidence: fail the same way, dispatch nothing, and do
+        // not retry — there is nothing to retry against.
+        thrownError = replayedFailure.error;
+        thrownErrorCode = replayedFailure.errorCode;
+        result = null;
+      } else if (deps.mockedOutputs?.has(stepId)) {
         result = deps.mockedOutputs.get(stepId) ?? null;
         // A replayed http.post response is interpreted exactly as a live one,
         // including a response captured before httpOutcome existed: it reads
@@ -4408,12 +4456,17 @@ function buildAgentExecutorDeps(
    * the run has started; the flat caller passes its local const directly.
    */
   runTaskId?: string,
+  /**
+   * The step this dispatch belongs to, so a replay refusal names it. Falls
+   * back to "agent" only when a caller genuinely does not know.
+   */
+  stepId?: string,
 ): AgentExecutorDeps {
   // Replay boundary (replayBoundary.ts, layer 3) — the single place agent
   // executor deps are built for every dispatch site in this runner, so a
   // replay's StepDeps can never hand a driver to an agent step.
   if (stepDeps.replayOnly === true) {
-    throw new ReplayIncompleteError(["agent"], "agent step");
+    throw new ReplayIncompleteError([stepId ?? "agent"], "agent step");
   }
   const claudeCliFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
   return {
@@ -5241,6 +5294,8 @@ export function buildChainedDeps(
       /** Resolved governed containment (Phase 0); forwarded to the driver. */
       containment?: import("../governance/profile.js").AgentContainment;
       boundary?: import("./agentExecutor.js").AgentExecutorInput["boundary"];
+      /** Names the step in a replay refusal; never affects dispatch. */
+      stepId?: string;
     },
   ): Promise<AgentResult> => {
     // Surface the FULL AgentResult (text + usage + servedBy) so the chained
@@ -5286,6 +5341,7 @@ export function buildChainedDeps(
         // Read at DISPATCH time, not build time — by now `runChainedRecipe` has
         // computed and published the run's `taskId`.
         runTaskIdRef.current,
+        opts?.stepId,
       ),
     );
   };
@@ -5494,6 +5550,7 @@ export async function dispatchRecipe(
       runLog: deps.chainedOptions?.runLog,
       activityLog: deps.chainedOptions?.activityLog,
       mockedOutputs: deps.chainedOptions?.mockedOutputs,
+      mockedFailures: deps.chainedOptions?.mockedFailures,
       ...((deps.replayOnly === true ||
         deps.chainedOptions?.replayOnly === true) && { replayOnly: true }),
       taskIdPrefix: deps.chainedOptions?.taskIdPrefix,

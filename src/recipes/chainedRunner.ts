@@ -62,7 +62,10 @@ import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
 import type { RouteCandidate } from "./pricing/costRouter.js";
 import { loadPriceTable, type PriceTable } from "./pricing/priceTable.js";
-import { replayRefusalMessage } from "./replayBoundary.js";
+import {
+  type ReplayedFailure,
+  replayRefusalMessage,
+} from "./replayBoundary.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import { registerRun, unregisterRun } from "./runRegistry.js";
@@ -236,6 +239,14 @@ export interface RunOptions {
    */
   mockedOutputs?: Map<string, unknown>;
   /**
+   * Recorded FAILURES for a mocked replay (`ReplayedFailure`,
+   * `replayBoundary.ts`): a step that failed in the original run with no
+   * captured output fails again with the recorded error, without reaching
+   * any tool, agent or nested recipe, and without a retry. Set by
+   * `replayMockedRun`.
+   */
+  mockedFailures?: Map<string, ReplayedFailure>;
+  /**
    * Mocked-replay boundary (`replayBoundary.ts`, layer 2). When true, a
    * step absent from `mockedOutputs` fails with
    * `replay_refused_unmocked_step` rather than reaching `executeTool` /
@@ -324,6 +335,8 @@ export type AgentExecutor = (
     disallowedTools?: string[];
     containment?: import("../governance/profile.js").AgentContainment;
     boundary?: AgentExecutorInput["boundary"];
+    /** Names the step in a replay refusal; never affects dispatch. */
+    stepId?: string;
   },
 ) => Promise<string | AgentResult>;
 
@@ -793,6 +806,18 @@ export async function executeChainedStep(
   // output from the original run. Templates may still re-resolve to
   // different values if the recipe was edited — that's expected; it's
   // what makes mocked replay useful for debugging template wiring.
+  const replayedFailure = options.mockedFailures?.get(step.id);
+  if (replayedFailure !== undefined) {
+    // The original run recorded this step as FAILED with no output: fail the
+    // same way and dispatch nothing. `writeRetryUnsafe` keeps `withRetry`
+    // from re-running it — there is nothing to retry against.
+    return {
+      success: false,
+      writeRetryUnsafe: true,
+      error: replayedFailure.error,
+      resolvedParams: resolved,
+    };
+  }
   if (options.mockedOutputs?.has(step.id)) {
     let mockedData: unknown = options.mockedOutputs.get(step.id);
     // A replayed http.post response is interpreted exactly as a live one,
@@ -1182,6 +1207,7 @@ export async function executeChainedStep(
       const agentReturn = toChainedAgentResult(
         await raceStepTimeout(
           deps.executeAgent(prompt, dispatchModel, dispatchDriver, {
+            stepId: step.id,
             ...(step.agent.mcpAccess !== undefined && {
               mcpAccess: step.agent.mcpAccess,
             }),

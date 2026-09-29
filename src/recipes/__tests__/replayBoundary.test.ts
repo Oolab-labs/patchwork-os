@@ -34,7 +34,12 @@ import {
   REPLAY_REFUSED_UNMOCKED_STEP,
   ReplayIncompleteError,
 } from "../replayBoundary.js";
-import { replayFlatMockedRun, replayMockedRun } from "../replayRun.js";
+import {
+  buildFlatMockedOutputs,
+  buildMockedOutputs,
+  replayFlatMockedRun,
+  replayMockedRun,
+} from "../replayRun.js";
 import type { RunnerDeps, YamlRecipe } from "../yamlRunner.js";
 import { buildChainedDeps, executeStep, runYamlRecipe } from "../yamlRunner.js";
 
@@ -497,6 +502,164 @@ describe("chained replay boundary", () => {
     );
     expect(res.success).toBe(false);
     expect(isReplayRefusal(res.stepResults.get("note")?.error)).toBe(true);
+    expectNothingDispatched(spies);
+  });
+});
+
+// ── recorded failures are evidence (follow-up to #1608) ──────────────────
+//
+// A step that ERRORED in the original run has no `output`. It used to land
+// in `unmocked`, so the most common reason to replay — a failed run — was
+// refused outright. The recorded error IS evidence: the replay reproduces
+// the same failure without dispatching anything.
+
+function withError(
+  run: RecipeRun,
+  id: string,
+  error: string | undefined,
+): RecipeRun {
+  return {
+    ...run,
+    stepResults: (run.stepResults ?? []).map((s) => {
+      if (s.id !== id) return s;
+      const { output: _o, error: _e, ...rest } = s;
+      return {
+        ...rest,
+        status: "error" as const,
+        ...(error !== undefined && { error }),
+      };
+    }),
+  };
+}
+
+describe("replaying a recorded failure", () => {
+  it("builders: an error step with no output is a mocked FAILURE, not unmocked", () => {
+    const run = {
+      seq: 1,
+      stepResults: [
+        { id: "a", status: "ok", output: "x" },
+        { id: "b", status: "error", error: "boom", errorCode: "E_X" },
+        { id: "c", status: "error" },
+        { id: "step_3", status: "error", error: "positional" },
+        { id: "d", status: "ok" },
+      ],
+    } as unknown as RecipeRun;
+    const flat = buildFlatMockedOutputs(run);
+    expect(flat.unmocked).toEqual(["step_3", "d"]);
+    expect(flat.failures.get("b")).toEqual({ error: "boom", errorCode: "E_X" });
+    expect(flat.failures.get("c")?.error).toMatch(/no error text captured/);
+    const chained = buildMockedOutputs(run);
+    expect(chained.unmocked).toEqual(["d"]);
+    expect(chained.failures.get("b")?.error).toBe("boom");
+    expect(chained.failures.has("step_3")).toBe(true);
+  });
+
+  it("flat: ok→error run replays; the error step fails with the recorded message and nothing is dispatched", async () => {
+    const original = await realFlatRun();
+    hits = 0;
+    unlinkSync(NOTE());
+    const { deps, spies } = replayDeps();
+    const r = await replayFlatMockedRun({
+      originalRun: withError(original, "note", "disk full (synthetic)"),
+      recipe: flatRecipe(),
+      deps,
+    });
+    expect(r.unmockedSteps).toBeUndefined();
+    expect(r.newSeq).toBeDefined();
+    expect(r.ok).toBe(true);
+    const note = r.result?.stepResults.find((s) => s.id === "note");
+    expect(note?.status).toBe("error");
+    expect(note?.error).toBe("disk full (synthetic)");
+    expect(r.result?.errorMessage).toBeDefined();
+    expectNothingDispatched(spies);
+  });
+
+  it("flat: a failed FIRST step halts as the original did — the next step never runs; no error text still never runs live", async () => {
+    const original = await realFlatRun();
+    hits = 0;
+    unlinkSync(NOTE());
+    const { deps, spies } = replayDeps();
+    const r = await replayFlatMockedRun({
+      originalRun: withError(original, "post", undefined),
+      recipe: flatRecipe(),
+      deps,
+    });
+    expect(r.ok).toBe(true);
+    const post = r.result?.stepResults.find((s) => s.id === "post");
+    expect(post?.status).toBe("error");
+    expect(post?.error).toMatch(/no error text captured/);
+    expect(r.result?.stepResults.find((s) => s.id === "note")?.status).not.toBe(
+      "ok",
+    );
+    expectNothingDispatched(spies);
+  });
+
+  it("chained: ok→error run replays; the error step fails with the recorded message and nothing is dispatched", async () => {
+    const recipe = {
+      name: "boundary-chained-fail",
+      trigger: { type: "chained" },
+      steps: [
+        { id: "post", tool: "http.post", url, allowPrivate: true, body: "{}" },
+        {
+          id: "note",
+          tool: "file.write",
+          path: "note.md",
+          content: "written",
+          awaits: ["post"],
+        },
+        {
+          id: "after",
+          tool: "file.write",
+          path: "after.md",
+          content: "x",
+          awaits: ["note"],
+        },
+      ],
+    } as unknown as ChainedRecipe;
+    const original = {
+      seq: 7,
+      taskId: "chained:boundary-chained-fail:1",
+      recipeName: "boundary-chained-fail",
+      status: "error",
+      createdAt: 1,
+      startedAt: 1,
+      doneAt: 2,
+      stepResults: [
+        { id: "post", status: "ok", output: { ok: true } },
+        { id: "note", status: "error", error: "quota exceeded (synthetic)" },
+        { id: "after", status: "skipped" },
+      ],
+    } as unknown as RecipeRun;
+    const { deps, spies } = replayDeps();
+    const r = await replayMockedRun({ originalRun: original, recipe, deps });
+    expect(r.unmockedSteps).toBeUndefined();
+    expect(r.ok).toBe(true);
+    expect(r.newSeq).toBeDefined();
+    expect(r.result?.stepResults.get("post")?.success).toBe(true);
+    const note = r.result?.stepResults.get("note");
+    expect(note?.success).toBe(false);
+    expect(String(note?.error?.message ?? note?.error)).toContain(
+      "quota exceeded (synthetic)",
+    );
+    expect(r.result?.stepResults.get("after")?.success).not.toBe(true);
+    expect(existsSync(path.join(tmpDir, "after.md"))).toBe(false);
+    expectNothingDispatched(spies);
+  });
+});
+
+describe("agent-step refusal names the step", () => {
+  it("layer 3: the chained executeAgent seam names the step id, not 'agent'", async () => {
+    const { deps, spies } = replayDeps();
+    const cd = buildChainedDeps(
+      { ...deps.runnerDeps, replayOnly: true },
+      undefined,
+      "boundary-seam",
+    );
+    const err = await cd
+      .executeAgent("hello", undefined, "claude-code", { stepId: "summarise" })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ReplayIncompleteError);
+    expect((err as ReplayIncompleteError).stepIds).toEqual(["summarise"]);
     expectNothingDispatched(spies);
   });
 });
