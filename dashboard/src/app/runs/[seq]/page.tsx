@@ -885,8 +885,8 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
     >
       <div style={{ fontWeight: 600, marginBottom: 4 }}>
         {preflight.unmocked.length} step
-        {preflight.unmocked.length === 1 ? "" : "s"} will run for real (no
-        usable capture)
+        {preflight.unmocked.length === 1 ? " has" : "s have"} no usable capture —
+        replay will be refused; nothing will run
       </div>
       <ul style={{ margin: "4px 0 0", paddingLeft: 20, color: "var(--ink-2)" }}>
         {preflight.unmocked.slice(0, 8).map((u) => (
@@ -895,9 +895,9 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
             <span style={{ color: "var(--ink-3)" }}>({u.id})</span>
             {" — "}
             {u.reason === "truncated"
-              ? "output >8 KB, will fire real tool"
+              ? "output >8 KB, not replayable"
               : u.reason === "positional-id"
-                ? "no stable id (add into:), will fire real tool"
+                ? "no stable id (add into:), not replayable"
                 : "no capture"}
           </li>
         ))}
