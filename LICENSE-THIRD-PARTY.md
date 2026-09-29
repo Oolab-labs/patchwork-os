@@ -264,7 +264,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | minimatch | 10.2.4 | BlueOak-1.0.0 |
 | node-cron | 4.6.0 | ISC |
 | require-from-string | 2.0.2 | MIT |
-| undici | 6.28.0 | MIT |
+| undici | 6.29.0 | MIT |
 | ws | 8.21.0 | MIT |
 | yaml | 2.8.3 | ISC |
 
