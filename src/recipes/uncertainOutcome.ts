@@ -29,6 +29,8 @@
  * here decides that a write is safe to re-issue.
  */
 
+import { isHttpFailureFromTool } from "./tools/httpOutcome.js";
+
 export const OUTCOME_UNCERTAIN_CODE = "outcome_uncertain" as const;
 export const OUTCOME_UNCERTAIN_TOKEN = `${OUTCOME_UNCERTAIN_CODE}:` as const;
 
@@ -106,4 +108,17 @@ export function isUncertainOutcome(value: unknown): boolean {
       return true;
   }
   return false;
+}
+
+/** One retry boundary for transport uncertainty and answered HTTP writes. */
+export function mustNotRetryWrite(
+  tool: string | undefined,
+  error: unknown,
+  answeredWriteFailure = false,
+): boolean {
+  return (
+    answeredWriteFailure ||
+    isUncertainOutcome(error) ||
+    isHttpFailureFromTool(tool, typeof error === "string" ? error : undefined)
+  );
 }

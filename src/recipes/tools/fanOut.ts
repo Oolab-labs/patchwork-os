@@ -33,6 +33,11 @@ import {
   markUncertainOutcome,
 } from "../uncertainOutcome.js";
 import type { RunContext } from "../yamlRunner.js";
+import {
+  classifyHttpStepResult,
+  type HttpStepFailure,
+  httpFailureEvidence,
+} from "./httpOutcome.js";
 
 /** Coerce `items` param into an array. Accepts an array directly, or a JSON-array string. */
 function coerceItems(raw: unknown): unknown[] | { error: string } {
@@ -353,6 +358,10 @@ registerTool({
         continue;
       }
 
+      // http.post answers a refusal with `{status, ok: false, body}` and does
+      // not throw, so without this an iteration the target rejected is
+      // recorded as ok. See httpOutcome.
+      let httpFailure: HttpStepFailure | null = null;
       try {
         const output = await executeTool(toolId, {
           params: innerParams,
@@ -360,19 +369,29 @@ registerTool({
           ctx: iterCtx,
           deps,
         });
+        httpFailure = classifyHttpStepResult(toolId, output);
         if (breakerKey) {
-          if (isReturnValueFailure(output)) {
+          if (httpFailure || isReturnValueFailure(output)) {
             getCircuitBreaker().recordFailure(breakerKey);
           } else {
             getCircuitBreaker().recordSuccess(breakerKey);
           }
         }
-        aggregate.push({
-          index: i,
-          ok: true,
-          ...(output != null && { output }),
-        });
-        report(i, true);
+        aggregate.push(
+          httpFailure
+            ? {
+                index: i,
+                ok: false,
+                error: httpFailure.message,
+                // Compact, so a batch of error pages cannot push the step's
+                // capture past the run log's 8 KB cap.
+                ...(output != null && {
+                  output: JSON.stringify(httpFailureEvidence(output)),
+                }),
+              }
+            : { index: i, ok: true, ...(output != null && { output }) },
+        );
+        report(i, !httpFailure, httpFailure?.message);
       } catch (err) {
         if (breakerKey) getCircuitBreaker().recordFailure(breakerKey);
         const msg = err instanceof Error ? err.message : String(err);
@@ -387,6 +406,11 @@ registerTool({
           // goes out again.
           throw isUncertainOutcome(err) ? markUncertainOutcome(halt) : halt;
         }
+      }
+      if (httpFailure && onIterError === "halt") {
+        throw new Error(
+          `${httpFailure.message} (fan_out iter ${i}, on_iter_error=halt)`,
+        );
       }
     }
 

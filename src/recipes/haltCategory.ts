@@ -48,6 +48,8 @@ export type HaltCategory =
    * operator has to look at the destination before re-running by hand.
    */
   | "delivery_unverified"
+  | "http_rejected"
+  | "http_unverified"
   /**
    * Opt-in judge→refine loop exhausted its `max_revisions` budget and the
    * judge still returned `request_changes` with `on_exhausted: "halt"`.
@@ -135,6 +137,8 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   expect_failed: "expect failed",
   step_timeout: "step timeout",
   delivery_unverified: "delivered, outcome unverified",
+  http_rejected: "target rejected request",
+  http_unverified: "target error, outcome unverified",
   judge_revisions_exhausted: "judge revisions exhausted",
   auth_failure: "auth failure",
   rate_limited: "rate limited",
@@ -172,6 +176,10 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   step_timeout: "bump timeout_ms or speed up step",
   delivery_unverified:
     "the write was sent and may have landed — check the destination before re-running; it was deliberately not retried",
+  http_rejected:
+    "read the target response; fix the request or preconditions before re-running",
+  http_unverified:
+    "check the target system before re-running; the status does not prove whether the write was applied",
   judge_revisions_exhausted:
     "raise max_revisions, refine the prompt, or set on_exhausted: proceed",
   auth_failure: "reconnect from /connections",
@@ -193,8 +201,27 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   unknown: "open run trace for raw error",
 };
 
+/**
+ * An httpOutcome code, either as a step's raw error or inside the sentence a
+ * runner wrote for an http.post / fan_out step, or for a nested recipe step
+ * (tool "?") that carries its child's HTTP failure. Anchored so that another
+ * tool echoing a third party's "http_rejected: …" cannot claim the category.
+ */
+const HTTP_FAILURE_SENTENCE =
+  /^(?:Tool "(?:http\.post|fan_out|\?)" in step ".*" (?:reported an error|threw)(?: after \d+ attempts?)?: )?(http_rejected|http_unverified): /s;
+
 export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (!reason) return "unknown";
+  // http.post failures (see tools/httpOutcome.ts) come FIRST. The sentence
+  // carries the author's step id, so a later matcher would win on an id like
+  // `alert_budget_exceeded`. The codes are emitted only by httpOutcome, so
+  // matching them first cannot capture any other halt. Also ahead of the
+  // auth / rate matchers: a 401 or 429 from an arbitrary endpoint is still a
+  // response the target sent, and "reconnect from /connections" is the wrong
+  // remedy for a tool that uses no connector.
+  const http = HTTP_FAILURE_SENTENCE.exec(reason);
+  if (http?.[1] === "http_rejected") return "http_rejected";
+  if (http?.[1] === "http_unverified") return "http_unverified";
   // Order matters: more specific phrases (silent-fail, narration, kill
   // switch) must match before the general "Agent step ... threw" /
   // "Tool ... threw" patterns. The phrases below mirror

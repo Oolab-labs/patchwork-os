@@ -1,4 +1,8 @@
 import { categoriseHaltReason } from "../recipes/haltCategory.js";
+import {
+  classifyHttpStepResult,
+  isHttpFailureFromTool,
+} from "../recipes/tools/httpOutcome.js";
 import { isUncertainOutcome } from "../recipes/uncertainOutcome.js";
 import {
   AGENT_STEP_TOOL,
@@ -173,6 +177,7 @@ type FoldStep = Pick<
  * outright failure; only confirmed/unknown successes wait out the window):
  *   - run violated its completion contract     → WITHHOLD (every step; see below)
  *   - agent (reasoning) step, ANY status       → WITHHOLD (not a durable action; see below)
+ *   - http.post failed on the target's answer → WITHHOLD (responsibility unassessed; see below)
  *   - failure (status ≠ ok)                    → count, good:false (durable evidence of failure)
  *   - success, no `now`                        → count, good:true (back-compat status-only)
  *   - success, non-reversible, junk (any age)  → count, good:false (human-rejected → demotes now)
@@ -264,6 +269,19 @@ export function foldOutcome(
   if (step.status === "error" && isUncertainOutcome(step)) {
     return { fold: false };
   }
+  if (
+    step.status === "error" &&
+    (isHttpFailureFromTool(step.tool, step.error) ||
+      ["http_rejected", "http_unverified"].includes(
+        categoriseHaltReason(step.haltReason),
+      ))
+  )
+    return { fold: false };
+  if (
+    step.status === "ok" &&
+    classifyHttpStepResult(step.tool, step.output) !== null
+  )
+    return { fold: false };
   if (step.status !== "ok") return { fold: true, good: false };
   // Success. Without a wall-clock, keep the prior status-only fold (back-compat).
   if (opts.now === undefined) return { fold: true, good: true };

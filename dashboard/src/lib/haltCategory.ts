@@ -24,6 +24,8 @@ export type HaltCategory =
   | "step_timeout"
   /** A write was sent and no usable response came back — it may have been applied. Never retried. */
   | "delivery_unverified"
+  | "http_rejected"
+  | "http_unverified"
   | "judge_revisions_exhausted"
   | "auth_failure"
   | "rate_limited"
@@ -59,6 +61,8 @@ export const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   expect_failed: "expect failed",
   step_timeout: "step timeout",
   delivery_unverified: "delivered, outcome unverified",
+  http_rejected: "target rejected request",
+  http_unverified: "target error, outcome unverified",
   judge_revisions_exhausted: "judge revisions exhausted",
   auth_failure: "auth failure",
   rate_limited: "rate limited",
@@ -101,6 +105,8 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "Step exceeded its timeout_ms. Bump the timeout or speed up the step.",
   delivery_unverified:
     "The write was sent and no usable response came back, so it may have been applied. It was deliberately not retried — check the destination before re-running.",
+  http_rejected: "The HTTP target rejected the request. Read its response before re-running.",
+  http_unverified: "The HTTP target reported an error. Check the target before re-running.",
   judge_revisions_exhausted:
     "The judge→refine loop used its max_revisions budget and the judge still asked for changes. Raise max_revisions, refine the prompt, or set on_exhausted: proceed.",
   auth_failure:
