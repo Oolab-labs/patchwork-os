@@ -899,6 +899,13 @@ export class RecipeOrchestration {
     server.runsBySeqFn = (seq: number) =>
       this.deps.recipeRunLog?.getAllBySeq(seq) ?? [];
 
+    server.runDetailByTaskFn = (taskId: string) => {
+      if (!this.deps.recipeRunLog) return null;
+      const run = this.deps.recipeRunLog.getByTaskId(taskId);
+      if (!run) return null;
+      return run as unknown as Record<string, unknown>;
+    };
+
     server.runDetailFn = (seq: number) => {
       if (!this.deps.recipeRunLog) return null;
       const run = this.deps.recipeRunLog.getBySeq(seq);
@@ -1018,14 +1025,43 @@ export class RecipeOrchestration {
     // from the captured per-step `output` (VD-2). Evidence-only: a step
     // with no usable capture refuses the whole replay
     // (`replay_refused_unmocked_step`) — see src/recipes/replayBoundary.ts.
+    // Replay is an ACTION, so it must know which run it replays. A seq can
+    // name several runs (it is per-bridge; see RecipeRunLog.getAllBySeq), so
+    // replay-by-seq refuses an ambiguous number rather than replaying
+    // whichever run is met first, and replay-by-taskId names the run exactly.
     server.runReplayFn = async (seq: number) => {
       if (!this.deps.recipeRunLog) {
         return { ok: false, error: "run_log_unavailable" };
+      }
+      const sameSeq = this.deps.recipeRunLog.getAllBySeq(seq);
+      if (sameSeq.length > 1) {
+        return {
+          ok: false,
+          error: "ambiguous_seq",
+          taskIds: sameSeq.map((r) => r.taskId),
+        };
       }
       const original = this.deps.recipeRunLog.getBySeq(seq);
       if (!original) {
         return { ok: false, error: "run_not_found" };
       }
+      return replayOriginal(original);
+    };
+    server.runReplayByTaskFn = async (taskId: string) => {
+      if (!this.deps.recipeRunLog) {
+        return { ok: false, error: "run_log_unavailable" };
+      }
+      const original = this.deps.recipeRunLog.getByTaskId(taskId);
+      if (!original) {
+        return { ok: false, error: "run_not_found" };
+      }
+      return replayOriginal(original);
+    };
+    const replayOriginal = async (
+      original: import("./runLog.js").RecipeRun,
+    ): Promise<import("./recipeRoutes.js").ReplayFnResult> => {
+      const runLog = this.deps.recipeRunLog;
+      if (!runLog) return { ok: false, error: "run_log_unavailable" };
       // Strip ":agent" suffix that triggerSource may carry.
       const recipeName = original.recipeName.replace(/:agent$/, "");
 
@@ -1060,7 +1096,7 @@ export class RecipeOrchestration {
           if (!orch) return "";
           const task = await orch.runAndWait({
             prompt,
-            triggerSource: `replay:${seq}:agent`,
+            triggerSource: `replay:${original.seq}:agent`,
             timeoutMs: 1_800_000,
             ...(await governedSystemPrompt()),
             ...(callOpts?.mcpAccess !== undefined && {
@@ -1134,7 +1170,7 @@ export class RecipeOrchestration {
             recipe:
               recipeYaml as unknown as import("./recipes/yamlRunner.js").YamlRecipe,
             deps: {
-              runLog: this.deps.recipeRunLog,
+              runLog: runLog,
               ...(this.deps.activityLog !== undefined && {
                 activityLog: this.deps.activityLog,
               }),
@@ -1161,7 +1197,7 @@ export class RecipeOrchestration {
             recipeYaml as unknown as import("./recipes/chainedRunner.js").ChainedRecipe,
           ...(recipePath !== undefined && { sourcePath: recipePath }),
           deps: {
-            runLog: this.deps.recipeRunLog,
+            runLog: runLog,
             ...(this.deps.activityLog !== undefined && {
               activityLog: this.deps.activityLog,
             }),
@@ -1181,7 +1217,7 @@ export class RecipeOrchestration {
         // the HTTP caller — same fix shape as the dashboard recipe
         // routes in #601. Server-side log retains the detail.
         this.deps.logger?.warn?.(
-          `[runReplayFn] replay failed for seq=${seq}: ${err instanceof Error ? err.message : String(err)}`,
+          `[runReplayFn] replay failed for seq=${original.seq}: ${err instanceof Error ? err.message : String(err)}`,
         );
         return { ok: false, error: "replay_internal_error" };
       }

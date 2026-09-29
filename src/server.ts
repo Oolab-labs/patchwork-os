@@ -458,12 +458,15 @@ export class Server extends EventEmitter<ServerEvents> {
   /** Patchwork (VD-4): mocked replay of an existing run. Returns the new
    *  run's seq plus any unmocked steps the caller may want to surface. */
   public runReplayFn:
-    | ((seq: number) => Promise<{
-        ok: boolean;
-        newSeq?: number;
-        unmockedSteps?: string[];
-        error?: string;
-      }>)
+    | ((seq: number) => Promise<import("./recipeRoutes.js").ReplayFnResult>)
+    | null = null;
+  /** Patchwork: mocked replay of the run with this taskId (exact identity). */
+  public runReplayByTaskFn:
+    | ((taskId: string) => Promise<import("./recipeRoutes.js").ReplayFnResult>)
+    | null = null;
+  /** Patchwork: a single run by taskId for the detail page. */
+  public runDetailByTaskFn:
+    | ((taskId: string) => Record<string, unknown> | null)
     | null = null;
   /** Patchwork: set by bridge to launch a named recipe via the orchestrator. */
   public runRecipeFn:
@@ -1847,6 +1850,8 @@ export class Server extends EventEmitter<ServerEvents> {
           outcomeStoreFn: this.outcomeStoreFn,
           pendingConfirmationsFn: this.pendingConfirmationsFn,
           runReplayFn: this.runReplayFn,
+          runReplayByTaskFn: this.runReplayByTaskFn,
+          runDetailByTaskFn: this.runDetailByTaskFn,
           runRecipeFn: this.runRecipeFn,
           onRecipesChangedFn: this.onRecipesChangedFn,
         })

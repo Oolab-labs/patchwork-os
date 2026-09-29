@@ -66,6 +66,9 @@ function orchestration(): {
     recipeRunLog: {
       getBySeq: (seq: number) =>
         seq === 7 ? { seq: 7, recipeName: RECIPE, taskId: "t" } : undefined,
+      // One run under seq 7 — replay-by-seq refuses only an ambiguous seq.
+      getAllBySeq: (seq: number) =>
+        seq === 7 ? [{ seq: 7, recipeName: RECIPE, taskId: "t" }] : [],
     } as never,
     workdir: home,
     logger: {},
