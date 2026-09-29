@@ -58,7 +58,7 @@ import { respond500 } from "./httpErrorResponse.js";
 import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import { patchworkPath } from "./patchworkHome.js";
 import { summariseBoundaryReceipts } from "./privacy/boundaryReceipts.js";
-import { cancelRun } from "./recipes/runRegistry.js";
+import { cancelRunChecked } from "./recipes/runRegistry.js";
 import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { invalidateRecipesCache } from "./recipesHttp.js";
@@ -708,6 +708,14 @@ export interface RecipeRouteDeps {
       }) => Record<string, unknown>[])
     | null;
   runDetailFn: ((seq: number) => Record<string, unknown> | null) | null;
+  /**
+   * Every run the shared log records under `seq` (`RecipeRunLog.getAllBySeq`).
+   * Used by cancel to refuse a number that names more than one running run.
+   * Optional: absent ⇒ the pre-existing seq-only behaviour.
+   */
+  runsBySeqFn?:
+    | ((seq: number) => Array<{ taskId: string; status: string }>)
+    | null;
   /**
    * Aggregate halt categories across recent runs. `sinceMs` filters to runs
    * created after `Date.now() - sinceMs`; default 7 days. `recipe` filters
@@ -1620,12 +1628,43 @@ export function tryHandleRecipeRoute(
       : null;
   if (runCancelMatch?.[1]) {
     const seq = Number.parseInt(runCancelMatch[1], 10);
+    const taskId = parsedUrl.searchParams.get("taskId") ?? undefined;
     try {
-      const cancelled = cancelRun(seq);
-      res.writeHead(cancelled ? 200 : 404, {
+      // `seq` is not unique across the bridges sharing one run log. Without a
+      // `taskId`, a number that names more than one RUNNING run cannot say
+      // which run the caller meant, so refuse rather than abort whichever run
+      // this process registered under it.
+      if (taskId === undefined && deps.runsBySeqFn) {
+        const running = deps
+          .runsBySeqFn(seq)
+          .filter((r) => r.status === "running");
+        if (running.length > 1) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              cancelled: false,
+              seq,
+              error: "ambiguous_seq",
+              taskIds: running.map((r) => r.taskId),
+            }),
+          );
+          return true;
+        }
+      }
+      const outcome = cancelRunChecked(seq, {
+        ...(taskId !== undefined && { taskId }),
+      });
+      const cancelled = outcome === "cancelled";
+      res.writeHead(cancelled ? 200 : outcome === "task_mismatch" ? 409 : 404, {
         "Content-Type": "application/json",
       });
-      res.end(JSON.stringify({ cancelled, seq }));
+      res.end(
+        JSON.stringify({
+          cancelled,
+          seq,
+          ...(outcome === "task_mismatch" && { error: "task_mismatch" }),
+        }),
+      );
     } catch (err) {
       respond500(res, err, "runs/:seq/cancel");
     }

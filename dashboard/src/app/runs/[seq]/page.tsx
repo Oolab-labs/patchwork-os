@@ -1379,7 +1379,7 @@ export default function RunDetailPage() {
             {run.status === "running" && (
               <button
                 type="button"
-                onClick={() => cancelRun.requestConfirm(run.seq)}
+                onClick={() => cancelRun.requestConfirm(run.seq, run.taskId)}
                 disabled={cancelRun.phase === "cancelling"}
                 title="Abort this run's in-progress step immediately."
                 style={{
