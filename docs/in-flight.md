@@ -56,6 +56,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-29 `fix/untrusted-instruction-api-drivers` — `makeProviderDriverFn` forwards the governed system prompt, so openai/grok/gemini-api receive `UNTRUSTED_SYSTEM_INSTRUCTION` as a system message; ADR-0026 prompt-cap line corrected. Touches `yamlRunner.ts`.
 - 2026-09-29 `fix/govern-recipe-test-record` — `recipe test` refuses any flat step whose tool has no fixture mock (stub-served reads excepted) and any unstubbed agent driver (`test_refused_unmocked_step`) instead of running it live; `recipe record` is governed via `resolveLocalGovernance` like `recipe run --local`. Touches `yamlRunner.ts` (`testOnly`), `replayBoundary.ts`, `commands/recipe.ts`.
 - 2026-09-29 `fix/replay-worker-owned` — governed replay of a worker-owned recipe is no longer refused (replay dispatches nothing, and the worker gate is not built so no Decision Record is written); replay runs are marked `replay: true` and excluded from the worker trust fold, closing a live path where replaying a run re-credited its evidence. Touches `recipeOrchestration.ts`, `runLog.ts`, both runners, `workers/runWorkerShadow.ts`.
 - 2026-09-29 `fix/untrusted-envelope-fanout` — docs only: ADR-0026's envelope bypass list was stale; `fan_out` items, nested child outputs, derived agent output and judge reviews were already enveloped (mutation-checked). Remaining: computed `fan_out` `items`. Touches ADR-0026, CLAUDE.md.

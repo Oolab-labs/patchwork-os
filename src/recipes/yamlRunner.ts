@@ -4953,6 +4953,7 @@ export function makeProviderDriverFn(): (
   prompt: string,
   model: string | undefined,
   providerOptions?: Record<string, unknown>,
+  systemPrompt?: string,
 ) => Promise<string | AgentResult> {
   const cache = new Map<string, import("../drivers/types.js").ProviderDriver>();
   return async function defaultProviderDriverFn(
@@ -4960,6 +4961,11 @@ export function makeProviderDriverFn(): (
     prompt: string,
     model: string | undefined,
     providerOptions?: Record<string, unknown>,
+    // Governed-only; resolved by `executeAgent`. Forwarded as
+    // `ProviderTaskInput.systemPrompt`, which the OpenAI-shaped API drivers
+    // (openai / grok / gemini-api) send as the system message. Absent under
+    // compat, so the request keeps its exact prior shape.
+    systemPrompt?: string,
   ): Promise<string | AgentResult> {
     try {
       let driver = cache.get(driverName);
@@ -4989,6 +4995,7 @@ export function makeProviderDriverFn(): (
           signal: controller.signal,
           model,
           ...(providerOptions && { providerOptions }),
+          ...(systemPrompt !== undefined && { systemPrompt }),
         });
         if (result.exitCode !== undefined && result.exitCode !== 0) {
           const detail = result.stderrTail ?? result.text ?? "";
