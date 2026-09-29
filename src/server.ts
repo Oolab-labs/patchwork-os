@@ -773,6 +773,22 @@ export class Server extends EventEmitter<ServerEvents> {
   public restartKillFn: () => void = () => process.kill(process.pid, "SIGTERM");
 
   /**
+   * Deferred /restart and /shutdown triggers. Tracked so close() can cancel
+   * them: once the server is closing, the process is already on its way down,
+   * and an untracked timer would fire (and log) after close() resolved —
+   * which in tests lands after the worker has begun teardown.
+   */
+  private readonly lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  private scheduleLifecycle(fn: () => void, ms: number): void {
+    const t = setTimeout(() => {
+      this.lifecycleTimers.delete(t);
+      fn();
+    }, ms);
+    this.lifecycleTimers.add(t);
+  }
+
+  /**
    * Called when /shutdown decides it is safe to exit. Defaults to
    * `process.kill(process.pid, 'SIGTERM')`. Bridge overrides this to run its
    * internal shutdown sequence directly — necessary on Windows where
@@ -3030,7 +3046,7 @@ export class Server extends EventEmitter<ServerEvents> {
         // Trigger shutdown after response is sent (100ms delay to ensure response delivery).
         // Uses this.restartKillFn so tests can override without killing the runner.
         const killFn = this.restartKillFn;
-        setTimeout(() => {
+        this.scheduleLifecycle(() => {
           this.logger.info("[/restart] Sending SIGTERM to self");
           killFn();
         }, 100);
@@ -3075,7 +3091,7 @@ export class Server extends EventEmitter<ServerEvents> {
         );
 
         const shutdownFn = this.shutdownFn;
-        setTimeout(() => {
+        this.scheduleLifecycle(() => {
           this.logger.info("[/shutdown] Calling bridge shutdown sequence");
           shutdownFn();
         }, 100);
@@ -3613,6 +3629,8 @@ export class Server extends EventEmitter<ServerEvents> {
 
   async close(): Promise<void> {
     if (this.pingInterval) clearInterval(this.pingInterval);
+    for (const t of this.lifecycleTimers) clearTimeout(t);
+    this.lifecycleTimers.clear();
     // close() may run before listen() (failed startup, or tests that stub
     // listen()); wss/httpServer are only created in listen(), so a pre-listen
     // close is a safe no-op rather than a crash on undefined this.wss.

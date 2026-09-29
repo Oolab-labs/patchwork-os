@@ -608,30 +608,48 @@ export class OrchestratorBridge {
     return lines.join("\n");
   }
 
+  private signalHandler: (() => void) | null = null;
+
+  /**
+   * Tear down everything start() created — health timer, registry, child
+   * sessions, lock file, the listening server — and AWAIT the server close,
+   * without exiting the process. The signal handler calls this then exits;
+   * tests call it directly so no socket outlives the test and logs after
+   * the worker has begun teardown.
+   */
+  async stop(): Promise<void> {
+    if (this.signalHandler) {
+      process.removeListener("SIGTERM", this.signalHandler);
+      process.removeListener("SIGINT", this.signalHandler);
+      this.signalHandler = null;
+    }
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    }
+    this.registry.stop();
+
+    // Close all child sessions
+    await Promise.all(
+      Array.from(this.clients.values()).map((c) =>
+        c.closeSession().catch(() => {}),
+      ),
+    );
+
+    for (const c of this.clients.values()) c.destroy();
+
+    this.lockFile.delete();
+    await this.server.close();
+  }
+
   private setupShutdownHandlers(): void {
     const shutdown = async () => {
       this.logger.info("Orchestrator shutting down...");
-
-      if (this.healthTimer) {
-        clearInterval(this.healthTimer);
-      }
-      this.registry.stop();
-
-      // Close all child sessions
-      await Promise.all(
-        Array.from(this.clients.values()).map((c) =>
-          c.closeSession().catch(() => {}),
-        ),
-      );
-
-      for (const c of this.clients.values()) c.destroy();
-
-      this.lockFile.delete();
-      this.server.close();
+      await this.stop();
       process.exit(0);
     };
-
-    process.once("SIGTERM", () => void shutdown());
-    process.once("SIGINT", () => void shutdown());
+    this.signalHandler = () => void shutdown();
+    process.once("SIGTERM", this.signalHandler);
+    process.once("SIGINT", this.signalHandler);
   }
 }

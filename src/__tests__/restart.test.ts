@@ -117,6 +117,51 @@ describe("POST /restart endpoint", () => {
     expect((res.body as { activeSessions?: number }).activeSessions).toBe(3);
   });
 
+  it("close() cancels the deferred restart trigger (no log or kill after close)", async () => {
+    // Regression: the 100 ms trigger was an untracked setTimeout, so it fired
+    // and LOGGED after close() resolved — on Windows CI that landed after the
+    // test worker began teardown ("Closing rpc while onUserConsoleLog was
+    // pending") and failed a fully green run.
+    const infos: string[] = [];
+    const spyLogger = new Logger(false);
+    spyLogger.info = (msg: string) => {
+      infos.push(msg);
+    };
+    const own = new Server(authToken, spyLogger);
+    const ownPort = await own.findAndListen(null);
+    let killed = 0;
+    own.restartKillFn = () => {
+      killed++;
+    };
+    own.restartCheckFn = () => ({
+      totalSessions: 0,
+      inFlightCalls: 0,
+      busySessions: [],
+    });
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port: ownPort,
+          path: "/restart",
+          method: "POST",
+          headers: { Authorization: `Bearer ${authToken}` },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    expect(status).toBe(202);
+    await own.close();
+    await new Promise((r) => setTimeout(r, 250));
+    expect(killed).toBe(0);
+    expect(infos.some((m) => m.includes("Sending SIGTERM"))).toBe(false);
+  });
+
   it("requires authentication", async () => {
     server.restartCheckFn = () => ({
       totalSessions: 0,
