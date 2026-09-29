@@ -26,6 +26,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { GOVERNED_PROFILE } from "../../governance/profile.js";
 import { type RecipeRun, RecipeRunLog } from "../../runLog.js";
 import type { ChainedRecipe } from "../chainedRunner.js";
 import { runChainedRecipe } from "../chainedRunner.js";
@@ -660,6 +661,145 @@ describe("agent-step refusal names the step", () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ReplayIncompleteError);
     expect((err as ReplayIncompleteError).stepIds).toEqual(["summarise"]);
+    expectNothingDispatched(spies);
+  });
+});
+
+// ── approval gate under replay ───────────────────────────────────────────
+//
+// Approval authorises an ACTION. A mocked replay performs none, so it must
+// never put a request in front of a human — the dashboard queue, and the
+// `approval_log.jsonl` audit ledger behind it — for something that will not
+// execute. `requireApprovalFn` is the seam through which the bridge enqueues
+// (`makeRecipeApprovalFn`), so a call to it IS an approval request.
+
+describe("governed replay never consults the approval gate", () => {
+  const approvalSpy = () => vi.fn(async () => false);
+
+  it("flat: mocked high-tier steps replay without an approval request", async () => {
+    const original = await realFlatRun();
+    hits = 0;
+    unlinkSync(NOTE());
+    const { deps, spies } = replayDeps();
+    const requireApprovalFn = approvalSpy();
+    const r = await replayFlatMockedRun({
+      originalRun: original,
+      recipe: flatRecipe(),
+      deps: {
+        ...deps,
+        runnerDeps: {
+          ...deps.runnerDeps,
+          governance: GOVERNED_PROFILE,
+          requireApprovalFn,
+        },
+      },
+    });
+    expect(requireApprovalFn).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    expectNothingDispatched(spies);
+  });
+
+  it("flat: a replayed recorded failure enqueues nothing", async () => {
+    const original = await realFlatRun();
+    hits = 0;
+    unlinkSync(NOTE());
+    const { deps, spies } = replayDeps();
+    const requireApprovalFn = approvalSpy();
+    const r = await replayFlatMockedRun({
+      originalRun: withError(original, "post", "synthetic failure"),
+      recipe: flatRecipe(),
+      deps: {
+        ...deps,
+        runnerDeps: {
+          ...deps.runnerDeps,
+          governance: GOVERNED_PROFILE,
+          requireApprovalFn,
+        },
+      },
+    });
+    expect(requireApprovalFn).not.toHaveBeenCalled();
+    expect(r.result?.stepResults.find((s) => s.id === "post")?.error).toBe(
+      "synthetic failure",
+    );
+    expectNothingDispatched(spies);
+  });
+
+  it("flat: an uncaptured step is still REFUSED and still enqueues nothing", async () => {
+    const { deps, spies } = replayDeps();
+    const requireApprovalFn = approvalSpy();
+    // Preflight bypassed: straight into the runner under replayOnly with no
+    // capture for any step.
+    const res = await runYamlRecipe(flatRecipe(), {
+      ...deps.runnerDeps,
+      runLog: deps.runLog,
+      governance: GOVERNED_PROFILE,
+      requireApprovalFn,
+      mockedOutputs: new Map(),
+      replayOnly: true,
+    });
+    expect(requireApprovalFn).not.toHaveBeenCalled();
+    expect(res.stepResults.some((s) => isReplayRefusal(s.error))).toBe(true);
+    expectNothingDispatched(spies);
+  });
+
+  it("control: a normal governed run still gates the same step", async () => {
+    const d = liveDeps();
+    const requireApprovalFn = approvalSpy();
+    await runYamlRecipe(flatRecipe(), {
+      ...d.runnerDeps,
+      runLog: d.runLog,
+      governance: GOVERNED_PROFILE,
+      requireApprovalFn,
+    });
+    expect(requireApprovalFn).toHaveBeenCalled();
+    // Rejected ⇒ nothing sent.
+    expect(hits).toBe(0);
+  });
+
+  it("chained: mocked steps replay without an approval request", async () => {
+    const recipe = {
+      name: "boundary-chained-gate",
+      trigger: { type: "chained" },
+      steps: [
+        { id: "post", tool: "http.post", url, allowPrivate: true, body: "{}" },
+      ],
+    } as unknown as ChainedRecipe;
+    const original = {
+      seq: 1,
+      taskId: "chained:boundary-chained-gate:1",
+      recipeName: "boundary-chained-gate",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      startedAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+      stepResults: [
+        {
+          id: "post",
+          tool: "http.post",
+          status: "ok",
+          durationMs: 1,
+          output: { ok: true, status: 200 },
+        },
+      ],
+    } as unknown as RecipeRun;
+    const { deps, spies } = replayDeps();
+    const requireApprovalFn = approvalSpy();
+    const r = await replayMockedRun({
+      originalRun: original,
+      recipe,
+      deps: {
+        ...deps,
+        runnerDeps: {
+          ...deps.runnerDeps,
+          governance: GOVERNED_PROFILE,
+          requireApprovalFn,
+        },
+      },
+    });
+    expect(requireApprovalFn).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
     expectNothingDispatched(spies);
   });
 });

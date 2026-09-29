@@ -127,6 +127,7 @@ The same order is what `policy explain` prints.
 ## Known remaining bypasses (recorded, not hidden)
 
 - The worker gate is not built on the replay path, deliberately, and worker-owned recipes ARE replayable under governed (the former `replay_refused_worker_owned_under_governed` refusal is gone). Replay is evidence-only (`replayBoundary.ts`): every step returns its captured output, replays its recorded failure, or refuses the whole replay, so there is no action for the gate to decide and running it would write Decision Records for actions that never happened. The remaining risk — a replay row folding as trust evidence — is closed by the `replay: true` run marker, which the trust fold excludes (`isReplayRun`).
+- A mocked replay never consults the approval gate (flat runner skips it under `replayOnly`; the chained runner short-circuits before it). Approval authorises an action and replay performs none, so a governed replay enqueues nothing and appends nothing to `approval_log.jsonl`; policy refusals (kill switch) still apply.
 - The untrusted envelope. Re-verified 2026-09-29 — four of the five surfaces
   this entry used to list were already covered, each by a test that fails when
   its hunk is reverted:
