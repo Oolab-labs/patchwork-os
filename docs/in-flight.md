@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-29 `fix/chained-worker-gate` — `buildChainedDeps` now forwards `gateAutomatedRuns`, so a worker-owned chained recipe can no longer opt out of the worker gate with `requireApproval: false` (the flat runner already refused). Touches yamlRunner `buildChainedDeps` + a chainedRunner doc comment.
+
 - 2026-09-29 `fix/fan-out-child-gate` — a `fan_out` step is gated as the tool it runs per item (tier, write, worker class; unconfirmed file writes irreversible), one approval per batch bound to the dispatched call; `patchwork.policy.yml` is checked per child before any child runs. Touches both runners' gate blocks, fanOut, new `fanOutChild.ts` + `toolPolicyCheck.ts`.
 
 - 2026-09-29 `docs/readme-governed-default` — README said the safety features are opt-in; since Phase 0 a fresh `init` writes `profile: governed`. States the three install cases and a governed-vs-compat table, and defers to `patchwork doctor`. README only.
