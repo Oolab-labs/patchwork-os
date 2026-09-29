@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { runHref } from "@/lib/runHref";
 import { apiPath } from "@/lib/api";
 import { deriveRunStatus } from "@/components/patchwork/StatusPill";
 import { HALT_CATEGORY_HINT, HALT_CATEGORY_LABEL } from "@/lib/haltCategory";
@@ -1059,7 +1060,7 @@ export default function RunsPage() {
                             )}
                             <div>
                               <Link
-                                href={`/runs/${r.seq}`}
+                                href={runHref(r.seq, r.taskId)}
                                 className="btn sm ghost"
                               >
                                 Open full run →
@@ -1192,7 +1193,7 @@ export default function RunsPage() {
                       <pre className="task-output">{r.outputTail}</pre>
                     )}
                     <Link
-                      href={`/runs/${r.seq}`}
+                      href={runHref(r.seq, r.taskId)}
                       className="btn sm ghost"
                       onClick={(e) => e.stopPropagation()}
                     >

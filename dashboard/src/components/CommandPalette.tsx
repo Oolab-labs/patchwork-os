@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { runHref } from "@/lib/runHref";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { flatRoutes } from "@/lib/navRoutes";
@@ -57,6 +58,8 @@ interface RecipeEntity {
 
 interface RunEntity {
   seq: number;
+  /** From the bridge's run rows; pins the link to this exact run. */
+  taskId?: string;
   recipeName: string;
   status: string;
 }
@@ -231,7 +234,7 @@ export function CommandPalette({
       label: `${run.recipeName} #${run.seq}`,
       hint: run.status,
       group: "Runs" as const,
-      perform: () => router.push(`/runs/${run.seq}`),
+      perform: () => router.push(runHref(run.seq, run.taskId)),
     }));
     const inboxCmds: Command[] = liveInbox.map((item) => {
       const key = inboxItemKey(item.name);

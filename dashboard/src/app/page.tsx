@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { runHref } from "@/lib/runHref";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -1944,7 +1945,7 @@ export default function HomePage() {
                       >
                         {isStopping ? "stopping…" : "■ Stop"}
                       </button>
-                      <Link href={`/runs/${topLiveRun.seq ?? ""}`} className="btn sm ghost">
+                      <Link href={runHref(topLiveRun.seq ?? "", topLiveRun.taskId)} className="btn sm ghost">
                         View run
                       </Link>
                     </div>

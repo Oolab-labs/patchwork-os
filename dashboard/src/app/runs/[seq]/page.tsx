@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { EntityTimeline, RelationStrip, RelatedPanel } from "@/components/patchwork";
@@ -918,6 +918,16 @@ export default function RunDetailPage() {
   const params = useParams();
   const seq = params.seq as string;
   const seqIsValid = !!seq && /^\d+$/.test(seq);
+  // A run number is only unique per bridge; `?task=` names the run exactly.
+  // Links carry it, so load / replay / plan go through the bridge's
+  // by-task routes. Without it (an old bookmark) the page falls back to the
+  // number, and says so if the number is shared by more than one run.
+  const searchParams = useSearchParams();
+  const taskParam = searchParams.get("task");
+  const runApiBase = taskParam
+    ? `/api/bridge/runs/by-task/${encodeURIComponent(taskParam)}`
+    : `/api/bridge/runs/${seq}`;
+  const [sameSeqTaskIds, setSameSeqTaskIds] = useState<string[]>([]);
 
   const [run, setRun] = useState<RunDetail | null>(null);
   const [runErr, setRunErr] = useState<string>();
@@ -959,7 +969,7 @@ export default function RunDetailPage() {
     setReplayState("running");
     setReplayMessage(undefined);
     try {
-      const res = await fetch(apiPath(`/api/bridge/runs/${seq}/replay`), {
+      const res = await fetch(apiPath(`${runApiBase}/replay`), {
         method: "POST",
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -1009,12 +1019,16 @@ export default function RunDetailPage() {
     const { signal } = controller;
 
     const doFetch = () =>
-      fetch(apiPath(`/api/bridge/runs/${seq}`), { signal })
+      fetch(apiPath(runApiBase), { signal })
         .then(async (res) => {
           if (!res.ok) throw new Error(`${res.status}`);
-          const data = (await res.json()) as { run?: RunDetail };
+          const data = (await res.json()) as {
+            run?: RunDetail;
+            sameSeqTaskIds?: string[];
+          };
           if (!data.run) throw new Error("empty response");
           setRun(data.run);
+          setSameSeqTaskIds(data.sameSeqTaskIds ?? []);
           return data.run;
         })
         .catch((e: unknown) => {
@@ -1051,7 +1065,7 @@ export default function RunDetailPage() {
       if (intervalId !== undefined) clearInterval(intervalId);
       controller.abort();
     };
-  }, [seq]);
+  }, [seq, runApiBase]);
 
   // VD-1B live-tail: subscribe to ActivityLog SSE while the run is in flight
   // and merge `recipe_step_start` / `recipe_step_done` events into the local
@@ -1191,7 +1205,7 @@ export default function RunDetailPage() {
     const controller = new AbortController();
     const { signal } = controller;
     setPlanLoading(true);
-    fetch(apiPath(`/api/bridge/runs/${seq}/plan`), { signal })
+    fetch(apiPath(`${runApiBase}/plan`), { signal })
       .then(async (res) => {
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1217,7 +1231,7 @@ export default function RunDetailPage() {
       })
       .finally(() => setPlanLoading(false));
     return () => controller.abort();
-  }, [tab, plan, planErr, seq]);
+  }, [tab, plan, planErr, seq, runApiBase]);
 
   const tabStyle = (t: Tab): React.CSSProperties => ({
     padding: "6px 14px",
@@ -1490,6 +1504,19 @@ export default function RunDetailPage() {
       />
 
       {runErr && <div className="alert-err" role="alert">Failed to load run: {runErr}</div>}
+      {!taskParam && sameSeqTaskIds.length > 1 && (
+        <div className="alert-warn" role="status">
+          Run #{seq} is shared by {sameSeqTaskIds.length} runs (each bridge
+          numbers its own runs). This page shows one of them — pick the one you
+          mean:{" "}
+          {sameSeqTaskIds.map((t, i) => (
+            <span key={t}>
+              {i > 0 && ", "}
+              <Link href={`/runs/${seq}?task=${encodeURIComponent(t)}`}>{t}</Link>
+            </span>
+          ))}
+        </div>
+      )}
       {!seqIsValid ? (
         <div className="empty-state">
           <h3>Invalid run id</h3>

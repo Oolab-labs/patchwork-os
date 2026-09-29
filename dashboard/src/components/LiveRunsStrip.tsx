@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { runHref } from "@/lib/runHref";
 import { useState } from "react";
 import { LivePill, StatusPill } from "@/components/patchwork";
 import { relTime } from "@/components/time";
@@ -110,7 +111,7 @@ export function LiveRunsStrip({
             ? fmtElapsed(r.durationMs)
             : "—";
         const href = r.seq != null
-          ? `/runs/${r.seq}`
+          ? runHref(r.seq, r.taskId)
           : `/runs?recipe=${encodeURIComponent(name)}`;
         const showRerun = !isLive && name.length > 0 && !pending[name];
         const isQueueing = Boolean(pending[name]);
