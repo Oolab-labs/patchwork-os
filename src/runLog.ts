@@ -177,6 +177,17 @@ export interface RecipeRun {
    */
   manualRunId?: string;
   /**
+   * `true` when this row is a MOCKED REPLAY of an earlier run
+   * (src/recipes/replayRun.ts): every step returned its captured output or
+   * its recorded failure, and nothing dispatched. Stamped by both runners
+   * whenever `replayOnly` is set. It exists so trust replay can EXCLUDE the
+   * row — a replay carries the original's `ok` steps and captured outputs,
+   * and folding it would let re-running yesterday's evidence manufacture
+   * trust. Absent on every real run. Read through `isReplayRun`, which also
+   * recognises the markers replay rows carried before this field existed.
+   */
+  replay?: true;
+  /**
    * PID of the process that started this run.
    *
    * Exists so the startup sweep can tell "the bridge died mid-run" from
@@ -381,6 +392,27 @@ export interface RunQuery {
 // was statSync + optional readFileSync. 250 ms is imperceptible for run-list
 // freshness but reduces Defender/NTFS I/O by ~20× at steady state.
 const _SYNC_MIN_INTERVAL_MS = 250;
+
+/**
+ * Is this row a mocked replay rather than a real run? `replay: true` is the
+ * marker; the other two are what replay rows carried BEFORE it existed — the
+ * chained replay's `taskIdPrefix: "replay:<seq>"` and the flat replay's
+ * `manualRunId: "replay-<seq>"` — so rows already in `runs.jsonl` (compat has
+ * always allowed replaying worker-owned recipes) are excluded too. A real
+ * manual attempt id shaped `replay-<digits>` would also match; that
+ * withholds evidence rather than crediting it, which is the safe direction.
+ */
+export function isReplayRun(
+  run: Pick<RecipeRun, "taskId" | "manualRunId" | "replay">,
+): boolean {
+  if (run.replay === true) return true;
+  if (typeof run.taskId === "string" && run.taskId.startsWith("replay:")) {
+    return true;
+  }
+  return (
+    typeof run.manualRunId === "string" && /^replay-\d+$/.test(run.manualRunId)
+  );
+}
 
 export class RecipeRunLog {
   private runs: RecipeRun[] = [];
@@ -709,6 +741,8 @@ export class RecipeRunLog {
     model?: string;
     parentSeq?: number;
     manualRunId?: string;
+    /** See `RecipeRun.replay`. */
+    replay?: true;
     /** Test seam — defaults to this process. See `RecipeRun.ownerPid`. */
     ownerPid?: number;
   }): number {
@@ -730,6 +764,7 @@ export class RecipeRunLog {
       stepResults: [],
       ...(opts.parentSeq !== undefined && { parentSeq: opts.parentSeq }),
       ...(opts.manualRunId !== undefined && { manualRunId: opts.manualRunId }),
+      ...(opts.replay === true && { replay: true }),
     };
     this.runs.push(run);
     if (this.runs.length > this.memoryCap) this.runs.shift();

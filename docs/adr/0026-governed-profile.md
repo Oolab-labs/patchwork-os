@@ -126,7 +126,7 @@ The same order is what `policy explain` prints.
 
 ## Known remaining bypasses (recorded, not hidden)
 
-- The worker gate is not rebuilt on the replay path (tier gate only); under governed a worker-owned recipe is therefore REFUSED for replay (`replay_refused_worker_owned_under_governed`) rather than replayed with fewer gates.
+- The worker gate is not built on the replay path, deliberately, and worker-owned recipes ARE replayable under governed (the former `replay_refused_worker_owned_under_governed` refusal is gone). Replay is evidence-only (`replayBoundary.ts`): every step returns its captured output, replays its recorded failure, or refuses the whole replay, so there is no action for the gate to decide and running it would write Decision Records for actions that never happened. The remaining risk — a replay row folding as trust evidence — is closed by the `replay: true` run marker, which the trust fold excludes (`isReplayRun`).
 - The untrusted envelope is applied to flat and chained agent prompts, not to
   `fan_out` per-item prompts, nested-recipe child outputs, agent output derived
   from connector data, judge `reviews:` blocks, or orchestrator automation-hook

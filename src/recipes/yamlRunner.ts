@@ -1793,6 +1793,8 @@ export async function runYamlRecipe(
         ...(deps.manualRunId !== undefined && {
           manualRunId: deps.manualRunId,
         }),
+        // Marks the row so trust replay never folds it (runLog isReplayRun).
+        ...(deps.replayOnly === true && { replay: true }),
       });
     } catch {
       // Non-fatal — run-log failures must never break recipe execution.
