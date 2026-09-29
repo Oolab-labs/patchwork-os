@@ -2713,7 +2713,19 @@ export async function runYamlRecipe(
       let stepApprovalGrant:
         | import("../approvalIdentity.js").ApprovalGrant
         | undefined;
-      if (deps.requireApprovalFn && effective.consultsApproval) {
+      // Replay: the approval gate is NOT consulted. Approval authorises an
+      // ACTION, and a replayOnly run performs none — every step below either
+      // returns its captured output, reproduces its recorded failure, or is
+      // refused (replayBoundary.ts, layers 2+3). Asking a human here would
+      // enqueue a request (dashboard queue + approval_log.jsonl) for a
+      // non-action, which is audit noise that trains operators to approve
+      // unread. The chained runner already short-circuits before its gate.
+      // Policy REFUSAL above (kill switch etc.) still applies under replay.
+      if (
+        deps.requireApprovalFn &&
+        effective.consultsApproval &&
+        deps.replayOnly !== true
+      ) {
         // What is EXECUTED and HASHED (raw) is not what an approval callback
         // may SEE (redacted). The digest carries the raw binding across.
         const rawApprovalParams = step.agent
