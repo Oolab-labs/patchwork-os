@@ -36,9 +36,8 @@ export interface StepForReplayPreflight {
  * before replay, and it's a safe over-approximation either way: a
  * chained recipe's step ids are mandatory/explicit, so a real collision
  * with this pattern is rare, and misclassifying a chained step as
- * "will run for real" only over-warns — it never falsely promises "no
- * side effects" for a step that actually fires for real, which is the
- * dangerous direction for a safety preflight.
+ * not replayable only over-refuses — it never promises a replay the
+ * bridge would then refuse, and a refused step is never run live.
  */
 const POSITIONAL_STEP_ID = /^step_\d+$/;
 
