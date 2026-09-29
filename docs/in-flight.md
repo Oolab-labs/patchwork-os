@@ -57,6 +57,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 ## Recently closed (informal log, prune periodically)
 
 - 2026-09-29 `docs/readme-governed-default` — README said the safety features are opt-in; since Phase 0 a fresh `init` writes `profile: governed`. States the three install cases and a governed-vs-compat table, and defers to `patchwork doctor`. README only.
+
 - 2026-09-29 `fix/governed-worker-authority` — the governed profile now turns the worker trust-ramp gate on at runtime via one shared predicate (`workerGateEnabled`) that the gate builders, `patchwork doctor`, `policy explain` and the boundary preview all call, so a flag reset or env override can no longer leave doctor saying ENFORCED while worker recipes run ungated. Touches `src/governance/workerAuthority.ts`, `src/recipeOrchestration.ts`, `src/governance/doctorReport.ts`, `src/commands/policyExplain.ts`, `src/workers/boundaryPreview.ts` and a new test.
 
 - 2026-09-29 `fix/private-ids-clone-exclude` — private-identifier gate refuses a staged file matched by the clone-local `.git/info/exclude` (a forced add), and no longer prints the `--text` filename; neither path nor pattern is echoed. Touches the gate script + its test only.
