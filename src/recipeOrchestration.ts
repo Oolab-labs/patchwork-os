@@ -282,6 +282,15 @@ export async function buildWorkerAutonomyGate(
     recordGateDecision?: (
       input: import("./workerGateDecisionLog.js").RecordGateDecisionInput,
     ) => void;
+    /**
+     * Where a GATED action's human decision comes from. Absent ⇒ the approval
+     * queue (the dashboard answers it — the bridge's case). A `--local` run
+     * passes its terminal prompt: a CLI process has no dashboard attached, so
+     * a queued request would wait for an answer that cannot come. Only gated
+     * actions reach it; `refuse` never does, so no answer unlocks a forbidden
+     * action. Must return a grant on approval (the runner revalidates it).
+     */
+    askHuman?: ApprovalFn;
   },
 ): Promise<ApprovalFn | null> {
   try {
@@ -321,7 +330,8 @@ export async function buildWorkerAutonomyGate(
       permissionStore = undefined;
     }
     const { getApprovalQueue } = await import("./approvalQueue.js");
-    const queue = getApprovalQueue();
+    // Not opened when a caller answers gated actions itself (`askHuman`).
+    const queue = ctxOpts?.askHuman ? undefined : getApprovalQueue();
     const { worker, store } = trust;
 
     // Context-risk: a live, situational DESCENDING de-rater resolved ONCE for the
@@ -520,7 +530,16 @@ export async function buildWorkerAutonomyGate(
       // the gate ledger holds 232 `allow` / 48 `gate` / 0 `forbid`, so it would
       // label a branch that has never fired on any real run.
       if (outcome === "refuse") return false;
-      // gate → queue for human approval; fail-closed on reject / expire / cancel
+      // gate → a human decides. A caller-supplied `askHuman` (the `--local`
+      // terminal prompt) answers it directly; otherwise it is queued for the
+      // dashboard. Fail-closed on reject / expire / cancel either way.
+      if (ctxOpts?.askHuman) {
+        return ctxOpts.askHuman({
+          ...input,
+          summary: `${worker.name} (${decision.classKey}): ${decision.reason}`,
+        });
+      }
+      if (!queue) return { approved: false, refusal: "rejected" };
       const { promise, callId, approvedActionIdentity } = queue.request(
         {
           toolName: input.toolId,

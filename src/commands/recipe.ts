@@ -1183,6 +1183,12 @@ export async function resolveLocalGovernance(
     isTTY?: boolean;
     ask?: (question: string) => Promise<string>;
   } = {},
+  /**
+   * The recipe being run. When a worker owns it, the worker's gate is composed
+   * over the tier gate exactly as a bridge run does (`buildWorkerAutonomyGate`),
+   * with human decisions asked on the terminal. Absent ⇒ tier gate only.
+   */
+  recipeName?: string,
 ): Promise<Partial<RunnerDeps>> {
   if (provided?.governance !== undefined) return {};
   const { loadConfig } = await import("../patchworkConfig.js");
@@ -1218,8 +1224,13 @@ export async function resolveLocalGovernance(
         rl.close();
       }
     });
-  const requireApprovalFn: RunnerDeps["requireApprovalFn"] = async (input) => {
-    if (input.effective === "ALLOW") return true;
+  // Put ONE action to the operator. Used by the tier gate below (for steps the
+  // effective policy says need a human) and by the worker gate (for actions
+  // the worker has not earned) — the worker gate calls it without consulting
+  // `effective`, because its own decision is the reason to ask.
+  const askOperator: NonNullable<RunnerDeps["requireApprovalFn"]> = async (
+    input,
+  ) => {
     if (!isTTY) {
       process.stderr.write(
         `[recipe run] step "${input.summary ?? input.toolId}" needs human approval under the governed profile and there is no terminal to ask on — refused. Run from a terminal, or run through the bridge so the approval reaches the dashboard.\n`,
@@ -1262,6 +1273,54 @@ export async function resolveLocalGovernance(
         }
       : { approved: false, refusal: "rejected" };
   };
+  const requireApprovalFn: NonNullable<
+    RunnerDeps["requireApprovalFn"]
+  > = async (input) =>
+    input.effective === "ALLOW" ? true : askOperator(input);
+  if (recipeName) {
+    const { buildWorkerAutonomyGate } = await import(
+      "../recipeOrchestration.js"
+    );
+    const { WorkerGateDecisionLog } = await import(
+      "../workerGateDecisionLog.js"
+    );
+    const { patchworkPath } = await import("../patchworkHome.js");
+    let decisionLog: InstanceType<typeof WorkerGateDecisionLog> | undefined;
+    try {
+      decisionLog = new WorkerGateDecisionLog({ dir: patchworkPath() });
+    } catch {
+      decisionLog = undefined;
+    }
+    // Same composition as a bridge run (recipeOrchestration.fireYamlRecipe):
+    // the worker gate is a FLOOR over the tier gate, and only its human
+    // decision is routed to the terminal instead of the approval queue.
+    const workerApprovalFn = await buildWorkerAutonomyGate(
+      recipeName,
+      requireApprovalFn,
+      // Explicit: the trust loader's own default is the OS home directory,
+      // which ignores PATCHWORK_HOME.
+      { patchworkDir: patchworkPath() },
+      {
+        askHuman: askOperator,
+        ...(decisionLog && {
+          recordGateDecision: (rec) => {
+            try {
+              decisionLog?.record(rec);
+            } catch {
+              /* never block the gate on a logging failure */
+            }
+          },
+        }),
+      },
+    );
+    if (workerApprovalFn) {
+      return {
+        governance: profile,
+        requireApprovalFn: workerApprovalFn,
+        gateAutomatedRuns: true,
+      };
+    }
+  }
   return { governance: profile, requireApprovalFn };
 }
 
@@ -1293,7 +1352,11 @@ export async function runRecipe(
   // rather than executed. Under compat nothing is injected — byte-identical
   // to before. Tests that pass their own `deps.requireApprovalFn` /
   // `deps.governance` keep them.
-  const localGovernance = await resolveLocalGovernance(options.deps);
+  const localGovernance = await resolveLocalGovernance(
+    options.deps,
+    {},
+    recipeToRun.name,
+  );
   const runnerDeps: RunnerDeps = {
     ...options.deps,
     workdir: options.workdir ?? options.deps?.workdir ?? process.cwd(),
