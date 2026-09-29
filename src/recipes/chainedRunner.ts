@@ -1934,7 +1934,9 @@ export async function runChainedRecipe(
   // abort it; nested recipes inherit the parent's signal. Combine both so
   // either source cancels. (run-cancel)
   const runController =
-    depth === 0 && runSeq !== undefined ? registerRun(runSeq) : undefined;
+    depth === 0 && runSeq !== undefined
+      ? registerRun(runSeq, runTaskId)
+      : undefined;
   const cancelSignals = [options.signal, runController?.signal].filter(
     (s): s is AbortSignal => !!s,
   );
@@ -2107,7 +2109,7 @@ export async function runChainedRecipe(
     // Drop the run from the registry as soon as execution finishes (success,
     // failure, or cancel) so the seq can't be cancelled post-hoc and the map
     // doesn't leak. Only the top-level run registered one. (run-cancel)
-    if (runController && runSeq !== undefined) unregisterRun(runSeq);
+    if (runController && runSeq !== undefined) unregisterRun(runSeq, runTaskId);
   }
 
   // Merge timings into step results

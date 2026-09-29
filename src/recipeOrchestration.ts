@@ -896,6 +896,9 @@ export class RecipeOrchestration {
       }) as unknown as Record<string, unknown>[];
     };
 
+    server.runsBySeqFn = (seq: number) =>
+      this.deps.recipeRunLog?.getAllBySeq(seq) ?? [];
+
     server.runDetailFn = (seq: number) => {
       if (!this.deps.recipeRunLog) return null;
       const run = this.deps.recipeRunLog.getBySeq(seq);

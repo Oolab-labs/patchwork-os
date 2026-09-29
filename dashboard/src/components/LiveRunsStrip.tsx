@@ -21,6 +21,9 @@ import { CancelRunDialog } from "@/components/CancelRunDialog";
 
 export interface LiveRun {
   seq?: number;
+  /** The run's real identity (the bridge's run rows carry it); a seq is not
+   *  unique across bridges sharing one run log. Pins a cancel to this run. */
+  taskId?: string;
   recipe: string;
   recipeName?: string;
   startedAt: number;
@@ -149,7 +152,7 @@ export function LiveRunsStrip({
                 onClick={(ev) => {
                   ev.preventDefault();
                   ev.stopPropagation();
-                  cancelRun.requestConfirm(r.seq as number);
+                  cancelRun.requestConfirm(r.seq as number, r.taskId);
                 }}
                 disabled={isStopping}
                 className="live-run-rerun-btn"

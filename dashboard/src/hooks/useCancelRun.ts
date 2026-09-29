@@ -40,15 +40,24 @@ export function useCancelRun(onCancelled?: (seq: number) => void) {
   const toast = useToast();
   const [phase, setPhase] = useState<CancelRunPhase>("idle");
   const [seq, setSeq] = useState<number | null>(null);
+  // The run's `taskId`, when the caller has it. A seq is NOT unique across
+  // the bridges sharing one run log; the taskId pins the cancel to THIS run,
+  // and without one the bridge refuses (409) a seq that names two live runs.
+  const [taskId, setTaskId] = useState<string | null>(null);
 
-  const requestConfirm = useCallback((targetSeq: number) => {
-    setSeq(targetSeq);
-    setPhase("confirming");
-  }, []);
+  const requestConfirm = useCallback(
+    (targetSeq: number, targetTaskId?: string) => {
+      setSeq(targetSeq);
+      setTaskId(targetTaskId ?? null);
+      setPhase("confirming");
+    },
+    [],
+  );
 
   const dismiss = useCallback(() => {
     setPhase("idle");
     setSeq(null);
+    setTaskId(null);
   }, []);
 
   const confirm = useCallback(async () => {
@@ -56,9 +65,11 @@ export function useCancelRun(onCancelled?: (seq: number) => void) {
     const targetSeq = seq;
     setPhase("cancelling");
     try {
-      const res = await fetch(apiPath(`/api/bridge/runs/${targetSeq}/cancel`), {
-        method: "POST",
-      });
+      const qs = taskId ? `?taskId=${encodeURIComponent(taskId)}` : "";
+      const res = await fetch(
+        apiPath(`/api/bridge/runs/${targetSeq}/cancel${qs}`),
+        { method: "POST" },
+      );
       const data = (await res.json().catch(() => ({}))) as Partial<CancelRunResponse>;
       if (res.ok && data.cancelled) {
         setPhase("idle");
@@ -69,7 +80,9 @@ export function useCancelRun(onCancelled?: (seq: number) => void) {
       toast.error(
         res.status === 404
           ? `Run #${targetSeq} is no longer running — nothing to stop.`
-          : `Couldn't stop run #${targetSeq}: HTTP ${res.status}`,
+          : res.status === 409
+            ? `Run #${targetSeq} could not be stopped safely: that number belongs to more than one running run, or the run is on another bridge. Nothing was stopped.`
+            : `Couldn't stop run #${targetSeq}: HTTP ${res.status}`,
       );
       setPhase("idle");
       setSeq(null);
@@ -79,7 +92,7 @@ export function useCancelRun(onCancelled?: (seq: number) => void) {
       setPhase("idle");
       setSeq(null);
     }
-  }, [seq, onCancelled, toast]);
+  }, [seq, taskId, onCancelled, toast]);
 
   return {
     /** Current lifecycle phase of the (at most one) in-flight cancel flow. */

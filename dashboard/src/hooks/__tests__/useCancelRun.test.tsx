@@ -128,4 +128,41 @@ describe("useCancelRun", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("pins the cancel to the run's taskId when the caller has one", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ cancelled: true, seq: 5 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useCancelRun());
+    act(() => {
+      result.current.requestConfirm(5, "yaml:example:1");
+    });
+    await act(async () => {
+      await result.current.confirm();
+    });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain("/api/bridge/runs/5/cancel?taskId=yaml%3Aexample%3A1");
+  });
+
+  it("without a taskId the request is seq-only (bridge refuses if ambiguous)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ cancelled: false, seq: 5, error: "ambiguous_seq" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useCancelRun());
+    act(() => {
+      result.current.requestConfirm(5);
+    });
+    await act(async () => {
+      await result.current.confirm();
+    });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).not.toContain("taskId");
+    expect(result.current.phase).toBe("idle");
+  });
 });
+

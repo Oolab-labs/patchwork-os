@@ -1939,7 +1939,7 @@ export default function HomePage() {
                         disabled={isStopping || topLiveRun.seq == null}
                         title={`Stop this run of ${name}`}
                         onClick={() => {
-                          if (topLiveRun.seq != null) cancelRun.requestConfirm(topLiveRun.seq);
+                          if (topLiveRun.seq != null) cancelRun.requestConfirm(topLiveRun.seq, topLiveRun.taskId);
                         }}
                       >
                         {isStopping ? "stopping…" : "■ Stop"}
@@ -2226,7 +2226,7 @@ export default function HomePage() {
                             title={`Stop this run of ${(rowLiveRun.recipeName ?? rowLiveRun.recipe ?? "").replace(/:agent$/, "")}`}
                             onClick={(ev) => {
                               ev.stopPropagation();
-                              cancelRun.requestConfirm(rowLiveRun.seq as number);
+                              cancelRun.requestConfirm(rowLiveRun.seq as number, rowLiveRun.taskId);
                             }}
                           >
                             {isStopping ? "stopping…" : "■ Stop"}

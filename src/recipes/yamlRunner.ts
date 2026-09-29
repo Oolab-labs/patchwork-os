@@ -1775,7 +1775,8 @@ export async function runYamlRecipe(
   }
   // Register this run so POST /runs/:seq/cancel can abort it (H11).
   // Mirrors chainedRunner.ts:1277 — only the top-level run registers.
-  const runController = runSeq !== undefined ? registerRun(runSeq) : undefined;
+  const runController =
+    runSeq !== undefined ? registerRun(runSeq, runTaskId) : undefined;
 
   // L1 (review #1028): the LIVE cancel handle is runController.signal (aborted
   // by POST /runs/:seq/cancel); deps.signal is the external caller signal
@@ -3510,7 +3511,7 @@ export async function runYamlRecipe(
     // Drop the run from the registry (success, failure, or cancel) so
     // the seq can't be cancelled post-hoc and the map doesn't leak (H11).
     if (runController !== undefined && runSeq !== undefined) {
-      unregisterRun(runSeq);
+      unregisterRun(runSeq, runTaskId);
     }
   }
 

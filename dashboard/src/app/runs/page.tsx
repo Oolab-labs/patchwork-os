@@ -942,7 +942,7 @@ export default function RunsPage() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              cancelRun.requestConfirm(r.seq);
+                              cancelRun.requestConfirm(r.seq, r.taskId);
                             }}
                             disabled={
                               cancelRun.cancelSeq === r.seq &&
@@ -1143,7 +1143,7 @@ export default function RunsPage() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        cancelRun.requestConfirm(r.seq);
+                        cancelRun.requestConfirm(r.seq, r.taskId);
                       }}
                       disabled={
                         cancelRun.cancelSeq === r.seq &&

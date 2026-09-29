@@ -538,6 +538,39 @@ export class RecipeRunLog {
     return this.readFromDiskBySeq(seq);
   }
 
+  /**
+   * EVERY run recorded under `seq`, in memory and on disk, de-duplicated by
+   * `taskId`. `seq` is a per-instance counter and the bridges sharing this
+   * file sync theirs upward from it, so one number routinely names more than
+   * one run; `getBySeq` returns whichever it meets first. Callers that act on
+   * a run — cancel above all — use this to detect that ambiguity instead of
+   * acting on a guess.
+   */
+  getAllBySeq(seq: number): RecipeRun[] {
+    this.syncFromDisk();
+    const byTask = new Map<string, RecipeRun>();
+    for (const r of this.runs) if (r.seq === seq) byTask.set(r.taskId, r);
+    let raw = "";
+    try {
+      raw = readFileSync(this.file, "utf-8");
+    } catch {
+      // no file yet — memory is all there is
+    }
+    for (const line of raw.split("\n")) {
+      if (!line) continue;
+      try {
+        const parsed = JSON.parse(line) as RecipeRun;
+        // Memory wins: it holds the live status of this process's own runs.
+        if (parsed.seq === seq && !byTask.has(parsed.taskId)) {
+          byTask.set(parsed.taskId, parsed);
+        }
+      } catch {
+        // skip malformed line — never let one bad row break lookup
+      }
+    }
+    return [...byTask.values()];
+  }
+
   /** Return seqs of all in-memory runs whose parentSeq matches this seq. */
   getChildSeqs(parentSeq: number): number[] {
     this.syncFromDisk();

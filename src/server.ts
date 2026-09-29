@@ -377,6 +377,10 @@ export class Server extends EventEmitter<ServerEvents> {
   /** Patchwork: set by bridge to fetch a single run by seq for the detail page. */
   public runDetailFn: ((seq: number) => Record<string, unknown> | null) | null =
     null;
+  /** Patchwork: every run the shared log records under a seq (cancel ambiguity). */
+  public runsBySeqFn:
+    | ((seq: number) => Array<{ taskId: string; status: string }>)
+    | null = null;
   /** Patchwork (PR1c): aggregate halt-reason categories across recent runs. */
   public haltSummaryFn:
     | ((opts?: {
@@ -1831,6 +1835,7 @@ export class Server extends EventEmitter<ServerEvents> {
           setRecipeEnabledFn: this.setRecipeEnabledFn,
           runsFn: this.runsFn,
           runDetailFn: this.runDetailFn,
+          runsBySeqFn: this.runsBySeqFn,
           haltSummaryFn: this.haltSummaryFn,
           judgeSummaryFn: this.judgeSummaryFn,
           runPlanFn: this.runPlanFn,
