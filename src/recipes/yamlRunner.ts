@@ -46,7 +46,6 @@ import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
 import {
   FLAG_CIRCUIT_BREAKER,
   FLAG_ENFORCE_ALLOWWRITES,
-  FLAG_ENFORCE_POLICY,
   isEnabled,
 } from "../featureFlags.js";
 import { computeEffectivePolicy } from "../governance/effectivePolicy.js";
@@ -69,7 +68,6 @@ import {
 } from "../governance/untrustedContent.js";
 import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
-import { checkPolicy, loadPolicyFile } from "../policy.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import { classifyTool } from "../riskTier.js";
 import type { RecipeRunLog } from "../runLog.js";
@@ -101,6 +99,11 @@ import {
   unsupportedKeysOf,
   unsupportedStepMessage,
 } from "./compoundSteps.js";
+import {
+  fanOutApprovalSummary,
+  fanOutChildReversibilityCeiling,
+  fanOutChildToolId,
+} from "./fanOutChild.js";
 import { FileRollbackLog } from "./fileRollback.js";
 import {
   assertRollbackNotWorsened,
@@ -145,6 +148,7 @@ import {
   detectSilentFail,
   redactSecretsForPrompt,
 } from "./stepObservation.js";
+import { enforceToolPolicy } from "./toolPolicyCheck.js";
 // Import tool registry and trigger tool self-registration
 import {
   applyToolOutputContext,
@@ -2564,6 +2568,11 @@ export async function runYamlRecipe(
       // explain` prints — so the explanation cannot drift from enforcement.
       // Under compat the calculation reproduces the old predicate exactly.
       const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
+      // A fan_out step is gated as the tool it runs per item (fanOutChild.ts).
+      // `approvalToolId` stays the DISPATCHED tool: it is what the approval
+      // identity hashes and what executeStep re-verifies at dispatch.
+      const fanOutChild = step.agent ? undefined : fanOutChildToolId(step);
+      const gateToolId = fanOutChild ?? approvalToolId;
       const governance = deps.governance ?? COMPAT_PROFILE;
       const agentContainment = step.agent
         ? resolveAgentContainment(
@@ -2598,7 +2607,9 @@ export async function runYamlRecipe(
               }),
             },
           );
-      const stepReversibilityCeiling = reversibilityCeilingFor(stepRollback);
+      const stepReversibilityCeiling = fanOutChild
+        ? fanOutChildReversibilityCeiling(fanOutChild)
+        : reversibilityCeilingFor(stepRollback);
       const effective = computeEffectivePolicy({
         profile: governance,
         recipe: {
@@ -2609,7 +2620,7 @@ export async function runYamlRecipe(
         },
         trigger: recipeTriggerKind,
         tool: toolFactsFor(
-          approvalToolId,
+          gateToolId,
           agentContainment ? { containment: agentContainment } : undefined,
           stepReversibilityCeiling
             ? { reversibilityCeiling: stepReversibilityCeiling }
@@ -2665,12 +2676,14 @@ export async function runYamlRecipe(
           ? undefined
           : resolveDispatchParamsSafe(step, ctx);
         const approvalInput = {
-          toolId: approvalToolId,
-          tier: classifyTool(approvalToolId),
+          toolId: gateToolId,
+          tier: classifyTool(gateToolId),
           effective: effective.final,
           summary: step.agent
             ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
-            : `tool ${approvalToolId}`,
+            : fanOutChild
+              ? fanOutApprovalSummary(fanOutChild, rawApprovalParams)
+              : `tool ${approvalToolId}`,
           params: rawApprovalParams && displayApprovalParams(rawApprovalParams),
           ...(rawApprovalParams && {
             proposedActionIdentity: computeApprovedActionIdentity({
@@ -3774,38 +3787,10 @@ export async function executeStep(
     // rolled back is refused, not silently downgraded.
     assertRollbackNotWorsened(toolId, params, deps, rollbackAtDecision);
 
-    // Deterministic policy check. Recipe/worker tool calls dispatch
-    // in-process via toolRegistry.executeTool and NEVER pass through
-    // McpTransport, so the bridge's CLI/HTTP chokepoint (bridge.ts /
-    // streamableHttp.ts) never sees them — this is the ONLY policy
-    // enforcement point for a flat recipe's tool steps. Runs whenever
-    // FLAG_ENFORCE_POLICY is on, independent of whether a worker owns the
-    // recipe: `checkPolicy`'s base rules (forbiddenPaths /
-    // allowedNetworkHosts / allowedCommands) apply to every tool call
-    // regardless of workerId; only its 4th check (per-worker allowedTools)
-    // actually needs one, and that check itself no-ops when workerId is
-    // undefined. Gating the whole call on `deps.workerId` here previously
-    // meant a recipe with no owning worker manifest — the common case —
-    // got ZERO policy enforcement even with a populated
-    // patchwork.policy.yml. Deny is fail-closed on a malformed policy file.
-    if (isEnabled(FLAG_ENFORCE_POLICY)) {
-      const loaded = loadPolicyFile(deps.workdir);
-      if (!loaded.ok) {
-        const err = new Error(`policy_denied: ${loaded.error}`);
-        (err as Error & { code?: string }).code = "policy_denied";
-        throw err;
-      }
-      const verdict = checkPolicy(loaded.policy, {
-        toolName: toolId,
-        params,
-        ...(deps.workerId !== undefined && { workerId: deps.workerId }),
-      });
-      if (!verdict.allowed) {
-        const err = new Error(`policy_denied: ${verdict.reason}`);
-        (err as Error & { code?: string }).code = "policy_denied";
-        throw err;
-      }
-    }
+    // Deterministic policy check — the only enforcement point for an
+    // in-process tool call. Shared with fan_out's per-child check; see
+    // toolPolicyCheck.ts.
+    enforceToolPolicy(toolId, params, deps);
 
     // Check if mock connector is available for this tool
     if (deps.mockConnectors?.[toolId]) {

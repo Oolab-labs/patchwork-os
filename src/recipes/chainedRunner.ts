@@ -9,6 +9,7 @@
 
 import {
   approvalIdentityMatches,
+  computeApprovedActionIdentity,
   executionEvidence,
 } from "../approvalIdentity.js";
 import { computeEffectivePolicy } from "../governance/effectivePolicy.js";
@@ -37,6 +38,11 @@ import {
   buildDependencyGraph,
   executeWithDependencies,
 } from "./dependencyGraph.js";
+import {
+  fanOutApprovalSummary,
+  fanOutChildReversibilityCeiling,
+  fanOutChildToolId,
+} from "./fanOutChild.js";
 import { reversibilityCeilingFor } from "./fileWriteRollbackability.js";
 import {
   approvalHaltFor,
@@ -888,7 +894,12 @@ export async function executeChainedStep(
       !step.agent && step.tool && deps.assessRollback
         ? deps.assessRollback(step.tool, resolved)
         : undefined;
-    const stepReversibilityCeiling = reversibilityCeilingFor(stepRollback);
+    // A fan_out step is gated as the tool it runs per item (fanOutChild.ts);
+    // identity below still hashes the dispatched `fan_out` call.
+    const fanOutChild = step.agent ? undefined : fanOutChildToolId(step);
+    const stepReversibilityCeiling = fanOutChild
+      ? fanOutChildReversibilityCeiling(fanOutChild)
+      : reversibilityCeilingFor(stepRollback);
     const effective =
       depth === 0 && (step.agent || step.tool)
         ? computeEffectivePolicy({
@@ -903,7 +914,7 @@ export async function executeChainedStep(
             },
             trigger: "manual",
             tool: toolFactsFor(
-              step.agent ? "agent" : (step.tool ?? "unknown"),
+              step.agent ? "agent" : (fanOutChild ?? step.tool ?? "unknown"),
               step.agent
                 ? {
                     containment: resolveAgentContainment(
@@ -954,13 +965,36 @@ export async function executeChainedStep(
       | import("../approvalIdentity.js").ApprovalGrant
       | undefined;
     if (deps.requireApprovalFn && effective?.consultsApproval) {
-      const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
+      const approvalToolId = step.agent
+        ? "agent"
+        : (fanOutChild ?? step.tool ?? "unknown");
       const approvalInput = {
         toolId: approvalToolId,
         tier: classifyTool(approvalToolId),
         effective: effective.final,
-        summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
+        summary: step.agent
+          ? "agent step"
+          : fanOutChild
+            ? fanOutApprovalSummary(
+                fanOutChild,
+                resolved as Record<string, unknown>,
+              )
+            : `tool ${approvalToolId}`,
         params: step.agent ? undefined : (resolved as Record<string, unknown>),
+        // fan_out: `toolId` names the child for classification, so the
+        // identity must be supplied — hashed over the DISPATCHED call, with
+        // exactly the fields the tool-step dispatch check below re-verifies.
+        ...(fanOutChild &&
+          step.tool && {
+            proposedActionIdentity: computeApprovedActionIdentity({
+              toolName: step.tool,
+              params: resolved as Record<string, unknown>,
+              sessionId: "recipe",
+              tier: classifyTool(step.tool),
+              correlationId: ctx.runTaskId ?? "",
+              recipeName: recipe.name,
+            }),
+          }),
         ...(stepReversibilityCeiling && {
           reversibilityCeiling: stepReversibilityCeiling,
         }),
