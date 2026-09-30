@@ -56,6 +56,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-30 `fix/approval-durability-fake-clock` — `approvalQueue-durability` "still-live restored entry" raced its own TTL on windows coverage (already raised 30→500 ms and still failed); now a 10 s TTL on fake timers with 500 ms of slow I/O replayed around the second queue's construction, same fix as #1636. Test only.
 - 2026-09-30 `fix/approval-log-windows-append` — `approvalExpiryDurable` two-queue test: 60 ms TTL expired during sync persistence on slow Windows, so the observer's restore dropped the request; test-only fix (10 s TTL on fake timers + injected 500 ms slow IO). No append was lost.
 
 - 2026-09-30 `fix/windows-coverage-hook-timeouts` — explicit 30 s budgets on the two hooks that timed out in the windows Coverage step (`getSymbolHistory.test.ts` git fixture, now 3 spawns not 5; `runRepositoryConformance.ts` beforeEach); global timeouts untouched.
