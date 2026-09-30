@@ -287,7 +287,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | @google-cloud/projectify | 4.0.0 | Apache-2.0 |
 | @google-cloud/promisify | 4.0.0 | Apache-2.0 |
 | @google-cloud/storage | 7.19.0 | Apache-2.0 |
-| @grpc/grpc-js | 1.14.4 | Apache-2.0 |
+| @grpc/grpc-js | 1.14.5 | Apache-2.0 |
 | @grpc/grpc-js/node_modules/@grpc/proto-loader | 0.8.0 | Apache-2.0 |
 | @grpc/proto-loader | 0.7.15 | Apache-2.0 |
 | @js-sdsl/ordered-map | 4.4.2 | MIT |
