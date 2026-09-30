@@ -256,7 +256,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | @opentelemetry/semantic-conventions | 1.40.0 | Apache-2.0 |
 | ajv | 8.18.0 | MIT |
 | balanced-match | 4.0.4 | MIT |
-| brace-expansion | 5.0.9 | MIT |
+| brace-expansion | 5.0.12 | MIT |
 | fast-deep-equal | 3.1.3 | MIT |
 | fast-uri | 3.1.7 | BSD-3-Clause |
 | ipaddr.js | 2.3.0 | MIT |
