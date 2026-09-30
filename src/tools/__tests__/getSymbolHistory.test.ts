@@ -18,6 +18,16 @@ let testFile: string;
 // budget scoped to this one hook. The global hookTimeout is deliberately left
 // alone — raising it would mask #1386-style heavy tails everywhere.
 const GIT_FIXTURE_HOOK_TIMEOUT_MS = 30_000;
+// Explicit identity for every commit in this file. Passing it via env (not
+// `git config`) costs no extra spawn, and env wins over any machine-level
+// config, so a runner with no global identity (CI) behaves like a laptop.
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: "Test",
+  GIT_AUTHOR_EMAIL: "test@test.com",
+  GIT_COMMITTER_NAME: "Test",
+  GIT_COMMITTER_EMAIL: "test@test.com",
+};
 
 beforeAll(async () => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), "symbol-history-test-"));
@@ -28,10 +38,7 @@ beforeAll(async () => {
   fs.mkdirSync(path.dirname(testFile), { recursive: true });
   fs.writeFileSync(testFile, "export function hello() { return 1; }\n");
   execSync("git add .", { cwd: workspace });
-  execSync(
-    'git -c user.email="test@test.com" -c user.name="Test" commit -m "initial"',
-    { cwd: workspace },
-  );
+  execSync('git commit -m "initial"', { cwd: workspace, env: GIT_ENV });
 }, GIT_FIXTURE_HOOK_TIMEOUT_MS);
 
 afterAll(() => {
@@ -134,7 +141,7 @@ describe("createGetSymbolHistoryTool", () => {
     const { execSync } = await import("node:child_process");
     fs.appendFileSync(testFile, "// line 2\n");
     execSync("git add .", { cwd: workspace });
-    execSync('git commit -m "second"', { cwd: workspace });
+    execSync('git commit -m "second"', { cwd: workspace, env: GIT_ENV });
 
     const ext = makeExtClient({ definition: null });
     const tool = createGetSymbolHistoryTool(workspace, ext);
