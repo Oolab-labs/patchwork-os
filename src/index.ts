@@ -4986,6 +4986,48 @@ if (process.argv[2] === "doctor" && process.argv[3] === "health") {
   })();
 }
 
+// `doctor acceptance` — does the INSTALLED package BEHAVE? Runs the real
+// runtime entrypoints in-process against a throwaway PATCHWORK_HOME and
+// asserts refusals, kill switch, no-resend on uncertain delivery, replay and
+// run lookup. A separate subcommand for the reason `doctor health` is: plain
+// `doctor`'s exit code is load-bearing and must not change meaning.
+if (process.argv[2] === "doctor" && process.argv[3] === "acceptance") {
+  const args = process.argv.slice(4);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork doctor acceptance [--json]\n\n" +
+        "Proves the INSTALLED package behaves, not merely that a symbol is in dist/.\n" +
+        "Seven checks: identity (version, build time, running bridges vs install),\n" +
+        "effective governed policy, policy-matrix refusal, kill switch, uncertain\n" +
+        "delivery is never resent, mocked replay dispatches nothing, run lookup by\n" +
+        "taskId. Exits 1 if any check fails.\n\n" +
+        "Safe on a live machine: every behavioural check runs in-process against a\n" +
+        "fresh temp PATCHWORK_HOME and HOME (removed afterwards), loopback only, no\n" +
+        "connectors, no model calls, and the real ledgers are never read or written.\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    try {
+      const { formatAcceptance, runAcceptance } = await import(
+        "./commands/doctorAcceptance.js"
+      );
+      const report = await runAcceptance();
+      process.stdout.write(
+        args.includes("--json")
+          ? `${JSON.stringify(report, null, 2)}\n`
+          : `${formatAcceptance(report)}\n`,
+      );
+      process.exit(report.ok ? 0 : 1);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 // `patchwork codex doctor` — diagnose whether ~/.codex/config.toml is
 // correctly (and currently) wired up to this bridge.
 if (process.argv[2] === "codex" && process.argv[3] === "doctor") {
@@ -5943,7 +5985,11 @@ if (process.argv[2] === "members") {
 // installed? Every check in this repo verifies the repository. On 2026-08-19
 // both live bridges were found running neither the privacy code nor `butler`,
 // merged and wired and green throughout.
-if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
+if (
+  process.argv[2] === "doctor" &&
+  process.argv[3] !== "health" &&
+  process.argv[3] !== "acceptance"
+) {
   const args = process.argv.slice(3);
   if (args.includes("--help") || args.includes("-h")) {
     // Previously this block had no --help of its own, so the OTHER doctor
@@ -5962,7 +6008,8 @@ if (process.argv[2] === "doctor" && process.argv[3] !== "health") {
         "  --require-governed    ALSO exit 1 when the governance posture is NOT GOVERNED\n" +
         "                        (the posture is always printed; see `patchwork profile`)\n\n" +
         "For workspace / git / lock-file / automation-policy checks, use\n" +
-        "`patchwork doctor health`.\n",
+        "`patchwork doctor health`. For 'does the installed package behave?',\n" +
+        "use `patchwork doctor acceptance` (safe on a live machine).\n",
     );
     process.exit(0);
   }
