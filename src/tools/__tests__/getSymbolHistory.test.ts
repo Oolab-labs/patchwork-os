@@ -11,19 +11,28 @@ function parse(r: { content: Array<{ text: string }> }) {
 let workspace: string;
 let testFile: string;
 
+// Windows CI under coverage instrumentation: each git spawn is slow and
+// heavy-tailed, and this hook timed out at the 10 s default in the Coverage
+// step while the plain Test step passed. Three spawns instead of five (identity
+// passed per-command rather than via two `git config` spawns), plus an explicit
+// budget scoped to this one hook. The global hookTimeout is deliberately left
+// alone — raising it would mask #1386-style heavy tails everywhere.
+const GIT_FIXTURE_HOOK_TIMEOUT_MS = 30_000;
+
 beforeAll(async () => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), "symbol-history-test-"));
   // init git repo so checkGitRepo passes
   const { execSync } = await import("node:child_process");
   execSync("git init -b main", { cwd: workspace });
-  execSync('git config user.email "test@test.com"', { cwd: workspace });
-  execSync('git config user.name "Test"', { cwd: workspace });
   testFile = path.join(workspace, "src", "app.ts");
   fs.mkdirSync(path.dirname(testFile), { recursive: true });
   fs.writeFileSync(testFile, "export function hello() { return 1; }\n");
   execSync("git add .", { cwd: workspace });
-  execSync('git commit -m "initial"', { cwd: workspace });
-});
+  execSync(
+    'git -c user.email="test@test.com" -c user.name="Test" commit -m "initial"',
+    { cwd: workspace },
+  );
+}, GIT_FIXTURE_HOOK_TIMEOUT_MS);
 
 afterAll(() => {
   fs.rmSync(workspace, { recursive: true, force: true });
