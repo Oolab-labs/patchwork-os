@@ -339,7 +339,21 @@ Comply with all docs in `/documents/`. Consult before changes:
   launchctl kickstart -k gui/$UID/co.patchwork-os.bridge   # :3101
   launchctl kickstart -k gui/$UID/com.patchwork.bridge     # :63906
   patchwork doctor                       # must exit 0
+  patchwork doctor acceptance            # must exit 0 — behaviour, not a grep
   ```
+
+  **`doctor acceptance [--json]`** replaces "grep `dist/` for one symbol" (which
+  could not see a deploy that silently did not happen). Seven checks, each a real
+  behaviour through the runtime entrypoints: identity (version + build time +
+  running bridges vs install; commit "not recorded"), governed report for a temp
+  governed config, a policy-forbidden `file.write` refused and absent, kill switch
+  refuses a write, an `http.post` whose response is lost is `outcome_uncertain`
+  and the loopback target saw exactly ONE request, a mocked replay by `taskId`
+  sends nothing and asks no approval and is stamped `replay: true`, and
+  `getByTaskId` resolves the run. **Safe on a live machine**: runs in-process
+  against a temp `PATCHWORK_HOME` and `HOME`, loopback only, never reads the real
+  ledgers, cleans up on failure. A separate subcommand so plain `doctor`'s exit
+  code keeps its meaning.
 
   Both bridges rebind in ~5 s. **Then verify the BEHAVIOUR**, because a
   timestamp comparison is not proof a code path changed: after deploying #1461
