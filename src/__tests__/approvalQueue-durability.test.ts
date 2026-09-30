@@ -10,7 +10,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../approvalQueue.js";
 
 let dir: string;
@@ -177,20 +177,41 @@ describe("ApprovalQueue — durable persistence", () => {
     // rename, which on a Windows CI runner can take longer than the 30 ms this
     // test used to allow — the entry then arrived at restore already expired
     // and the "still-live" branch was never exercised.
-    const q1 = new ApprovalQueue({ persistDir: dir, ttlMs: { high: 500 } });
-    q1.request({ toolName: "gitPush", params: {}, tier: "high" });
+    //
+    // Raising the TTL to 500 ms was not enough either: it still failed on
+    // windows-latest under coverage (2026-09-30), because the real cost is
+    // unbounded. Same fix as approvalExpiryDurable.test.ts (#1636): a realistic
+    // TTL on fake timers (costs no real time) and SLOW_IO_MS replayed around
+    // q2's construction, so every OS reproduces the Windows elapsed time.
+    const TTL_MS = 10_000;
+    const SLOW_IO_MS = 500;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const q1 = new ApprovalQueue({
+        persistDir: dir,
+        ttlMs: { high: TTL_MS },
+      });
+      q1.request({ toolName: "gitPush", params: {}, tier: "high" });
 
-    const q2 = new ApprovalQueue({ persistDir: dir });
-    expect(q2.list()).toHaveLength(1);
-    expect(q2.list()[0]?.owned).toBe(false);
+      const realNow = Date.now.bind(Date);
+      const clock = vi
+        .spyOn(Date, "now")
+        .mockImplementation(() => realNow() + SLOW_IO_MS);
+      const q2 = new ApprovalQueue({ persistDir: dir });
+      clock.mockRestore();
+      expect(q2.list()).toHaveLength(1);
+      expect(q2.list()[0]?.owned).toBe(false);
 
-    await new Promise((r) => setTimeout(r, 650));
-    expect(q2.list()).toHaveLength(0);
+      vi.advanceTimersByTime(TTL_MS + SLOW_IO_MS);
+      expect(q2.list()).toHaveLength(0);
 
-    const lines = logLines() as Array<{ kind: string; decision?: string }>;
-    const decisions = lines.filter((l) => l.kind === "decision");
-    expect(decisions).toHaveLength(1);
-    expect(decisions[0]?.decision).toBe("expired");
+      const lines = logLines() as Array<{ kind: string; decision?: string }>;
+      const decisions = lines.filter((l) => l.kind === "decision");
+      expect(decisions).toHaveLength(1);
+      expect(decisions[0]?.decision).toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not restore requests that already have a matching decision", () => {
