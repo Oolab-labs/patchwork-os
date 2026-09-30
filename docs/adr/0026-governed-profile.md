@@ -180,9 +180,16 @@ The same order is what `policy explain` prints.
   chained and `fan_out` agent steps (all dispatch through `_executeAgent`).
   The `runClaudeTask` tool caps at 32 KiB (`src/tools/runClaudeTask.ts:10`)
   and automation-hook prompts are truncated at 32,768 chars
-  (`src/fp/automationUtils.ts:7`). `ClaudeOrchestrator.enqueue`
-  (`src/claudeOrchestrator.ts:526`) itself has no cap, so other enqueue
-  callers (recipe orchestration, scheduler, resume) are uncapped.
+  (`src/fp/automationUtils.ts:7`). Behind all of them, the orchestrator's
+  single chokepoint (`ClaudeOrchestrator.enqueue` / `runAndWait`, both via
+  `_enqueueWithId`) refuses any prompt over `ClaudeOrchestrator.MAX_PROMPT_BYTES`
+  (98,304 UTF-8 bytes, equal to the agent cap, the largest upstream cap that
+  reaches it) with `prompt_too_large: <n> bytes > <cap> byte limit` — refused,
+  never truncated, in both profiles. That closes the previously uncapped
+  callers (JSON-recipe webhook and manual runs, the cron scheduler's legacy
+  JSON path). Exempt by design: tasks restored from the persisted task file,
+  and a resume whose prompt is byte-identical to the stored task's
+  (`resumeOf`), so a task accepted before the cap stays resumable.
 
 ## Alternatives rejected
 

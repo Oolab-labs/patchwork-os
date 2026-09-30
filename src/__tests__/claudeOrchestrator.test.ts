@@ -440,6 +440,114 @@ describe("ClaudeOrchestrator — persistence", () => {
     expect(task?.prompt).toBe("persisted-pending");
   });
 
+  // ── prompt size cap (ADR-0026 known bypass: enqueue had no cap) ───────────
+
+  describe("prompt size cap", () => {
+    const OVERSIZED = "x".repeat(200 * 1024);
+
+    it("refuses an oversized prompt at enqueue with prompt_too_large, never reaching the driver", () => {
+      const run = vi.fn(async () => ({ text: "", exitCode: 0, durationMs: 1 }));
+      const orch = new ClaudeOrchestrator({ name: "spy", run }, "/tmp", noop);
+      expect(() => orch.enqueue({ prompt: OVERSIZED })).toThrow(
+        /^prompt_too_large: 204800 bytes > 98304 byte limit/,
+      );
+      expect(run).not.toHaveBeenCalled();
+      expect(orch.list()).toHaveLength(0);
+    });
+
+    it("refuses an oversized prompt through runAndWait too", async () => {
+      const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", noop);
+      await expect(orch.runAndWait({ prompt: OVERSIZED })).rejects.toThrow(
+        /prompt_too_large/,
+      );
+    });
+
+    it("counts BYTES, not characters", () => {
+      const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+      // 40,000 three-byte chars = 120,000 bytes, under the cap in chars.
+      expect(() => orch.enqueue({ prompt: "€".repeat(40_000) })).toThrow(
+        /prompt_too_large: 120000 bytes/,
+      );
+    });
+
+    it("accepts a prompt at exactly the cap, which is >= every upstream cap", async () => {
+      const { MAX_AGENT_PROMPT_BYTES } = await import(
+        "../recipes/agentExecutor.js"
+      );
+      expect(ClaudeOrchestrator.MAX_PROMPT_BYTES).toBeGreaterThanOrEqual(
+        MAX_AGENT_PROMPT_BYTES,
+      );
+      expect(ClaudeOrchestrator.MAX_PROMPT_BYTES).toBeGreaterThanOrEqual(
+        32 * 1024,
+      );
+      const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+      const id = orch.enqueue({
+        prompt: "y".repeat(ClaudeOrchestrator.MAX_PROMPT_BYTES),
+      });
+      expect(orch.getTask(id)).toBeDefined();
+    });
+
+    it("a persisted oversized pending task is still re-enqueued on restore", async () => {
+      const stableId = "11111111-2222-3333-4444-555555555555";
+      mockReadFile.mockResolvedValueOnce(
+        JSON.stringify({
+          version: 1,
+          savedAt: Date.now(),
+          tasks: [
+            {
+              id: stableId,
+              sessionId: "",
+              prompt: OVERSIZED,
+              contextFiles: [],
+              status: "pending",
+              createdAt: Date.now() - 5000,
+              timeoutMs: 120_000,
+            },
+          ],
+        }),
+      );
+      const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+      await orch.loadPersistedTasks(9999);
+      const task = orch.getTask(stableId);
+      expect(task?.status === "pending" || task?.status === "running").toBe(
+        true,
+      );
+      expect(task?.prompt.length).toBe(OVERSIZED.length);
+    });
+
+    it("an already-accepted oversized task stays resumable via resumeOf; resumeOf cannot launder a different prompt", async () => {
+      const oldId = "66666666-7777-8888-9999-000000000000";
+      mockReadFile.mockResolvedValueOnce(
+        JSON.stringify({
+          version: 1,
+          savedAt: Date.now(),
+          tasks: [
+            {
+              id: oldId,
+              sessionId: "",
+              prompt: OVERSIZED,
+              contextFiles: [],
+              status: "interrupted",
+              createdAt: Date.now() - 5000,
+              timeoutMs: 120_000,
+            },
+          ],
+        }),
+      );
+      const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+      await orch.loadPersistedTasks(9999);
+      expect(orch.getTask(oldId)?.prompt).toBe(OVERSIZED);
+      const newId = orch.enqueue({ prompt: OVERSIZED, resumeOf: oldId });
+      expect(orch.getTask(newId)?.prompt).toBe(OVERSIZED);
+      expect(() =>
+        orch.enqueue({ prompt: `${OVERSIZED}!`, resumeOf: oldId }),
+      ).toThrow(/prompt_too_large/);
+      expect(() =>
+        orch.enqueue({ prompt: OVERSIZED, resumeOf: "no-such-task" }),
+      ).toThrow(/prompt_too_large/);
+    });
+  });
+
   it("loadPersistedTasks — preserves useAnt/mcpAccess/isAutomationTask across reload + re-persist (audit 2026-06-03 HIGH #11)", async () => {
     const stableId = "11111111-2222-3333-4444-555555555555";
     const v1Payload = {
@@ -995,10 +1103,23 @@ describe("ClaudeOrchestrator._drain does not loop forever when all tasks exceed 
     // Enqueue tasks whose prompts each exceed MAX_TOKEN_BUDGET tokens.
     // _drain is called synchronously inside enqueue — if the infinite-loop bug
     // is present the process hangs on the enqueue calls below.
+    //
+    // Since MAX_PROMPT_BYTES (96 KiB), a prompt this large can only enter the
+    // queue through restore (a task persisted before the cap existed), so the
+    // tasks go in through the restore path rather than public enqueue.
+    const restoreEnqueue = (
+      orch as unknown as {
+        _enqueueWithId: (
+          id: string,
+          opts: { prompt: string },
+          restoring: boolean,
+        ) => void;
+      }
+    )._enqueueWithId.bind(orch);
     const before = Date.now();
-    orch.enqueue({ prompt: `${hugePrompt}1` });
-    orch.enqueue({ prompt: `${hugePrompt}2` });
-    orch.enqueue({ prompt: `${hugePrompt}3` });
+    restoreEnqueue("huge-1", { prompt: `${hugePrompt}1` }, true);
+    restoreEnqueue("huge-2", { prompt: `${hugePrompt}2` }, true);
+    restoreEnqueue("huge-3", { prompt: `${hugePrompt}3` }, true);
     // If we reach here quickly, the loop guard worked.
     expect(Date.now() - before).toBeLessThan(500);
 

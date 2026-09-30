@@ -184,6 +184,10 @@ export function createResumeClaudeTaskTool(
       try {
         const newTaskId = orchestrator.enqueue({
           prompt: original.prompt,
+          // Byte-identical re-run of an already-accepted prompt: exempt from
+          // the orchestrator's size cap so a task accepted before the cap
+          // existed does not become unresumable.
+          resumeOf: original.id,
           contextFiles: original.contextFiles,
           timeoutMs,
           sessionId,

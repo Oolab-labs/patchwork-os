@@ -119,6 +119,14 @@ function estimateTokens(text: string): number {
 
 export type EnqueueOpts = {
   prompt: string;
+  /**
+   * Id of an existing task this enqueue resumes. Exempts the prompt from
+   * `MAX_PROMPT_BYTES` ONLY when it is byte-identical to that task's stored
+   * prompt — the prompt was already accepted once (possibly before the cap
+   * existed), and a new cap must not make it unresumable. Any other prompt is
+   * capped as usual, so this cannot launder a new oversized prompt.
+   */
+  resumeOf?: string;
   contextFiles?: string[];
   timeoutMs?: number;
   sessionId?: string;
@@ -488,6 +496,20 @@ export class ClaudeOrchestrator {
   static readonly DEFAULT_TIMEOUT_MS = 600_000;
   /** Maximum total estimated tokens in-flight across all running tasks. */
   static readonly MAX_TOKEN_BUDGET = 500_000;
+  /**
+   * Hard cap on a task prompt, in UTF-8 bytes, enforced at the single
+   * chokepoint every caller shares (`enqueue`, `runAndWait`). A resource guard,
+   * not a governance feature, so it applies in both profiles.
+   *
+   * Equal to `MAX_AGENT_PROMPT_BYTES` (agentExecutor.ts), the largest upstream
+   * cap that flows here: a recipe agent step's authored prompt reaches
+   * `claudeCodeFn` → `runAndWait` unchanged (the governed instruction travels
+   * in `systemPrompt`, not the prompt), so any tighter value would refuse
+   * prompts the executor already accepted. `runClaudeTask` (32 KiB) and
+   * automation hooks (32,768) sit below it. Not imported from agentExecutor to
+   * keep the orchestrator free of a recipes dependency; a test pins `>=`.
+   */
+  static readonly MAX_PROMPT_BYTES = 98_304;
 
   private tasks = new Map<string, ClaudeTask>();
   /** Per-task streaming callback (set by callers of enqueue/runAndWait). */
@@ -529,7 +551,30 @@ export class ClaudeOrchestrator {
     return id;
   }
 
-  private _enqueueWithId(id: string, opts: EnqueueOpts): void {
+  private _enqueueWithId(
+    id: string,
+    opts: EnqueueOpts,
+    restoring = false,
+  ): void {
+    // Size cap. Skipped only on restore (the prompt was accepted before the
+    // bridge restarted) and on a byte-identical resume of a stored task.
+    // Refuse, never truncate: a cut prompt is a different instruction.
+    if (!restoring) {
+      const bytes = Buffer.byteLength(opts.prompt, "utf8");
+      if (bytes > ClaudeOrchestrator.MAX_PROMPT_BYTES) {
+        const prior =
+          opts.resumeOf !== undefined
+            ? this.tasks.get(opts.resumeOf)
+            : undefined;
+        if (prior === undefined || prior.prompt !== opts.prompt) {
+          this.completionCallbacks.delete(id);
+          // Numbers first, never the prompt: this reaches logs and task errors.
+          throw new Error(
+            `prompt_too_large: ${bytes} bytes > ${ClaudeOrchestrator.MAX_PROMPT_BYTES} byte limit`,
+          );
+        }
+      }
+    }
     if (this.queue.length + this.running.size >= ClaudeOrchestrator.MAX_QUEUE) {
       // Clean up the pre-registered completion callback if we can't enqueue
       this.completionCallbacks.delete(id);
@@ -1157,43 +1202,47 @@ export class ClaudeOrchestrator {
             ClaudeOrchestrator.MAX_QUEUE
           ) {
             // Re-enqueue with original ID and creation timestamp
-            this._enqueueWithId(t.id, {
-              prompt,
-              contextFiles,
-              timeoutMs:
-                typeof t.timeoutMs === "number"
-                  ? t.timeoutMs
-                  : ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
-              sessionId: typeof t.sessionId === "string" ? t.sessionId : "",
-              createdAt:
-                typeof t.createdAt === "number" ? t.createdAt : undefined,
-              ...(t.model !== undefined && { model: t.model }),
-              ...(t.effort !== undefined && { effort: t.effort }),
-              ...(t.fallbackModel !== undefined && {
-                fallbackModel: t.fallbackModel,
-              }),
-              ...(t.maxBudgetUsd !== undefined && {
-                maxBudgetUsd: t.maxBudgetUsd,
-              }),
-              ...(t.startupTimeoutMs !== undefined && {
-                startupTimeoutMs: t.startupTimeoutMs,
-              }),
-              ...(t.systemPrompt !== undefined && {
-                systemPrompt: t.systemPrompt,
-              }),
-              ...(t.useAnt !== undefined && { useAnt: t.useAnt }),
-              ...(t.mcpAccess !== undefined && { mcpAccess: t.mcpAccess }),
-              ...(t.sandbox !== undefined && { sandbox: t.sandbox }),
-              ...(t.allowedTools !== undefined && {
-                allowedTools: t.allowedTools,
-              }),
-              ...(t.disallowedTools !== undefined && {
-                disallowedTools: t.disallowedTools,
-              }),
-              ...(t.isAutomationTask !== undefined && {
-                isAutomationTask: t.isAutomationTask,
-              }),
-            });
+            this._enqueueWithId(
+              t.id,
+              {
+                prompt,
+                contextFiles,
+                timeoutMs:
+                  typeof t.timeoutMs === "number"
+                    ? t.timeoutMs
+                    : ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
+                sessionId: typeof t.sessionId === "string" ? t.sessionId : "",
+                createdAt:
+                  typeof t.createdAt === "number" ? t.createdAt : undefined,
+                ...(t.model !== undefined && { model: t.model }),
+                ...(t.effort !== undefined && { effort: t.effort }),
+                ...(t.fallbackModel !== undefined && {
+                  fallbackModel: t.fallbackModel,
+                }),
+                ...(t.maxBudgetUsd !== undefined && {
+                  maxBudgetUsd: t.maxBudgetUsd,
+                }),
+                ...(t.startupTimeoutMs !== undefined && {
+                  startupTimeoutMs: t.startupTimeoutMs,
+                }),
+                ...(t.systemPrompt !== undefined && {
+                  systemPrompt: t.systemPrompt,
+                }),
+                ...(t.useAnt !== undefined && { useAnt: t.useAnt }),
+                ...(t.mcpAccess !== undefined && { mcpAccess: t.mcpAccess }),
+                ...(t.sandbox !== undefined && { sandbox: t.sandbox }),
+                ...(t.allowedTools !== undefined && {
+                  allowedTools: t.allowedTools,
+                }),
+                ...(t.disallowedTools !== undefined && {
+                  disallowedTools: t.disallowedTools,
+                }),
+                ...(t.isAutomationTask !== undefined && {
+                  isAutomationTask: t.isAutomationTask,
+                }),
+              },
+              true, // restoring: already accepted once — never re-capped
+            );
             reenqueued++;
           } else {
             // Queue full — demote to interrupted history
