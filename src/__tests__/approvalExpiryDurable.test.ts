@@ -30,7 +30,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../approvalQueue.js";
 
 let dir: string;
@@ -101,20 +101,42 @@ describe("approval expiry reaches the durable log", () => {
     // contrivance. The owner's live timer and the non-owner's restored timer
     // both fire; only the owner may write, or readers that join on callId
     // see the same expiry twice.
-    const owner = new ApprovalQueue({ ttlMs: 60, persistDir: dir });
-    const { callId, promise } = requestOne(owner);
+    //
+    // The deadline must sit well beyond the wall-clock cost of the
+    // SYNCHRONOUS persistence between the request and the observer's
+    // restore (a locked, fsynced `appendChained`, then a full log read).
+    // With a 60 ms TTL that cost alone passed the deadline on windows-latest
+    // under coverage: the observer's `restore()` then saw an already-expired
+    // request, took the "expired while nobody was up" branch, and listed
+    // nothing — so the failure was at `observer.list()`, never at the
+    // decision count. SLOW_IO_MS replays that elapsed time on any OS, and
+    // fake `setTimeout` lets a realistic TTL cost no real time.
+    const TTL_MS = 10_000;
+    const SLOW_IO_MS = 500;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const owner = new ApprovalQueue({ ttlMs: TTL_MS, persistDir: dir });
+      const { callId, promise } = requestOne(owner);
 
-    const observer = new ApprovalQueue({ persistDir: dir });
-    expect(observer.list()).toHaveLength(1);
-    expect(observer.list()[0]?.owned).toBe(false);
+      const realNow = Date.now.bind(Date);
+      const clock = vi
+        .spyOn(Date, "now")
+        .mockImplementation(() => realNow() + SLOW_IO_MS);
+      const observer = new ApprovalQueue({ persistDir: dir });
+      clock.mockRestore();
+      expect(observer.list()).toHaveLength(1);
+      expect(observer.list()[0]?.owned).toBe(false);
 
-    await promise;
-    await new Promise((r) => setTimeout(r, 40));
+      vi.advanceTimersByTime(TTL_MS + SLOW_IO_MS);
+      await expect(promise).resolves.toBe("expired");
 
-    const decisions = readEvents().filter(
-      (e) => e.kind === "decision" && e.callId === callId,
-    );
-    expect(decisions).toHaveLength(1);
-    expect(decisions[0]?.decision).toBe("expired");
+      const decisions = readEvents().filter(
+        (e) => e.kind === "decision" && e.callId === callId,
+      );
+      expect(decisions).toHaveLength(1);
+      expect(decisions[0]?.decision).toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
