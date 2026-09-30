@@ -120,12 +120,25 @@ const timingSafeTokenCompare = timingSafeStringEqual;
  * - single string      → that string
  * - comma-joined string (Node merge of duplicates) → null (multi-valued)
  * - `string[]`         → null (multi-valued)
+ * - `""` / whitespace  → null (present-but-empty)
+ *
+ * The last case is why "usable" is the word in the sentence above and not
+ * "single". An empty header is neither absent nor multi-valued, so it fell
+ * between the two sentinels: the outer gate saw a non-null value and waived
+ * the bearer requirement as an "HMAC candidate", while the inner gate's own
+ * `length > 0` check then skipped HMAC verification — a request with no
+ * credential of any kind reached the recipe. RFC 7230 permits a zero-length
+ * field-value and Node's parser hands it over as `""` (OWS trimmed, so a
+ * whitespace-only value arrives the same way). Returning null here makes
+ * both call sites fail closed without either needing its own special case,
+ * which is the property H6 established and this restores.
  */
 export function readSingleSignatureHeader(
   value: string | string[] | undefined,
 ): string | null {
   if (Array.isArray(value)) return null;
   if (typeof value !== "string") return null;
+  if (value.trim() === "") return null;
   // Node merges duplicate non-special headers with ", ". A genuine GitHub
   // signature is a single `sha256=<hex>` token and never contains a comma,
   // so any comma marks a multi-valued (spoofed) header.
