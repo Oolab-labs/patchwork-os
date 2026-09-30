@@ -412,6 +412,13 @@ export const FLAG_ENFORCE_POLICY = "policy.enforce";
  */
 export const FLAG_CIRCUIT_BREAKER = "recipe.circuit-breaker";
 
+/**
+ * Experimental Butler Loose Ends surface for short-lived personal open loops
+ * captured from clients such as Apple Shortcuts. Default OFF while the product
+ * experiment is dogfooded; separate from Butler's durable fact memory.
+ */
+export const FLAG_BUTLER_OPEN_LOOPS = "butler.open-loops";
+
 // Register built-in flags
 registerFlag({
   id: KILL_SWITCH_WRITES,
@@ -482,6 +489,15 @@ registerFlag({
     "Trip a per-(recipe, tool) circuit breaker after repeated consecutive failures, short-circuiting further calls until a cooldown elapses. Default off; see FLAG_CIRCUIT_BREAKER doc comment for why.",
   defaultValue: false,
   category: "safety",
+  requiresOptIn: true,
+});
+
+registerFlag({
+  id: FLAG_BUTLER_OPEN_LOOPS,
+  description:
+    "Experimental Butler Loose Ends API for short-lived personal reminders, promises, and waiting items. Separate from durable Butler memory. Default off.",
+  defaultValue: false,
+  category: "experimental",
   requiresOptIn: true,
 });
 
