@@ -14,7 +14,7 @@
  * purpose rather than hoping for it. Asserts on the FILE.
  */
 
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -115,18 +115,43 @@ describe("approval decision is written exactly once across processes", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.decision).toBe("approved");
   });
+});
 
-  it("an observer that expired a request cannot be followed by a second decision from a late owner action", () => {
-    // Owner still holds the entry after its deadline (timer lag) and a human
-    // approves in that gap, after an observer already recorded `expired`.
+/**
+ * The owner must ADOPT a decision another bridge already recorded. Keeping
+ * only `expired` in the ledger while the owner's caller receives `approved`
+ * would EXECUTE the gated action under a ledger that says it expired — less
+ * truthful than the duplicate rows this file exists to prevent.
+ */
+describe("owner adopts a decision already recorded by another bridge", () => {
+  for (const verb of ["approve", "reject"] as const) {
+    it(`${verb} after an observer recorded expired: not applied, promise resolves expired`, async () => {
+      const owner = new ApprovalQueue({ ttlMs: 1000, persistDir: dir });
+      const { callId, promise } = requestOne(owner);
+      vi.setSystemTime(T0 + 5000); // deadline passed, owner timer lagging
+      new ApprovalQueue({ persistDir: dir }); // observer records `expired`
+
+      expect(owner[verb](callId)).toBe(false);
+      await expect(promise).resolves.toBe("expired");
+      expect(owner.getRecentDecision(callId)).toBe("expired");
+      expect(owner.list()).toHaveLength(0);
+
+      const rows = decisionsFor(callId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.decision).toBe("expired");
+    });
+  }
+
+  it("a log WRITE failure never blocks an approval (fail-soft)", async () => {
     const owner = new ApprovalQueue({ ttlMs: 1000, persistDir: dir });
-    const { callId } = requestOne(owner);
-    vi.setSystemTime(T0 + 5000);
-    new ApprovalQueue({ persistDir: dir });
-    owner.approve(callId);
+    const { callId, promise } = requestOne(owner);
+    // Make the ledger unwritable: replace the file with a directory.
+    const file = path.join(dir, "approval_log.jsonl");
+    rmSync(file, { force: true });
+    mkdirSync(file);
 
-    expect(decisionsFor(callId)).toHaveLength(1);
-    expect(decisionsFor(callId)[0]?.decision).toBe("expired");
+    expect(owner.approve(callId)).toBe(true);
+    await expect(promise).resolves.toBe("approved");
   });
 });
 

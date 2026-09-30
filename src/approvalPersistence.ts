@@ -187,23 +187,47 @@ function safeParams(params: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * Does the log already hold a `decision` row for `callId`? Runs under the
- * ledger lock (see `recordDecision`). A cheap substring pre-filter keeps the
- * common case from parsing every line; a torn/unparseable line is skipped,
- * exactly as `loadUnresolvedRequests` skips it.
+ * Outcome of `recordDecision`. `skipped` and `failed` are deliberately
+ * distinct: `skipped` means the log was read under the lock and ALREADY holds
+ * `existing` for this callId (adopt it); `failed` means the log could not be
+ * written or consulted at all (fail-soft: the in-memory decision stands).
  */
-function hasDecisionFor(lines: readonly string[], callId: string): boolean {
+export type RecordDecisionResult =
+  | { status: "written" }
+  | { status: "skipped"; existing: ApprovalDecision }
+  | { status: "failed" };
+
+/**
+ * The first `decision` recorded for `callId`, or null. Runs under the ledger
+ * lock (see `recordDecision`). A cheap substring pre-filter keeps the common
+ * case from parsing every line; a torn/unparseable line is skipped, exactly as
+ * `loadUnresolvedRequests` skips it.
+ */
+function recordedDecisionFor(
+  lines: readonly string[],
+  callId: string,
+): ApprovalDecision | null {
   const needle = JSON.stringify(callId);
   for (const line of lines) {
     if (!line.includes(needle)) continue;
     try {
-      const row = JSON.parse(line) as { kind?: unknown; callId?: unknown };
-      if (row.kind === "decision" && row.callId === callId) return true;
+      const row = JSON.parse(line) as {
+        kind?: unknown;
+        callId?: unknown;
+        decision?: unknown;
+      };
+      if (
+        row.kind === "decision" &&
+        row.callId === callId &&
+        typeof row.decision === "string"
+      ) {
+        return row.decision as ApprovalDecision;
+      }
     } catch {
       /* torn row — not evidence of a decision */
     }
   }
-  return false;
+  return null;
 }
 
 export class ApprovalPersistence {
@@ -263,15 +287,20 @@ export class ApprovalPersistence {
    * Scoped to `decision` rows only: `request` and `attribution` rows are
    * untouched, and `loadUnresolvedRequests` is unchanged.
    *
-   * Consequence: whichever decision reaches the log first is THE decision.
-   * An in-memory resolution that loses (e.g. an owner approving in the gap
-   * after another bridge already recorded the expiry) is not written.
+   * Consequence: whichever decision reaches the log first is THE decision,
+   * and the caller must ADOPT it. `skipped` carries the recorded decision,
+   * read under the same lock that refused the append; `ApprovalQueue`
+   * resolves with it, so an owner approving after another bridge recorded
+   * the expiry does not execute the action under a ledger saying `expired`.
+   * `failed` (an I/O error, not a skip) is deliberately different: the log
+   * could not be consulted, so the in-memory decision stands — a log failure
+   * never blocks an approval.
    */
   recordDecision(
     callId: string,
     decision: ApprovalDecision,
     decidedAt: number,
-  ): void {
+  ): RecordDecisionResult {
     const event: ApprovalDecisionEvent = {
       kind: "decision",
       callId,
@@ -279,7 +308,15 @@ export class ApprovalPersistence {
       decidedAt,
       rv: APPROVAL_LOG_RV,
     };
-    this.append(event, (lines) => hasDecisionFor(lines, callId));
+    let existing: ApprovalDecision | null = null;
+    const ok = this.append(event, (lines) => {
+      existing = recordedDecisionFor(lines, callId);
+      return existing !== null;
+    });
+    if (!ok) return { status: "failed" };
+    return existing !== null
+      ? { status: "skipped", existing }
+      : { status: "written" };
   }
 
   /**
@@ -305,7 +342,7 @@ export class ApprovalPersistence {
   private append(
     event: ApprovalLogEvent,
     skipIf?: (lines: readonly string[]) => boolean,
-  ): void {
+  ): boolean {
     try {
       // ADR-0027: one locked, chained append. The primitive takes the same
       // `${file}.lock` sentinel the old `withFileLockSync` wrapper did, so the
@@ -318,10 +355,14 @@ export class ApprovalPersistence {
         mode: 0o600,
         ...(skipIf && { skipIf }),
       });
+      // `true` also when `skipIf` declined the append: the log was consulted
+      // successfully. Only an exception is a failure.
+      return true;
     } catch (err) {
       this.logger?.warn?.(
         `[approvalPersistence] failed to write ${event.kind} event for ${event.callId}: ${err instanceof Error ? err.message : String(err)}`,
       );
+      return false;
     }
   }
 

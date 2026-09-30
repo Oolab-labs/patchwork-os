@@ -765,16 +765,27 @@ export class ApprovalQueue {
     // in the same window) can be told "already decided as X" instead of
     // an indistinguishable 404 "unknown callId". Audit 2026-05-17.
     const decidedAt = Date.now();
-    this.recentlyDecided.set(callId, { decision, at: decidedAt });
-    this.pruneRecentlyDecided();
-    if (opts.persist !== false) {
-      this.persistence?.recordDecision(callId, decision, decidedAt);
+    // The durable log keeps ONE decision per callId, first writer wins
+    // (`ApprovalPersistence.recordDecision`). If another bridge already
+    // recorded one — e.g. its `restore()` expired this call while our own
+    // timer lagged — ADOPT it: resolving with our own decision instead would
+    // run a gated action under a ledger that says it expired. The caller is
+    // told it was not applied, and `recentlyDecided` carries the recorded
+    // decision so the HTTP layer answers `already_decided` honestly.
+    // A write FAILURE is different: the log could not be consulted, so the
+    // in-memory decision stands — a log failure never blocks an approval.
+    let effective = decision;
+    if (opts.persist !== false && this.persistence) {
+      const res = this.persistence.recordDecision(callId, decision, decidedAt);
+      if (res.status === "skipped") effective = res.existing;
     }
-    entry.resolve(decision);
+    this.recentlyDecided.set(callId, { decision: effective, at: decidedAt });
+    this.pruneRecentlyDecided();
+    entry.resolve(effective);
     // Wake up any duplicate callers who joined this entry via dedup.
-    for (const r of entry.pendingPromises) r(decision);
+    for (const r of entry.pendingPromises) r(effective);
     this.notify();
-    return true;
+    return effective === decision;
   }
 
   /**
