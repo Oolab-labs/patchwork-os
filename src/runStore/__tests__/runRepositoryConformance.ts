@@ -71,7 +71,13 @@ export function describeRunRepositoryContract(
     beforeEach(() => {
       dir = mkdtempSync(path.join(tmpdir(), "run-repo-contract-"));
       h = factory(dir);
-    });
+      // Explicit budget for THIS hook only. mkdtemp + opening a store (SQLite
+      // schema creation on a fresh file) is heavy-tailed on windows-latest
+      // under coverage and timed out at the 10 s default there while the plain
+      // Test step passed. A fresh store per test is the contract's isolation
+      // guarantee, so it is not shared across tests to save time. The global
+      // hookTimeout is deliberately untouched (#1386).
+    }, 30_000);
     afterEach(() => {
       // Handles first, then the directory — the reverse order throws EBUSY on
       // Windows and turns a clean run into 57 teardown failures.
