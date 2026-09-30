@@ -106,6 +106,16 @@ export interface AppendChainedOptions {
    * reads.
    */
   onRotate?: (info: { dropped: number; before: number }) => void;
+  /**
+   * Conditional append. Called UNDER the cross-process lock with the file's
+   * current lines, before anything is written; returning `true` skips the
+   * append entirely (no rotation, no marker, no row) and `appendChained`
+   * returns `null`. Evaluating it inside the lock is the point: a separate
+   * unlocked read followed by an append only narrows a cross-process race,
+   * it does not close it. The approval log uses it to keep exactly one
+   * `decision` row per callId.
+   */
+  skipIf?: (lines: readonly string[]) => boolean;
 }
 
 export type ChainBreakKind =
@@ -393,7 +403,7 @@ export function appendChained(
   file: string,
   row: Record<string, unknown>,
   opts: AppendChainedOptions = {},
-): { line: string; iseq: number } {
+): { line: string; iseq: number } | null {
   const now = opts.now ?? Date.now;
   const mode = opts.mode ?? 0o600;
   const side = chainSidecarPaths(file);
@@ -409,6 +419,7 @@ export function appendChained(
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         }
         let lines = splitLines(text);
+        if (opts.skipIf?.(lines)) return null;
         const overBytes =
           opts.maxBytes !== undefined &&
           Buffer.byteLength(text, "utf8") > opts.maxBytes;

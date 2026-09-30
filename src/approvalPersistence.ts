@@ -186,6 +186,26 @@ function safeParams(params: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
+/**
+ * Does the log already hold a `decision` row for `callId`? Runs under the
+ * ledger lock (see `recordDecision`). A cheap substring pre-filter keeps the
+ * common case from parsing every line; a torn/unparseable line is skipped,
+ * exactly as `loadUnresolvedRequests` skips it.
+ */
+function hasDecisionFor(lines: readonly string[], callId: string): boolean {
+  const needle = JSON.stringify(callId);
+  for (const line of lines) {
+    if (!line.includes(needle)) continue;
+    try {
+      const row = JSON.parse(line) as { kind?: unknown; callId?: unknown };
+      if (row.kind === "decision" && row.callId === callId) return true;
+    } catch {
+      /* torn row — not evidence of a decision */
+    }
+  }
+  return false;
+}
+
 export class ApprovalPersistence {
   private readonly file: string;
   private readonly logger?: Logger;
@@ -220,7 +240,33 @@ export class ApprovalPersistence {
     this.append(event);
   }
 
-  /** Append a decision event. Fail-soft, same rationale as `recordRequest`. */
+  /**
+   * Append a decision event — at most ONE per callId, first writer wins.
+   * Fail-soft, same rationale as `recordRequest`.
+   *
+   * Several bridges share this file, and more than one of them can reach a
+   * decision for the same call: the owner's live expiry timer, and another
+   * bridge's `restore()` that saw a passed `expiresAt` before that timer fired
+   * (timer lag, a blocked event loop). Each was individually correct and
+   * together they wrote two `expired` rows, which double-count in every
+   * reader joining on callId.
+   *
+   * Chosen over the alternatives because it is the only one that is ATOMIC
+   * across processes: the "is there already a decision?" check runs inside
+   * `appendChained`'s cross-process lock, on the same bytes the append then
+   * extends, so no interleaving can put two decisions on one callId.
+   *  - A grace period in `restore()` before recording an expiry only makes
+   *    the race rarer (any lag longer than the grace reopens it) and delays
+   *    the late-but-exactly-once record for a genuinely dead owner.
+   *  - An unlocked read before appending narrows the window without closing
+   *    it.
+   * Scoped to `decision` rows only: `request` and `attribution` rows are
+   * untouched, and `loadUnresolvedRequests` is unchanged.
+   *
+   * Consequence: whichever decision reaches the log first is THE decision.
+   * An in-memory resolution that loses (e.g. an owner approving in the gap
+   * after another bridge already recorded the expiry) is not written.
+   */
   recordDecision(
     callId: string,
     decision: ApprovalDecision,
@@ -233,7 +279,7 @@ export class ApprovalPersistence {
       decidedAt,
       rv: APPROVAL_LOG_RV,
     };
-    this.append(event);
+    this.append(event, (lines) => hasDecisionFor(lines, callId));
   }
 
   /**
@@ -256,7 +302,10 @@ export class ApprovalPersistence {
     this.append(event);
   }
 
-  private append(event: ApprovalLogEvent): void {
+  private append(
+    event: ApprovalLogEvent,
+    skipIf?: (lines: readonly string[]) => boolean,
+  ): void {
     try {
       // ADR-0027: one locked, chained append. The primitive takes the same
       // `${file}.lock` sentinel the old `withFileLockSync` wrapper did, so the
@@ -267,6 +316,7 @@ export class ApprovalPersistence {
       // swallowed here after a warning, never surfaced to a live approval.
       appendChained(this.file, event as unknown as Record<string, unknown>, {
         mode: 0o600,
+        ...(skipIf && { skipIf }),
       });
     } catch (err) {
       this.logger?.warn?.(
