@@ -406,7 +406,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | https-proxy-agent | 7.0.6 | MIT |
 | iconv-lite | 0.4.24 | MIT |
 | inherits | 2.0.4 | ISC |
-| ip-address | 10.4.0 | MIT |
+| ip-address | 10.7.2 | MIT |
 | ipaddr.js | 1.9.1 | MIT |
 | is-fullwidth-code-point | 3.0.0 | MIT |
 | is-stream | 2.0.1 | MIT |
