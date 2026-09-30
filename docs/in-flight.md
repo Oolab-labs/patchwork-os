@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-30 `fix/orchestrator-enqueue-prompt-cap` — `ClaudeOrchestrator` refuses prompts over 98,304 bytes (`prompt_too_large`) at `_enqueueWithId`, covering every enqueue/runAndWait caller; restore and byte-identical resume (`resumeOf`) exempt. Touches `claudeOrchestrator.ts`, `resumeClaudeTask.ts`, ADR-0026.
+
 - 2026-09-29 `fix/untrusted-instruction-api-drivers` — `makeProviderDriverFn` forwards the governed system prompt, so openai/grok/gemini-api receive `UNTRUSTED_SYSTEM_INSTRUCTION` as a system message; ADR-0026 prompt-cap line corrected. Touches `yamlRunner.ts`.
 - 2026-09-29 `fix/replay-no-approval-queue` — governed mocked replay no longer consults the tier approval gate in the flat runner (it enqueued approval requests and `approval_log.jsonl` rows for steps that never execute); chained already short-circuited first. Touches `yamlRunner.ts`, `replayBoundary.test.ts`.
 - 2026-09-29 `fix/govern-recipe-test-record` — `recipe test` refuses any flat step whose tool has no fixture mock (stub-served reads excepted) and any unstubbed agent driver (`test_refused_unmocked_step`) instead of running it live; `recipe record` is governed via `resolveLocalGovernance` like `recipe run --local`. Touches `yamlRunner.ts` (`testOnly`), `replayBoundary.ts`, `commands/recipe.ts`.

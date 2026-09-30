@@ -98,6 +98,8 @@ describe("resumeClaudeTask", () => {
       expect.objectContaining({
         prompt: "fix the bug",
         sessionId: "session-1",
+        // Byte-identical resume: exempt from the orchestrator prompt cap.
+        resumeOf: "task-abc",
       }),
     );
   });
