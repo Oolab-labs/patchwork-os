@@ -17,7 +17,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatAcceptance, runAcceptance } from "../doctorAcceptance.js";
 
 function listTree(dir: string): string[] {
@@ -31,11 +31,9 @@ function listTree(dir: string): string[] {
 }
 
 let sentinel: string;
-const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   sentinel = mkdtempSync(path.join(os.tmpdir(), "acceptance-sentinel-"));
-  for (const k of ["HOME", "PATCHWORK_HOME"]) saved[k] = process.env[k];
   // Stand-ins for the operator's real homes, pre-populated like a live box.
   const realHome = path.join(sentinel, "real-home");
   const realPw = path.join(sentinel, "real-patchwork");
@@ -45,15 +43,12 @@ beforeEach(() => {
   writeFileSync(path.join(realPw, "runs.jsonl"), "");
   writeFileSync(path.join(realPw, "approval_log.jsonl"), "");
   writeFileSync(path.join(realPw, "config.json"), '{"profile":"compat"}');
-  process.env.HOME = realHome;
-  process.env.PATCHWORK_HOME = realPw;
+  vi.stubEnv("HOME", realHome);
+  vi.stubEnv("PATCHWORK_HOME", realPw);
 });
 
 afterEach(() => {
-  for (const [k, v] of Object.entries(saved)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
+  vi.unstubAllEnvs();
   rmSync(sentinel, { recursive: true, force: true });
 });
 
