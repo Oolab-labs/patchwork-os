@@ -56,6 +56,8 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-09-30 `fix/approval-log-windows-append` — `approvalExpiryDurable` two-queue test: 60 ms TTL expired during sync persistence on slow Windows, so the observer's restore dropped the request; test-only fix (10 s TTL on fake timers + injected 500 ms slow IO). No append was lost.
+
 - 2026-09-30 `fix/orchestrator-enqueue-prompt-cap` — `ClaudeOrchestrator` refuses prompts over 98,304 bytes (`prompt_too_large`) at `_enqueueWithId`, covering every enqueue/runAndWait caller; restore and byte-identical resume (`resumeOf`) exempt. Touches `claudeOrchestrator.ts`, `resumeClaudeTask.ts`, ADR-0026.
 
 - 2026-09-29 `fix/untrusted-instruction-api-drivers` — `makeProviderDriverFn` forwards the governed system prompt, so openai/grok/gemini-api receive `UNTRUSTED_SYSTEM_INSTRUCTION` as a system message; ADR-0026 prompt-cap line corrected. Touches `yamlRunner.ts`.
