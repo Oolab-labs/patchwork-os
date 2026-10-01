@@ -3497,8 +3497,12 @@ export class Server extends EventEmitter<ServerEvents> {
    * peer is ignored — that header is spoofable by anyone who can reach the
    * server directly. Returns null when no IP can be determined; the caller
    * should fail closed.
+   *
+   * Public because the OAuth server's limiters key on it too (via the
+   * `clientIp` option the bridge passes) — one resolver, so the two limiter
+   * families cannot disagree about who a client is.
    */
-  private getClientIp(req: http.IncomingMessage): string | null {
+  getClientIp(req: http.IncomingMessage): string | null {
     const socketIp = req.socket?.remoteAddress;
     if (
       socketIp &&
