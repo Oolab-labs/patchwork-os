@@ -88,7 +88,7 @@ patchwork connect <vendor> [--url-only] [--token <TOKEN>] [--port <n>]
 | `members` | `members [list \| set-password <memberId>]` | The workspace roster and which members hold a credential. A member without one is reported as unable to authenticate; no `members.json` reports the single implicit owner. `set-password` prompts and stores a scrypt hash. |
 | `tools` | `tools [list \| search <q>] [--slim] [--json]` | The tools the bridge would register, without starting it. `search` matches name, description and category. |
 | `analytics` | `analytics show \| configure --endpoint URL [--key KEY] \| clear \| test` | Manage the opt-in telemetry config at `~/.claude/ide/analytics-config.json` (mode 0600). `test` sends a tiny synthetic payload and reports the HTTP status. Precedence: env, then config file, then default. |
-| `launchd` | `launchd install \| uninstall` | Install or remove the macOS LaunchAgent `co.patchwork-os.bridge`. |
+| `launchd` | `launchd install \| uninstall \| status [--json]` | Install, remove, or report the macOS LaunchAgent `co.patchwork-os.bridge`. `status` exits 0 only when the agent is installed, loaded and running; otherwise 1, with the last exit code. |
 | `install` | `install <companion> [--target cli\|desktop] [--env KEY=VALUE]` | Write one of the bundled MCP-companion server registrations into Claude Code (`~/.claude.json`) or Claude Desktop config. `install --list` names the companions. |
 | `print-token` | `print-token [--port <n>]` | Print the auth token of the running bridge from its lock file. |
 | `shim` | `shim` | The stdio↔WebSocket relay MCP clients use. Normally invoked by the client's config, not by hand. |

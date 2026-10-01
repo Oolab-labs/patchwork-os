@@ -1,46 +1,49 @@
 # Release Checklist
 
-Steps to complete before tagging a new version.
+Steps to complete before tagging a new version. The narrative version — channels,
+the publish workflow's jobs, the advisory process — is
+[docs/contributing/releasing.md](contributing/releasing.md); this is the tick list.
 
 ## Code
 
 - [ ] `npm run build` passes (bridge)
-- [ ] `npm test` passes — all tests green on Node 20 and 22 (CI matrix)
-- [ ] `npm run typecheck` passes — zero type errors
-- [ ] `npx biome check .` passes — zero lint errors
-- [ ] `cd vscode-extension && npm run build && npm test` passes
+- [ ] `npm test` passes — all four CI cells green (ubuntu + windows × Node 22 + 24; see `.github/workflows/ci.yml`)
+- [ ] `npm run typecheck` **and** `npm run typecheck:tests:core` pass (the second is the CI ratchet vitest cannot see)
+- [ ] `npx biome check .` passes
+- [ ] `cd dashboard && npm run typecheck && npm run lint && npm test` passes
+- [ ] `cd vscode-extension && npm run build && npm test` passes (if the extension changed)
 
 ## Version numbers
 
-- [ ] `package.json` version bumped
-- [ ] `vscode-extension/package.json` version bumped (if extension changed)
-- [ ] `CHANGELOG.md` entry written for this version
+- [ ] `package.json` version bumped — **version line only**; `npm version` rewrites unrelated escapes, so edit the line or revert the rest
+- [ ] `package-lock.json` carries the same version (both places)
+- [ ] `vscode-extension/package.json` version bumped if the extension changed — a repackaged `.vsix` with the same version is silently reused
+- [ ] `CHANGELOG.md` entry written for this version, with a **Security** section first when an advisory is involved
 
-## Hardcoded count audit (catches doc drift)
+## Doc drift (mechanical — do not count by hand)
 
-Run this before every release to find stale numbers in docs:
+Tool, prompt and coverage numbers are gated, not audited by eye:
 
 ```bash
-# Find hardcoded counts that may have drifted
-grep -rn "\b[0-9]\+ tools\b\|\b[0-9]\+ hook\|\b[0-9]\+ skill\|\b[0-9]\+ test\|\b[0-9]\+ subagent" \
-  README.md claude-ide-bridge-plugin/README.md documents/ \
-  --include="*.md"
+node scripts/audit-docs-drift.mjs
 ```
 
-Verify each number found against actual code:
+```bash
+node scripts/audit-docs-wired.mjs
+```
 
-- [ ] Slim tool count (`SLIM_TOOL_NAMES.size`) — currently **61**
-- [ ] Full mode tool count (`node scripts/audit-lsp-tools.mjs` Stats line) — currently **177**
-- [ ] Hook event count (keys in `claude-ide-bridge-plugin/hooks/hooks.json`) — currently **16**
-- [ ] Plugin skill count (entries in `claude-ide-bridge-plugin/skills/`) — currently **9**
-- [ ] Plugin subagent count (entries in `claude-ide-bridge-plugin/agents/`) — currently **3**
-- [ ] Test count (run `npm test` and read the summary line)
+```bash
+node scripts/audit-doc-links.mjs
+```
+
+All three run in CI; run them locally after any doc edit. Do not write a current
+count into this file — that is exactly the number that goes stale.
 
 ## Docs completeness
 
 - [ ] Any new tools added this release are documented in `documents/platform-docs.md`
+- [ ] Any new CLI subcommands appear in [docs/guide/cli.md](guide/cli.md) (and in `CLAUDE.md` only if they carry a trap)
 - [ ] Any new hook scripts in `claude-ide-bridge-plugin/scripts/` are listed in the hooks table in both `README.md` and `claude-ide-bridge-plugin/README.md`
-- [ ] Any new CLI subcommands are listed in `README.md` and `CLAUDE.md`
 - [ ] `documents/roadmap.md` updated to reflect what shipped
 
 ## Extension (if changed)
@@ -51,7 +54,14 @@ Verify each number found against actual code:
 
 ## Publish
 
-- [ ] `npm publish` (bridge)
-- [ ] `vsce publish` (VS Code Marketplace)
-- [ ] `ovsx publish` (Open VSX)
-- [ ] Git tag pushed: `git tag vX.Y.Z && git push --tags`
+- [ ] Release PR (`chore(release): bump to X.Y.Z`) merged
+- [ ] On `main`: `git pull`, then confirm `git rev-parse HEAD` is the merge commit **and** `package.json` says the new version — only then tag
+- [ ] `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z` on the merge commit — `publish-npm.yml` publishes `beta` (or `alpha`) from the tag with provenance
+- [ ] `npm dist-tag add patchwork-os@X.Y.Z latest` by hand — OIDC publish does not cover dist-tags; needs 2FA
+- [ ] Extension: `vsce publish` and `ovsx publish` (if changed)
+- [ ] Security advisory, if any: set `patched_versions`, publish only once the version is on npm
+
+## After publish
+
+- [ ] Local bridges: `git pull && npm run build && npm run install:global`, restart the LaunchAgents, `patchwork doctor --expect-running N`, `patchwork doctor acceptance`
+- [ ] `npm view patchwork-os dist-tags` shows what you expect
