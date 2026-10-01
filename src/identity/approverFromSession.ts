@@ -42,7 +42,7 @@
 
 import { verifySession } from "./dashboardSession.js";
 import type { Member } from "./members.js";
-import { findMember, loadRoster, type Roster } from "./roster.js";
+import { loadRoster, type Roster, resolveSessionMember } from "./roster.js";
 
 /** The snapshot shape a decision record stores — id + kind + name AS IT WAS. */
 export interface ActorSnapshot {
@@ -82,19 +82,12 @@ export function createApproverResolver(
       // name. This is the branch a `?? implicitOwner()` would ruin.
       if (!valid || !memberId) return undefined;
 
-      const roster = rosterFor();
-
-      // An IMPLICIT roster means no members.json exists — the single-owner
-      // degraded default. A cookie naming a member cannot be honoured against
-      // a roster that was synthesised rather than read: `findMember` would
-      // match only the literal id `local-owner`, and attributing to an owner
-      // nobody configured is exactly the defaulting this ADR forbids.
-      if (roster.implicit) return undefined;
-
-      const member = findMember(roster, memberId);
-      // Gone from the roster, or deactivated. A deactivated member keeps their
-      // history and may do nothing — including approve.
-      if (!member?.active) return undefined;
+      // Implicit roster, gone, or deactivated ⇒ nobody. The rule lives in
+      // `resolveSessionMember` so the dashboard's session gate applies the
+      // SAME one — a member this declines to name must also not hold a
+      // session, or they can act unattributed.
+      const member = resolveSessionMember(rosterFor(), memberId);
+      if (!member) return undefined;
 
       return {
         id: member.id,

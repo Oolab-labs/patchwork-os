@@ -202,6 +202,41 @@ export function findMember(roster: Roster, id: string): Member | null {
 }
 
 /**
+ * May a SESSION that names `memberId` act as that member right now?
+ *
+ * The one rule, used by both the bridge (attributing an approval to the
+ * member a v2 cookie names — `approverFromSession.ts`) and the dashboard
+ * (deciding whether that cookie is still a session at all — `middleware.ts`).
+ * It was inline in the first and absent from the second, which is how a
+ * deactivated member kept a working dashboard for up to 30 days and could
+ * still approve a gated action, unattributed, because attribution is resolved
+ * AFTER the approval lands and declines to name anyone it cannot verify.
+ *
+ * - IMPLICIT roster (no members.json): null. A cookie naming a member cannot
+ *   be honoured against a roster that was synthesised rather than read —
+ *   `findMember` would match only the literal implicit-owner id, and acting as
+ *   an owner nobody configured is exactly the defaulting ADR-0020 forbids.
+ * - UNREADABLE roster: null — `members` is empty, so this falls out of the
+ *   lookup, but it is named here because it is the fail-CLOSED case: a
+ *   membership decision exists and we cannot read it.
+ * - Not on the roster, or deactivated: null. A deactivated member keeps their
+ *   history and may do nothing.
+ *
+ * `null`, never a fallback. Callers decide what "nobody" means for them: the
+ * bridge records no actor, the dashboard treats the request as having no
+ * session. A v1 cookie never reaches this function — it names nobody, so
+ * there is nobody to check.
+ */
+export function resolveSessionMember(
+  roster: Roster,
+  memberId: string,
+): Member | null {
+  if (roster.implicit) return null;
+  const member = findMember(roster, memberId);
+  return member?.active ? member : null;
+}
+
+/**
  * Which member a request is acting as.
  *
  * `memberId` is whatever the transport managed to establish — today nothing, so
