@@ -141,6 +141,28 @@ function auditSubcommands() {
     const m = line.match(/^- `([a-z][a-z-]*)\b/);
     if (m) documented.add(m[1]);
   }
+  // The CLI reference moved to docs/guide/cli.md (2026-10); CLAUDE.md keeps
+  // only the trap-bearing entries. That file documents a subcommand two ways:
+  // as a backticked token in a `###` heading ("### `halts` and `judgments`")
+  // and as a synopsis line inside a fenced block ("patchwork recipe run ...").
+  // Both count, so the documented set does not shrink with the move. The file
+  // is optional so an older checkout without the guide still audits CLAUDE.md
+  // alone — and says so, rather than silently auditing less.
+  let cliRef = "";
+  try {
+    cliRef = read("docs/guide/cli.md");
+  } catch {
+    notes.push(
+      "subcommands: docs/guide/cli.md absent — auditing CLAUDE.md only",
+    );
+  }
+  for (const line of cliRef.split("\n")) {
+    if (/^#{3,4} /.test(line)) {
+      for (const m of line.matchAll(/`([a-z][a-z-]*)\b/g)) documented.add(m[1]);
+    }
+    const syn = line.match(/^patchwork ([a-z][a-z-]*)\b/);
+    if (syn) documented.add(syn[1]);
+  }
   const NON_SUBCOMMAND_TOKENS = new Set(["latest", "beta", "canary"]);
   for (const t of NON_SUBCOMMAND_TOKENS) documented.delete(t);
 
