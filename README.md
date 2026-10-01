@@ -170,7 +170,7 @@ Why not Zapier / an MCP server / a hosted assistant? Honest tradeoffs: [document
 
 ## Docs
 
-[Platform reference](documents/platform-docs.md) · [Recipes & triggers](documents/triggers.md) · [Worker autonomy](docs/worker-autonomy-policy-gate.md) · [Plugin authoring](documents/plugin-authoring.md) · [Architecture](documents/architecture.md) · [Windows](docs/windows.md) · [ADRs](docs/adr)
+[Docs index](docs/README.md) · [Platform reference](documents/platform-docs.md) · [Recipes & triggers](documents/triggers.md) · [Worker autonomy](docs/worker-autonomy-policy-gate.md) · [Plugin authoring](documents/plugin-authoring.md) · [Architecture](documents/architecture.md) · [Windows](docs/windows.md) · [ADRs](docs/adr)
 
 ## Telemetry
 
