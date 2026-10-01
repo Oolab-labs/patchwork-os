@@ -6,7 +6,7 @@ Start from the entry point that matches what you are doing:
 |---|---|
 | **Operating** a Patchwork install — installing, configuring, running recipes, approving actions, keeping it healthy | [Operator guide](guide/README.md) |
 | **Contributing** code, tests or docs to the repository | [Contributor guide](contributing/README.md) |
-| **An agent** (Claude Code or another coding agent) working in this repository | [AGENTS.md](../AGENTS.md) |
+| **An agent** (Claude Code or another coding agent) working in this repository | `AGENTS.md` at the repository root (a dedicated agent contract is in progress; until it lands, `CLAUDE.md` is the agent-facing document) |
 
 Everything below is the full map of reference material, grouped by topic. The operator guide links into it; this page exists so nothing is reachable only by knowing the path.
 
