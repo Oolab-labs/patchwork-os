@@ -169,6 +169,15 @@ const CLIENT_TTL_MS = 7 * 24 * 60 * 60 * 1_000; // 7 days — GC registered clie
  * registration answering 429 for the whole CLIENT_TTL_MS.
  */
 const MAX_REGISTERED_CLIENTS = 500;
+/**
+ * RFC 7636 shapes. A verifier is 43–128 characters of the unreserved set;
+ * an S256 challenge is the unpadded base64url of a 32-byte hash, which is
+ * always exactly 43 characters. The server only ever compared hashes — a
+ * matching hash of a one-character verifier passed — so these pin the shape
+ * at both ends: challenge at authorize, verifier at token.
+ */
+const PKCE_VERIFIER_RE = /^[A-Za-z0-9\-._~]{43,128}$/;
+const PKCE_S256_CHALLENGE_RE = /^[A-Za-z0-9_-]{43}$/;
 const DEFAULT_SCOPE = "mcp";
 const SUPPORTED_SCOPES = ["mcp"];
 
@@ -580,6 +589,14 @@ export class OAuthServerImpl implements OAuthServer {
       res.end("missing parameters");
       return;
     }
+    // Same shape rule as the GET side: the approval form carries the
+    // challenge back as a hidden field, so it is checked again here rather
+    // than trusted to have survived the round trip unchanged.
+    if (!PKCE_S256_CHALLENGE_RE.test(codeChallenge)) {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("invalid_request: malformed code_challenge");
+      return;
+    }
 
     // Verify CSRF nonce before any further processing.
     // Look up by flowId (not clientId) to prevent concurrent-flow nonce collision attacks.
@@ -754,6 +771,21 @@ export class OAuthServerImpl implements OAuthServer {
     if (!timingSafeStringEqual(record.redirectUri, redirectUri)) {
       this.authCodes.delete(code);
       this.sendError(res, 400, "invalid_grant", "redirect_uri mismatch");
+      return;
+    }
+    // RFC 7636 §4.1: 43–128 unreserved characters. Checked here, after the
+    // code is known to be valid for this client, so a malformed verifier
+    // invalidates the code exactly like a wrong one (M20) rather than leaving
+    // it live for a second guess. Without this a one-character verifier whose
+    // hash matched was accepted — PKCE with no entropy, and no complaint.
+    if (!PKCE_VERIFIER_RE.test(verifier)) {
+      this.authCodes.delete(code);
+      this.sendError(
+        res,
+        400,
+        "invalid_grant",
+        "code_verifier must be 43-128 unreserved characters (RFC 7636)",
+      );
       return;
     }
     if (!this.pkceVerify(verifier, record.codeChallenge)) {
@@ -1210,6 +1242,11 @@ export class OAuthServerImpl implements OAuthServer {
     if (!clientId || !redirectUri || !codeChallenge)
       return { error: "invalid_request" };
     if (codeChallengeMethod !== "S256") return { error: "invalid_request" };
+    // An S256 challenge is exactly 43 base64url characters; anything else
+    // cannot be the hash of a conformant verifier and is refused up front
+    // rather than stored and failed at token time.
+    if (!PKCE_S256_CHALLENGE_RE.test(codeChallenge))
+      return { error: "invalid_request" };
     // Cap state length to prevent memory amplification via huge reflected
     // query strings.
     if (state && state.length > 512) return { error: "invalid_request" };
