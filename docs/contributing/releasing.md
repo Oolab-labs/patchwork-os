@@ -47,7 +47,15 @@ publishing and the fresh-install smoke before anything leaves the machine.
    release checklist and fix any stale number it finds; the docs-drift gate
    will catch the ones about tool counts, but not everything.
 3. **Open the PR** titled `chore(release): bump to <version>`. CI must be
-   green on all cells.
+   green on all cells. To wait for that from a script rather than by eye:
+
+   ```bash
+   node scripts/wait-pr-checks.mjs <pr-number> && gh pr merge <pr-number> --squash
+   ```
+
+   It exits 0 only when every check has completed and passed; an in-progress
+   check with an empty `conclusion` is pending, not failed — the mistake a
+   hand-written `jq` filter makes.
 4. **Merge.** Then, locally:
 
    ```bash
