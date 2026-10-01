@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
+import {
+  clearSessionCookieHeader,
+  SESSION_COOKIE_NAME,
+  verifySession,
+} from "@/lib/session";
+import { sessionRoster } from "@/lib/sessionRoster";
+import { resolveSessionMember } from "../../src/identity/roster";
 
 /**
  * Cookie-based session auth for the dashboard. Replaces the previous
@@ -186,12 +192,44 @@ export async function middleware(req: NextRequest) {
   const cookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   const session = await verifySession(cookie);
   if (!session.valid) return unauthenticated(req);
+
+  // A v2 cookie names a member; the signature proves who MINTED it, not that
+  // the member still exists or is still active. Until this check a deactivated
+  // or deleted member kept a working session for the cookie's remaining life
+  // (30 days) — and could still approve a gated action, which the bridge then
+  // recorded with no actor because attribution is resolved after the approval
+  // lands and declines anyone it cannot verify. Same rule as that resolver,
+  // by construction: `resolveSessionMember` is the one implementation.
+  //
+  // Fail CLOSED here, unlike the roster's own fail-soft default: an unreadable
+  // members.json means a membership decision exists and cannot be read, and a
+  // v2 holder locked out by that still has the shared password (v1), which
+  // this check never touches. The cookie is cleared so the browser stops
+  // presenting a credential that will never work again.
+  if (session.memberId !== undefined) {
+    let active = false;
+    try {
+      active = resolveSessionMember(sessionRoster(), session.memberId) !== null;
+    } catch {
+      active = false;
+    }
+    if (!active) {
+      const res = unauthenticated(req);
+      res.headers.append("Set-Cookie", clearSessionCookieHeader());
+      return res;
+    }
+  }
+
   // AFTER auth: an unauthenticated visitor must reach the login page, not be
   // bounced to Butler and then to login.
   return butlerLanding(req) ?? NextResponse.next();
 }
 
 export const config = {
+  // Node runtime, not Edge: the roster check above reads members.json
+  // (`node:fs` via `loadRoster`). Stable in Next 15.5 — the build marks the
+  // middleware as a Node function purely on this field.
+  runtime: "nodejs",
   matcher: [
     // Protect all routes except Next.js internals, public assets, marketplace,
     // and the bridge-relay endpoint.
