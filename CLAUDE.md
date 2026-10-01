@@ -173,26 +173,10 @@ Comply with all docs in `/documents/`. Consult before changes:
 
 ### CLI Subcommands
 
-- `init [--workspace <path>]` — One-command setup: install extension + write CLAUDE.md + print next steps
-- `start-all` — Launch tmux session with bridge + extension watcher panes
-- `install-extension` — Install companion VS Code extension
-- `gen-claude-md` — Generate starter CLAUDE.md for current workspace
-- `print-token [--port N]` — Print auth token from active lock file
-- `gen-plugin-stub <dir> --name <org/name> --prefix <prefix> [--ts]` — Scaffold new plugin (add `--ts` for TypeScript variant)
-- `quick-task <preset>` — Launch a context-aware Claude task from a preset (fixErrors, refactorFile, addTests, explainCode, optimizePerf, runTests, resumeLastCancelled). Same dispatch path as the sidebar. Requires `--driver subprocess`.
-- `start-task "<description>"` — Enqueue a free-form Claude task; Claude gathers its own workspace context.
-- `continue-handoff` — Resume from the stored handoff note (skips auto-snapshots).
-- `halts [--window 1h|24h|overnight|7d|any] [--recipe <name>] [--json]` — One-screen morning summary of recent recipe halts. Discovers the running bridge via lock file, queries `/runs/halt-summary`, formats per category + 5 most-recent reasons. Default window is `overnight` (since 6pm yesterday local). `--recipe` filters to a single recipe by name. Composes the haltReason field + category aggregator shipped in #441/#444.
-- `recipe new <name>` — Scaffold a recipe from a template (`minimal` | `daily` | `inbox`). Add `--interactive` (or `-i`) to drop into the connector-aware prompt tree instead: mode pick (Guided / Template / AI-suggest), then step-by-step build. Generated YAML includes the SchemaStore pragma and runs `validateRecipeDefinition` post-hoc as warnings. AI-suggest discovers the running bridge via `~/.claude/ide/*.lock` and POSTs the goal to `/recipes/generate`; raw response written to disk (no form normalization).
-- `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production.
+**The command reference lives in [docs/guide/cli.md](docs/guide/cli.md)** — every verb, grouped as `patchwork --help` groups them, with flags and exit-code semantics, verified against the binary. Environment variables and `config.json` keys are in [docs/guide/configuration.md](docs/guide/configuration.md); the deploy sequence and the `doctor` family in [docs/guide/operations.md](docs/guide/operations.md). `scripts/audit-docs-wired.mjs` reads both that reference and this section, so a command documented in either must be wired.
 
-#### Recipe verbs (beyond `recipe new`)
+What stays here is the part a reference cannot carry: the verbs whose behaviour looks like a defect and is not, the measurements that went stale while being quoted, and the sequences where skipping a step has already cost a build. Read the entry for a verb before "fixing" it.
 
-- `recipe list` — Print installed recipes from the active bridge.
-- `recipe install <source>` — Install from `github:owner/repo[/path][@ref]`. Same shape the dashboard install panel posts.
-- `recipe uninstall <name>` — Remove a locally installed recipe.
-- `recipe enable <name>` / `recipe disable <name>` — Flip the per-recipe disabled marker so cron / file-watch / git-hook triggers stop firing without uninstalling. Used by the dashboard's pause toggle.
-- `recipe run <name> [--local --dry-run --step <id> --attempt <n> --ledger-dir <path> --var k=v]` — Manual run with overrides; `--local` skips the bridge API.
 - `recipe rollback <name> --run <taskId> [--dry-run] [--json]` — Undo an AUTOMATED run's file writes by run identity: every automated run (cron, webhook, automation hook, dashboard fire) gets its own attempt store under `$PATCHWORK_HOME/run-ledgers/<opaque key>/` (`src/recipes/runLedgers.ts`) before policy evaluation, so no ledger path is needed. `--dry-run` lists restore/delete/cannot without changing anything. Stores are kept 14 days (whole-run GC, never thinned); after that the run WAS reversible when it executed but rollback is no longer available, and the command says so. A store that cannot be created, or a pre-image that will not fit its 64 MB cap, makes that write `irreversible` (INV-1) — never a silent fallback.
 - `recipe rollback <name> --attempt <id> --ledger-dir <path> [--json]` — Undo a recipe attempt's `file.write`/`file.append` side effects, restoring each touched file to its pre-run content (or deleting it if the run created it). `<name>` must match the recipe's declared `name:`, and `--attempt`/`--ledger-dir` must match the original `recipe run` invocation. No bridge required — reads `${ledgerDir}/file_rollback.jsonl` (see `src/recipes/fileRollback.ts`), the pre-image counterpart to `--ledger-dir`'s idempotency ledger (PR5b). Ephemeral rollback: attempt-scoped undo of filesystem side effects, not a general version-control system, and deliberately narrow to file tools — undoing a GitHub issue creation, Slack post, or git push has no generic inverse and is out of scope.
 - `recipe lint <file.yaml>` — Lint a recipe YAML against the schema + best-practice rules.
@@ -269,22 +253,9 @@ Comply with all docs in `/documents/`. Consult before changes:
   installed recipes, all from plugins that live elsewhere. Run `recipe doctor`
   before concluding anything is missing here. Two separate builds were spent
   rediscovering this.
-- `recipe preflight <file.yaml>` — Connector preflight: list authorisations the recipe needs.
-- `recipe doctor <name|file.yaml> [--json] [--local]` — One-screen "why is this recipe unhealthy + how do I fix it" diagnosis. Composes the static preflight check (lint + write-policy + plan) with the recipe-scoped runtime halt summary from a live bridge (`/runs/halt-summary?recipe=`), mapping every finding to an actionable hint (shared `HALT_CATEGORY_HINTS`/`HALT_CATEGORY_LABELS` in `src/recipes/haltCategory.ts`, also used by `halts`). Fail-soft: no bridge → static-only; a recipe too broken to plan → lint-only diagnosis (never stack-traces). `--local` skips the runtime check. Exits 1 when unhealthy. Same composition is exposed over HTTP at `GET /recipes/doctor?recipe=<name>` (name-only over HTTP; reuses `deps.haltSummaryFn` in-process) and surfaced in the dashboard as a **Doctor** panel on the recipe-detail page (needs the dedicated `api/bridge/recipes/doctor` proxy — the dynamic `recipes/[...name]` proxy would otherwise swallow the `?recipe=` query). Run-detail step rows also render the per-category fix hint next to `haltReason` (shared `HALT_CATEGORY_HINT` in `dashboard/src/lib/haltCategory.ts`).
-- `recipe fmt <file.yaml>` — Format a recipe YAML in place.
 - `recipe record <file.yaml> [--fixtures <dir>]` — Record CONNECTOR FIXTURES from a run so the recipe can later be exercised under `recipe test` with no external calls. Takes a file path, not an installed recipe name. There is no learned-trace concept in the tree; the previous description here named one and was wrong in both halves.
-- `recipe schema` — Print the active recipe JSON schema.
-
 **Flight recorder / mocked replay** (`POST /runs/:seq/replay`, dashboard run-detail page — no dedicated CLI verb): every successful tool step's output is captured onto `RunStepResult.output` (secret-redacted, 8 KB cap) for both chained recipes (VD-2, pre-existing) and flat manual/cron/webhook recipes (`src/recipes/yamlRunner.ts`'s `StepResult.output` + `captureForRunlog`). Replay re-runs the recipe with each captured step short-circuited to its prior output — `replayMockedRun` for chained, `replayFlatMockedRun` for flat (`src/recipes/replayRun.ts`) — so template/transform/expect wiring can be debugged against real evidence with zero external calls or write side effects. `runReplayFn` in `src/recipeOrchestration.ts` dispatches on the recipe's `trigger.type`; flat recipes previously hard-errored with `replay_only_supported_for_chained_recipes` before this capability existed. Real-mode replay (write tools actually fire) is deliberately out of scope — needs a confirmation UX + kill-switch interaction, ship separately.
 
-#### Operational commands
-
-- `start [--port N] [--workspace <path>]` — Single-bridge start (no tmux). Pair with `--watch` for supervised mode.
-- `status` — One-line bridge status: lock file, port, uptime, session count.
-- `tools [--slim] [--json]` — List tools the bridge would register without starting it.
-- `tools list [--json]` — Same as bare `tools`, kept for symmetry with `search`.
-- `tools search <query> [--json]` — Filter the registered tools by name / description substring.
-- `install <companion>` — Install one of the bundled MCP-companion server registrations into Claude Desktop or Claude Code config. Use `--target cli|desktop` to choose, `--env KEY=VAL` to pass per-companion env vars. Companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `playwright`, `codebase-memory`. Each is a documented server config; the command writes it into `~/.claude.json` (CLI) or the Claude Desktop config (desktop) atomically.
 - `codex doctor [--config <path>] [--json]` — Diagnoses whether `~/.codex/config.toml` is correctly (and *currently*) wired up to this bridge: config file exists, has a `[mcp_servers.claude-ide-bridge]` entry, the entry's `url` is well-formed, and — when a bridge is running — the config's port and Bearer token still match the live bridge's lock file. A bridge restart (without `--fixed-token`) rotates its port/token, silently staling out a previously-generated config with no error until Codex's next tool call 401s; this catches that before it surprises the user. Fail-soft like `recipe doctor`: no live bridge → warns, doesn't fail (config alone can be valid while the bridge just isn't started yet). Exits 1 when unhealthy. Codex CLI itself connects over Streamable HTTP, not the stdio shim — generate the config with `scripts/gen-mcp-config.sh codex`.
 - `doctor [--json] [--expect-running [N]]` — **Is the running code the installed code?** Every other gate in this repo verifies the REPOSITORY; none looks at a running process. On 2026-08-19 both live bridges were found containing neither the ADR-0021 privacy code nor `butler` — merged, wired, tested, gated, and absent from every process serving requests, with three workstreams silently blocked for five days. Compares each bridge lock's `startedAt` against the installed build's mtime. **Deliberately NOT a version comparison**: in the live case both stale and fresh reported `1.2.0-beta.2`, because a version marks a release and not a build. Also reports dead locks (the shim discovers by lock file, so an orphan can win discovery) and refuses to judge a lock with no usable `startedAt`. Exits 1 when unhealthy.
 
@@ -363,10 +334,6 @@ Comply with all docs in `/documents/`. Consult before changes:
   process claimed this tick`. That last line is what distinguishes "the fix
   worked" from "the second bridge quietly stopped scheduling" — which produces
   an identical run-row count.
-- `approvals [--window 1h|24h|overnight|7d|any] [--json]` — Recent approval decisions across bridges.
-- `approve <callId>` — Approve one queued approval from the terminal. Prompts for confirmation on a TTY.
-- `reject <callId>` — Reject one queued approval. Same shape as `approve`.
-- `connect [list]` / `connect <vendor>` / `connect test <vendor>` / `connect disconnect <vendor>` — Connector authorisation from the terminal: list connectors and their status, start an OAuth flow or store a PAT, health-probe one, or revoke one. Documented in `--help` since it shipped and absent from this file until now.
 - `butler <shadow|observe|ingest|promote>` — The errand-outcome channel.
   - `shadow [--json]` — summarise the graded shadow ledger.
   - `shadow --rows [N] [--json]` — print the INDIVIDUAL graded rows, evidence-bearing
@@ -380,114 +347,24 @@ Comply with all docs in `/documents/`. Consult before changes:
   - `observe [--file <path>] [--stale-after-days N]` — discover errands from the run log, look up live task state, then grade. **Operator path only**: a recipe step runs AS the worker, and a worker that could observe its own filings could report them completed.
   - `ingest [--file <path>|-]` — grade a JSON array of observations.
   - `promote [--dry-run]` — fold confirmed/junk grades into the trust ledger. Requires `PATCHWORK_FLAG_BUTLER_PROMOTE=1`; reports without writing otherwise, because promotion is one-way (trust replay absorbs a folded row into a checkpoint that deleting the row does not undo).
-- `dashboard` — Launch the local dashboard. Guards first run: without `patchwork init` it prints a pointer instead of an empty panel.
-- `members [list|set-password <id>]` — Workspace roster plus which members hold credentials. Bare `members` lists. A member with no password is reported as `NO password — cannot authenticate`, and an absent `members.json` reports the single implicit owner rather than pretending a roster exists.
 - `runstore <backfill|compare> [--json]` — Durable run-store maintenance. `compare` prints ledger contents, so its output is **operator data, not a diagnostic blob** — never paste it into an issue, a PR body or a fixture.
 - `sweep [--dir <path>] [--expect-running [N]] [--no-write] [--json]` — **what MOVED since the last sweep.** Five read-only verbs already answer "what is true now" (`doctor`, `workers validate`, `evidence`, `privacy undeclared`, `pr-outcomes show`); run by hand they answer each question in isolation and none of the question an operator actually has, which is what changed. A denominator that has not shifted in three weeks and a gate that flipped yesterday look identical when every verb is read fresh. Appends a counts-only snapshot to `sweep_snapshots.jsonl` and diffs it against the previous one. **Only TWO of the five readings are gates** — deployment freshness and worker-manifest validity — and only a healthy→unhealthy flip exits 1. Everything else is DRIFT and never fails the command: the evidence ratios fall by construction as ledgers accrue rows faster than runs earn correlation ids, and an undeclared agent step is ADR-0021's documented fail-soft default. Wiring those to an exit code would make `sweep` permanently red, which is how a real warning gets ignored. **A first run is a BASELINE, never "no changes"** — nothing observed to change and nothing to compare against are different facts, the same distinction `evidence` draws between ABSENT and `0 rows`. A reading that could not be taken is OMITTED rather than recorded as zero, and a gate the previous snapshot never carried is not a flip (otherwise every newly-added gate fails its own first sweep). **The snapshot holds counts only** — no recipe name, no path, no id — which is a constraint and not a formality: two of the five inputs return operator data, and a health check is the last place anyone thinks to look for accumulated secrets, so the reduction to scalars happens at the collection boundary rather than in a formatter one refactor away from being lost. A mutation-checked test asserts a distinctively-named fixture recipe appears nowhere in the serialised snapshot. `rv` marks the schema; a row from another version is skipped rather than diffed across, because a counter name can survive a meaning change. Shares one implementation with each verb it composes (`scanRecipeDir`, `discoverLocks`/`installedBuildTimeMs`, `readObservations` were extracted for this) — two readers of the same number drift, and a drifting count is indistinguishable from a quiet week.
 - `evidence verify [--dir <path>] [--json]` — **is every spine ledger internally intact?** ([ADR-0027](docs/adr/0027-tamper-evident-ledgers.md)). Walks the per-row hash chain (`iseq` + `prev`, stamped by `appendChained` from the file's tail under the lock), the `chain-start` marker's commitment to the legacy prefix, the `rotation` marker's re-anchor, the `<file>.head` sidecar (the only thing that can say a file used to be longer) and the `<file>.write_failed` counter. **The only form of this verb that gates**: exits 1 and prints `ok: false` on any break, legacy mismatch, shortened file or UNSEALED write failure — a ledger that stopped writing is a different fact from a quiet day. Prints line numbers and `iseq`s, never a value. Legacy rows stay byte-identical and are never re-stamped; `seq` and `rv` are not repurposed (`seq` is per-PROCESS on two ledgers and cannot be monotonic across bridges). Marker rows carry `kind` and NO `seq`, which is what keeps every loader from mistaking them for data — do not add `seq` to a marker. A test that reads a chained file line-by-line must skip `kind: chain-start|rotation` rows. Chained so far: eight actively written ledgers — `worker_gate_decisions.jsonl` (rv 3), `boundary_receipts.jsonl` (rv 2), `privacy_shadow.jsonl` (rv 2), `outcome-log.jsonl` (rv 1), `approval_log.jsonl` (rv 2), `butler_outcome_shadow.jsonl` (rv 1), `run_steps.jsonl` (rv 1) and `pr_outcomes.jsonl` (rv 2). Migrated one ledger per PR because the reader-whitelist trap (#1517) has to be checked per reader, and it caught a live one each time — most recently `readObservations`, which cast any parsed line to an observation and would have counted a marker as a phantom pull request in every summary and in the weekly sweep. `butler/permission_exercises.jsonl` is walked by `evidence verify` too, but is legitimately ABSENT: no standing permission has ever been granted, so there is no chained writer to migrate until such evidence exists. **`VERIFIED_LEDGERS` (nine entries) is not `SPINE_LEDGERS` (six)** — the second is the correlation/coverage set behind `patchwork evidence`'s denominators, and a ledger carrying no run id has no business in a "rows carry a run id" count; the three wave-2 ledgers joined the verifier list ONLY. No signing — authorship is the control plane's (ADR-0019).
 - `evidence [--dir <path>] [--json]` — **how much of the evidence spine can actually be joined?** Per ledger: how many rows carry a `correlationId` out of how many rows exist, plus how many runs appear in more than one ledger. Reports DENOMINATORS; it is deliberately not the cross-ledger reader, which the spine's own rule defers until there is evidence to read. An absent ledger is reported ABSENT, never `0 rows` — `butler/permission_exercises.jsonl` is absent because no standing permission has ever been granted, and rendering that as a zero invites someone to "fix" it. Prints **counts only, never a row, an id or any value**, because a `correlationId` IS a run's `taskId`; unlike `runstore compare` and `privacy receipts`, its output is therefore safe to quote. Always exits 0 — zero joinable rows is a true and expected state, and failing on it would make a correct answer look like an error.
-- `shadow-scan [--since <duration|ISO>] [--limit <n>] [--runs-file <path>] [--json]` — Reclassification scan over the run log.
 - `privacy suggest [--json]` — Derive a STARTER `privacy.shadow` block from the drivers your installed recipes actually declare. The destinations are MEASURED; the classifications are a conservative placeholder you are told to review. Reports agent steps that declare no driver separately rather than folding them in — they dispatch somewhere too. Emits `privacy.shadow` only, never the enforcing `privacy.destinations` key.
 - `privacy undeclared [--dir <path>] [--json]` — **which agent steps carry no `data_policy`, and what feeds them.** ADR-0021 is fail-soft (absent ⇒ `internal`), which is correct as a default and makes an undeclared step invisible in a way a declared one is not. **Re-measured 2026-08-30: 0 undeclared of 74** agent steps across 72 installed recipes — the sweep completed and the population is GONE. The figure that stood here (58 of 77, 2026-08-26) is the one this file was quoting while scoping work against it, and it was stale by four days. Run the verb before citing either number; it exits 0 and takes a second. The remaining value of this command is now as a RATCHET — it is what stops the population regrowing as recipes are added — not as a to-do list. Reports the TOOL OUTPUTS feeding each undeclared step, because a step is classified by what it HANDLES *including whatever its tools return*: a prompt mentioning nothing sensitive can still be handed a mailbox by the step above it, which is why `morning-brief` declares `personal`. **Suggests no classification, deliberately** — a declared-but-wrong label is worse than an assumed one, because it stops looking like a gap (same reason `privacy suggest` emits only `privacy.shadow`, never the enforcing key). Always exits 0: an undeclared step is the documented default, not a failure. Output names real installed recipes, so it is **operator data** — quote a measurement, never the rows.
 - `pr-outcomes <collect|show> [--repo owner/name] [--limit N] [--json]` — **raw pull-request events, so trust can be derived LATER from evidence rather than asserted now.** Built ahead of the workers that will read it, deliberately: this is the one item on the maintenance roadmap where that is correct, because outcome history accrues only with wall-clock time and a day not recorded cannot be recovered. Each row is an OBSERVATION — what the API said at one moment — so collecting regularly makes trajectories (diff size at open vs at merge, how long it sat, whether it grew) fall out, while collecting once gives final states only. The summary reports **how many pull requests have more than one observation**, so a one-shot backfill cannot read as months of evidence. **Derives no score**, on purpose: a scalar computed now would fix its weighting before there is anything to weigh it against, and every later question would have to be answered from a number that already threw the answer away. `authorIsWorker` is **OMITTED when no worker roster is configured, never recorded as false** — unknown and no are different facts, the same never-backfill rule `workerGateDecisionLog` states in its header. Re-running `collect` appends nothing when nothing changed, so row counts measure the repository and not how often the collector ran; a row that cannot be keyed is DROPPED rather than written with a placeholder; and a failed GitHub query exits 1 having recorded nothing, loudly, because a silent gap is indistinguishable from a quiet week. Rows name real pull requests and authors — **operator data** like the other ledgers, so quote a measurement, never paste the rows.
 - `privacy destinations [--json]` — **where may prompts go, and which of those leave this machine?** The operator's choice already existed and was invisible: clearing a remote destination for `personal` is one line in `config.json`, and nothing said which destinations are off-machine or what clearing one means. Adds **no policy primitive**, deliberately — a recipe-scoped allow-list would put recipe identity into the decision point (which `recordBoundaryDecisionFn` explicitly keeps out of it) and would smuggle in `purpose` ahead of the per-field labels ADR-0021 reserves it for. **The disclosure names no retention period, deletion promise or training claim**, because such a claim rots without a code change — API retention moved 30 days to 7 in Sept 2025 and changed again in Aug 2026 — and a claim the code cannot keep is worse than none, because it is believed. It states only what is true by construction: the prompt leaves this machine, over the network, to the named destination. Provider behaviour goes in an operator `note` with `noteReviewedOn`; an undated or stale note is reported AS undated or stale. A LOCAL destination is never flagged however widely cleared — cleared for `restricted` is not a disclosure event when the data never leaves the box. An empty registry reports the boundary **INERT**, never "0 destinations". Always exits 0: inert and wide-open are both legitimate operator states. Two tests assert an ABSENCE (no retention/training claim anywhere in the output) and are mutation-checked.
 - `privacy shadow [--since-days N] [--json]` — What a candidate policy WOULD have stopped, without enforcing it (ADR-0021). Leads with the DENOMINATOR and refuses to print a bare crossing count; an empty ledger reports "nothing observed", never "0 crossings". Reads `privacy_shadow.jsonl`.
 - `privacy receipts [--since-days N] [--json]` — What the LIVE policy actually DID: a reader over `boundary_receipts.jsonl`, the ADR-0021 enforcement ledger (`privacy shadow` is its counterfactual sibling — what a CANDIDATE policy would have stopped). Reads the file rather than `BoundaryReceiptLog`, which trims to 500 rows on load and on every write, so a summary built on `.summary()` would serve 500 as a total. Leads with the DENOMINATOR and never prints a bare refusal count; an absent ledger reports "nothing recorded" and says the boundary is inert until a destination is registered, never "0 refusals". Also `GET /privacy/receipts` and the dashboard's **Data boundary** page under Activity. Like `runstore compare`, its output is **operator data, not a diagnostic blob** — it names real installed recipes and their dispatch volumes, so it must never be pasted into an issue, a PR body or a fixture. Quote a measurement ("N of M were refused"), never the rows.
-- `kill-switch engage|release|status [--reason <text>]` — Toggle the global write-disable gate (see ADR-0013).
-- `analytics show|configure|clear|test` — Manage the opt-in telemetry collector config (endpoint + shared secret) at `~/.claude/ide/analytics-config.json` (mode 0600). Replaces the brittle pattern of putting the secret in a launchd plist. `configure --endpoint URL --key KEY` writes both atomically; `test` sends a tiny synthetic payload and reports the HTTP status; `show` prints active values and resolution source (env / config / default). Env vars still win for headless/CI.
-- `panic` — Shortcut for `kill-switch engage --reason "manual panic"`.
-- `judgments [--window 1h|24h|overnight|7d|any] [--recipe <name>] [--json]` — Recent judge-step verdicts (from recipe steps with `agent.kind: judge`) across runs. Discovers the running bridge via lock file, queries `/runs/judge-summary`, prints per-verdict counts + 5 most-recent. Sibling of `halts`; same window/filter shape.
 - `workers list [--workers-dir <path>] [--json]` — what is installed and, the point, **what the bridge IGNORES**. `loadWorkersFromDir` is fail-soft: a manifest that does not parse is SKIPPED, and it logs only when the caller passes a logger — which the resolution path does not. Exits 1 when any manifest is ignored.
 - `workers validate [--workers-dir <path>] [--recipes-dir <path>] [--templates-dir <path>] [--json]` — every way a manifest can be present and govern NOTHING. All of them end identically: `resolveWorkerIdForRecipe` returns undefined, the caller falls back to the tier-based approval fn, and the worker ramp never runs. Since the worker gate is composed as a FLOOR over the tier fn (it can only ADD approvals), losing it means the recipe is governed **less**, and a manifest's ADR-0017 `forbids` list goes inert without a word. Checks: unparseable manifest · `recipe:` not installed · two workers claiming one recipe (**BOTH are ignored — resolution refuses to guess, so there is no winner**) · an unparseable `forbids` entry (**fails OPEN** — the banned action degrades to merely gated, which a human can then approve) · drift against `templates/workers`. Exits 1 when unhealthy. Leads with the denominator: an empty directory reports "nothing to check", never "no problems". Measured 2026-08-26 on the reference install — 8 manifests, all parsing, none dangling, none ambiguous, no drift — so the validator was built against deliberately broken fixtures, since one that has only seen healthy input is not known to be able to fail. **No `install` verb**, deliberately: a package format has to answer the third-copy problem (`templates/workers/` and `~/.patchwork/workers/` already diverge, which is why `manifestDrift` exists), and that is a design decision rather than a missing function.
 - `workers authority-delta [--base <ref>] [--head <ref>] [--dir <path>] [--json]` — **what does this change do to a worker's AUTHORITY?** Compares worker manifests between two git refs and reports structured findings, so a repository gate can block on a widening before it lands. Reuses the runtime primitives (`parseForbidRules`, `TrustLevel`, the gate's own `COMPENSABLE_AUTONOMY_LEVEL`) rather than re-deriving authority from a diff — two notions of authority would drift, and the drift is silent and permissive. **One inversion, and it is the point:** `parseForbidRules` reports unparseable entries and DROPS them, which fails OPEN at runtime and is correct there (a banned action degrading to merely gated is recoverable, because a human still approves it). A repository gate cannot inherit that — "I could not read your deny-list" must never resolve to "looks fine" — so an unreadable `forbids` entry is reported as a WIDENING. Same classifier, inverted failure mode. Three findings are non-obvious and are why this is not a diff pretty-printer: **deleting a manifest is a widening** (the gate composes as a FLOOR over the tier fn, so removing it leaves the recipe governed LESS, and any `forbids` list goes inert silently); **`ceiling: 1 → 2` crosses `COMPENSABLE_AUTONOMY_LEVEL`**, converting every compensable class the worker owns from "a human decides" to "it happens" — the manifest's own doc notes ceiling 2 is PERMISSIVE, not conservative, so "+1" is the wrong mental model; and **rebinding `recipe:` or renaming `id`** swaps the body under a dial the old body earned, since trust is keyed per (workerId × actionClass). Keyed by manifest FILE, not by worker id, so a rename surfaces as `identity-changed` rather than as a delete plus an add. No model, no scoring: every finding is a set difference or a numeric comparison over declared fields. Exits 1 on a widening — which is not a defect, and often exactly what was intended; it requires a person to say so. An unreadable ref exits 2 rather than reporting an empty set, because empty would render every worker as newly added.
-- `workers shadow [--workers-dir <path>]` — Replay run + gate logs to show per-worker × action-class trust dial and ramp-vs-gate divergences. Primary monitoring tool during the worker autonomy dogfood campaign. See [docs/runbooks/worker-autonomy-dogfood.md](docs/runbooks/worker-autonomy-dogfood.md).
-- `workers backtest [--workers-dir <path>]` — Cold-start calibration: replay historical runs as if the gate were live; measures how many shadow divergences the gate would have produced.
-- `gate explain <workerId> <classKey> [--limit N] [--diff] [--json]` — "Why did the worker allow/gate THIS action?" Plain-English rendering of the most recent decision(s) for a worker × action-class, from the local Decision Record (`~/.patchwork/worker_gate_decisions.jsonl`) — no bridge required. `--limit N` shows the N most recent (default 1, or 2 with `--diff`). `--diff` compares the 2 most recent decisions and reports only the fields that changed (e.g. `action: gate → allow`) — Tier 2 of the legibility layer. `classKey` is `domain:reversibility:blastTier`, plus a `:magnitudeBand` suffix for value-bearing domains (e.g. `issue:compensable:high`, `payments:irreversible:high:band<=50`). Also exposed over HTTP at `GET /gate/decisions?workerId=&classKey=&limit=` for the dashboard.
 - `outcomes confirm|reject <issue-url> | --tool <t> --id <id> [--recipe <name>] [--class <actionClass>]` / `outcomes list [--json]` — Operator positive-act confirmation of a worker-filed issue. Writes an outcome disposition (`confirm`→confirmed, `reject`→junk) to the trust-replay store (`~/.patchwork/outcome-log.jsonl`, the same file the outcome-ingester cron writes and `WorkerShadowObserver.ingestRun` reads) — no bridge required. This is the local alternative to closing/labelling the issue on GitHub. **A worker cannot self-confirm its own filings — but NOT because this verb is CLI-only, which is what this line used to claim.** `outcomes.classify_issues` (`src/recipes/tools/outcomes.ts`) is a recipe tool that also writes dispositions to `OutcomeStore`, so the CLI-only path secures nothing on its own. What actually holds the property is a chain of three, and the middle one is a load-bearing ABSENCE: (1) `classifyIssueDisposition` is a pure function of the issue's own GitHub state — no LLM, after a judge was removed for flipping the same issues between runs; (2) **no recipe-facing `github.*` tool can mutate that state** — the surface is `create_issue` plus four reads, with no close, label, update or comment; (3) `http.post` cannot resolve connector tokens and `{{env.X}}` exposes only keys a recipe declares in a `context: env` block. Break (2) — by adding `github.close_issue` or `github.add_label`, both obviously reasonable features — and a worker can file an issue, close it as completed, and have `classify_issues` record `confirmed`, climbing the ramp on evidence it manufactured. `src/recipes/tools/__tests__/githubIssueMutationGuard.test.ts` fails if that surface widens. Since a durable `unknown` filing is withheld (never earns trust), a `confirmed` disposition — here or via GitHub close-as-completed — is the only thing that moves a worker's `issue` dial. **The join key is generalised beyond URLs**: `--tool <t> --id <id>` references an action whose tool returned no URL (e.g. `todoist.create_task`, which exposes no permalink field at all). Records key on `ref` → `"<tool>:<id>"` when present, else the legacy `issueUrl`; the two namespaces cannot collide (`canonicalActionRef` refuses a URL-shaped key). Existing rows are deliberately NOT migrated — a URL is already a fine key and rewriting the ledger the gate rests on buys only uniformity. Rows carrying neither key are now REPORTED (`OutcomeStore.unkeyableRows()`) instead of silently dropped, and `upsert` refuses to write one. **The strict join is ON by default** (#1319) — a non-reversible success with no recorded disposition is WITHHELD, where it previously earned full trust. Measured before flipping: exactly one step changed label across the real run log. It was small because only 1 of 63 non-reversible successes was keyable at the time — 50 were `agent` steps that capture no output and 12 were `http.post` whose id sits inside a JSON string body. **Both of those have since been addressed and the figure is stale**: #1320 withholds `agent` steps by design (they are not evidence, so a key would not help), and #1322's one-level `body` dip reads the `http.post` ids. Re-measured 2026-08-16 across the live run log: of 187 successful steps, 46 are `agent` (withheld), 124 are reversible (which never need a key), leaving **17 non-reversible of which 11 are keyed — 65%, not 1.6%**. The residual is 6 `fan_out` steps, a control construct whose children are the real actions. **Do not quote "11 of 187"**: the 187 denominator counts steps that structurally cannot and need not join, so it understates coverage by an order of magnitude. The live constraint is evidence VOLUME — only 17 non-reversible successes exist in the whole log — not join-key coverage. `PendingConfirmation` is keyed by `actionKey` (not `issueUrl`) for the same reason the fold is: a queue keyed differently from the fold would withhold an action it never offers for confirmation — an invisible permanent denial. `--recipe`/`--class` stamp audit context. Core logic in `src/workers/outcomesCli.ts`.
-- `suggest [--since-days N]` — Recipe co-occurrence + unused-tool suggestions from recent activity.
-- `traces export [--passphrase <p>] [--mode keyed|public] > file.jsonl` — Export decision traces; `--mode keyed` encrypts with the passphrase.
-- `traces import [--passphrase <p>] [--dry-run] < file.jsonl` — Restore traces from an export.
-- `token-efficiency benchmark [...]` — Measure token cost across slim/full tool sets.
-- `launchd install|uninstall|status` — Manage the macOS LaunchAgent for the bridge (auto-start at login).
-- `orchestrator [--port N] [--workspace <path>]` — Start a multi-bridge orchestrator (parent/child topology).
-- `notify <event> [...]` — Forward a Claude Code hook event to the bridge `/notify` endpoint (wired from `~/.claude/settings.json`).
-- `shim` — stdio MCP bridge for Claude Desktop. Auto-invoked by Desktop's `claude_desktop_config.json`; not normally run by hand.
 
 #### Environment variables
 
-Most users don't need to touch these — CLI flags cover the common cases. Listed here so deployments and supervisors have a complete reference.
-
-| Var | Effect |
-|---|---|
-| `CLAUDE_IDE_BRIDGE_TOKEN` | Override the auto-generated auth token in the lock file. Use with `--fixed-token` in deployments. |
-| `CLAUDE_IDE_BRIDGE_CONFIG` | Path to a JSON config file the bridge reads at startup (alternative to CLI flags). |
-| `CLAUDE_IDE_BRIDGE_GRACE_PERIOD` | ms (default 120000) — session-restore window after WebSocket disconnect. Equivalent to `--grace-period`. |
-| `CLAUDE_IDE_BRIDGE_EDITOR` | Editor identity reported on `extension/hello` (default auto-detect). |
-| `CLAUDE_IDE_BRIDGE_LINTERS` | Comma-separated linter binaries the bridge will probe for. |
-| `CLAUDE_IDE_BRIDGE_TIMEOUT` | ms (default 30000) — tool execution timeout. |
-| `CLAUDE_IDE_BRIDGE_MAX_RESULT_SIZE` | bytes — cap on tool result payload size before truncation. |
-| `CLAUDE_IDE_BRIDGE_ISSUER_URL` | Equivalent to `--issuer-url`; activates OAuth 2.0 mode. |
-| `CLAUDE_IDE_BRIDGE_CORS_ORIGINS` | Comma-separated CORS origins (alternative to repeated `--cors-origin`). |
-| `CLAUDE_IDE_BRIDGE_TRUST_PROXY` | Truthy → trust `X-Forwarded-For` (set when running behind nginx/Caddy). |
-| `CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS` | Comma-separated hostnames for `/recipes/install` source allowlist (default `github.com`). |
-| `CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL` | Path override for recipe-runner temp directory. |
-| `BRIDGE_WEBHOOK_SECRET` | Equivalent to `--webhook-secret`; HMAC-SHA256 auth on `POST /hooks/*`. |
-| `PATCHWORK_HOME` | Override `~/.patchwork` workspace root. |
-| `PATCHWORK_BRIDGE_URL` / `PATCHWORK_BRIDGE_PORT` | CLI subcommands use these to find the bridge instead of the lock file (useful in remote-bridge setups). |
-| `PATCHWORK_DASHBOARD_URL` | Public base URL the OAuth callback is served from — FIRST in the `redirect_uri` precedence chain for every OAuth connector (`src/connectors/connectorRedirectUri.ts`). Must include the dashboard basePath (e.g. `https://example.com/dashboard`). Changing it changes the `redirect_uri` sent to every provider, so it must match what is registered on each OAuth app. Not read by any CLI "open" action. |
-| `PATCHWORK_CLAUDE_BINARY` | Equivalent to `--claude-binary`; path to the `claude` CLI. |
-| `PATCHWORK_RECIPE_REPO_ALLOWLIST` | Comma-separated `owner/repo` allowlist for recipe install sources. |
-| `PATCHWORK_TOKEN_DIR` / `PATCHWORK_TOKEN_STORAGE_BACKEND` | Connector-token storage location + backend (`file` vs `keychain`). |
-| `PATCHWORK_CRON_CLAIM_REQUIRED` | Truthy → a scheduled recipe SKIPS its tick when the cross-process claim store is unwritable, instead of firing anyway (#1458). Default off, i.e. fail-OPEN: the conditions that break the store are machine-level, so failing closed would stop every scheduled recipe on every bridge at once rather than allowing one duplicate. Set this where a duplicate is worse than a miss — recipes that send email or post publicly. `EEXIST` is not a failure and is unaffected: that is a peer holding the tick. |
-| `PATCHWORK_FLAG_KILL_SWITCH_WRITES` | Feature flag — gate write tools on kill-switch state. |
-| `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Feature flag — strict UI-schema linting in the recipe editor. |
-| `PATCHWORK_FLAG_BUTLER_PROMOTE` | Feature flag — let `patchwork butler promote` fold graded Butler shadow rows into the trust ledger (`outcome-log.jsonl`). Default off, and the flag is a decision about EVIDENCE rather than about code: promotion is one-way, since trust replay absorbs a folded row into a checkpoint that deleting the row does not undo. `unknown` grades are never promoted under any flag. Operator path only — never a recipe tool, so a worker cannot promote its own filings. |
-| `PATCHWORK_FLAG_WORKER_AUTONOMY` | Feature flag — enable trust-ramp-aware autonomy gate for worker recipes. Gates compensable/irreversible automated recipe actions until the owning worker earns L4 trust on that action-class; reversible actions always flow freely. Default off. Requires `--driver subprocess`. |
-| `LOCAL_MODEL` / `LOCAL_ENDPOINT` / `LOCAL_API_KEY` / `LOCAL_ENDPOINT_ALLOW_REMOTE` | Local-model driver config (Ollama / vLLM / OpenAI-compatible endpoint). |
-| `OTEL_SERVICE_NAME` | Override the OTel service name (default `claude-ide-bridge`). |
-| `PATCHWORK_ANALYTICS_ENDPOINT` | Override the opt-in telemetry collector URL (default `https://analytics.claude-ide-bridge.dev/v1/usage`). Must be `http(s)://`; invalid values fall back to default. Per-call resolution; precedence: env > config file > default. For CI/headless. Prefer `patchwork analytics configure` for persistent setups — keeps the secret out of launchd plists. |
-| `PATCHWORK_ANALYTICS_KEY` | Shared-secret sent as `X-Analytics-Key` header on telemetry POSTs. Only meaningful when paired with a self-hosted endpoint that checks it. Same precedence as endpoint. |
-
-##### Connector credential env vars
-
-Per-connector env override for OAuth client credentials (when self-hosting OAuth apps) or for PAT-style direct-token connectors. The dashboard `/connections` UI is the recommended setup path — these env vars are for headless / CI / scripted deployments. Setting `*_CLIENT_ID` + `*_CLIENT_SECRET` lets the bridge use your own GitHub/Slack/etc. OAuth app instead of the public one.
-
-| Var(s) | Connector | Type |
-|---|---|---|
-| `PATCHWORK_GITHUB_CLIENT_ID` / `PATCHWORK_GITHUB_CLIENT_SECRET` | GitHub | OAuth app override |
-| `PATCHWORK_SLACK_CLIENT_ID` / `PATCHWORK_SLACK_CLIENT_SECRET` | Slack | OAuth app override |
-| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` | Gmail | OAuth app override |
-| `GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` | Google Calendar | OAuth app override |
-| `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` | Google Drive | OAuth app override |
-| `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` | Asana | OAuth app override |
-| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | Discord | OAuth app override |
-| `GITLAB_CLIENT_ID` / `GITLAB_CLIENT_SECRET` / `GITLAB_BASE_URL` | GitLab | OAuth app override + self-hosted base URL |
-| `JIRA_API_TOKEN` / `JIRA_EMAIL` / `JIRA_INSTANCE_URL` | Jira | PAT-style token |
-| `CONFLUENCE_API_TOKEN` / `CONFLUENCE_EMAIL` / `CONFLUENCE_INSTANCE_URL` | Confluence | PAT-style token (HTTPS atlassian.net only) |
-| `LINEAR_API_KEY` | Linear (non-MCP fallback) | PAT-style token |
-| `NOTION_TOKEN` | Notion | PAT-style token |
-| `HUBSPOT_ACCESS_TOKEN` | HubSpot | PAT-style token |
-| `INTERCOM_ACCESS_TOKEN` | Intercom | PAT-style token |
-| `DATADOG_API_KEY` / `DATADOG_APP_KEY` / `DATADOG_SITE` | Datadog | PAT-style (`SITE` enum-allowlisted) |
-| `PAGERDUTY_TOKEN` / `PAGERDUTY_FROM_EMAIL` | PagerDuty | PAT-style token |
-| `ZENDESK_API_TOKEN` / `ZENDESK_EMAIL` / `ZENDESK_SUBDOMAIN` | Zendesk | PAT-style token |
-| `SENTRY_AUTH_TOKEN` | Sentry (non-MCP fallback) | PAT-style token |
-| `TELEGRAM_BOT_TOKEN` | Telegram | Bot-token PAT (from @BotFather) |
-
-##### Dashboard env vars (Next.js side)
-
-The dashboard reads these from `dashboard/.env.local` / `.env` at startup. Most users don't change them — defaults pick a free port and assume a single-user local install.
-
-| Var | Effect |
-|---|---|
-| `DASHBOARD_PASSWORD` | Single-user password gate for the dashboard. Required for any non-local deployment. |
-| `DASHBOARD_SESSION_SECRET` | Cookie-signing secret (random hex ≥ 32 chars). |
-| `DASHBOARD_ALLOW_UNAUTHENTICATED` | `1` to bypass the password gate (local dev only). |
-| `DASHBOARD_AUTH_FAILURE_WINDOW_MS` / `DASHBOARD_AUTH_MAX_FAILURES` / `DASHBOARD_AUTH_LOCKOUT_MS` | Brute-force lockout tuning for the login form. |
-| `PATCHWORK_BRIDGE_TOKEN` | Bearer token the dashboard uses when forwarding to a remote bridge (paired with `PATCHWORK_BRIDGE_URL`). |
-| `NEXT_PUBLIC_BASE_PATH` | basePath for mounted-prefix deployments (`/dashboard` under nginx, etc.). |
-| `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web Push (PWA notifications). |
-| `PATCHWORK_PUSH_TOKEN` / `PATCHWORK_PUSH_URL` / `PATCHWORK_PUSH_BASE_URL` | Phone-path push relay credentials (used by the optional remote relay; see ADR-0006). |
+Moved to [docs/guide/configuration.md](docs/guide/configuration.md) (runtime, connector-credential and dashboard tables). Two that are traps rather than reference: `PATCHWORK_CRON_CLAIM_REQUIRED` is **off by default and that is fail-OPEN on purpose** — the conditions that break the claim store are machine-level, so failing closed would stop every scheduled recipe on every bridge at once; set it only where a duplicate is worse than a miss. `PATCHWORK_FLAG_BUTLER_PROMOTE` gates a one-way fold into the trust ledger and is a decision about evidence, not code.
 
 ## Bug Fix Protocol
 
@@ -519,7 +396,7 @@ Before staging, run `npx biome check --write <files>` on changed files. Fix befo
 
 **Release channels:**
 - `latest` / `beta` — manual via `chore(release):` PRs, tagged `v*-beta*` → `publish-npm.yml`. Stable / human-curated.
-- `canary` — automatic on every green main merge via `publish-canary.yml`. Version shape `<base>.canary.<runNumber>` (e.g. `0.2.0-beta.5.canary.42`). `npm install -g patchwork-os@canary` always tracks main. Use for dogfooding freshly-merged changes without waiting for the next release PR. Never default-installed.
+- `canary` — automatic on every green main merge via the `publish-canary` job in `publish-npm.yml` (`workflow_run` on CI). Version shape `<base>.canary.<runNumber>` (e.g. `0.2.0-beta.5.canary.42`). `npm install -g patchwork-os@canary` always tracks main. Use for dogfooding freshly-merged changes without waiting for the next release PR. Never default-installed.
 
 ## LSP Workflows
 
@@ -975,158 +852,18 @@ always reports OK is the noise that teaches people to ignore checks.
 - **`Coverage` is the TIGHT step, not `Test`** — measured across six windows/22 jobs: Test 4.7-5.0 min against a 10 min cap, Coverage 5.4-6.4 min against 8 min. Both historical `timeout-minutes` bumps were applied to the wrong one. Before raising either, read #1386: `sqliteRunStoreSpecifics.test.ts` is heavy-tailed on Windows (median ~16-18 s, max 304 s), so a ceiling that accommodates the tail lets three retries eat the whole step budget.
 - **outputSchema is mandatory** for all tools. `scripts/audit-lsp-tools.mjs` enforces per-schema-block (not per-file) — multi-tool files can't mask gaps. Exceptions go in `scripts/audit-output-schema-allowlist.json` with a reason; ratchet gate rejects new entries and stale ones.
 
-## Plugin System
+## Subsystem pointers
 
-Plugins register additional MCP tools without forking bridge. Run in-process alongside built-in tools.
+Reference for these moved to the guides; what remains below is the trap in each.
 
-- **Scaffold**: `claude-ide-bridge gen-plugin-stub <dir> --name "org/name" --prefix "myPrefix"` (add `--ts` for TypeScript variant — adds tsconfig + build/dev scripts; compiled artifact lands at `index.mjs` so the manifest entrypoint stays the same)
-- **Load**: `--plugin <path-or-npm-package>` (repeatable). `--plugin-watch` enables hot reload.
-- **Manifest**: `claude-ide-bridge-plugin.json` with `schemaVersion: 1`. Tool names must start with `toolNamePrefix` (2-20 chars, `/^[a-zA-Z][a-zA-Z0-9_]{1,19}$/`).
-- **Entrypoint**: exports `register(ctx)` where `ctx` provides `workspace`, `workspaceFolders`, `config`, `logger`.
-- **Distribution**: publish to npm with keyword `claude-ide-bridge-plugin`; install via package name.
-- **Lifecycle**: loaded after CLI probes, before sessions accepted. On hot-reload, tools re-registered atomically.
-- **No symlinks**: Files in `claude-ide-bridge-plugin/` are standalone copies, not symlinks. After modifying plugin source, manually sync copies — they will NOT auto-update.
-
-Full reference: [documents/plugin-authoring.md](documents/plugin-authoring.md)
-
-## OAuth 2.0 Mode
-
-For remote deployments where claude.ai custom connectors need authenticated access.
-
-- **Activation**: `--issuer-url <public-https-url>` activates OAuth 2.0. `--cors-origin <origin>` (repeatable) sets `Access-Control-Allow-Origin` on all responses.
-- **Endpoints**: `/.well-known/oauth-authorization-server` (RFC 8414), `/.well-known/oauth-protected-resource` (RFC 9728), `/oauth/register` (RFC 7591 dynamic client registration), `/oauth/authorize` (approval page), `/oauth/token`, `/oauth/revoke` (RFC 7009).
-- **Design**: PKCE S256 mandatory. Auth codes single-use, 5-min TTL. Access tokens opaque base64url, 24-hour TTL. No refresh tokens — clients connecting TO the bridge re-authorize on expiry. Note: connector tokens (bridge connecting OUT to external services) DO use refresh tokens and auto-refresh on 401 via `baseConnector.refreshToken()`.
-- **CIMD**: if `client_id` is an `https://` URL, bridge fetches the Client ID Metadata Document (RFC draft) to discover `redirect_uris`; 5-min cache, 8 KB max, SSRF-guarded.
-- **Bridge token**: resource owner credential. Entered in `/oauth/authorize` approval page. All string comparisons timing-safe.
-- **CORS env var**: `CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai,https://other.example.com` (comma-separated alternative to `--cors-origin`).
-- **Never** commit bridge token, `--fixed-token` values, real domain names, `--issuer-url` values, or `--cors-origin` values to version control.
-
-## Remote Deployment
-
-- **VPS flags**: `--bind 0.0.0.0` exposes to all interfaces. `--vps` expands command allowlist (adds curl, systemctl, docker, etc.). `--fixed-token <uuid>` prevents token rotation on restart.
-- **Headless (no IDE)**: `print-token [--port N]` retrieves auth token from lock file. CLI tools work; LSP/debugger tools require VS Code extension.
-- **VS Code Remote-SSH / Cursor SSH**: extension has `extensionKind: ["workspace"]` — loads on VPS side automatically. Full tool support.
-- **Reverse proxy**: required for remote access (nginx or Caddy with TLS). See [docs/remote-access.md](docs/remote-access.md).
-- **Systemd + deploy scripts**: `deploy/bootstrap-new-vps.sh` (full provisioning), `deploy/install-vps-service.sh` (idempotent service install). See [deploy/README.md](deploy/README.md).
-- **Scheduled task templates not auto-installed**: Copy from `templates/scheduled-tasks/` to `~/.claude/scheduled-tasks/` manually, then restart Claude Desktop.
-
-## Claude Orchestration
-
-Bridge spawns Claude Code subprocesses as background tasks.
-
-- **Activation**: `--driver subprocess` (or `api`). Default `none` (disabled).
-- **Tools**: `runClaudeTask` (enqueue prompt), `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`, `resumeClaudeTask`.
-- **Task lifecycle**: `pending` → `running` → `done | error | cancelled | interrupted`. Output streams to VS Code output channel, capped at 50KB.
-- **Binary**: `--claude-binary <path>` overrides Claude CLI path (default: `claude` on PATH).
-
-Full reference: [documents/platform-docs.md](documents/platform-docs.md) (Claude orchestration section).
-
-## Automation Policy
-
-Event-driven hooks that trigger Claude tasks automatically.
-
-- **Activation**: Two paths:
-  1. `--automation --automation-policy <path.json> --driver subprocess` — explicit policy file; hooks fire immediately and stay active for the bridge lifetime.
-  2. Auto-enable (no `--automation` flag needed) — when `--driver` is non-none and at least one installed recipe declares a `file_watch`, `git_hook`, `on_file_save`, or `on_test_run` trigger, the bridge stands up a policy-less `AutomationHooks` at startup. **Startup-only**: installing a trigger recipe mid-session requires a bridge restart to take effect unless `--automation` is also active. `file_watch` and `git_hook` triggers hot-reload on recipe install/save/delete via `onRecipesChangedFn`; `on_file_save` and `on_test_run` are startup-only under the auto-enable path.
-- **Hooks**:
-  - `onDiagnosticsStateChange` (v2.43.0+) — unified diagnostics hook. `state: "error"` fires on new error/warning diagnostics (`{{file}}`, `{{diagnostics}}`, severity filter). `state: "cleared"` fires when errors/warnings drop to zero (`{{file}}`). Replaces deprecated `onDiagnosticsError` + `onDiagnosticsCleared`.
-  - `onFileSave` — matching files saved. Minimatch glob patterns. Placeholder: `{{file}}`.
-  - `onFileChanged` — matching files changed (buffer change, not save). Minimatch glob patterns. Placeholder: `{{file}}`.
-  - `onRecipeSave` — fires when any `.yaml`/`.yml` file is saved. Placeholder: `{{file}}`. Default prompt (when no `prompt`/`promptName`) runs `patchwork recipe preflight {{file}}` and reports issues as a Claude task. Override with explicit prompt for custom behavior. Cooldown key: per-file, default 10 000 ms.
-  - `onCompaction` (v2.43.0+) — unified hook. `phase: "pre"` fires before compaction (snapshot state); `phase: "post"` fires after (re-inject IDE state). Replaces the now-deprecated `onPreCompact` + `onPostCompact` pair; legacy names still work but emit a deprecation warning. Removed no earlier than 2026-09-01.
-  - `onInstructionsLoaded` — fires at session start. Injects bridge status summary.
-  - `onGitCommit` — fires after successful `gitCommit`. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`.
-  - `onGitPull` — fires after successful `gitPull`. Placeholders: `{{remote}}`, `{{branch}}`.
-  - `onGitPush` — fires after successful `gitPush`. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`.
-  - `onBranchCheckout` — fires after successful `gitCheckout`. Placeholders: `{{branch}}`, `{{previousBranch}}`, `{{created}}`.
-  - `onPullRequest` — fires after successful `githubCreatePR`. Placeholders: `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}`.
-  - `onTestRun` — fires after `runTests` completes. **Caveat**: only fires when tests are invoked via the bridge `runTests` tool — bare `npm test` / `npx vitest` invocations do NOT trigger this hook. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array). Supports `filter: "any"|"failure"|"pass-after-fail"` (v2.43.0+). `"pass-after-fail"` replaces the deprecated separate `onTestPassAfterFailure` hook. Legacy `onFailureOnly` boolean still works but emits a deprecation warning.
-  - `onTaskCreated` — fires on Claude Code TaskCreated hook (CC 2.1.84+). Placeholders: `{{taskId}}`, `{{prompt}}`.
-  - `onTaskSuccess` — fires when orchestrator task completes successfully. Placeholders: `{{taskId}}`, `{{output}}`.
-  - `onPermissionDenied` — fires on Claude Code PermissionDenied hook (CC 2.1.89+). Placeholders: `{{tool}}`, `{{reason}}`.
-  - `onCwdChanged` — fires when Claude Code CWD changes (CC 2.1.83+). Placeholder: `{{cwd}}`.
-  - `onDebugSession` (v2.43.0+) — unified debug-session hook. `phase: "start"` fires on session start (`{{sessionName}}`, `{{sessionType}}`, `{{breakpointCount}}`, `{{activeFile}}`). `phase: "end"` fires on termination (`{{sessionName}}`, `{{sessionType}}`). Replaces deprecated `onDebugSessionStart` + `onDebugSessionEnd`.
-- **Shared options**: all hooks support inline `prompt` string or `promptName`/`promptArgs` named prompt references. All support `cooldownMs` (min 5000).
-- **Cooldown**: min 5s between triggers for same file/event. Max prompt size: 32KB.
-- **Webhook fan-out** (v1, `onCompaction` only — see [ADR-0009](docs/adr/0009-automation-webhook-fanout.md)) — any opted-in hook may add an optional `webhook: { url, method?, headers? }` config. When the hook fires, the interpreter POSTs (or PUT/PATCH) a JSON body to the URL AFTER the inline prompt enqueue. Body shape: `{ hookType, phase?, timestamp, ...eventData }`. 10s timeout; non-2xx and network errors are logged but never block other hooks. SSRF guard: loopback (127.0.0.0/8, ::1, localhost) and public hosts allowed; other private ranges blocked unless `--automation-allow-private-webhooks` is set. Both inline `prompt` AND `webhook` may be set on the same entry — they run sequentially: prompt first, then webhook. Hook entries with only a `webhook` (no `prompt` / `promptName`) are valid and skip the task enqueue. Example:
-  ```json
-  {
-    "onCompaction": {
-      "phase": "pre",
-      "enabled": true,
-      "cooldownMs": 5000,
-      "webhook": {
-        "url": "http://127.0.0.1:54321/hooks/compaction-snapshot-pre",
-        "method": "POST",
-        "headers": { "Content-Type": "application/json" }
-      }
-    }
-  }
-  ```
-- **CC hook wiring** — hooks relying on Claude Code's hook system need MCP notify tools called from `settings.json`. Bridge registers these automatically when `--automation` active:
-
-  | CC hook event | Shell command (settings.json) |
-  |---|---|
-  | `PreCompact` | `claude-ide-bridge notify PreCompact` |
-  | `PostCompact` | `claude-ide-bridge notify PostCompact` |
-  | `InstructionsLoaded` | `claude-ide-bridge notify InstructionsLoaded` |
-  | `TaskCreated` | `claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT` |
-  | `PermissionDenied` | `claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON` |
-  | `CwdChanged` | `claude-ide-bridge notify CwdChanged --cwd $CWD` |
-
-  `notify` subcommand reads bridge lock file, looks up running port and auth token, POSTs to `/notify` HTTP endpoint. Bridge must be running.
-
-  Example `~/.claude/settings.json` block (Claude Code requires `matcher` + `hooks` arrays):
-  ```json
-  "hooks": {
-    "PreCompact": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PreCompact" }] }
-    ],
-    "PostCompact": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }] }
-    ],
-    "InstructionsLoaded": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }] }
-    ],
-    "TaskCreated": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }] }
-    ],
-    "PermissionDenied": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }] }
-    ],
-    "CwdChanged": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }] }
-    ]
-  }
-  ```
-
-## Transport & Session Model
-
-| Transport | Client | Protocol |
-|-----------|--------|----------|
-| WebSocket | Claude Code CLI | `ws://127.0.0.1:<port>` with `x-claude-code-ide-authorization` header |
-| stdio shim | Claude Desktop | stdin/stdout JSON-RPC, bridges to WebSocket internally |
-| Streamable HTTP | Remote MCP clients (claude.ai, Codex CLI) | `POST/GET/DELETE /mcp` with Bearer token |
-
+- **Plugins** — [documents/plugin-authoring.md](documents/plugin-authoring.md). Files in `claude-ide-bridge-plugin/` are standalone copies, not symlinks: after modifying plugin source, sync the copies by hand or they will NOT update.
+- **OAuth 2.0 mode / remote deployment** — [docs/guide/security.md](docs/guide/security.md), [docs/remote-access.md](docs/remote-access.md). Never commit the bridge token, `--fixed-token` values, real domain names, `--issuer-url` or `--cors-origin` values. Clients connecting TO the bridge get no refresh tokens; connector tokens going OUT do refresh (`baseConnector.refreshToken()`).
+- **Claude orchestration** — [documents/platform-docs.md](documents/platform-docs.md). `--driver subprocess` (or `api`); default `none` disables it, and several verbs (`quick-task`, webhooks) require it.
+- **Automation policy** — [docs/automation.md](docs/automation.md), [documents/platform-docs.md](documents/platform-docs.md). Two traps: `onTestRun` fires ONLY when tests run through the bridge `runTests` tool — bare `npm test` / `npx vitest` never trigger it; and the auto-enable path (a `--driver` plus an installed trigger recipe) is **startup-only** for `on_file_save` / `on_test_run`, so installing one mid-session needs a bridge restart unless `--automation` is also active. Webhook fan-out is `onCompaction` only ([ADR-0009](docs/adr/0009-automation-webhook-fanout.md)).
+- **Transport & sessions** — [docs/guide/security.md](docs/guide/security.md), [docs/protocol-spec.md](docs/protocol-spec.md), ADRs [0001](docs/adr/0001-dual-version-numbers.md), [0002](docs/adr/0002-generation-guards-on-reconnect.md), [0003](docs/adr/0003-isbridge-lock-file-flag.md), [0005](docs/adr/0005-http-session-eviction.md). `version=1.1.0` in bridge logs is the extension's WIRE version, not a stale extension. The old hard-required `Mcp-Session-Token` header was replaced (2026-07) by bearer-hash binding in `verifyPrincipal` because standard clients never sent it, which made every OAuth-mode session unreachable.
 - **Trust evidence retention is a real constraint** (#1337). `runs.jsonl` is capped by BYTES; the durability window is defined in TIME. Nothing reconciles them, so a high-frequency recipe can starve the trust ledger — measured 18.2h retention against a 24h window, meaning a non-reversible success was deleted before it could settle and compensable/irreversible trust was unearnable *in principle*. Trust replay now reads `runs.jsonl.1` (the rotation archive) alongside the live file, deduped by `taskId` across both. `evidenceRetention()` reports span-vs-window and `workers shadow` warns when it goes negative — a starved ledger otherwise looks identical to a quiet worker. **The 18.2h figure is HISTORICAL, not current**: re-measured 2026-08-16 at **88h across 1129 rows against the same 24h window**, comfortably sufficient, with no rotation having fired since (`runs.jsonl.1` does not exist). The starvation was caused by one high-frequency recipe's volume, so this number tracks usage and can regress at any time — re-measure with `evidenceRetention()` before treating retention as a live problem rather than quoting either figure. **The durable fix is a filtered worker-run ledger** (worker rows are ~0.2% of volume, so noise-immune), deliberately not built yet: it spans 8 write paths where a miss is a silent evidence gap, and as of the latest measurement there is no live starvation forcing it.
 - **Run log identity is `taskId`, NOT `seq`** (#1324). `seq` is a per-INSTANCE counter but `runs.jsonl` is shared by eight construction sites, several of which write — two live instances hand the same seq to unrelated runs (142 of 145 seqs collided in the live log). Deduping by it destroyed 2/3 of the run history, which is also the autonomy gate's trust evidence. `RecipeRunLog` now dedups on `taskId` at load AND upserts by it in `syncFromDisk` (the old `seq > this.seq` gate made a concurrent writer's runs invisible to a live bridge entirely). **Still open**: `getBySeq` backs `/runs/[seq]` and replay, so a run-detail page or a replay can still resolve to an arbitrary colliding run — fixing that is a URL-contract change. **Also open**: `rotateDisk` trims the oldest rows at the 1 MB cap. It is no longer true that nothing stands behind it — `worker_trust/` **has** been written since (a `butler-errand` checkpoint dated 2026-08-13 holding a watermark row plus three worker-state rows), so the `folded > 0` condition does now fire and the durable-checkpoint path is live rather than theoretical. Corrected 2026-08-16 by inspecting the directory; the previous claim that it had never been written was true when written and stale afterwards. Rotation destroyed the first real governed errand on 2026-08-11, which remains the reason the checkpoint exists.
-- **Lock file**: `~/.claude/ide/<port>.lock` — `{pid, workspace, authToken, isBridge: true, ...}`. Created with `O_EXCL` (prevents symlink attacks), permissions `0o600`. `isBridge: true` distinguishes bridge locks from IDE-owned locks. See [ADR-0003](docs/adr/0003-isbridge-lock-file-flag.md).
-- **Auth**: token from lock file, validated with `crypto.timingSafeEqual`. Host header DNS rebinding defense rejects non-loopback hosts.
-- **HTTP sessions**: max 5 concurrent, 2hr idle TTL, oldest idle (>60s) evicted on capacity. See [ADR-0005](docs/adr/0005-http-session-eviction.md).
-- **Session-hijack defense (OAuth mode)**: `verifyPrincipal` (`src/streamableHttp.ts`) binds an HTTP session to the SHA-256 hash of the bearer token presented at `initialize` — every subsequent POST/GET/DELETE must present a bearer that hashes to the same value, or 403. Replaces the old hard-required `Mcp-Session-Token` header (2026-07) — that header isn't part of the MCP spec, so standard clients (Gemini CLI, Codex, ChatGPT's connector) never sent it, making every OAuth-mode session unreachable by them. `Mcp-Session-Token` is still issued and optionally checked if present, but never required in any mode now.
-- **Grace period**: `--grace-period <ms>` (default 120s) preserves session state across brief disconnects. Reconnecting client sending `X-Claude-Code-Session-Id` matching in-grace session is reattached (no new session, no re-initialization). stdio shim sends stable per-process UUID automatically.
-- **Version numbers**: `BRIDGE_PROTOCOL_VERSION` (wire format, bump rarely) vs `PACKAGE_VERSION` (npm, every release). See [ADR-0001](docs/adr/0001-dual-version-numbers.md). Same dual-version applies to extension: `EXTENSION_PROTOCOL_VERSION` (wire compat, `"1.1.0"`) vs npm package version (`1.3.x`). `extension/hello` reports both — `protocolVersion` and `packageVersion`. Check both in bridge logs; `version=1.1.0` in logs is the wire version, not stale extension.
-- **Generation guards**: every WebSocket callback checks `gen !== this.generation` to prevent stale callbacks corrupting new connection state. See [ADR-0002](docs/adr/0002-generation-guards-on-reconnect.md).
-
-## Security Model
-
-- **Command allowlist**: `runCommand` only executes allowlisted commands. Interpreter commands (node, python, bash, etc.) permanently blocked from `--allow-command`. Argument splitting prevents `--flag=value` injection.
-- **SSRF defense** (`sendHttpRequest`): hostname blocklist for private/loopback ranges, DNS pre-resolution re-check, Host header override after user headers.
-- **Path traversal** (`resolveFilePath` in `src/tools/utils.ts`): rejects null bytes, symlink escapes (ancestor chain walk), paths outside workspace.
-- **Input validation**: AJV validates all tool arguments at transport layer before execution. `isValidRef` rejects leading-dash git refs. `searchAndReplace` rejects null bytes and `-`-prefixed globs. Clipboard enforces 1MB cap via `Buffer.byteLength`.
-- **Rate limiting**: 200 requests/min (ring buffer), 500 notifications/min, per-session tool token bucket (default 60/min, configurable via `--tool-rate-limit`). Failed AJV validation does not consume rate limit tokens.
-- **Error codes**: `ToolErrorCodes` (string codes in `isError: true` content blocks) for tool failures; `ErrorCodes` (JSON-RPC -32xxx) for protocol issues. Never mix. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
-- **Webhook HMAC auth** (`POST /hooks/*`): when started with `--webhook-secret <hex>` (or `BRIDGE_WEBHOOK_SECRET` env), requests carrying `X-Hub-Signature-256: sha256=<hex>` are authenticated via HMAC-SHA256 over the raw body (constant-time compare via `timingSafeEqual`). Bearer-token access still works — HMAC is additive. Without `--webhook-secret`, a request that presents `X-Hub-Signature-256` gets 401 `webhook_secret_not_configured` (must still pass Bearer gate to reach the handler); a missing/invalid signature with no Bearer returns 401 at the outer gate.
+- **Security model** — [docs/guide/security.md](docs/guide/security.md). Error codes: `ToolErrorCodes` (string codes in `isError: true` content) for tool failures, `ErrorCodes` (JSON-RPC -32xxx) for protocol issues — never mix ([ADR-0004](docs/adr/0004-tool-errors-as-content.md)). Interpreter commands are permanently blocked from `--allow-command`.
 
 <!-- claude-ide-bridge:start:0.2.0-beta.13 -->
 ## Claude IDE Bridge
