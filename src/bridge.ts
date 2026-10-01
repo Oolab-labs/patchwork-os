@@ -293,6 +293,10 @@ export class Bridge {
       this.oauthServer = new OAuthServerImpl(this.authToken, config.issuerUrl, {
         configDir,
         tokenTtlMs: config.oauthTokenTtlMs,
+        // The same proxy-aware resolver the phone-path limiter uses, so the
+        // OAuth limiters see the real client behind `--trusted-proxy` rather
+        // than the proxy's address for everyone.
+        clientIp: (req) => this.server.getClientIp(req),
       });
       this.server.setOAuthServer(this.oauthServer, config.issuerUrl);
       this.logger.info(`OAuth 2.0 enabled — issuer: ${config.issuerUrl}`);

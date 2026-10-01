@@ -160,8 +160,33 @@ export function isValidCimdRedirectUri(uri: string): boolean {
 const CODE_TTL_MS = 5 * 60 * 1_000; // 5 min
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1_000; // 24 hours
 const CLIENT_TTL_MS = 7 * 24 * 60 * 60 * 1_000; // 7 days — GC registered clients after a week
+/**
+ * Cap on `registeredClients`, counted across BOTH ways a client can enter the
+ * map: `POST /oauth/register` and a CIMD `client_id` pinned on first
+ * `GET /oauth/authorize`. Both are unauthenticated. The cap used to be checked
+ * only on the register path, so one public CIMD document reachable under 500
+ * path-variant URLs filled the map from the authorize path and left dynamic
+ * registration answering 429 for the whole CLIENT_TTL_MS.
+ */
+const MAX_REGISTERED_CLIENTS = 500;
 const DEFAULT_SCOPE = "mcp";
 const SUPPORTED_SCOPES = ["mcp"];
+
+/**
+ * Headers for EVERY render of the approval page. There are two renders — the
+ * GET and the wrong-bridge-token retry — and only the GET carried these until
+ * 2026-10-01. The CSRF nonce is flow-keyed and client-bound, not session-bound,
+ * so a cross-site form POST into an iframe with a wrong token produced a
+ * framable token-entry form bound to the attacker's client. One constant, two
+ * call sites, so the next render added cannot drift either.
+ */
+const APPROVAL_PAGE_HEADERS: Record<string, string> = {
+  "Content-Type": "text/html; charset=utf-8",
+  "Content-Security-Policy":
+    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer",
+};
 
 function oauthTokenStorageProvider(configDir: string): string {
   const hash = crypto
@@ -237,13 +262,29 @@ export class OAuthServerImpl implements OAuthServer {
   private readonly hashedTokens = new Map<string, AccessToken>();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * Resolves the client address the per-IP limiters key on. Injected because
+   * the correct answer depends on deployment: behind the reverse proxy that
+   * remote deployment REQUIRES, `req.socket.remoteAddress` is the proxy for
+   * every client, so a socket-keyed limiter let one attacker 429 everyone's
+   * token exchange. The bridge passes the server's proxy-aware resolver (which
+   * honours `trustedProxies`); tests pass a stub. `null` falls back to the
+   * socket peer, which is the right answer when nothing is in front.
+   */
+  private readonly clientIp: (req: IncomingMessage) => string | null;
+
   constructor(
     bridgeToken: string,
     issuerUrl: string,
-    opts?: { configDir?: string; tokenTtlMs?: number },
+    opts?: {
+      configDir?: string;
+      tokenTtlMs?: number;
+      clientIp?: (req: IncomingMessage) => string | null;
+    },
   ) {
     this.bridgeToken = bridgeToken;
     this.issuerUrl = issuerUrl.replace(/\/$/, "");
+    this.clientIp = opts?.clientIp ?? (() => null);
     this.tokenTtlMs = opts?.tokenTtlMs ?? TOKEN_TTL_MS;
     this.tokenStoreProvider = opts?.configDir
       ? oauthTokenStorageProvider(opts.configDir)
@@ -402,7 +443,7 @@ export class OAuthServerImpl implements OAuthServer {
     }
 
     // Per-IP rate limit: max 10 registrations per minute per IP
-    const remoteIp = (req.socket?.remoteAddress ?? "unknown").slice(0, 64);
+    const remoteIp = this.limiterKey(req);
     const now = Date.now();
     const ipEntry = this.registerIpCounts.get(remoteIp);
     if (
@@ -423,7 +464,8 @@ export class OAuthServerImpl implements OAuthServer {
 
     // Cap registered clients to prevent memory exhaustion via pre-auth DoS.
     // /oauth/register requires no bearer token, so any caller can POST freely.
-    if (this.registeredClients.size >= 500) {
+    // The CIMD path in parseAuthorizeParams checks the same constant.
+    if (this.registeredClients.size >= MAX_REGISTERED_CLIENTS) {
       this.sendJson(res, 429, {
         error: "too_many_requests",
         error_description: "client registration limit reached",
@@ -497,13 +539,7 @@ export class OAuthServerImpl implements OAuthServer {
       expiresAt: Date.now() + OAuthServerImpl.CSRF_TTL_MS,
     });
 
-    res.writeHead(200, {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy":
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
-      "X-Frame-Options": "DENY",
-      "Referrer-Policy": "no-referrer",
-    });
+    res.writeHead(200, APPROVAL_PAGE_HEADERS);
     res.end(
       this.approvalPage({
         clientId: clientId as string,
@@ -597,7 +633,7 @@ export class OAuthServerImpl implements OAuthServer {
         clientId,
         expiresAt: Date.now() + OAuthServerImpl.CSRF_TTL_MS,
       });
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.writeHead(200, APPROVAL_PAGE_HEADERS);
       res.end(
         this.approvalPage({
           clientId,
@@ -633,12 +669,19 @@ export class OAuthServerImpl implements OAuthServer {
 
   // ── Token endpoint ────────────────────────────────────────────────────────
 
+  /** Bucket key for the per-IP limiters — see `clientIp` on the constructor. */
+  private limiterKey(req: IncomingMessage): string {
+    const resolved =
+      this.clientIp(req) ?? req.socket?.remoteAddress ?? "unknown";
+    return resolved.slice(0, 64);
+  }
+
   async handleToken(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Per-IP rate limit. Mirrors the /oauth/register limiter: cheap window
     // counter, GC'd alongside the registration map. Without this, an
     // attacker can stuff CPU into auth-code-validation + PKCE verification
     // by hammering /token with bogus codes.
-    const remoteIp = (req.socket?.remoteAddress ?? "unknown").slice(0, 64);
+    const remoteIp = this.limiterKey(req);
     const rlNow = Date.now();
     const tokenIpEntry = this.tokenIpCounts.get(remoteIp);
     if (
@@ -1190,6 +1233,14 @@ export class OAuthServerImpl implements OAuthServer {
         // currently cached CIMD content that may have rotated.
         allowedRedirectUris = existing.redirectUris;
       } else {
+        // Same cap handleRegister enforces, checked BEFORE the fetch: this
+        // path is reachable by an unauthenticated GET and inserts into the
+        // map the cap counts, so without it the register-side cap was a
+        // fence with one side missing. An already-pinned client (above) is
+        // served regardless — it is not a new entry.
+        if (this.registeredClients.size >= MAX_REGISTERED_CLIENTS) {
+          return { error: "temporarily_unavailable" };
+        }
         const cimdUris = await this.fetchCimd(clientId);
         if (!cimdUris) return { error: "invalid_client" };
         this.registeredClients.set(clientId, {
