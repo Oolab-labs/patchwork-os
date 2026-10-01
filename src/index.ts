@@ -6693,8 +6693,15 @@ if (process.argv[2] === "launchd") {
   } else if (sub === "uninstall") {
     const { runLaunchdUninstall } = await import("./commands/launchd.js");
     await runLaunchdUninstall(process.argv.slice(4));
+  } else if (sub === "status") {
+    // Advertised in --help from the start; this branch did not exist until
+    // 2026-10-01, so `launchd status` printed the usage line and exited 1.
+    const { runLaunchdStatus } = await import("./commands/launchd.js");
+    process.exit(await runLaunchdStatus(process.argv.slice(4)));
   } else {
-    process.stderr.write("Usage: patchwork-os launchd install|uninstall\n");
+    process.stderr.write(
+      "Usage: patchwork-os launchd install|uninstall|status [--json]\n",
+    );
     process.exit(1);
   }
   process.exit(0);

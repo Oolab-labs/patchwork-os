@@ -142,3 +142,120 @@ export async function runLaunchdUninstall(_argv: string[]): Promise<void> {
 
   process.stdout.write(`✓ Patchwork OS launchd agent removed\n`);
 }
+
+/**
+ * Seams for `launchd status`, injected so the command is testable without a
+ * LaunchAgent and on non-macOS CI. Production passes nothing and gets the
+ * real filesystem, `launchctl` and platform.
+ */
+export interface LaunchdStatusDeps {
+  platform: NodeJS.Platform;
+  uid: number;
+  exists: (path: string) => boolean;
+  /** `launchctl print gui/<uid>/<label>` — exit status and stdout. */
+  launchctlPrint: (target: string) => { status: number | null; stdout: string };
+  stdout: (s: string) => void;
+  stderr: (s: string) => void;
+}
+
+function defaultStatusDeps(): LaunchdStatusDeps {
+  return {
+    platform: process.platform,
+    uid: process.getuid ? process.getuid() : 501,
+    exists: existsSync,
+    launchctlPrint: (target) => {
+      const r = spawnSync("launchctl", ["print", target], {
+        encoding: "utf-8",
+      });
+      return { status: r.error ? 1 : r.status, stdout: r.stdout ?? "" };
+    },
+    stdout: (s) => {
+      process.stdout.write(s);
+    },
+    stderr: (s) => {
+      process.stderr.write(s);
+    },
+  };
+}
+
+/**
+ * `patchwork launchd status [--json]` — is the LaunchAgent installed, loaded
+ * and running? Advertised in `--help` since the command shipped; the
+ * dispatcher had no branch for it until 2026-10-01, so it printed the
+ * install|uninstall usage and exited 1.
+ *
+ * Three facts, in the order they can fail: the plist exists; launchd has it
+ * loaded (`launchctl print` exits 0 — a plist on disk that was never
+ * bootstrapped is the common half-installed state); and the job has a pid.
+ * Exit 0 only when all three hold, so `launchd status && …` means "the agent
+ * is actually serving". Returns the exit code rather than calling
+ * `process.exit`, so the dispatcher owns the exit and the tests can assert.
+ */
+export async function runLaunchdStatus(
+  argv: string[],
+  deps: LaunchdStatusDeps = defaultStatusDeps(),
+): Promise<number> {
+  const json = argv.includes("--json");
+  if (deps.platform !== "darwin") {
+    deps.stderr("launchd is only available on macOS\n");
+    return 1;
+  }
+
+  const installed = deps.exists(PLIST_DEST);
+  let loaded = false;
+  let running = false;
+  let pid: number | null = null;
+  let lastExitCode: number | null = null;
+
+  if (installed) {
+    const r = deps.launchctlPrint(`gui/${deps.uid}/${PLIST_LABEL}`);
+    loaded = r.status === 0;
+    if (loaded) {
+      const pidMatch = r.stdout.match(/^\s*pid = (\d+)\s*$/m);
+      if (pidMatch) pid = Number(pidMatch[1]);
+      const exitMatch = r.stdout.match(/^\s*last exit code = (-?\d+)\s*$/m);
+      if (exitMatch) lastExitCode = Number(exitMatch[1]);
+      running = pid !== null && /^\s*state = running\s*$/m.test(r.stdout);
+    }
+  }
+
+  const ok = installed && loaded && running;
+
+  if (json) {
+    deps.stdout(
+      `${JSON.stringify({
+        label: PLIST_LABEL,
+        plistPath: PLIST_DEST,
+        installed,
+        loaded,
+        running,
+        pid,
+        lastExitCode,
+        ok,
+      })}\n`,
+    );
+    return ok ? 0 : 1;
+  }
+
+  const lines = [`Patchwork OS LaunchAgent (${PLIST_LABEL})`];
+  if (!installed) {
+    lines.push(
+      `  Plist:   ${PLIST_DEST} — not installed`,
+      "  Run `patchwork-os launchd install` to register it.",
+    );
+  } else {
+    lines.push(`  Plist:   ${PLIST_DEST}`);
+    lines.push(
+      `  Loaded:  ${loaded ? "yes" : "no"}${loaded ? "" : " (on disk but not bootstrapped — re-run `launchd install`)"}`,
+    );
+    if (loaded) {
+      lines.push(
+        running
+          ? `  State:   running (pid ${pid})`
+          : `  State:   not running${lastExitCode === null ? "" : ` (last exit code ${lastExitCode})`}`,
+      );
+    }
+  }
+  deps.stdout(`${lines.join("\n")}\n`);
+  return ok ? 0 : 1;
+}

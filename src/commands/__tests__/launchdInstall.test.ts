@@ -59,7 +59,7 @@ describe("runLaunchdInstall — symlink guard", () => {
 
     mockedDetect.mockReturnValue({
       logicalRoot: "/opt/homebrew/lib/node_modules/patchwork-os",
-      realRoot: "/Users/wesh/Documents/Anthropic Workspace/Patchwork OS",
+      realRoot: "/Users/someone/Documents/workspace",
     });
 
     const stderrChunks: string[] = [];
@@ -86,9 +86,7 @@ describe("runLaunchdInstall — symlink guard", () => {
     expect(output).toContain(
       `/opt/homebrew/lib/node_modules/${PATCHWORK_PACKAGE_NAME}`,
     );
-    expect(output).toContain(
-      "/Users/wesh/Documents/Anthropic Workspace/Patchwork OS",
-    );
+    expect(output).toContain("/Users/someone/Documents/workspace");
     expect(output).toContain("npm pack");
     expect(output).toContain("launchd install");
 
