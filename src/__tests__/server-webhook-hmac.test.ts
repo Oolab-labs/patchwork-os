@@ -212,7 +212,78 @@ describe("POST /hooks/* — HMAC-SHA256 webhook auth", () => {
     expect(result.status).not.toBe(200);
     expect(calls).toHaveLength(0);
   });
+
+  // An EMPTY signature header is neither "absent" (undefined) nor
+  // "multi-valued" (array / comma), so it slipped between the two sentinels:
+  // the outer gate saw a non-null value and waived the bearer requirement as
+  // an "HMAC candidate", and the inner gate's `length > 0` check then skipped
+  // HMAC verification entirely. No credential of any kind, and the recipe
+  // fired. RFC 7230 permits a zero-length field-value and Node's parser
+  // yields "" for `X-Hub-Signature-256:` (OWS trimmed, so whitespace-only
+  // arrives as "" too). Sent over a raw socket so the bytes on the wire are
+  // exactly what a hostile client would send, not what http.request
+  // normalises them to.
+  for (const [label, headerLine] of [
+    ["an empty", "X-Hub-Signature-256:"],
+    ["a whitespace-only", "X-Hub-Signature-256:    "],
+  ] as const) {
+    it(`${label} X-Hub-Signature-256 header must NOT bypass bearer auth and HMAC`, async () => {
+      await startServer({ secret: SECRET });
+      const body = JSON.stringify({ action: "opened" });
+      const result = await postHooksRaw(body, [headerLine]);
+      expect(result.status).toBe(401);
+      expect(calls).toHaveLength(0);
+    });
+  }
+
+  it("an empty X-Hub-Signature-256 header with NO secret configured still requires a bearer", async () => {
+    await startServer({ secret: null });
+    const body = JSON.stringify({ action: "opened" });
+    const result = await postHooksRaw(body, ["X-Hub-Signature-256:"]);
+    expect(result.status).toBe(401);
+    expect(calls).toHaveLength(0);
+  });
 });
+
+/**
+ * POST /hooks/test-recipe over a raw TCP socket with caller-supplied header
+ * lines verbatim. `http.request` normalises header values (and refuses some
+ * shapes outright), which is exactly what a test of hostile header bytes must
+ * not go through.
+ */
+async function postHooksRaw(
+  body: string,
+  headerLines: readonly string[],
+): Promise<{ status: number }> {
+  const net = await import("node:net");
+  const raw =
+    `POST /hooks/test-recipe HTTP/1.1\r\n` +
+    `Host: 127.0.0.1:${port}\r\n` +
+    `Content-Type: application/json\r\n` +
+    `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+    headerLines.map((h) => `${h}\r\n`).join("") +
+    `\r\n` +
+    body;
+  return new Promise<{ status: number }>((resolve, reject) => {
+    const sock = net.connect(port, "127.0.0.1", () => {
+      sock.write(raw);
+    });
+    let resp = "";
+    sock.on("data", (d) => {
+      resp += d.toString();
+      if (resp.includes("\r\n\r\n")) {
+        const statusLine = resp.split("\r\n")[0] ?? "";
+        const statusCode = Number(statusLine.split(" ")[1]);
+        sock.destroy();
+        resolve({ status: statusCode });
+      }
+    });
+    sock.on("error", reject);
+    sock.on("close", () => {
+      if (!resp) resolve({ status: 0 });
+    });
+  });
+}
 
 // H6 — direct coverage of the array/multi-valued reproduction that the raw
 // HTTP path cannot produce (Node comma-joins duplicate headers into a single
@@ -236,6 +307,15 @@ describe("readSingleSignatureHeader — H6 multi-valued rejection", () => {
     expect(
       readSingleSignatureHeader("sha256=invalid1, sha256=invalid2"),
     ).toBeNull();
+  });
+  // "" is present-but-unusable, the same class as multi-valued: a caller that
+  // treats null as "no signature, fall through to bearer" must get null here,
+  // or an empty header is a signature that verifies nothing.
+  it("returns null for an empty string (present-but-empty header)", () => {
+    expect(readSingleSignatureHeader("")).toBeNull();
+  });
+  it("returns null for a whitespace-only string", () => {
+    expect(readSingleSignatureHeader("   ")).toBeNull();
   });
 });
 
