@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
 import { requireSameOrigin } from "@/lib/csrf";
+import { joinPathSegments } from "@/lib/proxyPath";
 import {
   BRIDGE_BODY_CAPS,
   bodyTooLargeResponse,
@@ -26,7 +27,9 @@ export async function POST(
       headers: { "content-type": "application/json" },
     });
   }
-  const recipeName = name.slice(0, -1).join("/");
+  // Re-encoded, so the `/run` restriction above describes the wire too: a
+  // decoded `?` in a segment must not rewrite the upstream path/query.
+  const recipeName = joinPathSegments(name.slice(0, -1));
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.run);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.run);
   try {
@@ -55,7 +58,7 @@ export async function GET(
 ): Promise<Response> {
   const { name } = await ctx.params;
   try {
-    const encodedName = name.join("/");
+    const encodedName = joinPathSegments(name);
     const res = await bridgeFetch(`/recipes/${encodedName}`);
     const text = await res.text();
     return new Response(text, {
@@ -85,7 +88,7 @@ async function forwardWithMethod(
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.content);
   try {
     const { name } = await ctx.params;
-    const encodedName = name.join("/");
+    const encodedName = joinPathSegments(name);
     const res = await bridgeFetch(`/recipes/${encodedName}`, {
       method,
       headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
@@ -130,7 +133,7 @@ export async function DELETE(
   if (guard) return guard;
   try {
     const { name } = await ctx.params;
-    const encodedName = name.join("/");
+    const encodedName = joinPathSegments(name);
     const res = await bridgeFetch(`/recipes/${encodedName}`, {
       method: "DELETE",
     });

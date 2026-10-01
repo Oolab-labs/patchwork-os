@@ -6,6 +6,7 @@ import {
   bodyTooLargeResponse,
   readBodyWithCap,
 } from "@/lib/readBodyWithCap";
+import { joinPathSegments } from "@/lib/proxyPath";
 import { SESSION_COOKIE_NAME } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,10 @@ export const runtime = "nodejs";
 
 async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   const qs = req.nextUrl.search;
-  const target = `/${segments.join("/")}${qs}`;
+  // Segments arrive DECODED; re-encode so `recipes%2Finstall` stays one
+  // segment upstream instead of becoming the dedicated route's endpoint
+  // without that route's controls — see `joinPathSegments`.
+  const target = `/${joinPathSegments(segments)}${qs}`;
 
   // SSE passthrough for /stream — stream the response body back to the client.
   // Browsers only initiate EventSource over GET; reject other methods up-front
