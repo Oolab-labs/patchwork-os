@@ -118,8 +118,24 @@ function persist(store: Map<string, PushEntry>): void {
 
 const store = load();
 
-export function addSubscription(sub: PushSubscription): void {
+/**
+ * Hard cap on stored subscriptions. Every relay fan-out is one outbound
+ * HTTPS request per entry, and the store had no limit — an authenticated
+ * user could grow it without bound. One operator with a handful of devices
+ * is the real population; fifty is far above it and far below a problem.
+ */
+export const MAX_SUBSCRIPTIONS = 50;
+
+/**
+ * Add or refresh a subscription. Returns `false` — and stores nothing — when
+ * the endpoint is NEW and the store is at `MAX_SUBSCRIPTIONS`. A re-subscribe
+ * of an endpoint already present always succeeds, because that is the
+ * `pushsubscriptionchange` path and refusing it would silently drop a
+ * device that is still in use.
+ */
+export function addSubscription(sub: PushSubscription): boolean {
   const existing = store.get(sub.endpoint);
+  if (!existing && store.size >= MAX_SUBSCRIPTIONS) return false;
   store.set(sub.endpoint, {
     sub,
     // Preserve prefs on resubscribe (pushsubscriptionchange path) so a
@@ -128,6 +144,7 @@ export function addSubscription(sub: PushSubscription): void {
     prefs: existing?.prefs ?? { ...DEFAULT_PREFS },
   });
   persist(store);
+  return true;
 }
 
 export function removeSubscription(endpoint: string): void {
