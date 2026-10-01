@@ -6,6 +6,87 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.0-beta.3] — 2026-10-01
+
+A security release. It carries one fix that `latest` needs today, and with it
+the seven weeks of work that have been shipping to `canary` since
+`1.2.0-beta.2` (288 commits: 72 features, 134 fixes). Cut now rather than at
+the end of that line because the first item cannot wait for it.
+
+### Security
+
+- **An empty `X-Hub-Signature-256` header bypassed both the bearer gate and
+  HMAC verification on `POST /hooks/*`** (GHSA-5vg2-m59m-6v26, CVSS 8.6). On a
+  bridge started with `--webhook-secret`, a request carrying the header with no
+  value and no bearer token reached the matching webhook recipe with an
+  attacker-controlled payload. Introduced in `0.2.0-beta.12.canary.236`
+  (2026-06-22, #992); every published build since is affected, including
+  `1.2.0-beta.2`. Fixed in #1646: the header reader now treats an empty or
+  whitespace-only value as absent, so both call sites fail closed. If you
+  expose `/hooks/*` publicly, upgrade; the advisory lists proxy-level
+  workarounds for the interval.
+- Four further fixes from the same review are open as #1647–#1650 (dashboard
+  lockout keying, post-login redirect guard, app-level security headers, OAuth
+  approval-page framing and limiter keying, dashboard proxy segment encoding,
+  roster-checked sessions) and are **not** in this release. They need an
+  authenticated session or `--issuer-url` mode to matter.
+
+### Added
+
+- **Governed profile** (ADR-0026): `profile: "governed"` resolves to one
+  effective policy — approval gate floor, automated triggers gated like manual,
+  contained agent steps, kill switch failing closed, connector output enveloped
+  as untrusted — computed in one place and explained by `patchwork policy
+  explain`. `patchwork doctor` ends `STATUS: GOVERNED` / `NOT GOVERNED`.
+- **Tamper-evident ledgers** (ADR-0027): the eight actively written evidence
+  ledgers are hash-chained behind the `rv` sentinel; `patchwork evidence
+  verify` walks every chain and is the one evidence verb that gates.
+- **Identity, Phase A** (ADR-0020): per-member credentials (`patchwork members
+  set-password`), a dashboard login that resolves a member, and a verified
+  session that names the approver in the durable approval log.
+- **Information boundary** (ADR-0021): shadow mode, `privacy suggest`,
+  `privacy undeclared`, `privacy destinations`, `privacy receipts`; the
+  orchestrator path is observed and, on an operator opt-in, enforced.
+- **Evidence spine** (ADR-0025): `correlationId` on gate decisions, boundary
+  receipts and the approval log; `patchwork evidence` reports the denominators;
+  `patchwork sweep` reports what moved since the last run.
+- **Worker authority**: `workers validate`, `workers authority-delta` (a
+  repository gate on widening), `gate explain --diff`, and the control-boundary
+  view on `/workers`.
+- `patchwork doctor` (is the running code the installed code?), `doctor
+  health`, `doctor acceptance`, `approve`/`reject`, `pr-outcomes`, `halts`
+  contract failures, `recipe doctor`.
+- Flight-recorder replay for flat recipes; `recipe test` is offline by
+  construction and `recipe record` is governed.
+- Butler: promotion from graded shadow rows to trust evidence, "what I know
+  about you" with an undo that survives a refresh, and the large-print Home.
+
+### Fixed
+
+- Scheduled recipes fired once per running bridge (#1458); run identity is
+  `taskId`, not the colliding `seq`, across detail, replay, plan and cancel.
+- Approvals: a recipe could stop for a human and never tell one; an expired
+  approval never reached the durable log; execution now binds to the approved
+  action (GHSA-888g-53g6-4874); at most one decision row per `callId`.
+- Gate: a `forbid` decision was written correctly and dropped by every reader;
+  rotation destroyed half the trust ledger silently; a recipe could switch off
+  the machinery that governs it; `fan_out` is gated as the tool it runs.
+- Privacy: data policy preserved through chained agent steps; policy bound to
+  the resolved destination; real identifiers no longer ship to every install.
+- Governance: oversized agent prompts refused before dispatch; provenance
+  preserved through derived outputs; the governed instruction reaches every
+  agent transport; flags-load failures propagate to kill-switch policy.
+- Recipes: an `expect` on a conditional step can fail; a chained recipe's
+  completion contract is checked; a write whose outcome is uncertain is never
+  resent; five shipped event-trigger templates could never register.
+- CLI: `patchwork doctor` had two handlers and one never ran; an unknown
+  argument is refused rather than ignored; `recipe new` emitted unparseable
+  YAML and said "Created".
+
+The commit log between `v1.2.0-beta.2` and this tag is the complete record.
+
+---
+
 ## [1.2.0-beta.2] — 2026-08-11
 
 Documentation-only republish. No code changes — `dist/` is byte-for-byte the same as `1.2.0-beta.1`.
