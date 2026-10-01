@@ -1,4 +1,5 @@
 import { memberLoginConfigured } from "@/lib/memberAuth";
+import { isSafeRedirect } from "@/lib/safeRedirect";
 import { LoginForm } from "./login-form";
 
 interface PageProps {
@@ -17,16 +18,10 @@ export default async function LoginPage({ searchParams }: PageProps) {
   const sp = (await searchParams) ?? {};
   const rawNext = sp.next;
   const next = Array.isArray(rawNext) ? rawNext[0] : rawNext;
-  // Same-origin guard mirrors /api/login isSafeRedirect — we only honor
-  // a `next` that's a relative path, never a protocol-relative or
-  // off-host URL.
-  const safeNext =
-    typeof next === "string" &&
-    next.startsWith("/") &&
-    !next.startsWith("//") &&
-    !next.startsWith("/\\")
-      ? next
-      : "/dashboard";
+  // The SAME guard /api/login applies — one implementation, not a mirror. A
+  // mirror is how this page and the route both missed the control-character
+  // case (see `@/lib/safeRedirect`).
+  const safeNext = isSafeRedirect(next) ? next : "/dashboard";
 
   return (
     <main

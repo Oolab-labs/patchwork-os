@@ -15,6 +15,7 @@ import {
   bodyTooLargeResponse,
   readJsonWithCap,
 } from "@/lib/readBodyWithCap";
+import { isSafeRedirect } from "@/lib/safeRedirect";
 import { sessionCookieHeader, signSession } from "@/lib/session";
 
 /**
@@ -24,21 +25,15 @@ import { sessionCookieHeader, signSession } from "@/lib/session";
  *
  * Rate-limited per client IP via the same module the previous Basic-auth
  * middleware used — so brute-forcing the password is bounded.
+ *
+ * The `next` redirect guard lives in `@/lib/safeRedirect`, shared with the
+ * login page — see that file for why a private copy here was the bug.
  */
 
 interface LoginBody {
   password?: unknown;
   next?: unknown;
   memberId?: unknown;
-}
-
-function isSafeRedirect(next: unknown): next is string {
-  if (typeof next !== "string" || next.length === 0) return false;
-  // Same-origin only — must start with `/` and not `//` (protocol-relative).
-  if (!next.startsWith("/")) return false;
-  if (next.startsWith("//")) return false;
-  if (next.startsWith("/\\")) return false;
-  return true;
 }
 
 export async function POST(req: NextRequest) {
