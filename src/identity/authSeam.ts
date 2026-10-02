@@ -30,7 +30,7 @@
  * asserts the string never appears.
  */
 
-import { verifyPassword } from "./credentials.js";
+import { SCRYPT_PARAMS, verifyPassword } from "./credentials.js";
 import type { Member } from "./members.js";
 import { findMember, type Roster } from "./roster.js";
 
@@ -108,9 +108,7 @@ export class LocalPasswordProvider implements AuthProvider {
  * member path performs a real scrypt derivation instead of returning early.
  * The salt and hash are fixed and meaningless; the point is the CPU time.
  */
-const DUMMY_RECORD =
-  "scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" +
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+export const DUMMY_RECORD = `scrypt$${SCRYPT_PARAMS.N}$${SCRYPT_PARAMS.r}$${SCRYPT_PARAMS.p}$AAAAAAAAAAAAAAAAAAAAAA==$${"A".repeat(86)}==`;
 
 /**
  * Try each provider in order; the first that claims the request decides.

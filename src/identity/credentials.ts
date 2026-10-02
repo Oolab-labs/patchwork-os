@@ -47,11 +47,16 @@ const scrypt = promisify(scryptCb) as (
  * constant, so raising the cost would silently invalidate every existing
  * credential instead of upgrading it.
  *
- * N=2^15 with r=8, p=1 is ~32 MB of memory per verification. `maxmem` must be
+ * N=2^17 with r=8, p=1 is ~128 MB of memory per verification (OWASP's scrypt
+ * floor; raised from 2^15 in security sweep L8 — records written at 2^15 keep
+ * verifying because their cost is read from the record). `maxmem` must be
  * raised above Node's 32 MB default or scrypt throws at these parameters —
  * a footgun that presents as "the correct password is rejected".
+ *
+ * `DUMMY_RECORD` in authSeam.ts is derived from this, so the unknown-member
+ * path costs the same as a real verification.
  */
-export const SCRYPT_PARAMS = { N: 32768, r: 8, p: 1 } as const;
+export const SCRYPT_PARAMS = { N: 131072, r: 8, p: 1 } as const;
 const KEYLEN = 64;
 const MAXMEM = 192 * 1024 * 1024;
 
