@@ -931,10 +931,12 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // Unauthenticated liveness probe — safe to expose; contains no sensitive data.
-      // NOTE: /dashboard and /dashboard/data are unauthenticated. They expose only
-      // version, uptime, session count, and extension state — no workspace paths
-      // or tool outputs. For public VPS deployments (--bind 0.0.0.0), restrict
-      // at nginx/firewall or disable with --no-dashboard.
+      // NOTE: /dashboard and /dashboard/data answer without a token, because the
+      // built-in status page fetches with none. Unauthenticated callers get only
+      // version, uptime, session count and extension state; recent `events` and
+      // per-tool `perf` require the bearer token (security sweep L10). For public
+      // VPS deployments (--bind 0.0.0.0), restrict at nginx/firewall or disable
+      // with --no-dashboard.
       if (
         (req.url === "/dashboard" || req.url === "/dashboard/") &&
         req.method === "GET" &&
@@ -950,7 +952,14 @@ export class Server extends EventEmitter<ServerEvents> {
         !this.noDashboard
       ) {
         const health = this.healthDataFn?.() ?? {};
-        const status = this.statusFn?.() ?? {};
+        const authHeader = req.headers.authorization ?? "";
+        const bearer = authHeader.startsWith("Bearer ")
+          ? authHeader.slice(7)
+          : "";
+        const authed =
+          timingSafeTokenCompare(bearer, this.authToken) ||
+          (bearer !== "" && !!this.oauthServer?.resolveBearerToken(bearer));
+        const status = authed ? (this.statusFn?.() ?? {}) : {};
         const data = {
           version: PACKAGE_VERSION,
           uptimeMs: Date.now() - this.startTime,
@@ -961,7 +970,7 @@ export class Server extends EventEmitter<ServerEvents> {
           extensionVersion: (health as { extensionVersion?: string })
             .extensionVersion,
           events: (status as { events?: unknown[] }).events ?? [],
-          perf: this.perfDataFn?.() ?? null,
+          perf: authed ? (this.perfDataFn?.() ?? null) : null,
         };
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(data));

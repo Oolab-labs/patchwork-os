@@ -5,9 +5,10 @@
  * For VPS deployments (--bind 0.0.0.0), restrict at nginx/firewall or
  * disable with --no-dashboard flag.
  *
- * Data comes from GET /dashboard/data (also unauthenticated) which exposes
- * only: version, uptimeMs, sessions, extensionConnected, extensionVersion.
- * No workspace paths, no tool outputs, no session content.
+ * Data comes from GET /dashboard/data. Without a bearer token it returns only
+ * version, uptimeMs, sessions, extensionConnected and extensionVersion; the
+ * `events` and `perf` sections need the token (security sweep L10), so this
+ * page shows them empty when opened directly in a browser.
  */
 
 export function renderDashboardHtml(version: string): string {
