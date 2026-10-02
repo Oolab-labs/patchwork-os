@@ -12,6 +12,15 @@ export async function POST(req: Request) {
   if (guard) return guard;
   return NextResponse.json(
     { ok: true, redirect: "/dashboard/login" },
-    { headers: { "Set-Cookie": clearSessionCookieHeader() } },
+    {
+      headers: {
+        "Set-Cookie": clearSessionCookieHeader(),
+        // L5: the service worker caches authenticated HTML. "storage" covers
+        // CacheStorage and unregisters the worker; "cookies" is omitted on
+        // purpose (Set-Cookie already clears the session, and "cookies"
+        // would wipe every cookie on the registrable domain).
+        "Clear-Site-Data": '"cache", "storage"',
+      },
+    },
   );
 }
