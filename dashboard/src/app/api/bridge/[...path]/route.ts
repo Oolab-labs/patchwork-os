@@ -203,8 +203,40 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
       : upstreamCt;
   return new Response(text, {
     status: res.status,
-    headers: { "content-type": ct },
+    headers: securityHeadersFor(res.headers, ct),
   });
+}
+
+/**
+ * Security sweep L4: rebuilding a response with only `content-type` stripped
+ * the bridge's own CSP / X-Frame-Options, so bridge HTML was re-served from
+ * the dashboard origin with no script policy. Forward those headers, and give
+ * HTML that arrives without a CSP a sandboxed, script-free policy. The
+ * dashboard never renders proxied HTML as a page, so this costs nothing.
+ */
+const FORWARDED_SECURITY_HEADERS = [
+  "content-security-policy",
+  "x-frame-options",
+  "x-content-type-options",
+  "referrer-policy",
+] as const;
+const HTML_FALLBACK_CSP =
+  "sandbox; default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'";
+
+function securityHeadersFor(
+  upstream: Headers,
+  ct: string,
+): Record<string, string> {
+  const out: Record<string, string> = { "content-type": ct };
+  for (const name of FORWARDED_SECURITY_HEADERS) {
+    const v = upstream.get(name);
+    if (v) out[name] = v;
+  }
+  if (ct.toLowerCase().includes("text/html")) {
+    out["content-security-policy"] ??= HTML_FALLBACK_CSP;
+    out["x-content-type-options"] = "nosniff";
+  }
+  return out;
 }
 
 // Next 15: dynamic route params arrive as a Promise.
