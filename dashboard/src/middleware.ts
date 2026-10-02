@@ -1,3 +1,4 @@
+import { weakAuthConfig } from "./lib/authConfig";
 import { NextRequest, NextResponse } from "next/server";
 import {
   clearSessionCookieHeader,
@@ -132,6 +133,18 @@ function unauthenticated(req: NextRequest): NextResponse {
 export async function middleware(req: NextRequest) {
   const expected = process.env.DASHBOARD_PASSWORD ?? "";
   const secret = process.env.DASHBOARD_SESSION_SECRET ?? "";
+
+  // Configured, but with a known placeholder or a short HMAC key: refuse
+  // rather than serve cookies anyone could forge (L7).
+  if (expected && secret) {
+    const weak = weakAuthConfig(expected, secret);
+    if (weak) {
+      console.error(`[dashboard] ${weak}`);
+      return new NextResponse(`Dashboard auth misconfigured. ${weak}`, {
+        status: 503,
+      });
+    }
+  }
 
   // No password configured — let traffic through unless production
   // explicitly forbids it. Mirrors the prior basic-auth behavior.
