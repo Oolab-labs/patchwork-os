@@ -31,6 +31,9 @@ import { verifySession } from "@/lib/session";
 
 beforeEach(() => {
   vi.mocked(addSubscription).mockReset();
+  // addSubscription now reports whether the store accepted the endpoint;
+  // the default is "accepted" so the CSRF/session cases below still 200.
+  vi.mocked(addSubscription).mockReturnValue(true);
   vi.mocked(verifySession).mockResolvedValue({ valid: true, expiresAt: Date.now() + 60_000 });
 });
 
@@ -78,5 +81,32 @@ describe("POST /api/push/subscribe — CSRF guard", () => {
     const res = await POST(makeReq("same-origin", validSub));
     expect(res.status).toBe(401);
     expect(addSubscription).not.toHaveBeenCalled();
+  });
+});
+
+// Security sweep 2026-10-01 (L2): the endpoint is a URL this server POSTs to
+// on every fan-out. A private-range or non-https endpoint must never reach
+// the store; a full store must refuse a NEW endpoint rather than grow.
+describe("POST /api/push/subscribe — endpoint validation and cap", () => {
+  it.each([
+    ["loopback", "https://127.0.0.1/push"],
+    ["RFC1918", "https://10.0.0.5/push"],
+    ["http", "http://push.example.test/push"],
+    ["credentials", "https://u:p@push.example.test/push"],
+  ])("rejects a %s endpoint with 400 and stores nothing", async (_l, endpoint) => {
+    const res = await POST(makeReq("same-origin", { ...validSub, endpoint }));
+    expect(res.status).toBe(400);
+    expect(addSubscription).not.toHaveBeenCalled();
+    // The reason must not echo the rejected URL back.
+    const body = (await res.json()) as { error: string };
+    expect(body.error).not.toContain(endpoint);
+  });
+
+  it("returns 429 when the store refuses a new endpoint at the cap", async () => {
+    vi.mocked(addSubscription).mockReturnValue(false);
+    const res = await POST(
+      makeReq("same-origin", { ...validSub, endpoint: "https://push.example.test/x" }),
+    );
+    expect(res.status).toBe(429);
   });
 });

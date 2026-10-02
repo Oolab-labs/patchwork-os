@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSameOrigin } from "@/lib/csrf";
+import { validatePushEndpoint } from "@/lib/pushEndpoint";
 import { addSubscription } from "@/lib/pushStore";
 import {
   DASHBOARD_API_BODY_CAPS,
@@ -37,6 +38,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid subscription object" }, { status: 400 });
   }
 
-  addSubscription(sub);
+  // The endpoint is a URL this server will later POST to on every relay
+  // fan-out. Only an https URL on a public host is a push service; anything
+  // else is a request to make the dashboard reach into the network for the
+  // caller (security sweep 2026-10-01, L2). The reason never echoes the URL.
+  const verdict = validatePushEndpoint(sub.endpoint);
+  if (!verdict.ok) {
+    return NextResponse.json({ error: verdict.reason }, { status: 400 });
+  }
+
+  // The store is capped; a NEW endpoint past the cap is refused rather than
+  // evicting someone else's device. Re-subscribes of a known endpoint always
+  // succeed (pushsubscriptionchange).
+  if (!addSubscription(sub)) {
+    return NextResponse.json(
+      { error: "subscription limit reached — remove an old device first" },
+      { status: 429 },
+    );
+  }
   return NextResponse.json({ ok: true });
 }
