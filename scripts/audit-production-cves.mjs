@@ -231,6 +231,10 @@ function auditWorkspace(dir) {
       severity: v.severity,
       ids: [...new Set(ids)],
       title: advisories[0]?.title ?? "",
+      // Names of the vulnerable packages this one only DEPENDS on. A finding
+      // whose `via` is all strings has no advisory of its own — it is listed
+      // because a child is vulnerable — so it is judged by those children.
+      viaPackages: (v.via ?? []).filter((e) => typeof e === "string"),
     });
   }
   return found;
@@ -263,9 +267,23 @@ function main() {
   const reported = [];
 
   for (const dir of workspaces) {
-    for (const finding of auditWorkspace(dir)) {
+    const findings = auditWorkspace(dir);
+    // Findings that carry an advisory of their own are judged first; a
+    // transitive-only finding (no advisory, `via` all package names) is then
+    // judged by its children. Without this, a vulnerable dependency's PARENTS
+    // could never be allowlisted — they have no advisory id to match — so the
+    // remedy this gate prints was impossible for any transitive advisory,
+    // which is most of them. Found 2026-10-02 when an unfixable node-forge
+    // advisory reached push-relay through two parents.
+    const deferred = [];
+    const failingNames = new Set();
+    for (const finding of findings) {
       if (!FAILING.has(finding.severity)) {
         reported.push(finding);
+        continue;
+      }
+      if (finding.ids.length === 0 && finding.viaPackages.length > 0) {
+        deferred.push(finding);
         continue;
       }
       if (isAllowed(finding)) {
@@ -273,6 +291,21 @@ function main() {
         continue;
       }
       failing.push(finding);
+      failingNames.add(finding.name);
+    }
+    for (const parent of deferred) {
+      const blockers = parent.viaPackages.filter((p) => failingNames.has(p));
+      if (blockers.length === 0) {
+        // Every vulnerable child is allowlisted or below threshold; the
+        // parent adds no advisory of its own.
+        reported.push({
+          ...parent,
+          allowlisted: true,
+          note: `via ${parent.viaPackages.join(", ")}`,
+        });
+      } else {
+        failing.push({ ...parent, title: `via ${blockers.join(", ")}` });
+      }
     }
   }
 
@@ -282,7 +315,11 @@ function main() {
   );
 
   for (const r of reported) {
-    const tag = r.allowlisted ? "allowlisted" : "below threshold";
+    const tag = r.allowlisted
+      ? r.note
+        ? `allowlisted ${r.note}`
+        : "allowlisted"
+      : "below threshold";
     console.log(
       `[prod-cves]   ${r.workspace}: ${r.name} (${r.severity}, ${tag})`,
     );

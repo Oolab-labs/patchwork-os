@@ -6,5 +6,11 @@
     "`workspace` is the lockfile's directory ('.' for the repository root).",
     "Unused entries are reported, not fatal, so they can be deleted."
   ],
-  "allow": []
+  "allow": [
+    {
+      "workspace": "services/push-relay",
+      "advisory": "GHSA-86w9-cpqp-85rv",
+      "reason": "node-forge RSA PKCS#1 v1.5 signature VERIFICATION accepts extra nested DigestAlgorithm elements. Unfixable today: the advisory covers <=1.4.0 and 1.4.0 is the latest release; @parse/node-apn pins exactly 1.4.0, and firebase-admin only drops it in a major upgrade (12 -> 14). Not reachable: push-relay's own code never imports node-forge, and both dependents use it only to PARSE keys and certificates (pem.decode/encode, privateKeyFromPem, decryptRsaPrivateKey, certificateFromAsn1, getPublicKeyFingerprint) — never to verify a signature, which is where the flaw is. Remove when node-forge publishes a fixed release (then `npm audit fix` in services/push-relay), or when @parse/node-apn and firebase-admin no longer depend on it. Re-check reachability if either dependent is upgraded. Accepted 2026-10-02."
+    }
+  ]
 }
