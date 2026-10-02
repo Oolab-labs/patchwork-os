@@ -113,7 +113,10 @@ describe("validateOutboundUrl — DNS re-check and pinning", () => {
 });
 
 describe("safeFetch — pinning and redirects", () => {
-  it("pins the first hop to the resolved IP and carries the real name in Host", async () => {
+  // The pin moved from the URL to the connection (2026-10-02): rewriting the
+  // URL to the IP made TLS verify certificates against the IP and broke
+  // every public HTTPS request. See ssrfGuard.httpsPinning.test.ts.
+  it("keeps the real hostname in the URL and drops a caller-supplied Host", async () => {
     const fetchImpl = vi.fn(async () => ok());
     await safeFetch(
       "https://api.example.test/v1",
@@ -122,14 +125,20 @@ describe("safeFetch — pinning and redirects", () => {
     );
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [
       string,
-      { headers: Record<string, string>; redirect: string },
+      {
+        headers: Record<string, string>;
+        redirect: string;
+        dispatcher?: unknown;
+      },
     ];
-    expect(url).toBe("https://93.184.216.34/v1");
-    expect(init.headers.host).toBe("api.example.test");
+    expect(url).toBe("https://api.example.test/v1");
+    // A caller cannot steer the request with Host: it is derived from the URL.
+    expect(init.headers.host).toBeUndefined();
     expect(init.redirect).toBe("manual");
+    expect(init.dispatcher).toBeDefined();
   });
 
-  it("brackets an IPv6 pin", async () => {
+  it("keeps the hostname for an IPv6 pin too (the pin lives in the dispatcher)", async () => {
     const fetchImpl = vi.fn(async () => ok());
     await safeFetch(
       "https://v6.example.test/",
@@ -137,7 +146,7 @@ describe("safeFetch — pinning and redirects", () => {
       { fetchImpl, resolveDns: async () => "2001:db8::1" },
     );
     expect((fetchImpl.mock.calls[0] as unknown[] | undefined)?.[0]).toBe(
-      "https://[2001:db8::1]/",
+      "https://v6.example.test/",
     );
   });
 
@@ -195,7 +204,7 @@ describe("safeFetch — pinning and redirects", () => {
     expect(second.headers.authorization).toBeUndefined();
     expect(second.headers.cookie).toBeUndefined();
     expect(second.headers["x-api-key"]).toBeUndefined();
-    expect(second.headers.host).toBe("other.example.test");
+    expect(second.headers.host).toBeUndefined();
   });
 
   it("keeps Authorization on a same-origin redirect", async () => {
@@ -213,8 +222,9 @@ describe("safeFetch — pinning and redirects", () => {
       { headers: Record<string, string> },
     ];
     expect(init.headers.authorization).toBe("Bearer S");
-    // Relative Location resolved against the REAL name, then pinned.
-    expect(url).toBe("https://93.184.216.34/v2");
+    // Relative Location resolved against the REAL name; the pin is in the
+    // dispatcher, so the URL keeps that name.
+    expect(url).toBe("https://api.example.test/v2");
     expect(result.finalUrl).toBe("https://api.example.test/v2");
     expect(result.redirects).toBe(1);
   });

@@ -11,7 +11,7 @@
  */
 
 import dns from "node:dns/promises";
-import { Agent, type Dispatcher, fetch as undiciFetch } from "undici";
+import { type Dispatcher, fetch as undiciFetch } from "undici";
 import {
   assertWriteAllowed,
   FLAG_BLOCK_RECIPE_ALLOW_PRIVATE,
@@ -29,24 +29,19 @@ import {
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
 import { UncertainOutcomeError } from "../uncertainOutcome.js";
 
-// Custom dispatcher pinning DNS resolution to IPv4. Node's Happy-Eyeballs
-// implementation (autoSelectFamily) is documented to flip families after
-// 250 ms, but on macOS networks that lack a usable IPv6 path
-// (most home/office LANs, despite the host having public AAAA records)
-// the IPv6 attempt stalls past Node's request timeout and surfaces as
-// ETIMEDOUT — even though IPv4 would have succeeded instantly. Probing
-// repro'd this against ntfy.sh on 2026-05-12.
+// IPv4 only, for both DNS (`resolveDns` below) and the socket (`connect`
+// passed to safeFetch). Node's Happy-Eyeballs implementation
+// (autoSelectFamily) is documented to flip families after 250 ms, but on
+// macOS networks that lack a usable IPv6 path (most home/office LANs,
+// despite the host having public AAAA records) the IPv6 attempt stalls past
+// Node's request timeout and surfaces as ETIMEDOUT — even though IPv4 would
+// have succeeded instantly. Probing repro'd this against ntfy.sh on
+// 2026-05-12. IPv6-only networks are vanishingly rare in 2026; if one comes
+// up we can add a step-level `family: 6` override.
 //
-// IPv6-only networks are vanishingly rare in 2026; if one comes up we
-// can add a step-level `family: 6` override.
-const httpAgent = new Agent({
-  // biome-ignore lint/suspicious/noExplicitAny: undici's TcpNetConnectOpts type insists on `port` but it isn't required at the Agent-default-connect level
-  connect: { family: 4 } as any,
-  // Keep idle sockets short to avoid stale connections to the same host
-  // hanging across recipe fires.
-  keepAliveTimeout: 5_000,
-  keepAliveMaxTimeout: 10_000,
-});
+// There is no shared agent any more: safeFetch builds a dispatcher per hop
+// because that dispatcher IS the DNS pin (2026-10-02 — pinning by rewriting
+// the URL to the IP broke every public HTTPS request).
 
 /**
  * The "sent" boundary. A per-request view over the shared agent whose ONLY
@@ -68,19 +63,27 @@ const httpAgent = new Agent({
  * uncertain; a connect stall that our timer aborts before `onConnect` stays
  * an ordinary (retriable) failure, because nothing reached the target.
  */
-function trackedDispatcher(): { dispatcher: Dispatcher; sent: () => boolean } {
+function trackedDispatcher(): {
+  wrap: (d: Dispatcher) => Dispatcher;
+  sent: () => boolean;
+} {
   let sent = false;
-  const dispatcher = httpAgent.compose(
-    (dispatch) => (opts, handler) =>
-      dispatch(opts, {
-        ...handler,
-        onConnect(abort) {
-          sent = true;
-          handler.onConnect?.(abort);
-        },
-      }),
-  );
-  return { dispatcher, sent: () => sent };
+  // The same interceptor applied to ANY dispatcher: safeFetch now builds the
+  // per-hop dispatcher itself (that is where the DNS pin lives), so the
+  // sent-boundary has to wrap the dispatcher it was given rather than a
+  // shared agent the pin cannot reach.
+  const wrap = (d: Dispatcher): Dispatcher =>
+    d.compose(
+      (dispatch) => (opts, handler) =>
+        dispatch(opts, {
+          ...handler,
+          onConnect(abort) {
+            sent = true;
+            handler.onConnect?.(abort);
+          },
+        }),
+    );
+  return { wrap, sent: () => sent };
 }
 
 registerTool({
@@ -220,10 +223,14 @@ registerTool({
           body,
           headers,
           signal: ctrl.signal,
-          dispatcher: tracked.dispatcher,
         },
         {
           allowPrivate,
+          // IPv4 for the same reason as `httpAgent` above; safeFetch builds
+          // the per-hop dispatcher (it holds the DNS pin), so the family
+          // preference and the sent-boundary tracking ride on it.
+          connect: { family: 4 },
+          wrapDispatcher: tracked.wrap,
           resolveDns: async (hostname) =>
             (await dns.lookup(hostname, { family: 4 })).address,
           // undici's Response type lags the DOM lib (no `bytes()`); same

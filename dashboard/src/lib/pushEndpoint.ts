@@ -17,7 +17,7 @@
  * private address would otherwise be reflected back.
  */
 
-import { isPrivateHost } from "../../../src/ssrfGuard";
+import { isPrivateHost } from "../../../src/privateHost";
 
 export type PushEndpointVerdict =
   | { ok: true }
