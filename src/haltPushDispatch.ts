@@ -6,28 +6,18 @@
  * (a hosted push service or the dashboard's `/api/relay/halt` route)
  * fans it out to every subscribed browser via Web Push.
  *
- * SSRF guard mirrors the approval dispatcher: HTTPS-only, hostname
- * blocklist (localhost / loopback / private IPs after DNS resolve),
- * 5s abort timeout, fire-and-forget so the recipe runner is never
- * blocked on a push relay outage.
+ * Outbound safety is `pinnedSend`, shared with every approval-notification
+ * sender: HTTPS-only (checked here), every resolved address checked against
+ * the private ranges, the checked address pinned for the connection so DNS
+ * is never re-resolved, no redirects followed. 5s abort timeout,
+ * fire-and-forget so the recipe runner is never blocked on a push relay
+ * outage.
  *
  * Wired via `wireHaltPushDispatch` (subscribes to ActivityLog) — keeps
  * the runner itself ignorant of push transport.
  */
 
-import dns from "node:dns/promises";
-import { isPrivateHost } from "./ssrfGuard.js";
-
-/**
- * SSRF blocklist — delegates to the shared, tested `isPrivateHost`
- * (audit 2026-06-03 HIGH #5). Previously an inline copy that, like the
- * approvalHttp version, missed IPv4-mapped IPv6 (`::ffff:127.0.0.1`) and
- * every native IPv6 private range because it split on "." and Number()-
- * coerced the octets.
- */
-function isBlockedIp(ip: string): boolean {
-  return isPrivateHost(ip);
-}
+import { pinnedSend } from "./pinnedSend.js";
 
 export interface HaltPushPayload {
   recipeName: string;
@@ -71,35 +61,27 @@ export async function dispatchHaltPushNotification(
     console.warn(`[halt-push] Blocked loopback push service hostname`);
     return;
   }
-  if (!allowPrivate) {
-    try {
-      const resolved = await dns.lookup(hostname);
-      if (isBlockedIp(resolved.address)) {
-        console.warn(
-          `[halt-push] Blocked private/loopback IP for push service: ${resolved.address}`,
-        );
-        return;
-      }
-    } catch (err) {
-      console.warn(
-        `[halt-push] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
-    }
-  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
   try {
-    const res = await fetch(`${pushServiceUrl}/halt`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${pushServiceToken}`,
+    // DNS check + connection pin + no redirects, in one place shared with
+    // every approval-notification sender (security sweep L3). Returns null
+    // when refused before connecting — already warned as [halt-push].
+    const res = await pinnedSend(
+      `${pushServiceUrl}/halt`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${pushServiceToken}`,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+      { label: "halt-push", allowPrivate },
+    );
+    if (res === null) return;
     if (!res.ok) {
       // 404 is informational ("no subscribers yet") — same relay
       // contract as the approval path. Anything else is worth a warn.
