@@ -1,3 +1,4 @@
+import { weakAuthConfig } from "@/lib/authConfig";
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -53,6 +54,10 @@ export async function POST(req: NextRequest) {
       },
       { status: 503 },
     );
+  }
+  const weak = weakAuthConfig(expected, secret);
+  if (weak) {
+    return NextResponse.json({ error: weak }, { status: 503 });
   }
 
   const ip = clientKey(req.headers);

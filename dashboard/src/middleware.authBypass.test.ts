@@ -126,3 +126,39 @@ describe("the warning stays quiet where the bypass is legitimate", () => {
     expect(warned()).toBe(false);
   });
 });
+
+describe("weak auth config is refused, not served (L7)", () => {
+  it("refuses a short session secret with 503 and does not echo it", async () => {
+    const res = await runMiddleware({
+      production: false,
+      password: "pw",
+      secret: "short-secret-value",
+      allow: false,
+    });
+    expect(res.status).toBe(503);
+    const body = await res.text();
+    expect(body).toMatch(/DASHBOARD_SESSION_SECRET/);
+    expect(body).not.toContain("short-secret-value");
+  });
+
+  it("refuses the .env.example password placeholder", async () => {
+    const res = await runMiddleware({
+      production: true,
+      password: "changeme",
+      secret: "s".repeat(64),
+      allow: false,
+    });
+    expect(res.status).toBe(503);
+    expect(await res.text()).toMatch(/DASHBOARD_PASSWORD/);
+  });
+
+  it("does not refuse a strong config (control)", async () => {
+    const res = await runMiddleware({
+      production: true,
+      password: "pw",
+      secret: "s".repeat(64),
+      allow: false,
+    });
+    expect(res.status).not.toBe(503);
+  });
+});
