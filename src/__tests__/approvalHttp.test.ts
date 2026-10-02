@@ -1334,11 +1334,15 @@ describe("push notification dispatch", () => {
 
       // Two ntfy publishes expected: the initial action prompt + the
       // post-decision confirmation. Confirmation has no actions and a
-      // checkmark title.
-      const publishes = ntfyCalls.filter(
-        (c) => new URL(c.url).hostname === "ntfy.example.com",
+      // checkmark title. It is fire-and-forget after the decision, so wait
+      // for it rather than assuming how many microtasks the send takes
+      // (the shared pinned sender awaits DNS and validation before fetch).
+      const publishesTo = () =>
+        ntfyCalls.filter((c) => new URL(c.url).hostname === "ntfy.example.com");
+      await vi.waitFor(() =>
+        expect(publishesTo().length).toBeGreaterThanOrEqual(2),
       );
-      expect(publishes.length).toBeGreaterThanOrEqual(2);
+      const publishes = publishesTo();
       const confirmation = publishes.find((c) => {
         const b = c.body as { title?: string; actions?: unknown[] };
         return typeof b.title === "string" && b.title.startsWith("✓ Approved");

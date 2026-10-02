@@ -134,12 +134,15 @@ describe("dispatchHaltPushNotification", () => {
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://relay.example.com/halt");
     expect(init.method).toBe("POST");
-    expect((init.headers as Record<string, string>).Authorization).toBe(
-      "Bearer tok-secret",
-    );
-    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
-      "application/json",
-    );
+    // Header names are case-insensitive; the shared outbound guard sends
+    // them lowercased (it normalises so a caller cannot smuggle a second
+    // spelling of a header it strips).
+    const hdr = new Headers(init.headers as Record<string, string>);
+    expect(hdr.get("authorization")).toBe("Bearer tok-secret");
+    expect(hdr.get("content-type")).toBe("application/json");
+    // L3: the connection is pinned and redirects are not followed.
+    expect((init as { dispatcher?: unknown }).dispatcher).toBeDefined();
+    expect(init.redirect).toBe("manual");
     expect(JSON.parse(init.body as string)).toEqual(PAYLOAD);
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
