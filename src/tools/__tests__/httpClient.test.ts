@@ -472,11 +472,15 @@ describe("sendHttpRequest — Content-Length exceeded drains body", () => {
 describe("sendHttpRequest — redirect Host header after DNS failure", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("LOW: Host header is set from redirect target even when redirect DNS lookup fails", async () => {
-    // Bug: headers.host was only set inside the DNS try-block. On DNS failure
-    // the catch block fell through, leaving the PREVIOUS hop's Host header
-    // attached to the new request. Fix: set headers.host before the try.
+  it("LOW: the previous hop's Host never reaches the redirect target, even when the redirect's DNS lookup fails", async () => {
+    // Original bug: headers.host was only set inside the DNS try-block, so on
+    // DNS failure the PREVIOUS hop's Host was attached to the new request.
+    // Since 2026-10-02 safeFetch never sets Host at all — the pin lives in the
+    // connection, and fetch derives Host from each hop's URL — so the
+    // invariant holds by construction: the request goes to the redirect
+    // target's URL and carries no injected Host to leak.
     let capturedHost: string | undefined;
+    let capturedUrl: string | undefined;
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
         ok: true,
@@ -489,13 +493,13 @@ describe("sendHttpRequest — redirect Host header after DNS failure", () => {
           }),
         },
       } as unknown as Response)
-      .mockImplementation(async (_url, init) => {
+      .mockImplementation(async (url, init) => {
+        capturedUrl = String(url);
         capturedHost = (init?.headers as Record<string, string>)?.host;
         return new Response("final", { status: 200 });
       });
 
-    // First hop: DNS succeeds (sets host = example.com)
-    // Redirect hop: DNS fails → host should still be "other.example.com"
+    // First hop: DNS succeeds. Redirect hop: DNS fails (proceeds unpinned).
     vi.spyOn(dns, "lookup")
       .mockResolvedValueOnce({ address: "93.184.216.34", family: 4 } as never)
       .mockRejectedValueOnce(new Error("DNS lookup failed"));
@@ -505,8 +509,12 @@ describe("sendHttpRequest — redirect Host header after DNS failure", () => {
       url: "https://example.com/",
     });
 
-    // Host must be the redirect target, not the first hop's host
-    expect(capturedHost).toBe("other.example.com");
+    // The second request targets the redirect's real name…
+    expect(new URL(capturedUrl ?? "http://invalid").hostname).toBe(
+      "other.example.com",
+    );
+    // …and carries no Host header that could be a stale first-hop value.
+    expect(capturedHost).toBeUndefined();
   });
 });
 

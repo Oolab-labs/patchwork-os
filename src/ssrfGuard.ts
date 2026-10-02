@@ -26,15 +26,24 @@
  * both walked straight past it):
  *   - `validateOutboundUrl(url, opts)` — parse, protocol, userinfo strip,
  *     lexical check, DNS pre-resolution re-check, returns the address to pin.
- *   - `safeFetch(url, init, opts)` — validates, pins the connection to the
- *     resolved address (hostname rewritten to the IP, original name carried
- *     in the Host header so SNI / virtual hosting keep working), follows up
- *     to N redirects manually re-validating EVERY hop, downgrades method/body
- *     per RFC 7231 on 301/302/303, and drops credential headers on a
- *     cross-origin hop.
+ *   - `safeFetch(url, init, opts)` — validates, pins the CONNECTION to the
+ *     resolved address through an undici dispatcher whose `connect.lookup`
+ *     returns that address, follows up to N redirects manually re-validating
+ *     EVERY hop, downgrades method/body per RFC 7231 on 301/302/303, and
+ *     drops credential headers on a cross-origin hop.
+ *
+ * The pin lives in the connection, never in the URL. #1572 first pinned by
+ * rewriting the URL's hostname to the IP and carrying the name in a `Host`
+ * header; TLS takes SNI and the certificate check from the URL, so every
+ * public HTTPS request failed ERR_TLS_CERT_ALTNAME_INVALID, and `fetch`
+ * silently drops a caller-set `Host`, so plain HTTP reached virtual hosts
+ * with the wrong one. Found 2026-10-02 against the installed build; nothing
+ * in the suite could see it because every test used a mocked fetch or a
+ * loopback HTTP server.
  */
 
 import dns from "node:dns/promises";
+import { Agent, type Dispatcher } from "undici";
 
 /**
  * Convert the hex-compressed form that `new URL()` may return for an
@@ -394,8 +403,24 @@ export type FetchLike = (
 ) => Promise<Response>;
 
 export interface SafeFetchOptions extends OutboundUrlOptions {
-  /** Defaults to `globalThis.fetch`. */
+  /**
+   * Defaults to `globalThis.fetch`. Node's built-in fetch accepts the pinning
+   * `Agent` from the `undici` package as its `dispatcher` — verified against a
+   * public HTTPS endpoint on Node 24 (2026-10-02).
+   */
   fetchImpl?: FetchLike;
+  /**
+   * Extra socket options for every hop's connection (e.g. `{ family: 4 }`).
+   * `lookup` is always overridden when a hop is pinned.
+   */
+  connect?: Record<string, unknown>;
+  /**
+   * Wrap the per-hop dispatcher safeFetch builds — the seam `http.post` uses
+   * to observe `onConnect` (its "was anything sent" boundary). A caller's
+   * `init.dispatcher` is IGNORED: honouring it would let a caller route
+   * around the pin, which is the whole guard.
+   */
+  wrapDispatcher?: (d: Dispatcher) => Dispatcher;
   /** Follow 3xx redirects (default true). */
   followRedirects?: boolean;
   /** Redirect hop cap (default 10). */
@@ -435,11 +460,39 @@ function refusalMessage(v: OutboundUrlValidation, hop: "request" | "redirect") {
   }
 }
 
-function pin(url: URL, address: string | undefined): string {
-  if (address === undefined) return url.toString();
-  const pinned = new URL(url.toString());
-  pinned.hostname = address.includes(":") ? `[${address}]` : address;
-  return pinned.toString();
+/**
+ * A dispatcher whose connections go to `address` (when given), however the
+ * URL's hostname would resolve. The URL is left alone, so TLS uses the real
+ * name for SNI and certificate verification and the Host header is derived
+ * from it. Node's `net`/`tls` call `lookup` with `{ all: true }` when
+ * autoSelectFamily is on, so both callback shapes are answered.
+ *
+ * One Agent per hop, with short keep-alive: the pin is per-hostname-per-hop,
+ * and a shared pool keyed only on origin would happily reuse a socket pinned
+ * for a previous answer.
+ */
+function hopDispatcher(
+  address: string | undefined,
+  opts: SafeFetchOptions,
+): Dispatcher {
+  const connect: Record<string, unknown> = { ...(opts.connect ?? {}) };
+  if (address !== undefined) {
+    const family = address.includes(":") ? 6 : 4;
+    connect.lookup = (
+      _hostname: string,
+      lookupOpts: { all?: boolean } | undefined,
+      cb: (...args: unknown[]) => void,
+    ) => {
+      if (lookupOpts?.all) cb(null, [{ address, family }]);
+      else cb(null, address, family);
+    };
+  }
+  const agent = new Agent({
+    connect,
+    keepAliveTimeout: 1_000,
+    keepAliveMaxTimeout: 1_000,
+  });
+  return opts.wrapDispatcher ? opts.wrapDispatcher(agent) : agent;
 }
 
 /**
@@ -447,9 +500,11 @@ function pin(url: URL, address: string | undefined): string {
  * refusal (initial URL or any redirect hop); transport errors propagate from
  * `fetchImpl` untouched so callers keep their own timeout/abort messages.
  *
- * `init.headers` must be a plain object; keys are lowercased. `host` is set
- * by this function AFTER caller headers so a caller cannot un-pin a hop.
- * Every other `init` field (signal, dispatcher, …) is passed through.
+ * `init.headers` must be a plain object; keys are lowercased. A caller's
+ * `host` header and `dispatcher` are DROPPED: Host is derived from the URL,
+ * and the dispatcher is the pin — accepting either from the caller is a way
+ * to steer the request somewhere the validation never looked. Every other
+ * `init` field (signal, …) is passed through.
  */
 export async function safeFetch(
   input: string | URL,
@@ -475,15 +530,23 @@ export async function safeFetch(
 
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(init.headers ?? {})) {
-    headers[k.toLowerCase()] = v;
+    const key = k.toLowerCase();
+    if (key === "host") continue;
+    headers[key] = v;
   }
-  const { method: initMethod, headers: _h, body: initBody, ...rest } = init;
+  const {
+    method: initMethod,
+    headers: _h,
+    body: initBody,
+    dispatcher: _callerDispatcher,
+    ...rest
+  } = init;
 
   let currentMethod = (initMethod ?? "GET").toUpperCase();
   let currentBody = initBody;
   let displayUrl = first.url;
-  let currentUrl = pin(first.url, first.pinnedAddress);
-  if (first.pinnedAddress !== undefined) headers.host = first.url.hostname;
+  let currentUrl = first.url.toString();
+  let currentDispatcher = hopDispatcher(first.pinnedAddress, opts);
   const originalOrigin = first.url.origin;
   let redirects = 0;
 
@@ -494,6 +557,7 @@ export async function safeFetch(
       headers,
       body: currentBody,
       redirect: "manual",
+      dispatcher: currentDispatcher,
     });
 
     const isRedirect = response.status >= 300 && response.status < 400;
@@ -530,10 +594,6 @@ export async function safeFetch(
       );
     }
 
-    // Host always from the real name — even when this hop's DNS failed —
-    // so the previous hop's Host never leaks onto the new request.
-    headers.host = next.url.hostname;
-
     // RFC 7231 + browser/fetch semantics: 301/302 of a non-GET/HEAD and any
     // 303 become GET without a body; 307/308 preserve both.
     if (
@@ -552,8 +612,12 @@ export async function safeFetch(
       for (const h of CREDENTIAL_HEADERS) delete headers[h];
     }
 
+    // The previous hop's response is fully handled (a redirect body is never
+    // read), so its dispatcher can close; the next hop gets its own pin.
+    void (currentDispatcher as Agent).close?.().catch?.(() => {});
     displayUrl = next.url;
-    currentUrl = pin(next.url, next.pinnedAddress);
+    currentUrl = next.url.toString();
+    currentDispatcher = hopDispatcher(next.pinnedAddress, opts);
     redirects++;
   }
 }
