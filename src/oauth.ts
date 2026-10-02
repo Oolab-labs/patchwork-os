@@ -237,6 +237,18 @@ export class OAuthServerImpl implements OAuthServer {
    *  down trivial inflight stuffing. */
   private static readonly TOKEN_IP_MAX = 30;
   private static readonly TOKEN_IP_WINDOW_MS = 60 * 1_000;
+  /** Per-client rate limit on /oauth/authorize, GET and POST together
+   *  (security sweep L11). Every GET mints a 10-minute CSRF nonce and every
+   *  wrong-token POST re-renders the form; this was the one unauthenticated
+   *  OAuth endpoint with no bound. A real human flow is one GET and one or
+   *  two POSTs, so 30/min only stops automation. Keyed by `limiterKey` —
+   *  the proxy-aware client IP — like the other two limiters. */
+  private readonly authorizeIpCounts = new Map<
+    string,
+    { count: number; windowStart: number }
+  >();
+  private static readonly AUTHORIZE_IP_MAX = 30;
+  private static readonly AUTHORIZE_IP_WINDOW_MS = 60 * 1_000;
   private readonly gcTimer: ReturnType<typeof setInterval>;
   /** CSRF nonces: flowId → { nonce, clientId, expiresAt } */
   private readonly csrfNonces = new Map<
@@ -319,6 +331,9 @@ export class OAuthServerImpl implements OAuthServer {
         for (const [k, v] of this.tokenIpCounts)
           if (now - v.windowStart > OAuthServerImpl.TOKEN_IP_WINDOW_MS)
             this.tokenIpCounts.delete(k);
+        for (const [k, v] of this.authorizeIpCounts)
+          if (now - v.windowStart > OAuthServerImpl.AUTHORIZE_IP_WINDOW_MS)
+            this.authorizeIpCounts.delete(k);
         for (const [k, v] of this.cimdCache)
           if (now - v.fetchedAt > OAuthServerImpl.CIMD_CACHE_TTL_MS)
             this.cimdCache.delete(k);
@@ -513,6 +528,27 @@ export class OAuthServerImpl implements OAuthServer {
     res: ServerResponse,
   ): Promise<void> {
     const method = req.method ?? "GET";
+    if (method === "GET" || method === "POST") {
+      const key = this.limiterKey(req);
+      const now = Date.now();
+      const entry = this.authorizeIpCounts.get(key);
+      if (
+        entry &&
+        now - entry.windowStart < OAuthServerImpl.AUTHORIZE_IP_WINDOW_MS
+      ) {
+        if (entry.count >= OAuthServerImpl.AUTHORIZE_IP_MAX) {
+          res.writeHead(429, {
+            "Content-Type": "text/plain",
+            "Retry-After": "60",
+          });
+          res.end("too many authorization requests");
+          return;
+        }
+        entry.count++;
+      } else {
+        this.authorizeIpCounts.set(key, { count: 1, windowStart: now });
+      }
+    }
     if (method === "GET") {
       await this.authorizeGet(req, res);
     } else if (method === "POST") {
@@ -642,6 +678,12 @@ export class OAuthServerImpl implements OAuthServer {
     // Verify bridge token on approve
     const presentedToken = body.get("bridge_token") ?? "";
     if (!timingSafeStringEqual(presentedToken, this.bridgeToken)) {
+      // Recorded so an operator can see attempts at all — previously a wrong
+      // token left no trace anywhere. Names the client and the bucket key,
+      // NEVER the presented value (it may be a near-miss of the real token).
+      console.warn(
+        `[oauth] wrong bridge token on /oauth/authorize (client_id=${clientId}, from=${this.limiterKey(req)})`,
+      );
       // Issue a fresh flowId + nonce for the retry so the form remains usable.
       const retryCsrfNonce = crypto.randomBytes(16).toString("hex");
       const retryFlowId = crypto.randomBytes(8).toString("hex");
