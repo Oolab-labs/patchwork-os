@@ -12,7 +12,7 @@
  * proxied HTML as a page (it fetches JSON), so locking HTML down costs nothing.
  */
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const bridgeFetchMock = vi.fn();
 vi.mock("@/lib/bridge", () => ({
@@ -33,7 +33,11 @@ async function get(upstream: Response): Promise<Response> {
 
 beforeEach(() => {
   bridgeFetchMock.mockReset();
-  process.env.DASHBOARD_ALLOW_UNAUTHENTICATED = "1";
+  vi.stubEnv("DASHBOARD_ALLOW_UNAUTHENTICATED", "1");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("proxied HTML keeps a security policy (L4)", () => {
