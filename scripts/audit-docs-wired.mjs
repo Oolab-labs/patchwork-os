@@ -142,12 +142,17 @@ function auditSubcommands() {
     if (m) documented.add(m[1]);
   }
   // The CLI reference moved to docs/guide/cli.md (2026-10); CLAUDE.md keeps
-  // only the trap-bearing entries. That file documents a subcommand two ways:
-  // as a backticked token in a `###` heading ("### `halts` and `judgments`")
-  // and as a synopsis line inside a fenced block ("patchwork recipe run ...").
-  // Both count, so the documented set does not shrink with the move. The file
-  // is optional so an older checkout without the guide still audits CLAUDE.md
-  // alone — and says so, rather than silently auditing less.
+  // only the trap-bearing entries. That file documents a subcommand three
+  // ways: as a backticked token in a `###` heading ("### `halts` and
+  // `judgments`"), as a synopsis line inside a fenced block ("patchwork recipe
+  // run ..."), and as the first cell of a table row ("| `analytics` | ...").
+  // All three count. The table form was missed at first and the gate reported
+  // nineteen verbs as undocumented that the reference covered — an
+  // informational line nobody could act on, which is the kind that gets
+  // ignored. The file is optional so an older checkout without the guide
+  // still audits CLAUDE.md alone — and says so, rather than auditing less
+  // silently.
+  const coveredByTable = new Set();
   let cliRef = "";
   try {
     cliRef = read("docs/guide/cli.md");
@@ -162,6 +167,12 @@ function auditSubcommands() {
     }
     const syn = line.match(/^patchwork ([a-z][a-z-]*)\b/);
     if (syn) documented.add(syn[1]);
+    // Table rows also list SUB-verbs (`lint`, `run`, `backtest`) that are not
+    // top-level commands, so they must not feed the failure direction — a
+    // documented sub-verb is not a missing dispatcher branch. They only
+    // excuse a wired verb from the informational "undocumented" list.
+    const row = line.match(/^\| `([a-z][a-z-]*)\b/);
+    if (row) coveredByTable.add(row[1]);
   }
   const NON_SUBCOMMAND_TOKENS = new Set(["latest", "beta", "canary"]);
   for (const t of NON_SUBCOMMAND_TOKENS) documented.delete(t);
@@ -174,7 +185,9 @@ function auditSubcommands() {
     );
   }
   // Wired but undocumented — informational only.
-  const undocumented = [...wired].filter((c) => !documented.has(c)).sort();
+  const undocumented = [...wired]
+    .filter((c) => !documented.has(c) && !coveredByTable.has(c))
+    .sort();
   if (undocumented.length > 0) {
     notes.push(
       `subcommands: wired but not documented (informational): ${undocumented.join(", ")}`,
