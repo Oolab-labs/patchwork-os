@@ -17,6 +17,9 @@ const HOST_ENV: NodeJS.ProcessEnv = {
   XDG_CONFIG_HOME: "/home/op/.config",
   HTTPS_PROXY: "http://proxy.example.test:3128",
   SSL_CERT_FILE: "/etc/ssl/cert.pem",
+  // Not secrets: a relocated Claude login and a corporate CA bundle.
+  CLAUDE_CONFIG_DIR: "/home/op/.config/claude",
+  NODE_EXTRA_CA_CERTS: "/etc/ssl/corp-ca.pem",
   // Secrets that must never reach a contained child.
   JIRA_API_TOKEN: "jira-secret",
   NOTION_TOKEN: "notion-secret",
@@ -52,6 +55,8 @@ describe("allowlistEnv (governed containment)", () => {
         "XDG_CONFIG_HOME",
         "HTTPS_PROXY",
         "SSL_CERT_FILE",
+        "CLAUDE_CONFIG_DIR",
+        "NODE_EXTRA_CA_CERTS",
       ].sort(),
     );
   });

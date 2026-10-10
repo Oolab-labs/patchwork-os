@@ -25,6 +25,11 @@ import {
   killSwitchMessage,
   readKillSwitch,
 } from "./governance/killSwitchPolicy.js";
+import {
+  type AgentContainment,
+  activeProfile,
+  resolveAgentContainment,
+} from "./governance/profile.js";
 import { redactKnownSecrets } from "./governance/secretValues.js";
 import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import { sharedBoundaryReceiptLog } from "./privacy/boundaryReceiptLog.js";
@@ -167,6 +172,39 @@ export type EnqueueOpts = {
   disallowedTools?: string[];
   containment?: import("./governance/profile.js").AgentContainment;
 };
+
+/**
+ * The containment an orchestrator task runs under.
+ *
+ * A caller that resolved its own (a recipe agent step, whose widenings were
+ * already explained and gated by the runner) keeps it unchanged. Otherwise,
+ * under a governed profile, the default containment applies to every
+ * dispatch through this chokepoint: automation hooks, runClaudeTask and
+ * resumeClaudeTask, recipe generation and repair, prompt recipes, and tasks
+ * restored after a restart. Resolving it here rather than at each call site
+ * is what stops a new call site from forgetting it.
+ *
+ * Only `disallowedTools` carries over from the caller, because it only
+ * narrows. Nothing on this path can widen: `allowedTools`, `sandbox` and
+ * `mcpAccess` are not honoured, because there is no approval step here to
+ * justify a widening. (A contained child in dontAsk mode could not use bridge
+ * tools anyway unless they were allowlisted, and medium-tier bridge writes
+ * are not held for approval under governed.)
+ *
+ * Under compat nothing is added, so behaviour is unchanged.
+ */
+function orchestratorContainment(
+  opts: EnqueueOpts,
+): AgentContainment | undefined {
+  if (opts.containment !== undefined) return opts.containment;
+  const profile = activeProfile();
+  if (profile.agentContainment !== "enforced") return undefined;
+  return resolveAgentContainment(profile, {
+    ...(opts.disallowedTools !== undefined && {
+      disallowedTools: opts.disallowedTools,
+    }),
+  });
+}
 
 /** Encrypt a prompt for the tasks file; undefined when the key layer is unavailable. */
 function encryptPromptForPersistence(prompt: string): string | undefined {
@@ -583,6 +621,7 @@ export class ClaudeOrchestrator {
       );
     }
 
+    const containment = orchestratorContainment(opts);
     const task: ClaudeTask = {
       id,
       sessionId: opts.sessionId ?? "",
@@ -621,7 +660,7 @@ export class ClaudeOrchestrator {
       ...(opts.disallowedTools !== undefined && {
         disallowedTools: opts.disallowedTools,
       }),
-      ...(opts.containment !== undefined && { containment: opts.containment }),
+      ...(containment !== undefined && { containment }),
     };
 
     this.tasks.set(id, task);
