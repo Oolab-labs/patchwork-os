@@ -78,7 +78,15 @@ describe("resolveAgentContainment", () => {
     const c = resolveAgentContainment(GOVERNED_PROFILE, undefined);
     expect(c.enforced).toBe(true);
     expect(c.allowedTools).toEqual(["Read", "Glob", "Grep", "LS"]);
-    expect(c.deniedTools).toEqual(["WebFetch", "WebSearch", "Bash"]);
+    expect(c.deniedTools).toEqual([
+      "WebFetch",
+      "WebSearch",
+      "Bash",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+    ]);
     expect(c.envAllowlist).toBe(true);
     expect(c.mcpAccess).toBe(false);
     const w = resolveAgentContainment(GOVERNED_PROFILE, {

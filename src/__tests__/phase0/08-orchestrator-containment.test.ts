@@ -119,8 +119,19 @@ function expectContained(args: string[], env: NodeJS.ProcessEnv | undefined) {
   expect(args).not.toContain("--dangerously-skip-permissions");
   expect(flagValues(args, "--permission-mode")).toEqual(["dontAsk"]);
   expect(flagValues(args, "--disallowed-tools")).toEqual(
-    expect.arrayContaining(["WebFetch", "WebSearch", "Bash"]),
+    expect.arrayContaining([
+      "WebFetch",
+      "WebSearch",
+      "Bash",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+    ]),
   );
+  // Only the operator's user settings: a workspace's own settings can carry
+  // hooks and allow rules.
+  expect(flagValues(args, "--setting-sources")).toEqual(["user"]);
   for (const t of flagValues(args, "--allowed-tools")) {
     expect(CONTAINED_AGENT_ALLOWED_TOOLS).toContain(t);
   }
@@ -240,6 +251,7 @@ describe("compat: unchanged", () => {
     expect(orch.getTask(id)?.containment).toBeUndefined();
     const { args } = await finishNextSpawn();
     expect(args).toContain("--dangerously-skip-permissions");
+    expect(args).not.toContain("--setting-sources");
     await waitDone(orch, id);
   });
 });

@@ -98,6 +98,58 @@ export function containmentFromInput(
   };
 }
 
+/** Drop values a child's flag parser could misread (non-strings, `-…`). */
+function argvSafeList(list: unknown): string[] {
+  return (Array.isArray(list) ? (list as unknown[]) : []).filter(
+    (t): t is string =>
+      typeof t === "string" && t.length > 0 && !t.startsWith("-"),
+  );
+}
+
+/**
+ * Settings sources a contained run loads: only the operator's own USER
+ * settings. Project and local settings live in the workspace, so a repository
+ * can ship them. Their hooks run shell commands, and observed against the real
+ * CLI, a project PreToolUse hook ran inside a contained `-p` run despite
+ * `--settings` carrying `hooks: {}`. Their allow rules can also re-enable
+ * tools. User settings stay, because API-key auth (`apiKeyHelper`)
+ * lives there.
+ */
+export const CONTAINED_SETTING_SOURCES = "user";
+
+/**
+ * The permission argv for a CONTAINED `claude -p` run. This is the single
+ * implementation shared by the subprocess driver and the local-run path
+ * (`defaultClaudeCodeFn`), so the two cannot drift apart.
+ *
+ * - Setting sources are restricted to user settings.
+ * - The mode is dontAsk, even with an empty allowlist, so every unlisted tool
+ *   is refused.
+ * - The allowlist comes from the containment.
+ * - The deny list is the union of the caller's own denies and the
+ *   containment's. A deny is never dropped.
+ */
+export function containedPermissionArgs(
+  containment: Pick<AgentContainment, "allowedTools" | "deniedTools">,
+  extraDenied: unknown = [],
+): string[] {
+  const allowed = argvSafeList(containment.allowedTools);
+  const denied = Array.from(
+    new Set([
+      ...argvSafeList(extraDenied),
+      ...argvSafeList(containment.deniedTools),
+    ]),
+  );
+  return [
+    "--setting-sources",
+    CONTAINED_SETTING_SOURCES,
+    "--permission-mode",
+    "dontAsk",
+    ...(allowed.length > 0 ? ["--allowed-tools", ...allowed] : []),
+    ...(denied.length > 0 ? ["--disallowed-tools", ...denied] : []),
+  ];
+}
+
 /** Provider credentials the Claude CLI authenticates with. */
 export const CLAUDE_PROVIDER_ENV_KEYS: readonly string[] = Object.freeze([
   "ANTHROPIC_API_KEY",
@@ -274,7 +326,10 @@ export class SubprocessDriver implements ProviderDriver {
     }
     if (maxBudgetUsd !== undefined)
       args.push("--max-budget-usd", String(maxBudgetUsd));
-    if (sandboxActive) {
+    if (contained && containment) {
+      // Governed containment: one implementation for every contained spawn.
+      args.push(...containedPermissionArgs(containment, opts.disallowedTools));
+    } else if (sandboxActive) {
       // Sandbox: enforce the allowlist. --dangerously-skip-permissions VOIDS
       // --allowed-tools (per CC docs), so they are mutually exclusive — drop
       // skip-permissions and run in dontAsk mode (no interactive prompt, but
@@ -289,8 +344,9 @@ export class SubprocessDriver implements ProviderDriver {
       args.push("--dangerously-skip-permissions");
     }
     // Deny rules apply in ANY mode — even under --dangerously-skip-permissions.
-    // --disallowed-tools is variadic: one flag, all (filtered) values.
-    if (disallowedTools.length > 0) {
+    // --disallowed-tools is variadic: one flag, all (filtered) values. (A
+    // contained run already carries the union via containedPermissionArgs.)
+    if (!contained && disallowedTools.length > 0) {
       args.push("--disallowed-tools", ...disallowedTools);
     }
     for (const f of input.contextFiles ?? []) {

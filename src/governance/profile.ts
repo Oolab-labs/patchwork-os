@@ -208,10 +208,30 @@ export const CONTAINED_AGENT_ALLOWED_TOOLS: readonly string[] = Object.freeze([
  * genuinely needs them must say so with `sandbox: { network: true }` /
  * `sandbox: { shell: true }`, which `policy explain` reports as a widening.
  */
+/**
+ * The write-capable built-ins. Leaving them off `--allowed-tools` is not
+ * enough: an allow rule from any settings source the CLI loads re-enables a
+ * tool that is merely unlisted (observed against the real CLI). So they are
+ * DENIED by default, and a deny beats every allow rule in a settings file.
+ *
+ * Unlike network and shell, the recipe's own `allowedTools` lifts the deny for
+ * exactly the tools it names. That is a recorded widening (`allowedTools+X`),
+ * so `policy explain` shows it and it needs approval, the same as before.
+ * Orchestrator dispatch does not honour a caller's `allowedTools`, so these
+ * tools stay denied there.
+ */
+export const CONTAINED_AGENT_WRITE_TOOLS: readonly string[] = Object.freeze([
+  "Edit",
+  "Write",
+  "MultiEdit",
+  "NotebookEdit",
+]);
+
 export const CONTAINED_AGENT_DENIED_TOOLS: readonly string[] = Object.freeze([
   "WebFetch",
   "WebSearch",
   "Bash",
+  ...CONTAINED_AGENT_WRITE_TOOLS,
 ]);
 
 export interface AgentContainment {
@@ -267,6 +287,12 @@ export function resolveAgentContainment(
     allowed.add(t);
   }
   const denied = new Set<string>(CONTAINED_AGENT_DENIED_TOOLS);
+  // The recipe's own allowedTools lifts the default deny on a write tool
+  // (recorded above as a widening). The recipe's own disallowedTools are
+  // applied AFTER, so a tool it both allows and denies stays denied.
+  for (const t of req?.allowedTools ?? []) {
+    if (CONTAINED_AGENT_WRITE_TOOLS.includes(t)) denied.delete(t);
+  }
   for (const t of req?.disallowedTools ?? []) denied.add(t);
   if (req?.network === true) {
     denied.delete("WebFetch");

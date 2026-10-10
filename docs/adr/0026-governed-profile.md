@@ -46,7 +46,7 @@ function:
 | `gateAutomatedRuns` | runner consult predicate | every trigger consulted like a manual run |
 | `workerAuthority` | `FLAG_WORKER_AUTONOMY` | on |
 | `policyEnforce` | `FLAG_ENFORCE_POLICY` | on |
-| `agentContainment` | `src/drivers/*`, `ClaudeOrchestrator._enqueueWithId` | contained by default (Read/Glob/Grep/LS; WebFetch, WebSearch, Bash denied; env allowlist; no bridge MCP), for recipe agent steps and every orchestrator dispatch |
+| `agentContainment` | `src/drivers/*` (`containedPermissionArgs`), `defaultClaudeCodeFn`, `ClaudeOrchestrator._enqueueWithId` | contained by default (Read/Glob/Grep/LS; WebFetch, WebSearch, Bash and the write tools Edit/Write/MultiEdit/NotebookEdit denied; user settings only; env allowlist; no bridge MCP), for recipe agent steps on every path (bridge and `recipe run --local`/`record`) and every orchestrator dispatch |
 | `pluginPolicy` | `loadRecipeServers`, install, PUT, lint | allowlist (`config.plugins.allow`) |
 | `killSwitchFailClosed` | `readKillSwitch` | unreadable ⇒ engaged |
 | `unknownWriteTools` | `tierVerdict` | inferred-tier writes and NON-reversible writes queue |
@@ -112,10 +112,30 @@ The same order is what `policy explain` prints.
   approval on every run until a worker manifest earns it autonomy or a standing
   permission is granted. That is the intended posture; a reversible write
   (`file.write`, rollback-able) still flows.
-- A governed agent step cannot fetch URLs, run a shell, or see connector
-  credentials unless the recipe widens it explicitly (`sandbox: { network:
-  true }` etc.), and every widening is printed by `policy explain` and turns the
-  step into one that needs approval.
+- A governed agent step cannot fetch URLs, run a shell, write files, or see
+  connector credentials unless the recipe widens it explicitly:
+  - `sandbox: { network: true }` or `sandbox: { shell: true }`;
+  - for a write tool, naming it in the step's own `allowedTools`.
+
+  Every widening is printed by `policy explain` and turns the step into one that
+  needs approval.
+- A contained run loads only the operator's USER Claude settings
+  (`--setting-sources user`). Project and local settings live in the workspace,
+  so a repository can ship them, and two things in them were observed against
+  the real CLI:
+  - a project `PreToolUse` hook ran its shell command inside a contained `-p`
+    run, even with the driver's `--settings` carrying `hooks: {}`;
+  - an allow rule from any loaded settings source re-enabled a tool that was
+    merely absent from `--allowed-tools`.
+
+  So the write-capable built-ins are DENIED (a deny beats every allow) rather
+  than left unlisted. User settings stay, because API-key auth via
+  `apiKeyHelper` lives there.
+- The `recipe run --local` / `recipe record` path (`defaultClaudeCodeFn`)
+  applies the same containment as the subprocess driver: the same settings
+  deny file, the same permission argv (one shared `containedPermissionArgs`),
+  and the same env allowlist. If its settings file cannot be written, it
+  refuses rather than running uncontained.
 - Orchestrator dispatch gets the same default containment. This covers:
   - automation hooks;
   - `runClaudeTask` and `resumeClaudeTask`;
@@ -178,6 +198,13 @@ The same order is what `policy explain` prints.
   (`makeProviderDriverFn` previously dropped it). Still open: the `gemini` and
   `codex` CLI subprocess drivers have no system-prompt channel and ignore
   `ProviderTaskInput.systemPrompt`, so they receive the envelope without it.
+- ~~The local run path (`recipe run --local`, `recipe record`) ignored the
+  containment it was handed, and a workspace's own Claude settings (hooks,
+  allow rules) applied to contained runs.~~ Closed 2026-10-10, pinned by
+  `src/__tests__/phase0/09-local-run-and-setting-sources.test.ts` and checked
+  against the real CLI with a repository carrying a hook and an allow rule:
+  - before the fix, the hook ran on both the driver and the local path;
+  - after it, the hook ran on neither, and no file was written.
 - ~~Containment covered recipe agent steps only; no orchestrator caller
   resolved one.~~ Closed 2026-10-10: the default is applied at the
   orchestrator's enqueue chokepoint (see Consequences), and is pinned by

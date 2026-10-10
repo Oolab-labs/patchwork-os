@@ -69,7 +69,13 @@ describe("executeAgent — agent containment (Phase 0 step 6)", () => {
     const opts = vi.mocked(deps.claudeCliFn).mock.calls[0]![1]!;
     expect(opts.sandbox).toBe(true);
     expect(opts.containment?.widenings).toEqual(["network", "mcpAccess"]);
-    expect(opts.containment?.deniedTools).toEqual(["Bash"]);
+    expect(opts.containment?.deniedTools).toEqual([
+      "Bash",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+    ]);
     expect(opts.containment?.mcpAccess).toBe(true);
   });
 

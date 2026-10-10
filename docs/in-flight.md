@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-10-10 `fix/containment-local-run-and-setting-sources` — governed containment on the `recipe run --local`/`record` path; contained runs load only user Claude settings and deny the write tools — Claude Code session
+
 
 
 
