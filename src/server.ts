@@ -26,7 +26,9 @@ import type { AttributedPermissionRules } from "./ccPermissions.js";
 import {
   handleClaudeAuthCancel,
   handleClaudeAuthComplete,
+  handleClaudeAuthLogout,
   handleClaudeAuthStart,
+  handleClaudeAuthStatus,
 } from "./claudeAuthHttp.js";
 import { MAX_APPROVAL_TIMEOUT_MS, saveBridgeConfigDriver } from "./config.js";
 import {
@@ -1932,12 +1934,10 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
-      // /auth/claude/* — Claude Code subscription OAuth 2.0 + PKCE flow.
-      // start → returns a claude.ai auth URL; complete → exchanges code for token;
-      // cancel → discards the pending session. The dashboard "Connect Claude"
-      // button drives this flow; after complete the dashboard saves the returned
-      // token via POST /api/auth/anthropic-key → control-plane re-provisions
-      // the container with CLAUDE_CODE_OAUTH_TOKEN so subprocess driver works.
+      // /auth/claude/* — Claude sign-in relay (src/claudeAuthHttp.ts). The
+      // unmodified `claude auth login` performs the sign-in and stores its own
+      // login; the bridge only relays the sign-in link out and the pasted code
+      // in, and never handles a Claude credential.
       if (
         parsedUrl.pathname === "/auth/claude/start" &&
         req.method === "POST"
@@ -1957,6 +1957,20 @@ export class Server extends EventEmitter<ServerEvents> {
         req.method === "POST"
       ) {
         await handleClaudeAuthCancel(req, res);
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/auth/claude/status" &&
+        req.method === "GET"
+      ) {
+        await handleClaudeAuthStatus(req, res);
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/auth/claude/logout" &&
+        req.method === "POST"
+      ) {
+        await handleClaudeAuthLogout(req, res);
         return;
       }
 

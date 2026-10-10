@@ -1,137 +1,147 @@
 /**
- * Claude Code subscription OAuth 2.0 + PKCE flow.
- *
- * Implements the three endpoints the dashboard settings "Connect Claude" UX
- * expects on the bridge:
+ * Claude sign-in relay.
  *
  *   POST /auth/claude/start    → { sessionId, url }
- *   POST /auth/claude/complete → { token }
- *   POST /auth/claude/cancel   → { ok: true }
+ *   POST /auth/claude/complete → { ok, loggedIn, authMethod }   body { sessionId, code }
+ *   POST /auth/claude/cancel   → { ok: true }                   body { sessionId? }
+ *   GET  /auth/claude/status   → { loggedIn, authMethod }
+ *   POST /auth/claude/logout   → { ok: true }
  *
- * Flow:
- *   1. start  — generate PKCE verifier/challenge, build the claude.ai auth URL,
- *               store the verifier in an in-memory session map, return the URL.
- *   2. User opens the URL, signs in, and copies the authorization code shown on
- *               https://platform.claude.com/oauth/code/callback.
- *   3. complete — exchange the code + verifier for an access token at
- *               https://api.anthropic.com/v1/oauth/token.  Return the token.
- *   4. Dashboard POSTs the token to /api/auth/anthropic-key → control-plane
- *               stores it encrypted and re-provisions the container with
- *               CLAUDE_CODE_OAUTH_TOKEN=<token> so the subprocess driver works.
+ * Sign-in is performed by the UNMODIFIED Claude Code CLI (`claude auth login`),
+ * which talks to Anthropic and stores its own login where Claude Code always
+ * keeps it. This module only relays two things: the sign-in link the CLI
+ * prints (out to the person) and the code the person pastes (into the CLI's
+ * stdin). It never sees, stores, logs or returns a Claude credential.
+ *
+ * Why: Anthropic does not permit applications to run their own Claude.ai
+ * login, or to collect, store or intermediate Claude.ai credentials; sign-in
+ * must complete through Anthropic's own flow. The previous implementation
+ * ran its own OAuth exchange and returned the access token (and dropped the
+ * refresh token, so the login also expired within hours).
+ *
+ * The binary is `PATCHWORK_CLAUDE_BINARY` or `claude` on PATH, run with the
+ * bridge's HOME / CLAUDE_CONFIG_DIR so the login lands where every later
+ * `claude` invocation by this bridge will find it.
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { type ChildProcess, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-// ---------------------------------------------------------------------------
-// Constants (extracted from the claude binary via strings analysis)
-// ---------------------------------------------------------------------------
-
-// Claude Code's public OAuth client id. It must be a UUID: claude.ai's
-// /oauth/authorize rejects a non-UUID client_id ("Input should be a valid
-// UUID") and renders an "OAuth Request Failed" page, so the client-metadata
-// URL that used to live here made the flow unreachable before the user could
-// even approve. Public by design — an OAuth public client id is an
-// identifier, not a secret; PKCE is what protects the exchange.
-const CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const CLAUDE_OAUTH_AUTH_URL = "https://claude.com/cai/oauth/authorize";
-const CLAUDE_OAUTH_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
-const CLAUDE_OAUTH_REDIRECT_URI =
-  "https://platform.claude.com/oauth/code/callback";
-const CLAUDE_OAUTH_SCOPES = "user:inference user:profile org:create_api_key";
-
-// Sessions expire after 10 minutes — long enough for a user to complete the
-// browser flow, short enough not to accumulate stale entries.
+const URL_TIMEOUT_MS = 20_000;
+const COMPLETE_TIMEOUT_MS = 30_000;
+const STATUS_TIMEOUT_MS = 15_000;
 const SESSION_TTL_MS = 10 * 60 * 1000;
+/** Anthropic's sign-in pages; any other URL the CLI prints is not relayed. */
+const SIGN_IN_URL_RE = /https:\/\/(?:claude\.com|claude\.ai)\/[^\s"'<>]+/;
 
-// http-routes-4: hard ceiling on the in-memory session map. An authenticated
-// caller flooding POST /auth/claude/start faster than the 10-minute TTL expires
-// entries would otherwise grow the map without bound (memory-exhaustion DoS).
-// 500 concurrent in-flight OAuth flows is far more than any real deployment.
-const MAX_SESSIONS = 500;
-
-// Hard ceiling on the Anthropic token-exchange request (audit 2026-06-08 auth-1).
-const TOKEN_EXCHANGE_TIMEOUT_MS = 15_000;
-
-// ---------------------------------------------------------------------------
-// In-memory session store
-// ---------------------------------------------------------------------------
-
-interface AuthSession {
+interface LoginSession {
   sessionId: string;
-  codeVerifier: string;
+  child: ChildProcess;
   createdAt: number;
+  output: string;
+  exited: Promise<number | null>;
 }
 
-const sessions = new Map<string, AuthSession>();
+/** One sign-in at a time per bridge: a new start replaces any pending one. */
+let current: LoginSession | null = null;
 
-function pruneExpiredSessions(): void {
-  const now = Date.now();
-  for (const [id, s] of sessions) {
-    if (now - s.createdAt > SESSION_TTL_MS) sessions.delete(id);
+function claudeBinary(): string {
+  return process.env.PATCHWORK_CLAUDE_BINARY || "claude";
+}
+
+/** Only what Claude Code needs to find its own config and reach the network. */
+function childEnv(): NodeJS.ProcessEnv {
+  const keep = [
+    "HOME",
+    "PATH",
+    "USER",
+    "LANG",
+    "TMPDIR",
+    "CLAUDE_CONFIG_DIR",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "NODE_EXTRA_CA_CERTS",
+  ];
+  const env: NodeJS.ProcessEnv = {};
+  for (const k of keep)
+    if (process.env[k] !== undefined) env[k] = process.env[k];
+  // Never let a stray credential in the bridge's env decide which account
+  // Claude Code signs in as.
+  return env;
+}
+
+function endSession(s: LoginSession | null): void {
+  if (!s) return;
+  try {
+    s.child.stdin?.end();
+  } catch {
+    /* already closed */
+  }
+  if (s.child.exitCode === null) s.child.kill("SIGTERM");
+}
+
+/** Test seam: drop any in-flight session. */
+export function _resetClaudeLoginForTesting(): void {
+  endSession(current);
+  current = null;
+}
+
+function run(
+  args: string[],
+  timeoutMs: number,
+): Promise<{ code: number | null; stdout: string; spawnError?: string }> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let settled = false;
+    const child = spawn(claudeBinary(), args, {
+      env: childEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+    }, timeoutMs);
+    child.stdout?.on("data", (d: Buffer) => {
+      stdout += d.toString("utf8");
+    });
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code: null, stdout, spawnError: err.code ?? "spawn_failed" });
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stdout });
+    });
+  });
+}
+
+interface AuthStatus {
+  loggedIn: boolean;
+  authMethod: string;
+}
+
+async function readStatus(): Promise<AuthStatus | { error: string }> {
+  const r = await run(["auth", "status"], STATUS_TIMEOUT_MS);
+  if (r.spawnError) return { error: "claude_not_installed" };
+  try {
+    const parsed = JSON.parse(r.stdout) as Record<string, unknown>;
+    // Return only these two fields: the rest (e.g. email, organisation) is
+    // not this endpoint's business.
+    return {
+      loggedIn: parsed.loggedIn === true,
+      authMethod:
+        typeof parsed.authMethod === "string" ? parsed.authMethod : "unknown",
+    };
+  } catch {
+    return { error: "status_unreadable" };
   }
 }
-
-// ---------------------------------------------------------------------------
-// PKCE helpers
-// ---------------------------------------------------------------------------
-
-function generateCodeVerifier(): string {
-  return randomBytes(32).toString("base64url");
-}
-
-function deriveCodeChallenge(verifier: string): string {
-  return createHash("sha256").update(verifier).digest("base64url");
-}
-
-// ---------------------------------------------------------------------------
-// Pasted-value normalisation
-// ---------------------------------------------------------------------------
-
-/**
- * Turn whatever the user pasted into `{ code, state }`.
- *
- * Anthropic's callback page renders the value as `<code>#<state>`, and users
- * variously paste that verbatim, paste just the code, or paste the entire
- * callback URL out of the address bar. All three must work.
- *
- * `state` matters: /v1/oauth/token rejects a body without it as
- * `invalid_request_error / "Invalid request format"` — verified against the
- * live endpoint 2026-08-12. Sending only `code` failed for every user, which
- * is why the flow never worked regardless of what was pasted.
- */
-export function parsePastedAuthCode(raw: string): {
-  code: string;
-  state?: string;
-} {
-  const trimmed = raw.trim();
-
-  // Full callback URL — pull code/state out of the query string.
-  if (/^https?:\/\//i.test(trimmed)) {
-    try {
-      const url = new URL(trimmed);
-      const code = url.searchParams.get("code")?.trim();
-      const state = url.searchParams.get("state")?.trim();
-      if (code) return { code, state: state || undefined };
-    } catch {
-      // Not a parseable URL — fall through to the `#` handling below.
-    }
-  }
-
-  // `<code>#<state>` — the shape the callback page displays.
-  const hash = trimmed.indexOf("#");
-  if (hash !== -1) {
-    const code = trimmed.slice(0, hash).trim();
-    const state = trimmed.slice(hash + 1).trim();
-    return { code, state: state || undefined };
-  }
-
-  return { code: trimmed };
-}
-
-// ---------------------------------------------------------------------------
-// Body reader (reuse the same pattern as the bridge's other POST handlers)
-// ---------------------------------------------------------------------------
 
 async function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -159,66 +169,101 @@ function jsonReply(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
-// ---------------------------------------------------------------------------
-// POST /auth/claude/start
-// ---------------------------------------------------------------------------
+async function parseJson(
+  req: IncomingMessage,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = await readBody(req);
+    if (!raw.trim()) return {};
+    const v = JSON.parse(raw) as unknown;
+    return v && typeof v === "object" && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+// --- POST /auth/claude/start ----------------------------------------------
 
 export async function handleClaudeAuthStart(
   _req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  pruneExpiredSessions();
+  endSession(current);
+  current = null;
 
-  // http-routes-4: reject new sessions once the (post-prune) map is at
-  // capacity so a flood of /start requests can't exhaust memory.
-  if (sessions.size >= MAX_SESSIONS) {
-    jsonReply(res, 503, {
-      error: "too_many_sessions",
-      detail: "Too many in-flight authorization sessions. Try again shortly.",
+  let child: ChildProcess;
+  try {
+    child = spawn(claudeBinary(), ["auth", "login", "--claudeai"], {
+      env: childEnv(),
+      stdio: ["pipe", "pipe", "pipe"],
     });
+  } catch {
+    jsonReply(res, 503, { error: "claude_not_installed" });
     return;
   }
 
-  const codeVerifier = generateCodeVerifier();
-  const codeChallenge = deriveCodeChallenge(codeVerifier);
-  const sessionId = randomBytes(16).toString("hex");
+  const session: LoginSession = {
+    sessionId: randomBytes(16).toString("hex"),
+    child,
+    createdAt: Date.now(),
+    output: "",
+    exited: new Promise((resolve) => {
+      child.on("close", (code) => resolve(code));
+      child.on("error", () => resolve(null));
+    }),
+  };
 
-  sessions.set(sessionId, { sessionId, codeVerifier, createdAt: Date.now() });
-
-  const params = new URLSearchParams({
-    client_id: CLAUDE_OAUTH_CLIENT_ID,
-    response_type: "code",
-    redirect_uri: CLAUDE_OAUTH_REDIRECT_URI,
-    scope: CLAUDE_OAUTH_SCOPES,
-    code_challenge: codeChallenge,
-    code_challenge_method: "S256",
-    state: sessionId,
+  const outcome = await new Promise<
+    { url: string } | { error: string; status: number }
+  >((resolve) => {
+    const timer = setTimeout(() => {
+      resolve({ error: "sign_in_link_timeout", status: 504 });
+    }, URL_TIMEOUT_MS);
+    const onData = (d: Buffer) => {
+      session.output += d.toString("utf8");
+      const m = SIGN_IN_URL_RE.exec(session.output);
+      if (m) {
+        clearTimeout(timer);
+        resolve({ url: m[0] });
+      }
+    };
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      clearTimeout(timer);
+      resolve({
+        error: err.code === "ENOENT" ? "claude_not_installed" : "spawn_failed",
+        status: 503,
+      });
+    });
+    child.on("close", () => {
+      clearTimeout(timer);
+      resolve({ error: "sign_in_exited_early", status: 502 });
+    });
   });
 
-  const url = `${CLAUDE_OAUTH_AUTH_URL}?${params.toString()}`;
-  jsonReply(res, 200, { sessionId, url });
+  if ("error" in outcome) {
+    endSession(session);
+    jsonReply(res, outcome.status, { error: outcome.error });
+    return;
+  }
+  current = session;
+  jsonReply(res, 200, { sessionId: session.sessionId, url: outcome.url });
 }
 
-// ---------------------------------------------------------------------------
-// POST /auth/claude/complete  { sessionId, code }
-// ---------------------------------------------------------------------------
+// --- POST /auth/claude/complete -------------------------------------------
 
 export async function handleClaudeAuthComplete(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  // http-routes-4: keep the session map tidy on the completion path too —
-  // start() was the only pruning site, so abandoned flows lingered.
-  pruneExpiredSessions();
-
-  let body: { sessionId?: unknown; code?: unknown };
-  try {
-    body = JSON.parse(await readBody(req)) as typeof body;
-  } catch {
+  const body = await parseJson(req);
+  if (!body) {
     jsonReply(res, 400, { error: "invalid_json" });
     return;
   }
-
   const { sessionId, code } = body;
   if (
     typeof sessionId !== "string" ||
@@ -231,116 +276,99 @@ export async function handleClaudeAuthComplete(
     });
     return;
   }
-
-  const session = sessions.get(sessionId);
-  if (!session) {
+  const s = current;
+  if (
+    !s ||
+    s.sessionId !== sessionId ||
+    Date.now() - s.createdAt > SESSION_TTL_MS ||
+    s.child.exitCode !== null
+  ) {
     jsonReply(res, 404, {
       error: "session_not_found",
-      detail:
-        "Session expired or not found. Click 'Start over' to begin again.",
+      detail: "Sign-in expired or was replaced. Start again.",
     });
     return;
   }
+  current = null;
 
-  if (Date.now() - session.createdAt > SESSION_TTL_MS) {
-    sessions.delete(sessionId);
-    jsonReply(res, 410, {
-      error: "session_expired",
-      detail:
-        "Authorization session expired. Click 'Start over' to begin again.",
-    });
+  // The code goes to Claude Code's stdin and nowhere else: not logged, not
+  // stored, not echoed back.
+  const outputBefore = s.output.length;
+  s.child.stdin?.write(`${code.trim()}\n`);
+  const exit = await Promise.race([
+    s.exited,
+    new Promise<"timeout">((r) =>
+      setTimeout(() => r("timeout"), COMPLETE_TIMEOUT_MS),
+    ),
+  ]);
+  endSession(s);
+  if (exit === "timeout") {
+    jsonReply(res, 504, { error: "sign_in_timeout" });
     return;
   }
 
-  // Exchange authorization code + PKCE verifier for an access token.
-  // Audit 2026-06-08 HIGH (auth-1): bound the fetch with an AbortController so a
-  // slow/hung Anthropic endpoint can't keep the HTTP connection + session open
-  // indefinitely. Map an abort to a 504 (distinct from a 502 network error).
-  // The pasted value may be `<code>#<state>`, a bare code, or the whole
-  // callback URL. Fall back to the session id for `state` — that is what we
-  // put in the authorize URL, so it round-trips correctly when the user pasted
-  // only the code half.
-  const { code: authCode, state: pastedState } = parsePastedAuthCode(code);
-  if (!authCode) {
+  const status = await readStatus();
+  if ("error" in status) {
+    jsonReply(res, 502, { error: status.error });
+    return;
+  }
+  // The CLI prints "Invalid code" yet still exits 0, and an earlier login
+  // would make `status` look signed in, so neither the exit code nor status
+  // alone proves THIS code worked: also read what it printed after the code.
+  const reply = s.output.slice(outputBefore);
+  const rejected = /invalid|error|fail/i.test(reply);
+  if (exit !== 0 || rejected || !status.loggedIn) {
     jsonReply(res, 400, {
-      error: "missing_fields",
-      detail: "sessionId and code required",
-    });
-    return;
-  }
-  const authState = pastedState ?? session.sessionId;
-
-  let tokenRes: Response;
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    TOKEN_EXCHANGE_TIMEOUT_MS,
-  );
-  try {
-    tokenRes = await fetch(CLAUDE_OAUTH_TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        client_id: CLAUDE_OAUTH_CLIENT_ID,
-        code: authCode,
-        state: authState,
-        redirect_uri: CLAUDE_OAUTH_REDIRECT_URI,
-        code_verifier: session.codeVerifier,
-      }).toString(),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    const aborted =
-      err instanceof Error &&
-      (err.name === "AbortError" || controller.signal.aborted);
-    jsonReply(res, aborted ? 504 : 502, {
-      error: aborted ? "token_exchange_timeout" : "token_exchange_failed",
-      detail: aborted
-        ? "Timed out contacting Anthropic. Please try again."
-        : `Network error contacting Anthropic: ${err instanceof Error ? err.message : String(err)}`,
-    });
-    return;
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  const tokenData = (await tokenRes.json().catch(() => ({}))) as {
-    access_token?: string;
-    token_type?: string;
-    error?: string;
-    error_description?: string;
-  };
-
-  if (!tokenRes.ok || !tokenData.access_token) {
-    jsonReply(res, 400, {
-      error: "token_exchange_rejected",
+      error: "invalid_code",
       detail:
-        tokenData.error_description ??
-        tokenData.error ??
-        `Anthropic returned ${tokenRes.status}. Make sure you pasted the correct authorization code.`,
+        "Claude Code did not accept that code. Copy the whole code and try again.",
     });
     return;
   }
-
-  sessions.delete(sessionId);
-  jsonReply(res, 200, { token: tokenData.access_token });
+  jsonReply(res, 200, { ok: true, ...status });
 }
 
-// ---------------------------------------------------------------------------
-// POST /auth/claude/cancel  { sessionId? }
-// ---------------------------------------------------------------------------
+// --- POST /auth/claude/cancel ---------------------------------------------
 
 export async function handleClaudeAuthCancel(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  try {
-    const body = JSON.parse(await readBody(req)) as { sessionId?: unknown };
-    if (typeof body.sessionId === "string") sessions.delete(body.sessionId);
-  } catch {
-    // Body parse failure is fine — we just won't delete a specific session.
+  const body = (await parseJson(req)) ?? {};
+  if (
+    current &&
+    (body.sessionId === undefined || body.sessionId === current.sessionId)
+  ) {
+    endSession(current);
+    current = null;
   }
-  pruneExpiredSessions();
   jsonReply(res, 200, { ok: true });
+}
+
+// --- GET /auth/claude/status ----------------------------------------------
+
+export async function handleClaudeAuthStatus(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const status = await readStatus();
+  if ("error" in status) {
+    jsonReply(res, status.error === "claude_not_installed" ? 503 : 502, status);
+    return;
+  }
+  jsonReply(res, 200, status);
+}
+
+// --- POST /auth/claude/logout ---------------------------------------------
+
+export async function handleClaudeAuthLogout(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const r = await run(["auth", "logout"], STATUS_TIMEOUT_MS);
+  if (r.spawnError) {
+    jsonReply(res, 503, { error: "claude_not_installed" });
+    return;
+  }
+  jsonReply(res, r.code === 0 ? 200 : 502, { ok: r.code === 0 });
 }
