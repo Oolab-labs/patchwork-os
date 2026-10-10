@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
 import { ActivityLog } from "./activityLog.js";
-import { buildSummary } from "./analyticsAggregator.js";
 import { getAnalyticsPref, getAnalyticsSalt } from "./analyticsPrefs.js";
+import { AnalyticsReporter } from "./analyticsReporter.js";
 import { sendAnalytics } from "./analyticsSend.js";
 import {
   dispatchCancelPush,
@@ -177,6 +177,7 @@ export class Bridge {
   private server: Server;
   private extensionClient: ExtensionClient;
   private activityLog: ActivityLog;
+  private analyticsReporter: AnalyticsReporter | null = null;
   private authToken: string;
   private sessions = new Map<string, AgentSession>();
 
@@ -1168,6 +1169,20 @@ export class Bridge {
   async start(): Promise<void> {
     // 0. Initialize OpenTelemetry (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset)
     initTelemetry();
+
+    // 0. Opt-in usage telemetry: daily + at shutdown, so long-running bridges
+    // report too. The preference is re-read at every flush.
+    this.analyticsReporter = new AnalyticsReporter({
+      entries: () => this.activityLog.queryAll(),
+      enabled: () =>
+        (this.config.analyticsEnabled !== null
+          ? this.config.analyticsEnabled
+          : getAnalyticsPref()) === true,
+      bridgeVersion: PACKAGE_VERSION,
+      salt: getAnalyticsSalt,
+      send: (summary) => sendAnalytics(summary),
+    });
+    this.analyticsReporter.start();
 
     // 0a. Snapshot env-derived kill-switch flags. After this, plugins or
     // recipe steps mutating `process.env.PATCHWORK_FLAG_*` cannot disable an
@@ -2640,27 +2655,17 @@ export class Bridge {
       `Shutdown complete — ${totalSessions} session${totalSessions === 1 ? "" : "s"}, ${totalCalls} tool call${totalCalls === 1 ? "" : "s"}${shutdownErrorPart}`,
     );
 
-    // Send analytics if opted in — awaited with 2s timeout so it completes before process.exit()
-    const analyticsOn =
-      this.config.analyticsEnabled !== null
-        ? this.config.analyticsEnabled
-        : getAnalyticsPref();
-    if (analyticsOn === true && totalSessions > 0) {
+    // Final telemetry flush (opt-in only; the reporter checks). Covers activity
+    // since the last periodic send. Awaited with a 2s cap before exit.
+    if (this.analyticsReporter) {
+      this.analyticsReporter.stop();
       try {
-        const entries = this.activityLog.query({ last: 500 });
-        const salt = getAnalyticsSalt();
-        const summary = buildSummary(
-          entries,
-          maxDurationMs,
-          PACKAGE_VERSION,
-          salt,
-        );
         await Promise.race([
-          sendAnalytics(summary),
+          this.analyticsReporter.flush(),
           new Promise<void>((resolve) => setTimeout(resolve, 2000)),
         ]);
       } catch {
-        // Swallow all errors — analytics must never affect shutdown
+        // Telemetry must never affect shutdown.
       }
     }
     // Send aggregate session-end notification to the extension before disconnecting

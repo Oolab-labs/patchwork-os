@@ -22,9 +22,9 @@ default model provider (Claude Code CLI) sends prompts to Anthropic's
 API — but that is the one thing you can replace.
 
 **Telemetry is opt-in and disabled by default.** If you explicitly
-enable it, an aggregate usage summary (tool counts, latencies, OS
-family) is POSTed to `analytics.claude-ide-bridge.dev` on bridge
-shutdown. No workspace paths, file contents, prompts, tool arguments,
+enable it, an aggregate usage summary (bridge version, tool counts,
+latencies) is POSTed to `analytics.patchworkos.com` once a day and at
+bridge shutdown. `DO_NOT_TRACK=1` always stops it. No workspace paths, file contents, prompts, tool arguments,
 or output are ever sent — see the [Telemetry section](../README.md#telemetry)
 of the README for the full list and the source files involved.
 

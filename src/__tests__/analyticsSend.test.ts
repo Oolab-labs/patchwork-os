@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let tmpRoot: string;
 
+/** safeFetch resolves DNS; keep tests offline with a public test address. */
+const PUBLIC_DNS = {
+  resolveDns: async () => "93.184.216.34",
+  killSwitchEngaged: () => false,
+};
+
 function makeFetchSpy(status = 204) {
   return vi.fn<typeof fetch>(async () => new Response(null, { status }));
 }
@@ -58,16 +64,16 @@ describe("sendAnalytics endpoint resolution", () => {
     const fetchSpy = makeFetchSpy();
     vi.stubGlobal("fetch", fetchSpy);
     const mod = await importFresh({});
-    await mod.sendAnalytics({} as never);
+    await mod.sendAnalytics({} as never, PUBLIC_DNS);
     expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe(
-      "https://analytics.claude-ide-bridge.dev/v1/usage",
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      "https://analytics.patchworkos.com/v1/usage",
     );
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(
-      (init?.headers as Record<string, string> | undefined)?.[
-        "X-Analytics-Key"
-      ],
+      new Headers(init?.headers as HeadersInit | undefined).get(
+        "x-analytics-key",
+      ) ?? undefined,
     ).toBeUndefined();
   });
 
@@ -79,15 +85,15 @@ describe("sendAnalytics endpoint resolution", () => {
         "https://analytics.patchworkos.com/v1/usage",
       PATCHWORK_ANALYTICS_KEY: "sekret",
     });
-    await mod.sendAnalytics({} as never);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+    await mod.sendAnalytics({} as never, PUBLIC_DNS);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
       "https://analytics.patchworkos.com/v1/usage",
     );
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(
-      (init?.headers as Record<string, string> | undefined)?.[
-        "X-Analytics-Key"
-      ],
+      new Headers(init?.headers as HeadersInit | undefined).get(
+        "x-analytics-key",
+      ) ?? undefined,
     ).toBe("sekret");
   });
 
@@ -97,9 +103,9 @@ describe("sendAnalytics endpoint resolution", () => {
     const mod = await importFresh({
       PATCHWORK_ANALYTICS_ENDPOINT: "not a url",
     });
-    await mod.sendAnalytics({} as never);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe(
-      "https://analytics.claude-ide-bridge.dev/v1/usage",
+    await mod.sendAnalytics({} as never, PUBLIC_DNS);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      "https://analytics.patchworkos.com/v1/usage",
     );
   });
 
@@ -109,9 +115,9 @@ describe("sendAnalytics endpoint resolution", () => {
     const mod = await importFresh({
       PATCHWORK_ANALYTICS_ENDPOINT: "file:///etc/passwd",
     });
-    await mod.sendAnalytics({} as never);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe(
-      "https://analytics.claude-ide-bridge.dev/v1/usage",
+    await mod.sendAnalytics({} as never, PUBLIC_DNS);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      "https://analytics.patchworkos.com/v1/usage",
     );
   });
 
@@ -122,13 +128,15 @@ describe("sendAnalytics endpoint resolution", () => {
       {},
       { endpoint: "https://collector.example.com/u", key: "from-file" },
     );
-    await mod.sendAnalytics({} as never);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("https://collector.example.com/u");
+    await mod.sendAnalytics({} as never, PUBLIC_DNS);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      "https://collector.example.com/u",
+    );
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(
-      (init?.headers as Record<string, string> | undefined)?.[
-        "X-Analytics-Key"
-      ],
+      new Headers(init?.headers as HeadersInit | undefined).get(
+        "x-analytics-key",
+      ) ?? undefined,
     ).toBe("from-file");
   });
 
@@ -142,13 +150,15 @@ describe("sendAnalytics endpoint resolution", () => {
       },
       { endpoint: "https://collector.example.com/u", key: "from-file" },
     );
-    await mod.sendAnalytics({} as never);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("https://env.example.com/u");
+    await mod.sendAnalytics({} as never, PUBLIC_DNS);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      "https://env.example.com/u",
+    );
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(
-      (init?.headers as Record<string, string> | undefined)?.[
-        "X-Analytics-Key"
-      ],
+      new Headers(init?.headers as HeadersInit | undefined).get(
+        "x-analytics-key",
+      ) ?? undefined,
     ).toBe("from-env");
   });
 
@@ -159,13 +169,15 @@ describe("sendAnalytics endpoint resolution", () => {
       { PATCHWORK_ANALYTICS_ENDPOINT: "https://env.example.com/u" },
       { key: "from-file" },
     );
-    await mod.sendAnalytics({} as never);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe("https://env.example.com/u");
+    await mod.sendAnalytics({} as never, PUBLIC_DNS);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      "https://env.example.com/u",
+    );
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(
-      (init?.headers as Record<string, string> | undefined)?.[
-        "X-Analytics-Key"
-      ],
+      new Headers(init?.headers as HeadersInit | undefined).get(
+        "x-analytics-key",
+      ) ?? undefined,
     ).toBe("from-file");
   });
 
@@ -177,6 +189,8 @@ describe("sendAnalytics endpoint resolution", () => {
       }),
     );
     const mod = await importFresh({});
-    await expect(mod.sendAnalytics({} as never)).resolves.toBeUndefined();
+    await expect(
+      mod.sendAnalytics({} as never, PUBLIC_DNS),
+    ).resolves.toBeUndefined();
   });
 });

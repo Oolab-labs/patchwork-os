@@ -50,3 +50,19 @@ describe("TelemetrySection mount fetches", () => {
     expect(prefGets).toHaveLength(1);
   });
 });
+
+describe("TelemetrySection only promises what is sent", () => {
+  it("offers no crash-report toggle (nothing sends stack traces)", async () => {
+    const { queryByText, findByText } = render(
+      <TelemetrySection flashSaved={() => {}} />,
+    );
+    await findByText("Anonymous usage stats");
+    expect(queryByText("Crash reports")).toBeNull();
+    expect(queryByText(/stack traces/i)).toBeNull();
+  });
+
+  it("describes the usage payload accurately", async () => {
+    const { findByText } = render(<TelemetrySection flashSaved={() => {}} />);
+    await findByText(/tool names, call and error counts, and durations/i);
+  });
+});

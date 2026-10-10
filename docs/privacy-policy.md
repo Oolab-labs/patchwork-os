@@ -42,7 +42,7 @@ The bridge writes the following files in your home directory. All are **local-on
 | `~/.claude/ide/handoff-note.json` | Single string written by `setHandoffNote`. | Overwritten on each call. |
 | `~/.claude/ide/checkpoint-<port>.json` | Open files / terminal state for session restoration. | Cleaned up on graceful shutdown. |
 | `~/.claude/ide/activity-<port>.jsonl` | Tool-call history: tool name, duration, success/error. **No arguments, no output.** | Rotated at 1 MB / 10K lines. |
-| `~/.claude/ide/analytics.json` | Your opt-in preference (boolean + decision timestamp). Mode `0600`. | Persistent. |
+| `~/.claude/ide/analytics.json` | Your opt-in preferences and the time of the last successful send. Mode `0600`. | Persistent. |
 | `~/.claude/ide/analytics-salt` | Random per-install salt used to hash plugin tool names. Mode `0600`. | Persistent; never transmitted. |
 | `~/.patchwork/runs.jsonl` | Recipe execution history: recipe name, trigger, status, duration, per-step results, output tail (≤2 KB), assertion failures. | Rotated at 1 MB / 10K lines. |
 | `~/.patchwork/decision_traces.jsonl` | Problem/solution traces written by agents via `ctxSaveTrace`. | Rotated at 1 MB / 10K lines. |
@@ -126,19 +126,21 @@ The bridge ships with an **opt-in** anonymized analytics pipeline. It is **off b
 **How to enable / disable:**
 
 ```bash
-claude-ide-bridge --analytics on    # opt in
-claude-ide-bridge --analytics off   # opt out
-claude-ide-bridge --analytics       # show current preference
+patchwork --analytics on    # opt in
+patchwork --analytics off   # opt out
+patchwork --analytics       # show current preference
 ```
 
 Your preference is stored in `~/.claude/ide/analytics.json` (mode `0600`).
 
+**Always off, whatever the preference:** setting `DO_NOT_TRACK=1` (the Console Do Not Track convention) stops every send. `PATCHWORK_TELEMETRY_DEBUG=1` prints the summary to stderr instead of sending it, so you can see exactly what would leave the machine. Nothing is sent while the write kill switch is engaged.
+
 **What is sent (when opted in):**
 
-At the end of each session, a single anonymized summary is POSTed to `https://analytics.claude-ide-bridge.dev/v1/usage`:
+An anonymized summary is POSTed to `https://analytics.patchworkos.com/v1/usage` once a day and once more when the bridge shuts down. Each summary covers only the activity since the previous one, so nothing is counted twice, and activity from before you opted in is never sent:
 
 - Bridge version (e.g. `1.2.0-beta.1`)
-- Session duration in milliseconds
+- The length of the period the summary covers, in milliseconds
 - Per-tool counts: `{tool: string, calls: number, errors: number, p50Ms: number, p95Ms: number}`
   - **Built-in tool names** (a fixed allowlist — `getDiagnostics`, `readFile`, `runCommand`, etc.) are sent verbatim
   - **Plugin tool names** are hashed with a per-install random salt and reduced to an 8-character hex prefix (e.g. `plugin:a1b2c3d4`). The salt is generated locally on first send and never transmitted; the same plugin produces a different hash on a different machine, so plugin usage cannot be correlated across installs.
@@ -153,10 +155,14 @@ At the end of each session, a single anonymized summary is POSTed to `https://an
 - Recipe names, recipe contents, prompt text, AI-generated YAML
 - Issue / PR titles, ticket text
 - OAuth tokens, auth tokens, handoff notes, decision traces
-- IP address (beyond what the HTTP transport implicitly carries; we do not log or retain it)
+- IP address. The connection necessarily carries it; the collector uses it only in memory to rate-limit, and never writes it to disk or logs
 - Any user-identifying metadata: name, email, machine name, geographic info
 
-The send is best-effort with a 3-second timeout. All errors are silently swallowed — analytics failures never affect bridge operation. If you opt out (or never opt in), no network call is made.
+**Where it goes and how long it is kept:** the collector stores summaries as daily files and deletes them after 90 days. Installs from before this change send to the previous default host, which now points at the same collector.
+
+You can send to your own collector instead with `PATCHWORK_ANALYTICS_ENDPOINT` or `patchwork analytics configure`.
+
+The send is best-effort with a 3-second timeout and never follows redirects. All errors are silently swallowed — analytics failures never affect bridge operation. If you opt out (or never opt in), no network call is made.
 
 ---
 

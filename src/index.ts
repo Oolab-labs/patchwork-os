@@ -4553,12 +4553,15 @@ Steps performed:
   // Analytics opt-in prompt — only ask once; skip if preference already set
   const existingPref = getAnalyticsPref();
   if (existingPref === null) {
+    const { DEFAULT_ANALYTICS_ENDPOINT } = await import("./analyticsSend.js");
     process.stdout.write("\n");
     process.stdout.write(
       "Optional: send anonymous usage statistics to help prioritize features?\n" +
-        "  Tool names, success/error counts, and durations only.\n" +
+        "  Bridge version, tool names, success/error counts and durations only.\n" +
         "  No file paths, code, error messages, or personal data. Ever.\n" +
-        "  Change anytime: claude-ide-bridge --analytics on|off\n\n",
+        `  Sent once a day and at shutdown to ${new URL(DEFAULT_ANALYTICS_ENDPOINT).host}.\n` +
+        "  Details: docs/privacy-policy.md. DO_NOT_TRACK=1 always wins.\n" +
+        "  Change anytime: patchwork --analytics on|off\n\n",
     );
     const answer = await new Promise<string>((resolve) => {
       const rl = readline.createInterface({
