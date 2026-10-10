@@ -112,6 +112,10 @@ export const ENV_ALLOWLIST_EXACT: readonly string[] = Object.freeze([
   "TZ",
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
+  // Not secrets. Without them a contained child cannot find a relocated
+  // Claude login (reports "not logged in") or trust a corporate CA.
+  "NODE_EXTRA_CA_CERTS",
+  "CLAUDE_CONFIG_DIR",
   "HTTP_PROXY",
   "HTTPS_PROXY",
   "NO_PROXY",

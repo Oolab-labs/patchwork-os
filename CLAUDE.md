@@ -463,9 +463,9 @@ one (restart the bridge). The profile resolves to EXISTING primitives
 gated like manual, `FLAG_WORKER_AUTONOMY` + `FLAG_ENFORCE_POLICY` on, agent
 steps contained by default (Read/Glob/Grep/LS; WebFetch/WebSearch/Bash denied;
 env allowlist; no bridge MCP; orchestrator dispatch included — hooks,
-`runClaudeTask`, recipe generation/repair, prompt recipes and restored tasks are
-contained once in `ClaudeOrchestrator._enqueueWithId`, where a caller's
-`mcpAccess` is a recorded widening and native `allowedTools` is not honoured),
+`runClaudeTask`/`resumeClaudeTask`, recipe generation/repair, prompt recipes and
+restored tasks are contained once in `ClaudeOrchestrator._enqueueWithId`, where
+nothing a caller passes can widen it, so they are read-only),
 recipe `servers:` allowlisted via
 `config.plugins.allow`, kill switch fails CLOSED when unreadable, non-reversible
 and inferred-tier writes queue, unregistered tools halt, a recipe's

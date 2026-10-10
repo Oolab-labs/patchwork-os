@@ -184,11 +184,12 @@ export type EnqueueOpts = {
  * restored after a restart. Resolving it here rather than at each call site
  * is what stops a new call site from forgetting it.
  *
- * Only two caller fields carry over. `mcpAccess` is honoured as a recorded
- * widening, because every bridge tool call still passes the bridge's own
- * approval gate and kill switch. `disallowedTools` only narrows.
- * `allowedTools` and `sandbox` are NOT honoured as widenings on this path:
- * it has no approval step to justify one.
+ * Only `disallowedTools` carries over from the caller, because it only
+ * narrows. Nothing on this path can widen: `allowedTools`, `sandbox` and
+ * `mcpAccess` are not honoured, because there is no approval step here to
+ * justify a widening. (A contained child in dontAsk mode could not use bridge
+ * tools anyway unless they were allowlisted, and medium-tier bridge writes
+ * are not held for approval under governed.)
  *
  * Under compat nothing is added, so behaviour is unchanged.
  */
@@ -202,7 +203,6 @@ function orchestratorContainment(
     ...(opts.disallowedTools !== undefined && {
       disallowedTools: opts.disallowedTools,
     }),
-    ...(opts.mcpAccess === true && { mcpAccess: true }),
   });
 }
 

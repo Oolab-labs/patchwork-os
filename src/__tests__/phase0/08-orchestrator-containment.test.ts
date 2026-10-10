@@ -17,10 +17,9 @@
  *     WebFetch/WebSearch/Bash denied, only read-only tools allowed, an
  *     unrelated env secret not inherited. Same through `runAndWait` and
  *     through the `runClaudeTask` tool.
- *   - a caller's `mcpAccess` is honoured as a recorded widening (bridge tool
- *     calls pass the bridge's own gates); the native denials still apply.
- *   - caller `allowedTools`/`sandbox` do not widen an orchestrator task
- *     under governed (this path has no approval hop to justify a widening).
+ *   - nothing a caller passes widens an orchestrator task under governed —
+ *     not `allowedTools`, `sandbox` or `mcpAccess` (this path has no approval
+ *     step to justify a widening); the bridge MCP surface stays off.
  *   - a containment the caller resolved itself (a recipe step) is kept as is.
  *   - compat: byte-identical to before — no containment, skip-permissions.
  */
@@ -125,7 +124,12 @@ function expectContained(args: string[], env: NodeJS.ProcessEnv | undefined) {
   for (const t of flagValues(args, "--allowed-tools")) {
     expect(CONTAINED_AGENT_ALLOWED_TOOLS).toContain(t);
   }
+  // Positive control: the child did get an explicit, filtered env (an absent
+  // env would inherit everything and make the line below pass vacuously).
+  expect(env?.PATH).toBeTruthy();
   expect(env?.ORCH_TEST_UNRELATED_SECRET).toBeUndefined();
+  // No bridge MCP surface unless something widened it — nothing here can.
+  expect(args).not.toContain("--mcp-config");
 }
 
 async function waitDone(orch: ClaudeOrchestrator, id: string) {
@@ -183,17 +187,16 @@ describe("governed: orchestrator dispatch is contained by default", () => {
     expectContained(args, env);
   });
 
-  it("a caller's mcpAccess is honoured as a recorded widening; native denials still apply", async () => {
+  it("a caller's mcpAccess is not honoured: no bridge MCP, no widening", async () => {
     governed();
     const orch = makeOrchestrator();
     const id = orch.enqueue({ prompt: "x", sessionId: "s", mcpAccess: true });
     const c = orch.getTask(id)?.containment;
     expect(c?.enforced).toBe(true);
-    expect(c?.mcpAccess).toBe(true);
-    expect(c?.widenings).toContain("mcpAccess");
+    expect(c?.mcpAccess).toBe(false);
+    expect(c?.widenings ?? []).toEqual([]);
     const { args, env } = await finishNextSpawn();
     expectContained(args, env);
-    expect(args).toContain("--mcp-config");
     await waitDone(orch, id);
   });
 

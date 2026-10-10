@@ -127,13 +127,16 @@ The same order is what `policy explain` prints.
   site inherits it. A caller's own resolved containment (a recipe step) is kept
   unchanged.
 
-  A caller's `mcpAccess` is honoured as a recorded widening, because every
-  bridge tool call still passes the bridge's approval gate and kill switch.
-  `allowedTools` and `sandbox` are not honoured, because this path has no
+  Only a caller's `disallowedTools` carries over, because it only narrows.
+  `allowedTools`, `sandbox` and `mcpAccess` are not honoured: this path has no
   approval step to justify a widening.
 
-  So under governed, a hook or `runClaudeTask` agent is read-only. With
-  `mcpAccess` it can act only through gated bridge tools.
+  So under governed, these agents are read-only and get no bridge tool surface.
+  Flows that relied on writing, a shell or bridge tools only do analysis now.
+  Examples are the `fixErrors` quick-task preset and the default `onRecipeSave`
+  hook prompt, which runs `patchwork recipe preflight`. To act, route the work
+  through a recipe: its steps are gated, and its widenings are explained and
+  need approval.
 - Gemini and Codex can only be contained coarsely (mode + exclusions, OS
   sandbox + network). The drivers say so in code, and the containment object
   records what could not be expressed.
@@ -179,9 +182,12 @@ The same order is what `policy explain` prints.
   resolved one.~~ Closed 2026-10-10: the default is applied at the
   orchestrator's enqueue chokepoint (see Consequences), and is pinned by
   `src/__tests__/phase0/08-orchestrator-containment.test.ts`. That test drives
-  the real orchestrator and subprocess driver, and fails when the default,
-  the `mcpAccess` carry-over, the caller-containment passthrough or the compat
-  exemption is removed.
+  the real orchestrator and subprocess driver. It fails when any of these is
+  removed:
+  - the default itself;
+  - the no-widening rule (for `allowedTools` and for `mcpAccess`);
+  - the caller-containment passthrough;
+  - the compat exemption.
 - ~~Per-tool `assertWriteAllowed` and direct `isWriteKillSwitchActive()` reads
   in `server.ts` / `recipeRoutes.ts` are not profile-aware.~~ Closed:
   `assertWriteAllowed` consults a refusal hook `killSwitchPolicy.ts` registers
