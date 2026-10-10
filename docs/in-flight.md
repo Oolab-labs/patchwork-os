@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-10-10 `fix/orchestrator-governed-containment` — governed containment applied to every orchestrator dispatch at `ClaudeOrchestrator._enqueueWithId` (hooks, runClaudeTask/resume, recipe generation/repair, prompt recipes, restored tasks); ADR-0026 + doctor text updated — Claude Code session
+
 
 
 ## Recently closed (informal log, prune periodically)

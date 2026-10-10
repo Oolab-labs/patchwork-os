@@ -46,7 +46,7 @@ function:
 | `gateAutomatedRuns` | runner consult predicate | every trigger consulted like a manual run |
 | `workerAuthority` | `FLAG_WORKER_AUTONOMY` | on |
 | `policyEnforce` | `FLAG_ENFORCE_POLICY` | on |
-| `agentContainment` | `src/drivers/*` | contained by default (Read/Glob/Grep/LS; WebFetch, WebSearch, Bash denied; env allowlist; no bridge MCP) |
+| `agentContainment` | `src/drivers/*`, `ClaudeOrchestrator._enqueueWithId` | contained by default (Read/Glob/Grep/LS; WebFetch, WebSearch, Bash denied; env allowlist; no bridge MCP), for recipe agent steps and every orchestrator dispatch |
 | `pluginPolicy` | `loadRecipeServers`, install, PUT, lint | allowlist (`config.plugins.allow`) |
 | `killSwitchFailClosed` | `readKillSwitch` | unreadable ⇒ engaged |
 | `unknownWriteTools` | `tierVerdict` | inferred-tier writes and NON-reversible writes queue |
@@ -116,6 +116,24 @@ The same order is what `policy explain` prints.
   credentials unless the recipe widens it explicitly (`sandbox: { network:
   true }` etc.), and every widening is printed by `policy explain` and turns the
   step into one that needs approval.
+- Orchestrator dispatch gets the same default containment. This covers:
+  - automation hooks;
+  - `runClaudeTask` and `resumeClaudeTask`;
+  - recipe generation and repair;
+  - prompt recipes;
+  - tasks restored after a restart.
+
+  It is resolved once, in `ClaudeOrchestrator._enqueueWithId`, so a new call
+  site inherits it. A caller's own resolved containment (a recipe step) is kept
+  unchanged.
+
+  A caller's `mcpAccess` is honoured as a recorded widening, because every
+  bridge tool call still passes the bridge's approval gate and kill switch.
+  `allowedTools` and `sandbox` are not honoured, because this path has no
+  approval step to justify a widening.
+
+  So under governed, a hook or `runClaudeTask` agent is read-only. With
+  `mcpAccess` it can act only through gated bridge tools.
 - Gemini and Codex can only be contained coarsely (mode + exclusions, OS
   sandbox + network). The drivers say so in code, and the containment object
   records what could not be expressed.
@@ -157,6 +175,13 @@ The same order is what `policy explain` prints.
   (`makeProviderDriverFn` previously dropped it). Still open: the `gemini` and
   `codex` CLI subprocess drivers have no system-prompt channel and ignore
   `ProviderTaskInput.systemPrompt`, so they receive the envelope without it.
+- ~~Containment covered recipe agent steps only; no orchestrator caller
+  resolved one.~~ Closed 2026-10-10: the default is applied at the
+  orchestrator's enqueue chokepoint (see Consequences), and is pinned by
+  `src/__tests__/phase0/08-orchestrator-containment.test.ts`. That test drives
+  the real orchestrator and subprocess driver, and fails when the default,
+  the `mcpAccess` carry-over, the caller-containment passthrough or the compat
+  exemption is removed.
 - ~~Per-tool `assertWriteAllowed` and direct `isWriteKillSwitchActive()` reads
   in `server.ts` / `recipeRoutes.ts` are not profile-aware.~~ Closed:
   `assertWriteAllowed` consults a refusal hook `killSwitchPolicy.ts` registers
