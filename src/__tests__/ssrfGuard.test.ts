@@ -47,6 +47,30 @@ describe("isPrivateHost", () => {
     expect(isPrivateHost("fc00::1")).toBe(true);
   });
 
+  // The IPv6 prefix checks (fc/fd ULA, fe80: link-local, 2002: 6to4) are
+  // prefixes of an ADDRESS. Applied to a DNS name they read "fcm." or "fd."
+  // as a unique-local prefix, which rejected every Firebase push endpoint in
+  // the dashboard and any public host beginning "fc"/"fd" in http.post.
+  it("does not read a hostname's leading letters as an IPv6 prefix", () => {
+    expect(isPrivateHost("fcm.googleapis.com")).toBe(false);
+    expect(isPrivateHost("fd.example.test")).toBe(false);
+    expect(isPrivateHost("fc-services.example.test")).toBe(false);
+    expect(isPrivateHost("fe80.example.test")).toBe(false);
+    expect(isPrivateHost("2002.example.test")).toBe(false);
+    expect(isPrivateNonLoopbackHost("fcm.googleapis.com")).toBe(false);
+  });
+
+  it("still blocks the same prefixes on IPv6 literals, bracketed or not", () => {
+    expect(isPrivateHost("fd00::1")).toBe(true);
+    expect(isPrivateHost("[fd00::1]")).toBe(true);
+    expect(isPrivateHost("[fc00::1]")).toBe(true);
+    expect(isPrivateHost("FD12:3456:789a::1")).toBe(true);
+    expect(isPrivateHost("[fe80::1]")).toBe(true);
+    expect(isPrivateHost("[2002:c0a8:101::1]")).toBe(true);
+    expect(isPrivateHost("::ffff:10.0.0.1")).toBe(true);
+    expect(isPrivateHost("[::ffff:7f00:1]")).toBe(true);
+  });
+
   it("blocks IPv6-mapped IPv4 loopback", () => {
     expect(isPrivateHost("::ffff:127.0.0.1")).toBe(true);
     expect(isPrivateHost("::ffff:10.0.0.1")).toBe(true);
