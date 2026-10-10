@@ -52,47 +52,47 @@ not that it is unlicensed; check the package itself before relying on it.
 | @codemirror/theme-one-dark | 6.1.3 | MIT |
 | @codemirror/view | 6.42.0 | MIT |
 | @img/colour | 1.1.0 | MIT |
-| @img/sharp-darwin-arm64 | 0.35.4 | Apache-2.0 |
-| @img/sharp-darwin-x64 | 0.35.4 | Apache-2.0 |
-| @img/sharp-freebsd-wasm32 | 0.35.4 | Apache-2.0 |
-| @img/sharp-libvips-darwin-arm64 | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-darwin-x64 | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-linux-arm | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-linux-arm64 | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-linux-ppc64 | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-linux-riscv64 | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-linux-s390x | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-linux-x64 | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-linuxmusl-arm64 | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-libvips-linuxmusl-x64 | 1.3.3 | LGPL-3.0-or-later |
-| @img/sharp-linux-arm | 0.35.4 | Apache-2.0 |
-| @img/sharp-linux-arm64 | 0.35.4 | Apache-2.0 |
-| @img/sharp-linux-ppc64 | 0.35.4 | Apache-2.0 |
-| @img/sharp-linux-riscv64 | 0.35.4 | Apache-2.0 |
-| @img/sharp-linux-s390x | 0.35.4 | Apache-2.0 |
-| @img/sharp-linux-x64 | 0.35.4 | Apache-2.0 |
-| @img/sharp-linuxmusl-arm64 | 0.35.4 | Apache-2.0 |
-| @img/sharp-linuxmusl-x64 | 0.35.4 | Apache-2.0 |
-| @img/sharp-wasm32 | 0.35.4 | Apache-2.0 AND LGPL-3.0-or-later AND MIT |
+| @img/sharp-darwin-arm64 | 0.35.5 | Apache-2.0 |
+| @img/sharp-darwin-x64 | 0.35.5 | Apache-2.0 |
+| @img/sharp-freebsd-wasm32 | 0.35.5 | Apache-2.0 |
+| @img/sharp-libvips-darwin-arm64 | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-darwin-x64 | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-arm | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-arm64 | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-ppc64 | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-riscv64 | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-s390x | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linux-x64 | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linuxmusl-arm64 | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-libvips-linuxmusl-x64 | 1.3.4 | LGPL-3.0-or-later |
+| @img/sharp-linux-arm | 0.35.5 | Apache-2.0 |
+| @img/sharp-linux-arm64 | 0.35.5 | Apache-2.0 |
+| @img/sharp-linux-ppc64 | 0.35.5 | Apache-2.0 |
+| @img/sharp-linux-riscv64 | 0.35.5 | Apache-2.0 |
+| @img/sharp-linux-s390x | 0.35.5 | Apache-2.0 |
+| @img/sharp-linux-x64 | 0.35.5 | Apache-2.0 |
+| @img/sharp-linuxmusl-arm64 | 0.35.5 | Apache-2.0 |
+| @img/sharp-linuxmusl-x64 | 0.35.5 | Apache-2.0 |
+| @img/sharp-wasm32 | 0.35.5 | Apache-2.0 AND LGPL-3.0-or-later AND MIT |
 | @img/sharp-wasm32/node_modules/@emnapi/runtime | 1.11.3 | MIT |
-| @img/sharp-webcontainers-wasm32 | 0.35.4 | Apache-2.0 |
-| @img/sharp-win32-arm64 | 0.35.4 | Apache-2.0 AND LGPL-3.0-or-later |
-| @img/sharp-win32-ia32 | 0.35.4 | Apache-2.0 AND LGPL-3.0-or-later |
-| @img/sharp-win32-x64 | 0.35.4 | Apache-2.0 AND LGPL-3.0-or-later |
+| @img/sharp-webcontainers-wasm32 | 0.35.5 | Apache-2.0 |
+| @img/sharp-win32-arm64 | 0.35.5 | Apache-2.0 AND LGPL-3.0-or-later |
+| @img/sharp-win32-ia32 | 0.35.5 | Apache-2.0 AND LGPL-3.0-or-later |
+| @img/sharp-win32-x64 | 0.35.5 | Apache-2.0 AND LGPL-3.0-or-later |
 | @lezer/common | 1.5.2 | MIT |
 | @lezer/highlight | 1.2.3 | MIT |
 | @lezer/lr | 1.4.10 | MIT |
 | @lezer/yaml | 1.0.4 | MIT |
 | @marijn/find-cluster-break | 1.0.2 | MIT |
-| @next/env | 15.5.24 | MIT |
-| @next/swc-darwin-arm64 | 15.5.24 | MIT |
-| @next/swc-darwin-x64 | 15.5.24 | MIT |
-| @next/swc-linux-arm64-gnu | 15.5.24 | MIT |
-| @next/swc-linux-arm64-musl | 15.5.24 | MIT |
-| @next/swc-linux-x64-gnu | 15.5.24 | MIT |
-| @next/swc-linux-x64-musl | 15.5.24 | MIT |
-| @next/swc-win32-arm64-msvc | 15.5.24 | MIT |
-| @next/swc-win32-x64-msvc | 15.5.24 | MIT |
+| @next/env | 15.5.27 | MIT |
+| @next/swc-darwin-arm64 | 15.5.27 | MIT |
+| @next/swc-darwin-x64 | 15.5.27 | MIT |
+| @next/swc-linux-arm64-gnu | 15.5.27 | MIT |
+| @next/swc-linux-arm64-musl | 15.5.27 | MIT |
+| @next/swc-linux-x64-gnu | 15.5.27 | MIT |
+| @next/swc-linux-x64-musl | 15.5.27 | MIT |
+| @next/swc-win32-arm64-msvc | 15.5.27 | MIT |
+| @next/swc-win32-x64-msvc | 15.5.27 | MIT |
 | @swc/helpers | 0.5.15 | Apache-2.0 |
 | @types/debug | 4.1.13 | MIT |
 | @types/estree | 1.0.8 | MIT |
@@ -195,7 +195,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | minimist | 1.2.8 | MIT |
 | ms | 2.1.3 | MIT |
 | nanoid | 3.3.18 | MIT |
-| next | 15.5.24 | MIT |
+| next | 15.5.27 | MIT |
 | parse-entities | 4.0.2 | MIT |
 | parse-entities/node_modules/@types/unist | 2.0.11 | MIT |
 | picocolors | 1.1.1 | ISC |
@@ -213,8 +213,8 @@ not that it is unlicensed; check the package itself before relying on it.
 | safer-buffer | 2.1.2 | MIT |
 | scheduler | 0.23.2 | MIT |
 | semver | 7.8.5 | ISC |
-| sharp | 0.35.4 | Apache-2.0 |
-| source-map-js | 1.2.1 | BSD-3-Clause |
+| sharp | 0.35.5 | Apache-2.0 |
+| source-map-js | 1.2.2 | BSD-3-Clause |
 | space-separated-tokens | 2.0.2 | MIT |
 | stringify-entities | 4.0.4 | MIT |
 | style-mod | 4.1.3 | MIT |
@@ -272,7 +272,7 @@ not that it is unlicensed; check the package itself before relying on it.
 
 | Package | Version | Licence |
 |---|---|---|
-| @fastify/busboy | 3.2.0 | MIT |
+| @fastify/busboy | 3.2.2 | MIT |
 | @firebase/app-check-interop-types | 0.3.2 | Apache-2.0 |
 | @firebase/app-types | 0.9.2 | Apache-2.0 |
 | @firebase/auth-interop-types | 0.2.3 | Apache-2.0 |
@@ -451,7 +451,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | path-to-regexp | 0.1.13 | MIT |
 | proto3-json-serializer | 2.0.2 | Apache-2.0 |
 | protobufjs | 7.6.5 | BSD-3-Clause |
-| proxy-addr | 2.0.7 | MIT |
+| proxy-addr | 2.0.8 | MIT |
 | qs | 6.16.0 | BSD-3-Clause |
 | range-parser | 1.2.1 | MIT |
 | raw-body | 2.5.3 | MIT |
