@@ -27,6 +27,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { ensureCmdShim } from "./winShim.js";
 
 const URL_TIMEOUT_MS = 20_000;
 const COMPLETE_TIMEOUT_MS = 30_000;
@@ -47,7 +48,9 @@ interface LoginSession {
 let current: LoginSession | null = null;
 
 function claudeBinary(): string {
-  return process.env.PATCHWORK_CLAUDE_BINARY || "claude";
+  // npm installs `claude` as a `.cmd` shim on Windows, which spawn() cannot
+  // resolve from a bare name; same helper as the Claude subprocess driver.
+  return ensureCmdShim(process.env.PATCHWORK_CLAUDE_BINARY || "claude");
 }
 
 /** Only what Claude Code needs to find its own config and reach the network. */

@@ -124,7 +124,11 @@ afterEach(() => {
   delete process.env.CLAUDE_CONFIG_DIR;
 });
 
-describe("claude sign-in relay", () => {
+// The fake CLI is a `#!/usr/bin/env node` script, which Windows cannot
+// execute directly, so the spawning tests run on POSIX only. The relay's
+// logic is platform-independent; the Windows-specific part (the `.cmd`
+// shim) is ensureCmdShim, tested in winShim's own tests.
+describe.skipIf(process.platform === "win32")("claude sign-in relay", () => {
   it("start returns Anthropic's sign-in link from the real CLI, and no token", async () => {
     const r = await call(handleClaudeAuthStart);
     expect(r.status).toBe(200);
