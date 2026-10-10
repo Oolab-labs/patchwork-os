@@ -1,29 +1,37 @@
 /**
  * Phase 0 acceptance — scenario 9: containment on the local run path, and
- * workspace settings that must not reach a contained agent.
+ * what a governed contained agent may load.
  *
  * 1. `recipe run --local` and `recipe record` spawn the Claude CLI through
  *    `defaultClaudeCodeFn`, not the subprocess driver. Under the governed
  *    profile the runner hands it a resolved containment; it must apply it
- *    exactly as the driver does.
- * 2. A contained run must load only the operator's USER settings. Project and
- *    local settings live in the workspace, so a repository can ship them:
- *    their hooks run shell commands (observed against the real CLI: a
- *    project PreToolUse hook ran inside a contained `-p` run), and an allow
- *    rule from any loaded source re-enables a tool that is merely absent from
- *    `--allowed-tools`. So contained runs pass `--setting-sources user`, and
- *    the write-capable built-ins are DENIED (a deny beats any allow), not
- *    just left off the allowlist.
+ *    exactly as the driver does (one shared `containedPermissionArgs`).
+ * 2. A governed (strict) contained run must not be widened by anything outside
+ *    the recipe. Each of these was observed against the real CLI:
+ *    - a workspace's own Claude settings: its hooks ran shell commands, and
+ *      its allow rules re-enabled unlisted tools;
+ *    - the CLI's full built-in tool set: tools that need no permission ran
+ *      anyway.
+ *
+ *    So strict runs:
+ *    - load only USER settings, merging the workspace's DENY rules in
+ *      ourselves;
+ *    - restrict the tool set with `--tools` to the allowlist;
+ *    - disable all hooks;
+ *    - deny the write built-ins. The step's own `tools:` (internally
+ *      `allowedTools`) lifts a named write tool, scoped or bare.
+ * 3. Compat is byte-identical, including a compat step that opted into
+ *    `sandbox: true`.
  *
  * Driven through the real `defaultClaudeCodeFn` (and the real runner) with a
  * fake `claude` script that records its argv and env — no mocks of
- * `node:child_process`. POSIX only: the fake binary is a shell script.
+ * `node:child_process`. Spawning cases are POSIX only (shell-script binary).
  */
 
-import { execSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -40,7 +48,10 @@ import {
   it,
   vi,
 } from "vitest";
+import { containedPermissionArgs } from "../../drivers/claude/subprocess.js";
+import { createSubprocessSettings } from "../../drivers/claude/subprocessSettings.js";
 import {
+  COMPAT_PROFILE,
   CONTAINED_AGENT_ALLOWED_TOOLS,
   GOVERNED_PROFILE,
   resolveAgentContainment,
@@ -58,6 +69,7 @@ import {
 } from "./_harness.js";
 
 const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+const POSIX = process.platform !== "win32";
 const sandbox = makeSandbox("local-containment");
 afterAll(() => sandbox.dispose());
 
@@ -69,7 +81,6 @@ let envFile: string;
 beforeEach(() => {
   resetGovernanceState();
   workspace = mkdtempSync(path.join(os.tmpdir(), "pw-local-ws-"));
-  execSync("git init -q -b main", { cwd: workspace });
   binDir = mkdtempSync(path.join(os.tmpdir(), "pw-local-bin-"));
   argvFile = path.join(binDir, "argv.txt");
   envFile = path.join(binDir, "env.txt");
@@ -111,24 +122,31 @@ function flagValues(args: string[], flag: string): string[] {
   }
   return out;
 }
+function settingsOf(args: string[]): {
+  disableAllHooks?: boolean;
+  permissions?: { deny?: string[]; allow?: string[] };
+  hooks?: unknown;
+} {
+  const p = flagValues(args, "--settings")[0];
+  expect(p).toBeTruthy();
+  return JSON.parse(readFileSync(p as string, "utf8"));
+}
 
-function expectContainedLocal(args: string[]) {
+function expectStrictLocal(args: string[]) {
   expect(flagValues(args, "--permission-mode")).toEqual(["dontAsk"]);
   expect(flagValues(args, "--setting-sources")).toEqual(["user"]);
-  const denied = flagValues(args, "--disallowed-tools");
-  expect(denied).toEqual(
+  expect(flagValues(args, "--tools")).toEqual([
+    CONTAINED_AGENT_ALLOWED_TOOLS.join(","),
+  ]);
+  expect(flagValues(args, "--disallowed-tools")).toEqual(
     expect.arrayContaining(["WebFetch", "WebSearch", "Bash", ...WRITE_TOOLS]),
   );
   for (const t of flagValues(args, "--allowed-tools")) {
     expect(CONTAINED_AGENT_ALLOWED_TOOLS).toContain(t);
   }
-  // The deny list is also written into the settings file the run loads.
-  const settingsPath = flagValues(args, "--settings")[0];
-  expect(settingsPath).toBeTruthy();
-  const settings = JSON.parse(readFileSync(settingsPath as string, "utf8")) as {
-    permissions?: { deny?: string[] };
-  };
-  expect(settings.permissions?.deny).toEqual(
+  const s = settingsOf(args);
+  expect(s.disableAllHooks).toBe(true);
+  expect(s.permissions?.deny).toEqual(
     expect.arrayContaining(["Bash", "WebFetch", ...WRITE_TOOLS]),
   );
   const env = childEnv();
@@ -136,60 +154,196 @@ function expectContainedLocal(args: string[]) {
   expect(env.LOCAL_TEST_UNRELATED_SECRET).toBeUndefined();
 }
 
-describe.skipIf(process.platform === "win32")(
-  "local run path applies governed containment",
-  () => {
-    it("defaultClaudeCodeFn with a resolved containment → contained argv, settings and env", async () => {
-      const containment = resolveAgentContainment(GOVERNED_PROFILE, undefined);
-      const out = await defaultClaudeCodeFn("summarise", { containment });
-      expect(out).toBe("fake-reply");
-      expectContainedLocal(argv());
-    });
+describe("containedPermissionArgs (shared by the driver and the local path)", () => {
+  it("strict: user settings only, the tool SET restricted, denies unioned", () => {
+    const c = resolveAgentContainment(GOVERNED_PROFILE, undefined);
+    const args = containedPermissionArgs(c, ["Read(./secret.txt)"]);
+    expect(flagValues(args, "--setting-sources")).toEqual(["user"]);
+    expect(flagValues(args, "--tools")).toEqual([
+      CONTAINED_AGENT_ALLOWED_TOOLS.join(","),
+    ]);
+    expect(flagValues(args, "--disallowed-tools")).toEqual(
+      expect.arrayContaining(["Read(./secret.txt)", "Bash", ...WRITE_TOOLS]),
+    );
+  });
 
-    it("through the real runner: a governed agent step on the local CLI path is contained", async () => {
-      const profile = governed();
-      const recipe: YamlRecipe = {
-        name: "local-contained",
-        trigger: { type: "manual" },
-        steps: [
-          {
-            id: "ask",
-            agent: { prompt: "summarise", driver: "claude-code", into: "out" },
-          },
-        ],
-      } as unknown as YamlRecipe;
-      await runYamlRecipe(
-        recipe,
-        baseDeps(sandbox, {
-          governance: profile,
-          claudeCodeFn: defaultClaudeCodeFn,
-        }),
-      );
-      expect(existsSync(argvFile)).toBe(true);
-      expectContainedLocal(argv());
+  it("a scoped write rule lifts the bare deny and puts the base tool in the set", () => {
+    const c = resolveAgentContainment(GOVERNED_PROFILE, {
+      allowedTools: ["Edit(src/**)"],
     });
+    expect(c.deniedTools).not.toContain("Edit");
+    expect(c.widenings).toContain("allowedTools+Edit(src/**)");
+    const args = containedPermissionArgs(c);
+    expect(flagValues(args, "--allowed-tools")).toContain("Edit(src/**)");
+    expect(flagValues(args, "--tools")[0]?.split(",")).toContain("Edit");
+    expect(flagValues(args, "--disallowed-tools")).not.toContain("Edit");
+  });
 
-    it("a containment that grants bridge MCP is refused, not silently dropped", async () => {
-      const containment = resolveAgentContainment(GOVERNED_PROFILE, {
-        mcpAccess: true,
-      });
-      const out = await defaultClaudeCodeFn("x", { containment });
-      expect(out).toMatch(/recipe_mcp_unsupported/);
-      expect(existsSync(argvFile)).toBe(false);
-    });
+  it("bridge MCP tool names never go into the built-in tool set", () => {
+    const c = {
+      ...resolveAgentContainment(GOVERNED_PROFILE, undefined),
+      allowedTools: ["Read", "mcp__bridge__getDiagnostics"],
+    };
+    expect(flagValues(containedPermissionArgs(c), "--tools")).toEqual(["Read"]);
+  });
 
-    it("compat (no containment): argv is unchanged — no settings sources, no dontAsk", async () => {
-      await defaultClaudeCodeFn("x");
-      const args = argv();
-      expect(args).not.toContain("--setting-sources");
-      expect(args).not.toContain("--permission-mode");
-      expect(args).not.toContain("--settings");
-      expect(childEnv().LOCAL_TEST_UNRELATED_SECRET).toBe(
-        "must-not-be-inherited",
-      );
+  it("compat sandbox opt-in: exactly the flags it always had", () => {
+    const c = resolveAgentContainment(COMPAT_PROFILE, {
+      sandbox: true,
+      allowedTools: ["Read"],
+      disallowedTools: ["Bash"],
     });
-  },
-);
+    expect(containedPermissionArgs(c)).toEqual([
+      "--permission-mode",
+      "dontAsk",
+      "--allowed-tools",
+      "Read",
+      "--disallowed-tools",
+      "Bash",
+    ]);
+  });
+});
+
+describe("contained settings file", () => {
+  it("strict: all hooks disabled, extra denies written", () => {
+    const s = createSubprocessSettings(() => {}, ["Bash"], { strict: true });
+    expect(s.write()).toBe(true);
+    const content = JSON.parse(readFileSync(s.path, "utf8"));
+    expect(content.disableAllHooks).toBe(true);
+    expect(content.permissions.deny).toContain("Bash");
+  });
+  it("non-strict: unchanged shape (no disableAllHooks key)", () => {
+    const s = createSubprocessSettings(() => {}, ["Bash"]);
+    expect(s.write()).toBe(true);
+    const content = JSON.parse(readFileSync(s.path, "utf8"));
+    expect("disableAllHooks" in content).toBe(false);
+  });
+});
+
+describe.skipIf(!POSIX)("local run path applies governed containment", () => {
+  it("defaultClaudeCodeFn with a strict containment → contained argv, settings and env", async () => {
+    const containment = resolveAgentContainment(GOVERNED_PROFILE, undefined);
+    const out = await defaultClaudeCodeFn("summarise", { containment });
+    expect(out).toBe("fake-reply");
+    expectStrictLocal(argv());
+  });
+
+  it("through the real runner: a governed agent step on the local CLI path is contained", async () => {
+    const profile = governed();
+    const recipe = {
+      name: "local-contained",
+      trigger: { type: "manual" },
+      steps: [
+        {
+          id: "ask",
+          agent: { prompt: "summarise", driver: "claude-code", into: "out" },
+        },
+      ],
+    } as unknown as YamlRecipe;
+    await runYamlRecipe(
+      recipe,
+      baseDeps(sandbox, {
+        governance: profile,
+        claudeCodeFn: defaultClaudeCodeFn,
+      }),
+    );
+    expect(existsSync(argvFile)).toBe(true);
+    expectStrictLocal(argv());
+  });
+
+  it("the workspace's own deny rules still apply; its allows and hooks do not", async () => {
+    mkdirSync(path.join(workspace, ".claude"));
+    writeFileSync(
+      path.join(workspace, ".claude", "settings.json"),
+      JSON.stringify({
+        permissions: { deny: ["Read(./secret.txt)"], allow: ["Write"] },
+        hooks: { PreToolUse: [{ matcher: "*", hooks: [] }] },
+      }),
+    );
+    writeFileSync(
+      path.join(workspace, ".claude", "settings.local.json"),
+      JSON.stringify({ permissions: { deny: ["Grep(./private/**)"] } }),
+    );
+    const containment = resolveAgentContainment(GOVERNED_PROFILE, undefined);
+    await defaultClaudeCodeFn("x", { containment });
+    const args = argv();
+    expect(flagValues(args, "--disallowed-tools")).toEqual(
+      expect.arrayContaining(["Read(./secret.txt)", "Grep(./private/**)"]),
+    );
+    const s = settingsOf(args);
+    expect(s.permissions?.deny).toEqual(
+      expect.arrayContaining(["Read(./secret.txt)", "Grep(./private/**)"]),
+    );
+    expect(s.permissions?.allow ?? []).not.toContain("Write");
+    expect(flagValues(args, "--allowed-tools")).not.toContain("Write");
+    expect(flagValues(args, "--setting-sources")).toEqual(["user"]);
+  });
+
+  it.skipIf(typeof process.getuid === "function" && process.getuid() === 0)(
+    "refuses, rather than running uncontained, when the settings file cannot be written",
+    async () => {
+      const ro = mkdtempSync(path.join(os.tmpdir(), "pw-ro-"));
+      chmodSync(ro, 0o500);
+      vi.stubEnv("TMPDIR", ro);
+      try {
+        const containment = resolveAgentContainment(
+          GOVERNED_PROFILE,
+          undefined,
+        );
+        const out = await defaultClaudeCodeFn("x", { containment });
+        expect(out).toMatch(/contained_settings_unwritable/);
+        expect(existsSync(argvFile)).toBe(false);
+      } finally {
+        chmodSync(ro, 0o700);
+        rmSync(ro, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("compat sandbox opt-in on the local path: legacy argv, unchanged", async () => {
+    const containment = resolveAgentContainment(COMPAT_PROFILE, {
+      sandbox: true,
+      allowedTools: ["Read"],
+    });
+    await defaultClaudeCodeFn("x", {
+      containment,
+      sandbox: true,
+      allowedTools: ["Read"],
+    });
+    const args = argv();
+    expect(flagValues(args, "--permission-mode")).toEqual(["dontAsk"]);
+    expect(flagValues(args, "--allowed-tools")).toEqual(["Read"]);
+    expect(args).not.toContain("--setting-sources");
+    expect(args).not.toContain("--tools");
+    expect(args).not.toContain("--settings");
+    expect(childEnv().LOCAL_TEST_UNRELATED_SECRET).toBe(
+      "must-not-be-inherited",
+    );
+  });
+
+  it("compat (no containment): argv is unchanged — no settings sources, no dontAsk", async () => {
+    await defaultClaudeCodeFn("x");
+    const args = argv();
+    expect(args).not.toContain("--setting-sources");
+    expect(args).not.toContain("--permission-mode");
+    expect(args).not.toContain("--settings");
+    expect(args).not.toContain("--tools");
+    expect(childEnv().LOCAL_TEST_UNRELATED_SECRET).toBe(
+      "must-not-be-inherited",
+    );
+  });
+});
+
+describe("local path MCP refusal", () => {
+  it("a strict containment that grants bridge MCP is refused, not silently dropped", async () => {
+    const containment = resolveAgentContainment(GOVERNED_PROFILE, {
+      mcpAccess: true,
+    });
+    const out = await defaultClaudeCodeFn("x", { containment });
+    expect(out).toMatch(/recipe_mcp_unsupported/);
+    expect(existsSync(argvFile)).toBe(false);
+  });
+});
 
 describe("governed deny list covers the write-capable built-ins", () => {
   it("denied by default, so no settings-file allow rule can re-enable them", () => {
@@ -198,7 +352,7 @@ describe("governed deny list covers the write-capable built-ins", () => {
     for (const t of WRITE_TOOLS) expect(c.allowedTools).not.toContain(t);
   });
 
-  it("the recipe's own allowedTools lifts exactly the named tool, as a recorded widening", () => {
+  it("the step's own tools: lifts exactly the named tool, as a recorded widening", () => {
     const w = resolveAgentContainment(GOVERNED_PROFILE, {
       allowedTools: ["Edit"],
     });
@@ -210,12 +364,21 @@ describe("governed deny list covers the write-capable built-ins", () => {
     expect(w.widenings).toContain("allowedTools+Edit");
   });
 
-  it("a recipe that both allows and denies a write tool keeps it denied", () => {
+  it("a step that both allows and denies a write tool keeps it denied", () => {
     const w = resolveAgentContainment(GOVERNED_PROFILE, {
       allowedTools: ["Write"],
       disallowedTools: ["Write"],
     });
     expect(w.allowedTools).not.toContain("Write");
     expect(w.deniedTools).toContain("Write");
+  });
+
+  it("governed containment is marked strict; compat containment is not", () => {
+    expect(resolveAgentContainment(GOVERNED_PROFILE, undefined).strict).toBe(
+      true,
+    );
+    expect(
+      resolveAgentContainment(COMPAT_PROFILE, { sandbox: true }).strict,
+    ).toBeFalsy();
   });
 });

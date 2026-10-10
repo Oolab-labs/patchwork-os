@@ -18,7 +18,10 @@ import {
   sanitizeEnv,
 } from "./envSanitizer.js";
 import { parseStreamLine, splitLines } from "./streamParser.js";
-import { createSubprocessSettings } from "./subprocessSettings.js";
+import {
+  createSubprocessSettings,
+  readWorkspaceDenies,
+} from "./subprocessSettings.js";
 
 const OUTPUT_CAP = 50 * 1024; // 50KB
 
@@ -95,6 +98,7 @@ export function containmentFromInput(
     envAllowlist: o.envAllowlist === true,
     mcpAccess: o.mcpAccess === true,
     widenings: strs(o.widenings),
+    ...(o.strict === true && { strict: true }),
   };
 }
 
@@ -122,15 +126,29 @@ export const CONTAINED_SETTING_SOURCES = "user";
  * implementation shared by the subprocess driver and the local-run path
  * (`defaultClaudeCodeFn`), so the two cannot drift apart.
  *
- * - Setting sources are restricted to user settings.
- * - The mode is dontAsk, even with an empty allowlist, so every unlisted tool
- *   is refused.
- * - The allowlist comes from the containment.
- * - The deny list is the union of the caller's own denies and the
- *   containment's. A deny is never dropped.
+ * Every contained run:
+ * - runs in dontAsk mode, even with an empty allowlist, so an unlisted tool
+ *   is refused;
+ * - takes its allowlist from the containment;
+ * - denies the union of the caller's own denies and the containment's. A deny
+ *   is never dropped.
+ *
+ * A STRICT (governed) run additionally:
+ * - loads only user settings;
+ * - restricts the built-in tool SET to the allowlist with `--tools`.
+ *
+ * `--tools` matters because dontAsk only refuses what would otherwise ask.
+ * Tools that need no permission, and tools a loaded allow rule pre-approves,
+ * run anyway unless they do not exist (observed against the real CLI).
+ *
+ * A compat `sandbox: true` opt-in (not strict) gets exactly the flags it
+ * always had.
  */
 export function containedPermissionArgs(
-  containment: Pick<AgentContainment, "allowedTools" | "deniedTools">,
+  containment: Pick<
+    AgentContainment,
+    "allowedTools" | "deniedTools" | "strict"
+  >,
   extraDenied: unknown = [],
 ): string[] {
   const allowed = argvSafeList(containment.allowedTools);
@@ -140,9 +158,19 @@ export function containedPermissionArgs(
       ...argvSafeList(containment.deniedTools),
     ]),
   );
+  const strict = containment.strict === true;
+  // Built-in names only: `Edit(src/**)` → `Edit`; bridge MCP tools are not
+  // part of the built-in set.
+  const toolSet = Array.from(
+    new Set(
+      allowed
+        .map((t) => t.split("(")[0] ?? t)
+        .filter((t) => t.length > 0 && !t.startsWith("mcp__")),
+    ),
+  );
   return [
-    "--setting-sources",
-    CONTAINED_SETTING_SOURCES,
+    ...(strict ? ["--setting-sources", CONTAINED_SETTING_SOURCES] : []),
+    ...(strict ? ["--tools", toolSet.join(",")] : []),
     "--permission-mode",
     "dontAsk",
     ...(allowed.length > 0 ? ["--allowed-tools", ...allowed] : []),
@@ -200,11 +228,12 @@ export class SubprocessDriver implements ProviderDriver {
 
   private settingsFor(
     deniedTools: readonly string[],
+    strict: boolean,
   ): ReturnType<typeof createSubprocessSettings> {
-    const key = [...deniedTools].sort().join("\u0000");
+    const key = `${strict ? "strict" : "plain"}\u0001${[...deniedTools].sort().join("\u0000")}`;
     let s = this.containedSettings.get(key);
     if (!s) {
-      s = createSubprocessSettings(this.log, deniedTools);
+      s = createSubprocessSettings(this.log, deniedTools, { strict });
       this.containedSettings.set(key, s);
     }
     return s;
@@ -232,8 +261,15 @@ export class SubprocessDriver implements ProviderDriver {
     // `resolveAgentContainment`). Absent ⇒ legacy providerOptions keys below.
     const containment = containmentFromInput(input);
     const contained = containment?.enforced === true;
+    // A strict run applies the workspace's own deny rules itself, because it
+    // does not load the workspace's settings sources.
+    const strict = contained && containment?.strict === true;
+    const workspaceDenies = strict ? readWorkspaceDenies(input.workspace) : [];
     const settings = contained
-      ? this.settingsFor(containment?.deniedTools ?? [])
+      ? this.settingsFor(
+          [...(containment?.deniedTools ?? []), ...workspaceDenies],
+          strict,
+        )
       : this.settings;
     if (!settings.write()) {
       throw new Error(
@@ -328,7 +364,12 @@ export class SubprocessDriver implements ProviderDriver {
       args.push("--max-budget-usd", String(maxBudgetUsd));
     if (contained && containment) {
       // Governed containment: one implementation for every contained spawn.
-      args.push(...containedPermissionArgs(containment, opts.disallowedTools));
+      args.push(
+        ...containedPermissionArgs(containment, [
+          ...argvSafeList(opts.disallowedTools),
+          ...workspaceDenies,
+        ]),
+      );
     } else if (sandboxActive) {
       // Sandbox: enforce the allowlist. --dangerously-skip-permissions VOIDS
       // --allowed-tools (per CC docs), so they are mutually exclusive — drop

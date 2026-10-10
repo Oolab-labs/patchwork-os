@@ -47,7 +47,10 @@ import {
   CLAUDE_PROVIDER_ENV_KEYS,
   containedPermissionArgs,
 } from "../drivers/claude/subprocess.js";
-import { createSubprocessSettings } from "../drivers/claude/subprocessSettings.js";
+import {
+  createSubprocessSettings,
+  readWorkspaceDenies,
+} from "../drivers/claude/subprocessSettings.js";
 import {
   FLAG_CIRCUIT_BREAKER,
   FLAG_ENFORCE_ALLOWWRITES,
@@ -4820,8 +4823,12 @@ export function defaultClaudeCodeFn(
   // silently falling back to no-MCP spawn — the recipe explicitly asked
   // for bridge tools and should be routed through SubprocessDriver via
   // the runtime injector instead.
+  // Only a STRICT (governed) containment takes the contained branch. A compat
+  // `sandbox: true` opt-in keeps the legacy branch below, byte-identical.
   const containment =
-    opts?.containment?.enforced === true ? opts.containment : undefined;
+    opts?.containment?.enforced === true && opts.containment.strict === true
+      ? opts.containment
+      : undefined;
   if (opts?.mcpAccess === true || containment?.mcpAccess === true) {
     return Promise.resolve(
       "[agent step failed: recipe_mcp_unsupported — defaultClaudeCodeFn does not support mcpAccess:true; route via SubprocessDriver or unset the mcpAccess flag on this step]",
@@ -4841,10 +4848,17 @@ export function defaultClaudeCodeFn(
   // A contained run gets the same settings deny file the driver writes. If it
   // cannot be written, refuse rather than run the agent uncontained.
   let containedSettingsPath: string | undefined;
+  // The workspace's own deny rules: applied by us, because a strict run does
+  // not load the workspace's settings sources (their hooks and allows could
+  // widen it).
+  const workspaceDenies = containment
+    ? readWorkspaceDenies(workspace.path)
+    : [];
   if (containment) {
     const settings = createSubprocessSettings(
       () => {},
-      containment.deniedTools,
+      [...containment.deniedTools, ...workspaceDenies],
+      { strict: true },
     );
     if (!settings.write()) {
       return Promise.resolve(
@@ -4874,7 +4888,12 @@ export function defaultClaudeCodeFn(
   ];
   if (containment && containedSettingsPath) {
     localArgs.push("--settings", containedSettingsPath);
-    localArgs.push(...containedPermissionArgs(containment, sandboxDenied));
+    localArgs.push(
+      ...containedPermissionArgs(containment, [
+        ...sandboxDenied,
+        ...workspaceDenies,
+      ]),
+    );
   } else {
     if (opts?.sandbox === true && sandboxAllowed.length > 0) {
       localArgs.push("--permission-mode", "dontAsk");

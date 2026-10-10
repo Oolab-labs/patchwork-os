@@ -46,7 +46,7 @@ function:
 | `gateAutomatedRuns` | runner consult predicate | every trigger consulted like a manual run |
 | `workerAuthority` | `FLAG_WORKER_AUTONOMY` | on |
 | `policyEnforce` | `FLAG_ENFORCE_POLICY` | on |
-| `agentContainment` | `src/drivers/*` (`containedPermissionArgs`), `defaultClaudeCodeFn`, `ClaudeOrchestrator._enqueueWithId` | contained by default (Read/Glob/Grep/LS; WebFetch, WebSearch, Bash and the write tools Edit/Write/MultiEdit/NotebookEdit denied; user settings only; env allowlist; no bridge MCP), for recipe agent steps on every path (bridge and `recipe run --local`/`record`) and every orchestrator dispatch |
+| `agentContainment` | `src/drivers/*` (`containedPermissionArgs`), `defaultClaudeCodeFn`, `ClaudeOrchestrator._enqueueWithId` | contained by default (tool set restricted to Read/Glob/Grep/LS via `--tools`; WebFetch, WebSearch, Bash and the write tools Edit/Write/MultiEdit/NotebookEdit denied; user Claude settings only, with the workspace's deny rules merged in; all hooks disabled; env allowlist; no bridge MCP), for recipe agent steps on every path (bridge and `recipe run --local`/`record`) and every orchestrator dispatch |
 | `pluginPolicy` | `loadRecipeServers`, install, PUT, lint | allowlist (`config.plugins.allow`) |
 | `killSwitchFailClosed` | `readKillSwitch` | unreadable ⇒ engaged |
 | `unknownWriteTools` | `tierVerdict` | inferred-tier writes and NON-reversible writes queue |
@@ -115,22 +115,36 @@ The same order is what `policy explain` prints.
 - A governed agent step cannot fetch URLs, run a shell, write files, or see
   connector credentials unless the recipe widens it explicitly:
   - `sandbox: { network: true }` or `sandbox: { shell: true }`;
-  - for a write tool, naming it in the step's own `allowedTools`.
+  - for a write tool, naming it in the step's own `tools:` list, either bare
+    (`Edit`) or scoped (`Edit(src/**)`).
 
   Every widening is printed by `policy explain` and turns the step into one that
   needs approval.
-- A contained run loads only the operator's USER Claude settings
-  (`--setting-sources user`). Project and local settings live in the workspace,
-  so a repository can ship them, and two things in them were observed against
-  the real CLI:
+- A governed (strict) contained run is not widened by anything outside the
+  recipe. Each of these was observed against the real CLI:
   - a project `PreToolUse` hook ran its shell command inside a contained `-p`
     run, even with the driver's `--settings` carrying `hooks: {}`;
   - an allow rule from any loaded settings source re-enabled a tool that was
-    merely absent from `--allowed-tools`.
+    merely absent from `--allowed-tools`;
+  - dontAsk mode only refuses what would otherwise ask. Tools that need no
+    permission ran without one, and the CLI's built-in set includes tools that
+    run commands or reach the network.
 
-  So the write-capable built-ins are DENIED (a deny beats every allow) rather
-  than left unlisted. User settings stay, because API-key auth via
-  `apiKeyHelper` lives there.
+  So a strict run:
+  - loads only the operator's USER Claude settings (`--setting-sources user`).
+    User settings stay because API-key auth via `apiKeyHelper` lives there.
+    The workspace's own DENY rules (`.claude/settings.json` and
+    `.claude/settings.local.json`) are read by the bridge and applied as extra
+    denies. They only narrow, so dropping them would have been a regression.
+  - restricts the built-in tool SET to the allowlist (`--tools`), so an
+    unlisted tool does not exist rather than merely needing permission;
+  - disables every hook (`disableAllHooks`), the operator's user hooks
+    included;
+  - DENIES the write-capable built-ins, since a deny beats every allow, rather
+    than leaving them unlisted.
+
+  A compat step's own `sandbox: true` opt-in is not strict and keeps exactly
+  its previous flags.
 - The `recipe run --local` / `recipe record` path (`defaultClaudeCodeFn`)
   applies the same containment as the subprocess driver: the same settings
   deny file, the same permission argv (one shared `containedPermissionArgs`),

@@ -461,11 +461,12 @@ for a NEW config only; `patchwork profile governed|compat` changes an existing
 one (restart the bridge). The profile resolves to EXISTING primitives
 (`src/governance/profile.ts`): approval gate floor `high`, automated triggers
 gated like manual, `FLAG_WORKER_AUTONOMY` + `FLAG_ENFORCE_POLICY` on, agent
-steps contained by default (Read/Glob/Grep/LS; WebFetch/WebSearch/Bash and the
-write tools Edit/Write/MultiEdit/NotebookEdit denied — a step's own
-`allowedTools` lifts a named write tool as a recorded widening; only USER Claude
-settings load, never the workspace's own; the same rules on the
-`recipe run --local`/`record` path;
+steps contained by default (tool set restricted to Read/Glob/Grep/LS via
+`--tools`; WebFetch/WebSearch/Bash and the write tools Edit/Write/MultiEdit/
+NotebookEdit denied, though a step's own `tools:` lifts a named write tool,
+scoped or bare, as a recorded widening; only USER Claude settings load, plus
+the workspace's deny rules merged in by the bridge; all hooks disabled; the
+same rules on the `recipe run --local`/`record` path;
 env allowlist; no bridge MCP; orchestrator dispatch included — hooks,
 `runClaudeTask`/`resumeClaudeTask`, recipe generation/repair, prompt recipes and
 restored tasks are contained once in `ClaudeOrchestrator._enqueueWithId`, where
