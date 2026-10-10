@@ -42,7 +42,15 @@ import {
   executionEvidence,
 } from "../approvalIdentity.js";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
-import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
+import { allowlistEnv, sanitizeEnv } from "../drivers/claude/envSanitizer.js";
+import {
+  CLAUDE_PROVIDER_ENV_KEYS,
+  containedPermissionArgs,
+} from "../drivers/claude/subprocess.js";
+import {
+  createSubprocessSettings,
+  readWorkspaceDenies,
+} from "../drivers/claude/subprocessSettings.js";
 import {
   FLAG_CIRCUIT_BREAKER,
   FLAG_ENFORCE_ALLOWWRITES,
@@ -4788,6 +4796,14 @@ export function defaultClaudeCodeFn(
      * fallback below covers that case.
      */
     systemPrompt?: string;
+    /**
+     * Resolved by `executeAgent` (Phase 0 step 6). When enforced it is
+     * applied exactly as the subprocess driver applies it, via the shared
+     * `containedPermissionArgs`, plus the same settings deny file and env
+     * allowlist. This is the `recipe run --local` / `recipe record` path,
+     * and it must not be a way around containment.
+     */
+    containment?: import("../governance/profile.js").AgentContainment;
   },
 ): Promise<string> {
   const binary = resolveClaudeBinary();
@@ -4807,7 +4823,13 @@ export function defaultClaudeCodeFn(
   // silently falling back to no-MCP spawn — the recipe explicitly asked
   // for bridge tools and should be routed through SubprocessDriver via
   // the runtime injector instead.
-  if (opts?.mcpAccess === true) {
+  // Only a STRICT (governed) containment takes the contained branch. A compat
+  // `sandbox: true` opt-in keeps the legacy branch below, byte-identical.
+  const containment =
+    opts?.containment?.enforced === true && opts.containment.strict === true
+      ? opts.containment
+      : undefined;
+  if (opts?.mcpAccess === true || containment?.mcpAccess === true) {
     return Promise.resolve(
       "[agent step failed: recipe_mcp_unsupported — defaultClaudeCodeFn does not support mcpAccess:true; route via SubprocessDriver or unset the mcpAccess flag on this step]",
     );
@@ -4823,6 +4845,28 @@ export function defaultClaudeCodeFn(
   const sandboxDenied = (
     Array.isArray(opts?.disallowedTools) ? opts.disallowedTools : []
   ).filter((t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"));
+  // A contained run gets the same settings deny file the driver writes. If it
+  // cannot be written, refuse rather than run the agent uncontained.
+  let containedSettingsPath: string | undefined;
+  // The workspace's own deny rules: applied by us, because a strict run does
+  // not load the workspace's settings sources (their hooks and allows could
+  // widen it).
+  const workspaceDenies = containment
+    ? readWorkspaceDenies(workspace.path)
+    : [];
+  if (containment) {
+    const settings = createSubprocessSettings(
+      () => {},
+      [...containment.deniedTools, ...workspaceDenies],
+      { strict: true },
+    );
+    if (!settings.write()) {
+      return Promise.resolve(
+        "[agent step failed: contained_settings_unwritable — could not write the contained run's settings file; refusing to run the agent uncontained]",
+      );
+    }
+    containedSettingsPath = settings.path;
+  }
   const localArgs = [
     "-p",
     prompt,
@@ -4842,13 +4886,23 @@ export function defaultClaudeCodeFn(
         : RECIPE_SYSTEM_PROMPT_COMPAT),
     "--no-session-persistence",
   ];
-  if (opts?.sandbox === true && sandboxAllowed.length > 0) {
-    localArgs.push("--permission-mode", "dontAsk");
-    localArgs.push("--allowed-tools", ...sandboxAllowed);
-  }
-  // Deny rules apply in ANY mode.
-  if (sandboxDenied.length > 0) {
-    localArgs.push("--disallowed-tools", ...sandboxDenied);
+  if (containment && containedSettingsPath) {
+    localArgs.push("--settings", containedSettingsPath);
+    localArgs.push(
+      ...containedPermissionArgs(containment, [
+        ...sandboxDenied,
+        ...workspaceDenies,
+      ]),
+    );
+  } else {
+    if (opts?.sandbox === true && sandboxAllowed.length > 0) {
+      localArgs.push("--permission-mode", "dontAsk");
+      localArgs.push("--allowed-tools", ...sandboxAllowed);
+    }
+    // Deny rules apply in ANY mode.
+    if (sandboxDenied.length > 0) {
+      localArgs.push("--disallowed-tools", ...sandboxDenied);
+    }
   }
   try {
     const result = spawnSync(binary, localArgs, {
@@ -4857,7 +4911,11 @@ export function defaultClaudeCodeFn(
       // child so the spawn doesn't re-authenticate as, or nest under,
       // the parent Claude Code session. Mirrors SubprocessDriver.run
       // hygiene. Preserves CLAUDE_CODE_OAUTH_TOKEN (subscription auth).
-      env: sanitizeEnv(process.env),
+      // Contained: the same env allowlist the driver uses (no connector
+      // tokens, bridge secrets or PATCHWORK_* settings reach the child).
+      env: containment?.envAllowlist
+        ? allowlistEnv(process.env, { providerKeys: CLAUDE_PROVIDER_ENV_KEYS })
+        : sanitizeEnv(process.env),
       encoding: "utf-8",
       timeout: 600_000,
       maxBuffer: 10 * 1024 * 1024,

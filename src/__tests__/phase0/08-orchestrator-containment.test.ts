@@ -25,6 +25,8 @@
  */
 
 import { EventEmitter } from "node:events";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import {
   afterAll,
   afterEach,
@@ -65,6 +67,7 @@ import { spawn } from "node:child_process";
 import { ClaudeOrchestrator } from "../../claudeOrchestrator.js";
 import { SubprocessDriver } from "../../drivers/claude/subprocess.js";
 import {
+  COMPAT_PROFILE,
   CONTAINED_AGENT_ALLOWED_TOOLS,
   GOVERNED_PROFILE,
   resolveAgentContainment,
@@ -119,7 +122,27 @@ function expectContained(args: string[], env: NodeJS.ProcessEnv | undefined) {
   expect(args).not.toContain("--dangerously-skip-permissions");
   expect(flagValues(args, "--permission-mode")).toEqual(["dontAsk"]);
   expect(flagValues(args, "--disallowed-tools")).toEqual(
-    expect.arrayContaining(["WebFetch", "WebSearch", "Bash"]),
+    expect.arrayContaining([
+      "WebFetch",
+      "WebSearch",
+      "Bash",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+    ]),
+  );
+  // Only the operator's user settings: a workspace's own settings can carry
+  // hooks and allow rules.
+  expect(flagValues(args, "--setting-sources")).toEqual(["user"]);
+  // The tool SET is restricted, not just what is pre-approved.
+  expect(flagValues(args, "--tools")).toEqual([
+    CONTAINED_AGENT_ALLOWED_TOOLS.join(","),
+  ]);
+  // Every hook is off in a strict contained run.
+  const settingsPath = flagValues(args, "--settings")[0] as string;
+  expect(JSON.parse(readFileSync(settingsPath, "utf8")).disableAllHooks).toBe(
+    true,
   );
   for (const t of flagValues(args, "--allowed-tools")) {
     expect(CONTAINED_AGENT_ALLOWED_TOOLS).toContain(t);
@@ -233,13 +256,60 @@ describe("governed: orchestrator dispatch is contained by default", () => {
   });
 });
 
+describe("governed: the workspace's deny rules reach the driver", () => {
+  it("project and local denies are merged in; allows are not", async () => {
+    governed();
+    const dir = path.join(sandbox.dir, ".claude");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "settings.json"),
+      JSON.stringify({
+        permissions: { deny: ["Read(./secret.txt)"], allow: ["Write"] },
+      }),
+    );
+    try {
+      const orch = makeOrchestrator();
+      const id = orch.enqueue({ prompt: "x", sessionId: "s" });
+      const { args, env } = await finishNextSpawn();
+      expectContained(args, env);
+      expect(flagValues(args, "--disallowed-tools")).toContain(
+        "Read(./secret.txt)",
+      );
+      expect(flagValues(args, "--allowed-tools")).not.toContain("Write");
+      await waitDone(orch, id);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("compat: unchanged", () => {
+  it("a compat sandbox opt-in keeps exactly its old flags", async () => {
+    const orch = makeOrchestrator();
+    const own = resolveAgentContainment(COMPAT_PROFILE, {
+      sandbox: true,
+      allowedTools: ["Read"],
+    });
+    const id = orch.enqueue({ prompt: "x", sessionId: "s", containment: own });
+    const { args } = await finishNextSpawn();
+    expect(flagValues(args, "--permission-mode")).toEqual(["dontAsk"]);
+    expect(flagValues(args, "--allowed-tools")).toEqual(["Read"]);
+    expect(args).not.toContain("--setting-sources");
+    expect(args).not.toContain("--tools");
+    const settingsPath = flagValues(args, "--settings")[0] as string;
+    expect(
+      "disableAllHooks" in JSON.parse(readFileSync(settingsPath, "utf8")),
+    ).toBe(false);
+    await waitDone(orch, id);
+  });
+
   it("no containment is added and the child is spawned as before", async () => {
     const orch = makeOrchestrator();
     const id = orch.enqueue({ prompt: "x", sessionId: "s" });
     expect(orch.getTask(id)?.containment).toBeUndefined();
     const { args } = await finishNextSpawn();
     expect(args).toContain("--dangerously-skip-permissions");
+    expect(args).not.toContain("--setting-sources");
     await waitDone(orch, id);
   });
 });

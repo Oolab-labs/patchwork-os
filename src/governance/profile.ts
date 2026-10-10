@@ -202,16 +202,41 @@ export const CONTAINED_AGENT_ALLOWED_TOOLS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * Tools that are DENIED in every mode when the profile is governed, even when
- * a recipe widens `allowedTools`. Network egress and shell are the two
- * capabilities that turn a prompt injection into exfiltration; a recipe that
- * genuinely needs them must say so with `sandbox: { network: true }` /
+ * The write-capable built-ins. Leaving them off `--allowed-tools` is not
+ * enough: an allow rule from any settings source the CLI loads re-enables a
+ * tool that is merely unlisted (observed against the real CLI). So they are
+ * DENIED by default, and a deny beats every allow rule in a settings file.
+ *
+ * Unlike network and shell, the step's own `tools:` (internally
+ * `allowedTools`) lifts the deny for exactly the tools it names, scoped
+ * (`Edit(src/**)`) or bare. That is a recorded widening (`allowedTools+X`),
+ * so `policy explain` shows it and it needs approval, the same as before.
+ * Orchestrator dispatch does not honour a caller's `allowedTools`, so these
+ * tools stay denied there.
+ */
+export const CONTAINED_AGENT_WRITE_TOOLS: readonly string[] = Object.freeze([
+  "Edit",
+  "Write",
+  "MultiEdit",
+  "NotebookEdit",
+]);
+
+/**
+ * Tools DENIED by default when the profile is governed.
+ *
+ * Network egress and shell can turn a prompt injection into exfiltration, so
+ * the recipe's `allowedTools` never lifts them. A recipe that genuinely needs
+ * them must say so with `sandbox: { network: true }` or
  * `sandbox: { shell: true }`, which `policy explain` reports as a widening.
+ *
+ * The write tools (see `CONTAINED_AGENT_WRITE_TOOLS`) ARE lifted by the
+ * step's own `tools:` (internally `allowedTools`), scoped or bare.
  */
 export const CONTAINED_AGENT_DENIED_TOOLS: readonly string[] = Object.freeze([
   "WebFetch",
   "WebSearch",
   "Bash",
+  ...CONTAINED_AGENT_WRITE_TOOLS,
 ]);
 
 export interface AgentContainment {
@@ -225,6 +250,17 @@ export interface AgentContainment {
   mcpAccess: boolean;
   /** Human-readable widenings the recipe requested, for `policy explain`. */
   widenings: string[];
+  /**
+   * Governed (profile-enforced) containment, as opposed to a compat step's
+   * own `sandbox: true` opt-in. A strict run is not widened by anything
+   * outside the recipe:
+   * - only USER Claude settings load, and the workspace's deny rules are
+   *   merged in by the bridge;
+   * - the built-in tool SET is restricted to the allowlist;
+   * - all hooks are disabled.
+   * Absent means not strict, which keeps a compat opt-in byte-identical.
+   */
+  strict?: boolean;
 }
 
 export interface StepSandboxRequest {
@@ -267,6 +303,14 @@ export function resolveAgentContainment(
     allowed.add(t);
   }
   const denied = new Set<string>(CONTAINED_AGENT_DENIED_TOOLS);
+  // The recipe's own allowedTools lifts the default deny on a write tool
+  // (recorded above as a widening). The recipe's own disallowedTools are
+  // applied AFTER, so a tool it both allows and denies stays denied.
+  for (const t of req?.allowedTools ?? []) {
+    // `Edit(src/**)` lifts the bare `Edit` deny; the scoped rule then limits it.
+    const base = t.split("(")[0] ?? t;
+    if (CONTAINED_AGENT_WRITE_TOOLS.includes(base)) denied.delete(base);
+  }
   for (const t of req?.disallowedTools ?? []) denied.add(t);
   if (req?.network === true) {
     denied.delete("WebFetch");
@@ -288,5 +332,6 @@ export function resolveAgentContainment(
     envAllowlist: true,
     mcpAccess,
     widenings,
+    strict: true,
   };
 }

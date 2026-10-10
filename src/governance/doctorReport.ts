@@ -198,7 +198,7 @@ export function governanceReport(
     label: "Agent sandbox",
     value:
       profile.agentContainment === "enforced"
-        ? "ENFORCED (read-only tools, no network/shell, env allowlist; recipe steps and orchestrator tasks)"
+        ? "ENFORCED (read-only tool set; no network, shell, writes or hooks; user settings + workspace denies; env allowlist; recipe steps and orchestrator tasks)"
         : "OPT-IN per step",
     status: profile.agentContainment === "enforced" ? "ok" : "fail",
     reason:

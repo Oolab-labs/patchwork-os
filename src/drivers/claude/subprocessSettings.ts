@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -48,22 +48,61 @@ const DENY_LIST = [
 
 /**
  * Build the settings content. `extraDeny` (Phase 0 step 6) is the
- * containment's denied tool list — under a governed profile that includes
- * bare `WebFetch` / `WebSearch` / `Bash`, written into `permissions.deny` as
- * well as passed via `--disallowed-tools`, so the denial holds even if a
- * future CLI version changes how the argv flag composes with the mode.
+ * containment's denied tool list. Under a governed profile it includes bare
+ * `WebFetch` / `WebSearch` / `Bash` and the write tools, plus the workspace's
+ * own deny rules. It is written into `permissions.deny` as well as passed via
+ * `--disallowed-tools`, so the denial holds even if a future CLI version
+ * changes how the argv flag composes with the mode.
  */
-function settingsContent(extraDeny: readonly string[]): string {
+function settingsContent(
+  extraDeny: readonly string[],
+  strict: boolean,
+): string {
   return JSON.stringify({
     hooks: {},
+    // `hooks: {}` alone does NOT stop hooks from other loaded sources
+    // (observed against the real CLI). A strict contained run turns every
+    // hook off, the operator's user hooks included.
+    ...(strict && { disableAllHooks: true }),
     permissions: { deny: Array.from(new Set([...DENY_LIST, ...extraDeny])) },
   });
 }
 
 /**
- * Write a minimal subprocess settings file that suppresses hooks and denies
- * destructive operations. Uses --settings instead of --bare to preserve OAuth
- * auth flows (--bare sets CLAUDE_CODE_SIMPLE=1 which skips OAuth).
+ * The DENY rules a workspace's own Claude settings declare
+ * (`.claude/settings.json` and `.claude/settings.local.json` under `dir`).
+ * A strict contained run does not load those sources, because their hooks and
+ * allow rules could widen it. Their denies only narrow, though, so the
+ * bridge reads them and applies them itself. Fail-soft: a missing or
+ * malformed file contributes nothing.
+ */
+export function readWorkspaceDenies(dir: string | undefined): string[] {
+  if (!dir) return [];
+  const out = new Set<string>();
+  for (const name of ["settings.json", "settings.local.json"]) {
+    try {
+      const parsed = JSON.parse(
+        readFileSync(join(dir, ".claude", name), "utf-8"),
+      ) as { permissions?: { deny?: unknown } };
+      const deny = parsed?.permissions?.deny;
+      if (!Array.isArray(deny)) continue;
+      for (const d of deny) {
+        if (typeof d === "string" && d.length > 0 && !d.startsWith("-")) {
+          out.add(d);
+        }
+      }
+    } catch {
+      // absent or unreadable: nothing to merge
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Write a minimal subprocess settings file that denies destructive
+ * operations. A strict contained run's file also disables all hooks. Uses
+ * --settings instead of --bare to preserve OAuth auth flows (--bare sets
+ * CLAUDE_CODE_SIMPLE=1 which skips OAuth).
  *
  * The file path is keyed on the deny set: a contained run and an uncontained
  * run in the same bridge process must never share (and race on) one file.
@@ -71,13 +110,15 @@ function settingsContent(extraDeny: readonly string[]): string {
 export function createSubprocessSettings(
   log: (msg: string) => void,
   extraDeny: readonly string[] = [],
+  opts: { strict?: boolean } = {},
 ): {
   path: string;
   write: () => boolean;
 } {
-  const content = settingsContent(extraDeny);
+  const strict = opts.strict === true;
+  const content = settingsContent(extraDeny, strict);
   const suffix =
-    extraDeny.length === 0
+    extraDeny.length === 0 && !strict
       ? ""
       : `-${createHash("sha256").update(content).digest("hex").slice(0, 12)}`;
   const path = join(
