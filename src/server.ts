@@ -4,7 +4,7 @@ import { unlinkSync } from "node:fs";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { ActivityListener } from "./activityTypes.js";
-import { clearAnalyticsConfig, getAnalyticsConfig } from "./analyticsConfig.js";
+import { clearAnalyticsConfig } from "./analyticsConfig.js";
 import {
   getAnalyticsPrefsAll,
   getAnalyticsPrefsPath,
@@ -12,6 +12,7 @@ import {
   getTelemetryPrefs,
   setTelemetryPrefs,
 } from "./analyticsPrefs.js";
+import { resolveAnalyticsTarget } from "./analyticsSend.js";
 import {
   dispatchCancelPush,
   handleApprovalsStream,
@@ -2893,20 +2894,11 @@ export class Server extends EventEmitter<ServerEvents> {
           // Destination visibility — consent baseline. Caller can see
           // where their data would go and whether the destination came
           // from env (CI/headless) or the on-disk config file.
-          const envEndpoint = process.env.PATCHWORK_ANALYTICS_ENDPOINT;
-          const cfgEndpoint = getAnalyticsConfig().endpoint;
-          const defaultEndpoint =
-            "https://analytics.claude-ide-bridge.dev/v1/usage";
-          if (envEndpoint) {
-            response.endpoint = envEndpoint;
-            response.endpointSource = "env";
-          } else if (cfgEndpoint) {
-            response.endpoint = cfgEndpoint;
-            response.endpointSource = "config";
-          } else {
-            response.endpoint = defaultEndpoint;
-            response.endpointSource = "default";
-          }
+          // Same resolver the sender uses, so the shown destination is the
+          // one data would actually go to (including invalid-override fallback).
+          const target = resolveAnalyticsTarget();
+          response.endpoint = target.endpoint;
+          response.endpointSource = target.source.endpoint;
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(response));
           return;

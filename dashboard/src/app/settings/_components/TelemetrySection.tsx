@@ -13,7 +13,6 @@ import { ToggleRow } from "./ToggleRow";
  * own endpoint.
  */
 export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
-  const [telCrash, setTelCrash] = useState(false);
   const [telUsage, setTelUsage] = useState(false);
   // Default false — the card subtitle says "Everything off by default".
   // `true` here flashed the toggle ON before the GET resolved,
@@ -70,8 +69,6 @@ export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
         if (typeof data.endpointSource === "string") {
           setTelEndpointSource(data.endpointSource);
         }
-        if (typeof data.crashReports === "boolean")
-          setTelCrash(data.crashReports);
         if (typeof data.usageStats === "boolean") setTelUsage(data.usageStats);
         if (typeof data.localDiagnostics === "boolean")
           setTelDiag(data.localDiagnostics);
@@ -127,7 +124,6 @@ export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
         });
       } else {
         // Local state reset — server salt is gone, prefs reset to false.
-        setTelCrash(false);
         setTelUsage(false);
         setTelDiag(false);
         setTelLastSentAt(null);
@@ -157,19 +153,9 @@ export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
 
       <div className="stg-tel-list">
         <ToggleRow
-          id="tel-crash"
-          label="Crash reports"
-          help="Send anonymized stack traces to help diagnose bridge crashes. No source files, no env vars."
-          checked={telCrash}
-          onChange={(v) => {
-            setTelCrash(v);
-            void saveTelemetryPref("crashReports", v);
-          }}
-        />
-        <ToggleRow
           id="tel-usage"
           label="Anonymous usage stats"
-          help="Tool-call counts and feature flag usage. No prompts, no file paths, no identifiers."
+          help="Bridge version, tool names, call and error counts, and durations — once a day and at shutdown. No prompts, no file paths, no identifiers. DO_NOT_TRACK=1 always wins."
           checked={telUsage}
           onChange={(v) => {
             setTelUsage(v);
