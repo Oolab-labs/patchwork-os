@@ -35,8 +35,10 @@
  * future-writer row carrying a prompt cannot turn the viewer into the thing
  * that publishes it.
  */
+
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { isChainMarker } from "../ledgerChain.js";
 
 import { patchworkPath } from "../patchworkHome.js";
 import type { BoundaryDecision, Classification } from "./dataPolicy.js";
@@ -231,6 +233,9 @@ export function summariseBoundaryReceipts(
       s.unreadableLines += 1;
       continue;
     }
+    // A chained ledger's own marker rows (chain-start, rotation) are part of
+    // its integrity chain, not damage — skip them like every other reader.
+    if (isChainMarker(parsed)) continue;
     const v = view(parsed);
     if (!v) {
       s.unreadableLines += 1;
