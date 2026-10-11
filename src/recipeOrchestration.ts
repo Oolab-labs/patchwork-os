@@ -111,9 +111,26 @@ export const RECIPE_TASK_TIMEOUT_MS = 1_800_000;
  * were byte-identical duplicates and still drifted from the third site.
  */
 export function agentTextFromTask(task: {
+  status?: string;
   output?: string;
   errorMessage?: string;
 }): string {
+  // The STATUS decides, not which field happens to be filled. On failure the
+  // orchestrator stores the driver's text in `output` too, so checking
+  // `output` first returned a CLI's own error ("Not logged in · Please run
+  // /login") as the step's answer and the run finished `done`. A cancelled
+  // or timed-out task's partial output is not an answer either.
+  const failed =
+    task.status === "error" ||
+    task.status === "cancelled" ||
+    task.status === "interrupted";
+  if (failed) {
+    const reason =
+      task.errorMessage ??
+      (task.status === "error" ? "task failed" : `task ${task.status}`);
+    const tail = task.output ? ` — ${task.output.slice(0, 120)}` : "";
+    return `[agent step failed: ${reason.slice(0, 160)}${tail}]`;
+  }
   if (task.output) return task.output;
   if (task.errorMessage) {
     return `[agent step failed: ${task.errorMessage.slice(0, 200)}]`;
