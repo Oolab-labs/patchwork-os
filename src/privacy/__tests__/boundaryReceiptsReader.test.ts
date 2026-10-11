@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { appendChained } from "../../ledgerChain.js";
 
 import {
   BOUNDARY_RECEIPTS_BASENAME,
@@ -186,5 +187,35 @@ describe("boundaryReceiptsPath", () => {
     expect(boundaryReceiptsPath(dir)).toBe(
       path.join(dir, "boundary_receipts.jsonl"),
     );
+  });
+});
+
+describe("summariseBoundaryReceipts on a hash-chained ledger", () => {
+  it("does not count the chain's own marker rows as unreadable", () => {
+    // A chained ledger opens with a `chain-start` marker (and may carry
+    // `rotation` markers). They are part of the integrity chain, not damage:
+    // reporting them as "unreadable" told an operator a healthy ledger had a
+    // corrupt line. Written through the real appender, not hand-made.
+    const dir = tempDir();
+    const file = path.join(dir, BOUNDARY_RECEIPTS_BASENAME);
+    appendChained(
+      file,
+      row({ decision: "REQUIRE_APPROVAL", classification: "confidential" }),
+    );
+    appendChained(file, row({ seq: 2 }));
+    const s = summariseBoundaryReceipts({ dir });
+    expect(s.recorded).toBe(2);
+    expect(s.unreadableLines).toBe(0);
+    expect(formatBoundaryReceipts(s)).not.toMatch(/unreadable/);
+  });
+
+  it("still counts a genuinely broken line", () => {
+    const dir = tempDir();
+    const file = path.join(dir, BOUNDARY_RECEIPTS_BASENAME);
+    appendChained(file, row());
+    writeFileSync(file, "{not json\n", { flag: "a" });
+    const s = summariseBoundaryReceipts({ dir });
+    expect(s.recorded).toBe(1);
+    expect(s.unreadableLines).toBe(1);
   });
 });
