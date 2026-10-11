@@ -96,6 +96,48 @@ function safeInboxPath(filename: string): string | null {
 }
 
 /**
+ * An inbox attachment is a regular, non-markdown file with a plain name: no
+ * dotfile, no in-progress `.partial` write, nothing but letters, digits and
+ * `._-`. Markdown files are inbox ITEMS and have their own routes.
+ */
+function isAttachmentName(name: string): boolean {
+  return (
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$/.test(name) &&
+    !name.endsWith(".md") &&
+    !name.endsWith(".partial")
+  );
+}
+
+const ATTACHMENT_TYPES: Array<[RegExp, string]> = [
+  [/\.(tar\.gz|tgz|gz)$/i, "application/gzip"],
+  [/\.zip$/i, "application/zip"],
+  [/\.csv$/i, "text/csv; charset=utf-8"],
+  [/\.json$/i, "application/json"],
+  [/\.pdf$/i, "application/pdf"],
+  [/\.txt$/i, "text/plain; charset=utf-8"],
+];
+
+function attachmentContentType(name: string): string {
+  for (const [re, type] of ATTACHMENT_TYPES) if (re.test(name)) return type;
+  return "application/octet-stream";
+}
+
+async function listInboxAttachments(
+  inboxDir: string,
+): Promise<Array<{ name: string; size: number; modifiedAt: string }>> {
+  const { readdir, lstat } = await import("node:fs/promises");
+  const out: Array<{ name: string; size: number; modifiedAt: string }> = [];
+  for (const name of await readdir(inboxDir)) {
+    if (!isAttachmentName(name)) continue;
+    const st = await lstat(path.join(inboxDir, name)).catch(() => null);
+    if (!st || !st.isFile()) continue;
+    out.push({ name, size: st.size, modifiedAt: st.mtime.toISOString() });
+  }
+  out.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+  return out;
+}
+
+/**
  * Try to handle an `/inbox` or `/inbox/<filename>.md` route. Returns true
  * if the route was dispatched (caller should `return` from the request
  * handler), false if no route matched.
@@ -112,7 +154,7 @@ export function tryHandleInboxRoute(
         const inboxDir = patchworkPath("inbox");
         if (!existsSync(inboxDir)) {
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ items: [] }));
+          res.end(JSON.stringify({ items: [], attachments: [] }));
           return;
         }
         const files = (await readdir(inboxDir)).filter((f) =>
@@ -156,8 +198,52 @@ export function tryHandleInboxRoute(
           (a, b) =>
             new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime(),
         );
+        const attachments = await listInboxAttachments(inboxDir);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ items }));
+        res.end(JSON.stringify({ items, attachments }));
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // GET /inbox/attachments/<name> — a non-markdown inbox file, byte for byte.
+  const attachmentMatch = parsedUrl.pathname?.match(
+    /^\/inbox\/attachments\/([^/]+)$/,
+  );
+  if (attachmentMatch && req.method === "GET") {
+    void (async () => {
+      try {
+        let name = "";
+        try {
+          name = decodeURIComponent(attachmentMatch[1] ?? "");
+        } catch {
+          name = "";
+        }
+        const filePath = isAttachmentName(name) ? safeInboxPath(name) : null;
+        if (!filePath) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid filename" }));
+          return;
+        }
+        const { lstat, readFile } = await import("node:fs/promises");
+        // lstat, not stat: a symlink is never served, whatever it points at.
+        const st = await lstat(filePath).catch(() => null);
+        if (!st || !st.isFile()) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Not found" }));
+          return;
+        }
+        const bytes = await readFile(filePath);
+        res.writeHead(200, {
+          "Content-Type": attachmentContentType(name),
+          "Content-Disposition": `attachment; filename="${name}"`,
+          "Content-Length": String(bytes.length),
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "no-store",
+        });
+        res.end(bytes);
       } catch (err) {
         respond500(res, err);
       }
