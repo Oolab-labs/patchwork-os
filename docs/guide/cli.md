@@ -184,6 +184,8 @@ patchwork evidence verify [--dir <path>] [--json]
 
 Is every ledger internally intact? Walks the per-row hash chain, the chain-start commitment, the rotation marker, the head sidecar and unsealed write failures. **The only evidence verb that gates: exits 1 on any break, shortened file or unsealed write failure.** Prints line numbers and sequence numbers, never a value.
 
+To verify a workspace that runs on another machine, download its ledgers verbatim and point `--dir` at the copy. `GET /evidence/ledgers` lists every verified ledger with the files that make it up (the ledger and its `.head` / `.write_failed` sidecars, where present); `GET /evidence/ledger?file=<name>` returns one of those files byte for byte. Both need the bridge token. Only names on that list are served. Keep each file at its listed path under the download directory (for example `butler/permission_exercises.jsonl`). A later download compared against an earlier one shows whether a record you already held was changed or removed.
+
 ### `privacy`
 
 ```bash

@@ -27,6 +27,7 @@
  * connectorRoutes.ts.
  */
 
+import { existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -40,6 +41,7 @@ import {
   type CopilotRecipeRef,
   parseCopilotIntent,
 } from "./copilot/parseIntent.js";
+import { VERIFIED_LEDGERS } from "./evidenceVerify.js";
 import {
   consumeToken,
   refillBucket,
@@ -55,8 +57,9 @@ import {
 import { activeProfile } from "./governance/profile.js";
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
+import { chainSidecarPaths } from "./ledgerChain.js";
 import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
-import { patchworkPath } from "./patchworkHome.js";
+import { patchworkHome, patchworkPath } from "./patchworkHome.js";
 import { summariseBoundaryReceipts } from "./privacy/boundaryReceipts.js";
 import { cancelRunChecked } from "./recipes/runRegistry.js";
 import type { LintIssue } from "./recipes/validation.js";
@@ -1121,6 +1124,70 @@ export function tryHandleRecipeRoute(
       });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(summary));
+    } catch (err) {
+      respond500(res, err);
+    }
+    return true;
+  }
+
+  // GET /evidence/ledgers + GET /evidence/ledger?file=<name> — download the
+  // chained ledgers VERBATIM so `patchwork evidence verify --dir` can check
+  // them on another machine. Bytes are streamed from disk untouched: a
+  // re-serialised file would fail its own chain, or pass one never written.
+  // Only names on VERIFIED_LEDGERS and their two chain sidecars are servable,
+  // matched EXACTLY against that list — never joined from the request — so no
+  // other file in the home directory is reachable. Operator data: bearer-gated
+  // like every route here.
+  if (parsedUrl.pathname === "/evidence/ledgers" && req.method === "GET") {
+    try {
+      const home = patchworkHome();
+      const ledgers = VERIFIED_LEDGERS.map(({ key, file }) => {
+        const files = servableLedgerFiles(file).filter((f) =>
+          existsSync(path.join(home, f)),
+        );
+        const main = path.join(home, file);
+        const present = existsSync(main);
+        return {
+          key,
+          file,
+          present,
+          bytes: present ? statSync(main).size : 0,
+          files,
+        };
+      });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ledgers }));
+    } catch (err) {
+      respond500(res, err);
+    }
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/evidence/ledger" && req.method === "GET") {
+    const requested = parsedUrl.searchParams.get("file") ?? "";
+    const allowed = new Set(
+      VERIFIED_LEDGERS.flatMap(({ file }) => servableLedgerFiles(file)),
+    );
+    if (!allowed.has(requested)) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "not_a_verified_ledger" }));
+      return true;
+    }
+    const full = path.join(patchworkHome(), requested);
+    if (!existsSync(full)) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "absent" }));
+      return true;
+    }
+    try {
+      const bytes = readFileSync(full);
+      res.writeHead(200, {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${path.basename(requested)}"`,
+        "Content-Length": String(bytes.length),
+        "Cache-Control": "no-store",
+      });
+      res.end(bytes);
     } catch (err) {
       respond500(res, err);
     }
@@ -3705,4 +3772,15 @@ export function tryHandleRecipeRoute(
   }
 
   return false;
+}
+
+/**
+ * The files `evidence verify` reads for one ledger: the ledger and its two
+ * chain sidecars, as paths relative to the Patchwork home. Derived from
+ * `chainSidecarPaths` so the download can never disagree with the verifier
+ * about which files make up a ledger.
+ */
+function servableLedgerFiles(file: string): string[] {
+  const { head, writeFailed } = chainSidecarPaths(file);
+  return [file, head, writeFailed];
 }
