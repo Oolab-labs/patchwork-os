@@ -63,9 +63,39 @@ describe("agentTextFromTask", () => {
     ).toBe("The build failed; investigate the linker");
   });
 
-  it("prefers output when a task carries both", () => {
+  it("a FAILED task is marked even when it carries output", () => {
+    // On failure the orchestrator stores the driver's text in `output` AND sets
+    // `errorMessage` + status "error". Preferring `output` turned a CLI's own
+    // error text into the step's answer: with no Claude sign-in, a recipe
+    // wrote "Not logged in · Please run /login" to the inbox and the run
+    // finished `done`. The task's status is the authoritative signal.
+    const text = agentTextFromTask({
+      status: "error",
+      output: "Not logged in · Please run /login",
+      errorMessage: "Process exited with code 1",
+    });
+    expect(text.startsWith("[agent step failed:")).toBe(true);
+    expect(text).toContain("Process exited with code 1");
+    expect(text).toContain("Not logged in");
+    expect(detectSilentFail(text)).not.toBeNull();
+  });
+
+  it("a cancelled or timed-out task's partial output is not an answer", () => {
+    const text = agentTextFromTask({
+      status: "cancelled",
+      output: "partial thought, cut off mid-",
+    });
+    expect(text.startsWith("[agent step failed:")).toBe(true);
+    expect(detectSilentFail(text)).not.toBeNull();
+  });
+
+  it("a done task's output passes through even if an errorMessage lingers", () => {
     expect(
-      agentTextFromTask({ output: "real answer", errorMessage: "ignored" }),
+      agentTextFromTask({
+        status: "done",
+        output: "real answer",
+        errorMessage: "ignored",
+      }),
     ).toBe("real answer");
   });
 

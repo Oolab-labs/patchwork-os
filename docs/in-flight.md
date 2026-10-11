@@ -58,6 +58,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-10-11 `fix/failed-agent-task-not-an-answer` — `agentTextFromTask` decides by task status: a failed, cancelled or interrupted orchestrator task is marked `[agent step failed: …]` even when it carries output (a missing Claude sign-in previously became the step's answer and the run finished `done`).
 - 2026-10-11 `feat/evidence-ledger-download` — `GET /evidence/ledgers` + `GET /evidence/ledger?file=` serve the verified ledgers and their chain sidecars verbatim, exact-match against `VERIFIED_LEDGERS`, so `evidence verify --dir` works on a downloaded copy.
 - 2026-10-10 `fix/containment-local-run-and-setting-sources` (#1676) — local run path contained; strict containment loads user settings only (workspace denies merged), restricts the tool set with `--tools`, disables hooks, denies write tools (liftable by a step's own `tools:`); compat byte-identical.
 - 2026-10-10 `fix/orchestrator-governed-containment` (#1675) — governed containment applied to every orchestrator dispatch at `ClaudeOrchestrator._enqueueWithId`; nothing a caller passes widens it; env allowlist gains CLAUDE_CONFIG_DIR and NODE_EXTRA_CA_CERTS; ADR-0026, guide, CLAUDE.md and doctor text updated.
