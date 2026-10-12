@@ -8,9 +8,11 @@
  *
  * Design constraints baked into the shape (from the 2026-06-04 investigation,
  * `docs/counterfactual-sim-engine-investigation.md`):
- *   - `gatedOnRecipeSteps` is a first-class boolean so a consumer can NEVER
- *     imply an approval gate that does not exist on the recipe execution path
- *     today (the live gate in transport.ts only gates MCP bridge calls).
+ *   - `gatedOnRecipeSteps` is a first-class field so a consumer can never
+ *     imply an approval gate that the runtime would not apply — nor hide one
+ *     it would. Since v3 it is COMPUTED from the effective policy (the same
+ *     `computeEffectivePolicy` both runners consult per step), never a
+ *     constant; `null` when the policy could not be evaluated.
  *   - cost carries an explicit `basis` and is never a precise dollar figure or
  *     `$0` — at static fidelity USD is genuinely not projectable.
  *   - conditional branches resolve to `"undetermined"`, never a faked
@@ -26,8 +28,15 @@
  * and the `taken`/`skipped` branch outcomes (alongside the existing
  * `undetermined`). All additions are additive/back-compatible — a static report
  * is still a valid v2 report.
+ *
+ * v3: the approval projection is the RUNTIME's verdict, not a tier guess.
+ * `gatedOnRecipeSteps` becomes `boolean | null` and is computed;
+ * `ApprovalProjection` gains `verdict` / `consultsApproval` and its
+ * `wouldRequireApproval` now means "the runner would hold this step for a
+ * human" (`null` when unknown); `approvals` gains `basis`, `profile` and
+ * `trigger`. A meaning change, hence the bump.
  */
-export const SIMULATION_SCHEMA_VERSION = 2;
+export const SIMULATION_SCHEMA_VERSION = 3;
 
 export type RiskTier = "low" | "medium" | "high";
 
@@ -77,14 +86,53 @@ export interface SimulationStep {
   mockedFrom?: "history" | "synthesized";
 }
 
-/** Per-step approval projection — "what WOULD gate, if recipe steps were gated". */
+/**
+ * The effective-policy verdict for one step, as `computeEffectivePolicy`
+ * returns it, or `"unknown"` when it was not evaluated (a nested-recipe or
+ * compound step, or a report built with no policy input).
+ */
+export type StepPolicyVerdict =
+  | "ALLOW"
+  | "HUMAN_APPROVAL_REQUIRED"
+  | "REFUSED"
+  | "unknown";
+
+/** Per-step approval projection — what the runtime WOULD do with this step. */
 export interface ApprovalProjection {
   stepId: string;
   tool?: string;
   tier: RiskTier;
-  /** True if this step's tier would trip an approval gate (tier !== "low"). */
-  wouldRequireApproval: boolean;
+  /**
+   * True when the runner would hold this step for a human
+   * (`verdict === "HUMAN_APPROVAL_REQUIRED"`); false when it would not;
+   * `null` when the verdict is unknown.
+   */
+  wouldRequireApproval: boolean | null;
+  /** The effective-policy verdict for this step. */
+  verdict: StepPolicyVerdict;
+  /** True when the runner consults the approval gate for this step at all. */
+  consultsApproval?: boolean;
   reason: string;
+}
+
+/**
+ * Per-step effective-policy facts handed to the pure transform. Built by
+ * `projectRecipePolicy` from `computeEffectivePolicy` — the transform never
+ * derives a verdict itself.
+ */
+export interface SimulationPolicy {
+  profile: "governed" | "compat";
+  /** The trigger the runtime evaluates (a top-level chained run is "manual"). */
+  trigger: string;
+  /** Keyed by plan step id. A step absent here was not evaluated. */
+  steps: Map<
+    string,
+    {
+      final: Exclude<StepPolicyVerdict, "unknown">;
+      consultsApproval: boolean;
+      reason: string;
+    }
+  >;
 }
 
 /** A conditional branch surfaced by the engine. */
@@ -192,16 +240,28 @@ export interface RecipeSimulationReport {
   /** "chained" recipes have a real DAG; "flat" recipes are a linear list. */
   topology: "chained" | "flat";
   /**
-   * CRITICAL honesty field. False today: the approval queue does NOT gate
-   * recipe-runner steps. Consumers MUST surface this so the approval
-   * projection is never read as live gate behaviour.
+   * CRITICAL honesty field. True when the runtime consults the approval gate
+   * for at least one of this recipe's steps under the current profile,
+   * approval-gate setting and trigger; false when it consults it for none;
+   * `null` when the effective policy could not be evaluated. Computed from
+   * `computeEffectivePolicy`, never a constant.
    */
-  gatedOnRecipeSteps: boolean;
+  gatedOnRecipeSteps: boolean | null;
   steps: SimulationStep[];
   summary: SimulationSummary;
   risk: RunRiskSummary;
   approvals: {
-    gatedOnRecipeSteps: boolean;
+    gatedOnRecipeSteps: boolean | null;
+    /**
+     * `"effective-policy"`: verdicts come from `computeEffectivePolicy`.
+     * `"unavailable"`: the policy could not be evaluated; verdicts are
+     * `"unknown"` and nothing is claimed either way.
+     */
+    basis: "effective-policy" | "unavailable";
+    /** Governance profile the verdicts were computed under. */
+    profile?: "governed" | "compat";
+    /** Trigger the verdicts were computed for. */
+    trigger?: string;
     projected: ApprovalProjection[];
     note: string;
   };

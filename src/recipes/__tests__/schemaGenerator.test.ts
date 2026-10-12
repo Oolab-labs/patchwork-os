@@ -492,9 +492,11 @@ describe("schemaGenerator", () => {
         "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/simulation-report.v1.json",
       );
       const properties = schema.properties as Record<string, unknown>;
-      expect(properties.schemaVersion).toMatchObject({ const: 2 });
+      expect(properties.schemaVersion).toMatchObject({ const: 3 });
       expect(properties.kind).toMatchObject({ const: "what-if-preview" });
-      expect(properties.gatedOnRecipeSteps).toMatchObject({ type: "boolean" });
+      expect(properties.gatedOnRecipeSteps).toMatchObject({
+        type: ["boolean", "null"],
+      });
       expect(properties.fidelity).toMatchObject({
         enum: ["static", "mocked"],
       });

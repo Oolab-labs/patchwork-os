@@ -25,6 +25,7 @@ import {
   type RiskTier,
   SIMULATION_SCHEMA_VERSION,
   type SimulationCost,
+  type SimulationPolicy,
   type SimulationStep,
 } from "./types.js";
 
@@ -128,15 +129,59 @@ function buildCost(plan: RecipeDryRunPlan): SimulationCost {
   };
 }
 
-/** Pure transform: a dry-run plan → a What-If Preview simulation report. */
+/**
+ * Is any step of this recipe put in front of the approval gate? Read off the
+ * effective-policy verdicts — never assumed. `null` when there is no policy
+ * input, or when not one step could be evaluated: "we did not look" must not
+ * read as "not gated".
+ */
+function computeGated(
+  steps: SimulationStep[],
+  policy: SimulationPolicy | undefined,
+): boolean | null {
+  if (!policy) return null;
+  const evaluated = steps
+    .map((s) => policy.steps.get(s.id))
+    .filter((v) => v !== undefined);
+  if (evaluated.length === 0) return null;
+  return evaluated.some((v) => v.consultsApproval);
+}
+
+/** The one approval caveat, shared by the static and mocked reports. */
+function approvalNote(
+  gated: boolean | null,
+  policy: SimulationPolicy | undefined,
+  projected: ApprovalProjection[],
+): string {
+  if (!policy || gated === null) {
+    return "Approval projection unavailable: the effective policy could not be evaluated, so this report claims nothing about whether steps would wait for approval.";
+  }
+  const scope = `the runtime's effective policy (${policy.profile} profile, ${policy.trigger} run)`;
+  if (!gated) {
+    return `Approval projection comes from ${scope}: the approval gate is not consulted for any step of this recipe, so no step would wait for a human.`;
+  }
+  const waiting = projected.filter((p) => p.wouldRequireApproval === true);
+  const refused = projected.filter((p) => p.verdict === "REFUSED");
+  return `Approval projection comes from ${scope}: ${waiting.length} step(s) would wait for a human${refused.length > 0 ? `, ${refused.length} would be refused` : ""}.`;
+}
+
+/**
+ * Pure transform: a dry-run plan → a What-If Preview simulation report.
+ *
+ * `policy` carries the per-step `computeEffectivePolicy` verdicts (built by
+ * `projectRecipePolicy`). Without it the approval section is reported as
+ * UNAVAILABLE — this function never derives a gating verdict itself, because
+ * a second derivation is exactly how a preview drifts from enforcement.
+ */
 export function simulateFromPlan(
   plan: RecipeDryRunPlan,
+  policy?: SimulationPolicy,
 ): RecipeSimulationReport {
   const topology: "chained" | "flat" =
     plan.triggerType === "chained" ? "chained" : "flat";
-  const gatedOnRecipeSteps = false; // P0/P4 truth: recipe steps are not gated today.
 
   const steps = buildSteps(plan, topology);
+  const gatedOnRecipeSteps = computeGated(steps, policy);
 
   const sideEffectCounts = emptySideEffectCounts();
   for (const s of steps) sideEffectCounts[s.sideEffect] += 1;
@@ -159,18 +204,35 @@ export function simulateFromPlan(
     })),
   );
 
+  // Every risky or writing step is listed, plus any step the policy would
+  // hold or refuse whatever its tier (e.g. `approvalGate: all`, or an agent
+  // step that widened its containment).
   const projected: ApprovalProjection[] = steps
-    .filter((s) => s.baseRisk !== "low" || s.isWrite)
-    .map((s) => ({
-      stepId: s.id,
-      ...(s.tool !== undefined ? { tool: s.tool } : {}),
-      tier: s.baseRisk,
-      wouldRequireApproval: s.baseRisk !== "low",
-      reason:
-        s.baseRisk !== "low"
-          ? `${s.baseRisk}-risk ${s.sideEffect}`
-          : `write step (${s.sideEffect}), low tier`,
-    }));
+    .filter((s) => {
+      const v = policy?.steps.get(s.id);
+      return (
+        s.baseRisk !== "low" ||
+        s.isWrite ||
+        (v !== undefined && v.final !== "ALLOW")
+      );
+    })
+    .map((s): ApprovalProjection => {
+      const v = policy?.steps.get(s.id);
+      return {
+        stepId: s.id,
+        ...(s.tool !== undefined ? { tool: s.tool } : {}),
+        tier: s.baseRisk,
+        wouldRequireApproval: v ? v.final === "HUMAN_APPROVAL_REQUIRED" : null,
+        verdict: v ? v.final : "unknown",
+        ...(v ? { consultsApproval: v.consultsApproval } : {}),
+        reason: v
+          ? v.reason
+          : policy
+            ? `not evaluated (${s.type === "recipe" ? "nested recipe — governed by its own steps" : "no tool or agent to evaluate"})`
+            : "effective policy unavailable",
+      };
+    });
+  const approvalsNote = approvalNote(gatedOnRecipeSteps, policy, projected);
 
   const branches: BranchProjection[] = steps
     .filter((s) => typeof s.condition === "string" && s.condition.length > 0)
@@ -186,7 +248,7 @@ export function simulateFromPlan(
 
   const notes: string[] = [
     "Static fidelity: no step is executed. Agent/LLM outputs and data-dependent branches are not resolved.",
-    "Approval projection shows the tier that WOULD apply if recipe steps were gated — they are NOT gated on the execution path today (gatedOnRecipeSteps=false).",
+    approvalsNote,
     "Cost is a low-confidence estimate; USD is not projected at this phase.",
   ];
   if (topology === "flat") {
@@ -219,8 +281,13 @@ export function simulateFromPlan(
     risk,
     approvals: {
       gatedOnRecipeSteps,
+      basis:
+        policy && gatedOnRecipeSteps !== null
+          ? "effective-policy"
+          : "unavailable",
+      ...(policy ? { profile: policy.profile, trigger: policy.trigger } : {}),
       projected,
-      note: "Recipe-runner steps are NOT gated by the approval queue today; this column is the tier that would apply if they were.",
+      note: approvalsNote,
     },
     cost,
     branches,
@@ -270,13 +337,14 @@ export function extractReferencedStepIds(condition: string): Set<string> {
  *     data), else `"undetermined"`.
  *
  * Risk / side-effect / cost / approvals sections are carried over unchanged
- * from the static report. `gatedOnRecipeSteps` stays false (P0/P4 truth).
+ * from the static report, including the effective-policy approval verdicts.
  */
 export function simulateMockedFromPlan(
   plan: RecipeDryRunPlan,
   mocked: MockedRunResult,
+  policy?: SimulationPolicy,
 ): RecipeSimulationReport {
-  const base = simulateFromPlan(plan);
+  const base = simulateFromPlan(plan, policy);
 
   const steps: SimulationStep[] = base.steps.map((s) => {
     const state = mocked.stepData.get(s.id);
@@ -312,7 +380,7 @@ export function simulateMockedFromPlan(
   const notes: string[] = [
     `Mocked fidelity: downstream templates and conditions were resolved by driving the chained runner with ${mocked.sampleRuns} prior run(s) of history. No step executed for real (stubbed deps, no persistence).`,
     "Steps without run history were fed synthesized placeholders; their downstream effects are approximate.",
-    "Approval projection shows the tier that WOULD apply if recipe steps were gated — they are NOT gated on the execution path today (gatedOnRecipeSteps=false).",
+    base.approvals.note,
     "Cost remains a static estimate at this phase; USD is not projected (P3).",
   ];
   if (base.summary.unresolvedSteps > 0) {

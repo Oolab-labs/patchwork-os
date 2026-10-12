@@ -190,7 +190,7 @@ export function generateSimulationSchema(): unknown {
     $id: "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/simulation-report.v1.json",
     title: "Patchwork Recipe What-If Preview",
     description:
-      "Stable machine-readable output of `patchwork recipe simulate` / GET /recipes/:name/simulate. Static counterfactual simulation — executes nothing. Pin consumers on schemaVersion. `gatedOnRecipeSteps` is false today: recipe steps are NOT gated by the approval queue.",
+      "Stable machine-readable output of `patchwork recipe simulate` / GET /recipes/:name/simulate. Static counterfactual simulation — executes nothing. Pin consumers on schemaVersion. Approval verdicts (`gatedOnRecipeSteps`, `approvals.projected[].wouldRequireApproval`) are computed from the runtime's effective policy — the calculation both recipe runners consult per step.",
     type: "object",
     required: [
       "schemaVersion",
@@ -211,7 +211,7 @@ export function generateSimulationSchema(): unknown {
       "notes",
     ],
     properties: {
-      schemaVersion: { type: "number", const: 2 },
+      schemaVersion: { type: "number", const: 3 },
       kind: { type: "string", const: "what-if-preview" },
       recipe: { type: "string" },
       triggerType: { type: "string" },
@@ -227,9 +227,9 @@ export function generateSimulationSchema(): unknown {
       },
       topology: { type: "string", enum: ["chained", "flat"] },
       gatedOnRecipeSteps: {
-        type: "boolean",
+        type: ["boolean", "null"],
         description:
-          "False today — recipe-runner steps are NOT gated by the approval queue. The approval projection is the tier that WOULD apply if they were.",
+          "True when the runtime consults the approval gate for at least one step of this recipe under the current profile, approval-gate setting and trigger; false when for none; null when the effective policy could not be evaluated.",
       },
       steps: { type: "array", items: simStep },
       summary: {
@@ -286,20 +286,47 @@ export function generateSimulationSchema(): unknown {
       },
       approvals: {
         type: "object",
-        required: ["gatedOnRecipeSteps", "projected", "note"],
+        required: ["gatedOnRecipeSteps", "basis", "projected", "note"],
         properties: {
-          gatedOnRecipeSteps: { type: "boolean" },
+          gatedOnRecipeSteps: { type: ["boolean", "null"] },
+          basis: { type: "string", enum: ["effective-policy", "unavailable"] },
+          profile: { type: "string", enum: ["governed", "compat"] },
+          trigger: {
+            type: "string",
+            description:
+              "Trigger the verdicts were computed for (a top-level chained run is evaluated as manual).",
+          },
           note: { type: "string" },
           projected: {
             type: "array",
             items: {
               type: "object",
-              required: ["stepId", "tier", "wouldRequireApproval", "reason"],
+              required: [
+                "stepId",
+                "tier",
+                "wouldRequireApproval",
+                "verdict",
+                "reason",
+              ],
               properties: {
                 stepId: { type: "string" },
                 tool: { type: "string" },
                 tier: riskEnum,
-                wouldRequireApproval: { type: "boolean" },
+                wouldRequireApproval: {
+                  type: ["boolean", "null"],
+                  description:
+                    "True when the runner would hold this step for a human; null when the verdict is unknown.",
+                },
+                verdict: {
+                  type: "string",
+                  enum: [
+                    "ALLOW",
+                    "HUMAN_APPROVAL_REQUIRED",
+                    "REFUSED",
+                    "unknown",
+                  ],
+                },
+                consultsApproval: { type: "boolean" },
                 reason: { type: "string" },
               },
             },

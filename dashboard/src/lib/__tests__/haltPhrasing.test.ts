@@ -42,6 +42,13 @@ describe("ownerHaltPhrase", () => {
     }
   });
 
+  it("agent_auth says to sign in, and does not offer the connector reconnect", () => {
+    const p = ownerHaltPhrase("agent_auth");
+    expect(p.sentence).toMatch(/sign(ed)? in/i);
+    expect(p.sentence).toMatch(/AI provider/);
+    expect(p.fix).not.toBe("reconnect");
+  });
+
   it("uses a generic service when none is given for auth_failure", () => {
     expect(ownerHaltPhrase("auth_failure").sentence).toMatch(/the service it needs/);
   });
@@ -50,6 +57,7 @@ describe("ownerHaltPhrase", () => {
     const banned = /expect:|tokensMax|connector|cron|LCB|disposition|actionClass/i;
     const cats: HaltCategory[] = [
       "auth_failure",
+      "agent_auth",
       "missing_connector",
       "rate_limited",
       "network_error",

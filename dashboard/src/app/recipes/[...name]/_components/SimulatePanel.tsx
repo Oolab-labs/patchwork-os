@@ -4,13 +4,14 @@
  * What-If Preview panel — the dashboard home for `recipe simulate`. Calls the
  * bridge `GET /recipes/:name/simulate` (via the `/api/bridge/recipes/simulate`
  * proxy) and renders the static counterfactual: projected actions, side-effect
- * taxonomy, blast-radius risk, a tier-only approval projection, a cost
+ * taxonomy, blast-radius risk, the per-step approval verdicts, a cost
  * projection (history band or heuristic), the simulation fidelity
  * (static/mocked), and per-branch outcomes. Executes nothing.
  *
  * The bridge owns the simulation (single source of truth); this only renders
- * it — and surfaces the `gatedOnRecipeSteps=false` honesty caveat loudly so the
- * approval projection is never read as live gate behaviour.
+ * it. The approval line reports `gatedOnRecipeSteps` exactly as computed from
+ * the effective policy the runners consult — gated, not gated, or (null)
+ * unknown — and never fills an unknown in with a guess.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -58,7 +59,10 @@ export function SimulatePanel({
   }, [autoRun, run]);
 
   const gating = report?.approvals.projected.filter(
-    (a) => a.wouldRequireApproval,
+    (a) => a.wouldRequireApproval === true,
+  ).length;
+  const refused = report?.approvals.projected.filter(
+    (a) => a.verdict === "REFUSED",
   ).length;
 
   return (
@@ -174,16 +178,28 @@ export function SimulatePanel({
             · {report.summary.agentSteps} agent step(s)
           </div>
 
-          {/* Approvals — loud honesty caveat */}
+          {/* Approvals — the runtime's own verdict, or an explicit unknown */}
           <div style={{ fontSize: "var(--fs-xs)" }}>
             <span className="mono muted" style={{ fontSize: "var(--fs-2xs)" }}>
               approvals:{" "}
             </span>
-            {gating} step(s) would gate
-            {!report.gatedOnRecipeSteps && (
+            {report.gatedOnRecipeSteps === null ? (
               <span style={{ color: "var(--warn)" }}>
+                unknown — the effective policy could not be evaluated
+              </span>
+            ) : report.gatedOnRecipeSteps ? (
+              <>
+                {gating} step(s) would wait for approval
+                {(refused ?? 0) > 0 && `, ${refused} would be refused`}
+              </>
+            ) : (
+              "no step would wait for approval"
+            )}
+            {report.approvals.profile && (
+              <span className="muted">
                 {" "}
-                — but recipe steps are NOT gated today (projection only)
+                ({report.approvals.profile} profile,{" "}
+                {report.approvals.trigger ?? report.triggerType} run)
               </span>
             )}
           </div>

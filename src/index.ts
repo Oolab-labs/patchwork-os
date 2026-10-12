@@ -3234,8 +3234,8 @@ if (process.argv[2] === "recipe" && process.argv[3] === "preflight") {
 
 // `recipe simulate <name|file>` — What-If Preview. Statically simulates a
 // recipe before it is enabled: projected actions, side-effect taxonomy,
-// blast-radius risk, tier-only approval projection (honestly flagged as NOT
-// gated on recipe steps today), low-confidence cost, and undetermined
+// blast-radius risk, per-step approval verdicts from the effective policy the
+// runners consult, low-confidence cost, and undetermined
 // conditional branches. Executes nothing. See runRecipeSimulate in
 // commands/recipe.ts.
 if (process.argv[2] === "recipe" && process.argv[3] === "simulate") {
@@ -3335,11 +3335,21 @@ if (process.argv[2] === "recipe" && process.argv[3] === "simulate") {
         } · ${report.summary.agentSteps} agent step(s)\n`,
       );
       const gating = report.approvals.projected.filter(
-        (a) => a.wouldRequireApproval,
+        (a) => a.wouldRequireApproval === true,
       ).length;
-      out.write(
-        `  Approvals: ${gating} step(s) would gate IF recipe steps were gated — they are NOT gated today\n`,
-      );
+      const refused = report.approvals.projected.filter(
+        (a) => a.verdict === "REFUSED",
+      ).length;
+      const gatedLine =
+        report.gatedOnRecipeSteps === null
+          ? "unknown — the effective policy could not be evaluated"
+          : report.gatedOnRecipeSteps
+            ? `${gating} step(s) would wait for a human${refused > 0 ? `, ${refused} would be refused` : ""}`
+            : "none — the approval gate is not consulted for this recipe's steps";
+      const scope = report.approvals.profile
+        ? ` (${report.approvals.profile} profile, ${report.approvals.trigger ?? report.triggerType} run)`
+        : "";
+      out.write(`  Approvals${scope}: ${gatedLine}\n`);
       {
         const c = report.cost;
         const toks =

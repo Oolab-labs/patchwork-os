@@ -51,6 +51,8 @@ import "../recipes/tools/index.js";
 
 export interface ExplainStep {
   stepId: string;
+  /** Position of the step in the recipe's `steps:` list (0-based). */
+  index: number;
   toolId: string;
   input: EffectivePolicyInput;
   result: EffectivePolicy;
@@ -93,6 +95,13 @@ export async function explainRecipePolicy(
   const name = typeof raw.name === "string" ? raw.name : ref;
   const trigger = ((raw.trigger as { type?: string } | undefined)?.type ??
     "manual") as TriggerKind;
+  // The trigger the RUNNER evaluates. A top-level chained run is the
+  // user-dispatched case, and `chainedRunner` passes `trigger: "manual"` to
+  // `computeEffectivePolicy` for it (cron and webhooks route to the flat
+  // runner, never to a chained recipe). Explaining it as "chained" made the
+  // compat profile report its steps as ungated while the runner gated them.
+  const evaluatedTrigger: TriggerKind =
+    trigger === "chained" ? "manual" : trigger;
   let cfg = opts.config;
   if (!cfg) {
     try {
@@ -186,6 +195,7 @@ export async function explainRecipePolicy(
       (typeof step.into === "string" && step.into) ||
       (agent && typeof agent.into === "string" && agent.into) ||
       `step_${n}`;
+    const index = n;
     n++;
     if (!toolId) continue; // compound / nested steps are governed by their children
     if (opts.tool && opts.tool !== toolId) continue;
@@ -288,7 +298,7 @@ export async function explainRecipePolicy(
           requireApproval: raw.requireApproval,
         }),
       },
-      trigger,
+      trigger: evaluatedTrigger,
       tool,
       ...(worker && { worker }),
       ...(privacy && { privacy }),
@@ -296,6 +306,7 @@ export async function explainRecipePolicy(
     };
     steps.push({
       stepId,
+      index,
       toolId,
       input,
       result: computeEffectivePolicy(input),

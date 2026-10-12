@@ -2425,8 +2425,8 @@ export function tryHandleRecipeRoute(
 
   // GET /recipes/:name/simulate — What-If Preview: static counterfactual
   // simulation of a recipe by name (projected actions, side-effect taxonomy,
-  // blast-radius risk, tier-only approval projection honestly flagged as NOT
-  // gated on recipe steps today, low-confidence cost, undetermined branches).
+  // blast-radius risk, per-step approval verdicts from the effective policy the
+  // runners consult, low-confidence cost, undetermined branches).
   // Executes nothing; superset of the dry-run plan. See runRecipeSimulate.
   const recipeSimulateMatch =
     req.method === "GET"
