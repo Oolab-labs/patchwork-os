@@ -509,6 +509,12 @@ export class Server extends EventEmitter<ServerEvents> {
    * applies without a bridge restart. Null in tests + headless tooling.
    */
   public onScheduleSettingsChangedFn: (() => void) | null = null;
+  /**
+   * Patchwork: set by bridge to report each scheduled recipe's next fire time
+   * (epoch ms), read from the running RecipeScheduler. GET /recipes adds it as
+   * `nextRunAt`. Null in tests + headless tooling, which omits the field.
+   */
+  public nextRunTimesFn: (() => ReadonlyMap<string, number>) | null = null;
   /** Patchwork: admin-controlled managed settings path (highest rule precedence). */
   public managedSettingsPath: string | undefined = undefined;
   /** Effective bridge config path to update when dashboard saves driver changes. */
@@ -1872,6 +1878,7 @@ export class Server extends EventEmitter<ServerEvents> {
           generateRecipeFn: this.generateRecipeFn,
           repairRecipeFn: this.repairRecipeFn,
           recipesFn: this.recipesFn,
+          nextRunTimesFn: this.nextRunTimesFn,
           loadRecipeContentFn: this.loadRecipeContentFn,
           saveRecipeContentFn: this.saveRecipeContentFn,
           deleteRecipeContentFn: this.deleteRecipeContentFn,

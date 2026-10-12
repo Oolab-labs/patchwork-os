@@ -171,6 +171,8 @@ interface Recipe {
   trustLevel?: TrustLevel;
   vars?: RecipeVar[];
   lastRun?: number;
+  /** Next scheduled fire time (epoch ms), from the bridge scheduler. Absent when not scheduled. */
+  nextRunAt?: number;
   lint?: {
     ok: boolean;
     errorCount: number;

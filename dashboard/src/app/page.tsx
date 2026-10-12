@@ -79,6 +79,8 @@ interface Recipe {
   name: string;
   enabled?: boolean;
   lastRun?: number;
+  /** Next scheduled fire time (epoch ms), from the bridge scheduler. Absent when not scheduled. */
+  nextRunAt?: number;
   installedAt?: number;
   schedule?: string;
   trigger?: { type?: string } | string;

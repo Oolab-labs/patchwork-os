@@ -631,6 +631,11 @@ export interface RecipeRouteDeps {
       }>)
     | null;
   recipesFn: (() => Record<string, unknown>) | null;
+  /**
+   * Next fire time (epoch ms) per scheduled recipe name, from the scheduler
+   * that will fire it. Optional so existing dep structs need no change.
+   */
+  nextRunTimesFn?: (() => ReadonlyMap<string, number>) | null;
   loadRecipeContentFn:
     | ((name: string) => { content: string; path: string } | null)
     | null;
@@ -913,6 +918,37 @@ async function writePlanForRun(
   const plan = await deps.runPlanFn(recipeName);
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ plan }));
+}
+
+/**
+ * Add `nextRunAt` (epoch ms) to each listed recipe the scheduler has a next
+ * fire time for. A recipe with no entry gets no field — never 0, never a
+ * guess — and a failing lookup leaves the list itself untouched, because a
+ * missing "next run" must not cost the operator the whole recipe list.
+ */
+function withNextRunAt(
+  data: Record<string, unknown>,
+  nextRunTimesFn: (() => ReadonlyMap<string, number>) | null | undefined,
+): Record<string, unknown> {
+  if (!nextRunTimesFn || !Array.isArray(data.recipes)) return data;
+  let next: ReadonlyMap<string, number>;
+  try {
+    next = nextRunTimesFn();
+  } catch {
+    return data;
+  }
+  if (next.size === 0) return data;
+  return {
+    ...data,
+    recipes: data.recipes.map((r: unknown) => {
+      if (!r || typeof r !== "object") return r;
+      const name = (r as { name?: unknown }).name;
+      if (typeof name !== "string") return r;
+      const at = next.get(name);
+      if (typeof at !== "number" || !Number.isFinite(at) || at <= 0) return r;
+      return { ...(r as Record<string, unknown>), nextRunAt: at };
+    }),
+  };
 }
 
 export function tryHandleRecipeRoute(
@@ -2641,7 +2677,10 @@ export function tryHandleRecipeRoute(
 
   if (parsedUrl.pathname === "/recipes" && req.method === "GET") {
     try {
-      const data = deps.recipesFn?.() ?? { recipesDir: null, recipes: [] };
+      const data = withNextRunAt(
+        deps.recipesFn?.() ?? { recipesDir: null, recipes: [] },
+        deps.nextRunTimesFn,
+      );
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(data));
     } catch (err) {
