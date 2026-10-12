@@ -48,6 +48,12 @@ export interface JudgeVerdict {
   fixList?: string[];
   /** Original model text when parsing failed (or for audit). */
   raw?: string;
+  /**
+   * Present instead of `reasons` / `fixList` / `raw` text when the run used a
+   * text or file input (`withheldOutputs.ts`): the verdict kind is kept and
+   * the free text, which can quote the artefact, is not recorded.
+   */
+  textWithheld?: import("./withheldOutputs.js").OutputWithheld;
 }
 
 /**

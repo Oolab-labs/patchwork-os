@@ -114,6 +114,7 @@ import {
   type OutputWithheld,
   outputWithheldMarker,
   runWithholdsOutputs,
+  withholdAssertionFailures,
 } from "./withheldOutputs.js";
 // TYPE-ONLY on purpose. `yamlRunner` imports this module dynamically to break
 // the cycle (see `loadRecipeServers` below); a value import here would close
@@ -1412,7 +1413,9 @@ export async function executeChainedStep(
       }
       let agentExpectWarnings: string[] | undefined;
       if (step.expect) {
-        const failures = await evaluateStepExpect(step.expect, result);
+        const failures = await evaluateStepExpect(step.expect, result, {
+          withholdActual: options.withholdOutputs === true,
+        });
         if (failures.length > 0) {
           if ((step.expect.on_fail ?? "halt") === "halt") {
             return {
@@ -1514,7 +1517,9 @@ export async function executeChainedStep(
       }
       let toolExpectWarnings: string[] | undefined;
       if (step.expect) {
-        const failures = await evaluateStepExpect(step.expect, result);
+        const failures = await evaluateStepExpect(step.expect, result, {
+          withholdActual: options.withholdOutputs === true,
+        });
         if (failures.length > 0) {
           if ((step.expect.on_fail ?? "halt") === "halt") {
             return {
@@ -2379,6 +2384,11 @@ async function runChainedRecipeHeld(
         },
         recipe.expect,
       );
+      // Same rule as the flat path: the value that failed is this run's own
+      // output, so a run with a text or file input records only its marker.
+      if (options.withholdOutputs === true) {
+        assertionFailures = withholdAssertionFailures(assertionFailures);
+      }
     } catch {
       // Same posture as the flat path: never let contract evaluation break a
       // run that already finished.

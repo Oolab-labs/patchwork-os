@@ -200,6 +200,9 @@ import {
   type OutputWithheld,
   outputWithheldMarker,
   runWithholdsOutputs,
+  withheldValueNote,
+  withholdAssertionFailures,
+  withholdJudgeVerdict,
 } from "./withheldOutputs.js";
 import { resolveWorkspaceRoot } from "./workspaceRoot.js";
 import "./tools/index.js";
@@ -428,7 +431,13 @@ export interface YamlRecipeExpect {
 export interface AssertionFailure {
   assertion: string;
   expected: unknown;
-  actual: unknown;
+  /** Absent when withheld — see `actualWithheld`. */
+  actual?: unknown;
+  /**
+   * Present instead of `actual` in a run that used a text or file input
+   * (`withheldOutputs.ts`): the value that failed is the run's own output.
+   */
+  actualWithheld?: OutputWithheld;
   message: string;
 }
 
@@ -545,6 +554,13 @@ function stringifyForAssert(value: unknown): string {
 export async function evaluateStepExpect(
   expect: StepExpect,
   value: unknown,
+  opts?: {
+    /**
+     * The run used a text or file input (`withheldOutputs.ts`): a message
+     * that would quote the checked value names its length and hash instead.
+     */
+    withholdActual?: boolean;
+  },
 ): Promise<string[]> {
   const failures: string[] = [];
   const asString = stringifyForAssert(value);
@@ -555,7 +571,11 @@ export async function evaluateStepExpect(
       typeof expected === "string" ? expected : stringifyForAssert(expected);
     if (asString !== expectedStr) {
       failures.push(
-        `equals: expected ${JSON.stringify(expectedStr)}, got ${JSON.stringify(asString)}`,
+        `equals: expected ${JSON.stringify(expectedStr)}, got ${
+          opts?.withholdActual === true
+            ? withheldValueNote(asString)
+            : JSON.stringify(asString)
+        }`,
       );
     }
   }
@@ -2301,6 +2321,14 @@ async function runYamlRecipeHeld(
     };
   }
 
+  // What a judge step RECORDS: the verdict as parsed, or — in a run with a
+  // text or file input — its kind only (`withholdJudgeVerdict`). The loop
+  // itself keeps reading the full verdict; only the recorded copy changes.
+  const recordedVerdict = (
+    v: import("./judgeVerdict.js").JudgeVerdict,
+  ): import("./judgeVerdict.js").JudgeVerdict =>
+    withholdOutputs ? withholdJudgeVerdict(v) : v;
+
   const runJudgeRefineLoop = async (params: {
     agentCfg: NonNullable<YamlStep["agent"]>;
     reviewsKey: string;
@@ -2478,7 +2506,7 @@ async function runYamlRecipeHeld(
       // staged draft.
       if (currentVerdict.verdict === "unparseable") {
         const reason = `judge "${judgeStepId}" returned an unparseable verdict after revision`;
-        judgeStepResult.judgeVerdict = currentVerdict;
+        judgeStepResult.judgeVerdict = recordedVerdict(currentVerdict);
         judgeStepResult.revisions = revisions;
         judgeStepResult.status = "error";
         judgeStepResult.error = reason;
@@ -2497,7 +2525,7 @@ async function runYamlRecipeHeld(
     }
 
     // Record the FINAL verdict + the revision count on the judge step result.
-    judgeStepResult.judgeVerdict = currentVerdict;
+    judgeStepResult.judgeVerdict = recordedVerdict(currentVerdict);
     judgeStepResult.revisions = revisions;
 
     // EXHAUSTION: still requesting changes after the loop.
@@ -3259,7 +3287,12 @@ async function runYamlRecipeHeld(
                 id: stepId,
                 tool: "agent",
                 status: "ok",
-                ...(judgeVerdict !== undefined && { judgeVerdict }),
+                // The verdict's free text can quote the artefact it reviewed:
+                // in a protected run only the verdict kind is recorded. The
+                // refine loop below reads the full local `judgeVerdict`.
+                ...(judgeVerdict !== undefined && {
+                  judgeVerdict: recordedVerdict(judgeVerdict),
+                }),
                 // Flat agent rows never capture the answer; in a run with a
                 // text or file input they say so, so a reader can tell
                 // "withheld" from "nothing produced".
@@ -3310,6 +3343,7 @@ async function runYamlRecipeHeld(
                 const failures = await evaluateStepExpect(
                   step.expect,
                   ctx[intoKey],
+                  { withholdActual: withholdOutputs },
                 );
                 if (failures.length > 0) {
                   const onFail = step.expect.on_fail ?? "halt";
@@ -3731,7 +3765,9 @@ async function runYamlRecipeHeld(
         // the ctx commit by nulling `result` so the downstream `if (step.into)`
         // block skips. Composes with `optional: true` / `on_error.fallback`.
         if (step.expect && !thrownError && !stepError && result !== null) {
-          const failures = await evaluateStepExpect(step.expect, result);
+          const failures = await evaluateStepExpect(step.expect, result, {
+            withholdActual: withholdOutputs,
+          });
           if (failures.length > 0) {
             const onFail = step.expect.on_fail ?? "halt";
             const last = stepResults[stepResults.length - 1];
@@ -3806,6 +3842,11 @@ async function runYamlRecipeHeld(
         { stepsRun, outputs, context: ctx, errorMessage: runError },
         recipe.expect,
       );
+      // The value that failed is this run's own output: in a run with a text
+      // or file input, record its length and hash, never the value.
+      if (withholdOutputs) {
+        assertionFailures = withholdAssertionFailures(assertionFailures);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       runError = runError ?? `expect evaluation failed: ${msg}`;

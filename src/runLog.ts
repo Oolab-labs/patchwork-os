@@ -175,7 +175,10 @@ export interface RecipeRun {
   assertionFailures?: Array<{
     assertion: string;
     expected: unknown;
-    actual: unknown;
+    /** Absent when withheld — see `actualWithheld`. */
+    actual?: unknown;
+    /** Present instead of `actual` in a run with a text or file input. */
+    actualWithheld?: OutputWithheld;
     message: string;
   }>;
   /**

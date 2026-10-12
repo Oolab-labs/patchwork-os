@@ -163,3 +163,93 @@ export function replayWithheldMessage(stepIds: readonly string[]): string {
     "Mocked replay has no evidence to replay from; nothing was dispatched."
   );
 }
+
+// ---------------------------------------------------------------------------
+// Assertion failures and judge verdicts
+// ---------------------------------------------------------------------------
+//
+// Two channels carry ANSWER TEXT without being a step output, so withholding
+// step outputs did not reach them:
+//
+// - A completion-contract (`expect`) failure records the `actual` value that
+//   failed, and its message quotes it. When the checked value is the model's
+//   answer, that is the operator's material again.
+// - A judge verdict carries free-text `reasons`, a `fixList`, and, when the
+//   reply did not parse, the `raw` model text — all of which can quote the
+//   artefact under review.
+//
+// In a protected run the STRUCTURE survives (assertion id, the
+// recipe-authored `expected`, the verdict kind) and the text is replaced by
+// the same marker shape as a withheld output. Runs without such an input are
+// untouched.
+
+/** The fields of a run-level assertion failure this module rewrites. */
+export interface WithheldAssertionFields {
+  assertion: string;
+  expected: unknown;
+  actual?: unknown;
+  /** Present instead of `actual` when the run withheld its outputs. */
+  actualWithheld?: OutputWithheld;
+  message: string;
+}
+
+/**
+ * Replace each failure's `actual` (and the message that quotes it) with a
+ * marker. A failure whose `actual` is `undefined` — a missing key — quotes
+ * nothing and is returned unchanged.
+ */
+export function withholdAssertionFailures<T extends WithheldAssertionFields>(
+  failures: readonly T[],
+): T[] {
+  return failures.map((f) => {
+    if (f.actual === undefined) return f;
+    const { actual, ...rest } = f;
+    return {
+      ...rest,
+      actualWithheld: outputWithheldMarker(actual),
+      message:
+        `${f.assertion}: actual value withheld (run used a text or file ` +
+        `input); expected ${JSON.stringify(f.expected)}`,
+    } as T;
+  });
+}
+
+/**
+ * What a step-level `expect` message says in place of the value it would
+ * otherwise quote.
+ */
+export function withheldValueNote(value: string): string {
+  const m = outputWithheldMarker(value);
+  return (
+    "a value withheld (run used a text or file input; " +
+    `length ${m.length}, sha256 ${m.sha256.slice(0, 12)})`
+  );
+}
+
+/** The free-text-bearing shape of a judge verdict. */
+interface JudgeVerdictLike {
+  verdict: string;
+  reasons: string[];
+  fixList?: string[];
+  raw?: string;
+  textWithheld?: OutputWithheld;
+}
+
+/**
+ * Keep the verdict kind; replace `reasons`, `fixList` and `raw` with one
+ * marker over exactly the text removed.
+ */
+export function withholdJudgeVerdict<T extends JudgeVerdictLike>(v: T): T {
+  if (v.textWithheld !== undefined) return v;
+  const { reasons, fixList, raw, ...rest } = v;
+  const removed = {
+    reasons,
+    ...(fixList !== undefined && { fixList }),
+    ...(raw !== undefined && { raw }),
+  };
+  return {
+    ...rest,
+    reasons: [],
+    textWithheld: outputWithheldMarker(removed),
+  } as unknown as T;
+}
