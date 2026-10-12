@@ -41,7 +41,7 @@ Written by `patchwork init`, edited by the dashboard settings page, and safe to 
 | `approvalGate` | `"off"` \| `"high"` \| `"all"` | Mirrors `--approval-gate`. Under `governed` the effective floor is `high`. |
 | `approvalTimeouts` | `{ low, medium, high }` in ms | Per-tier auto-expiry; `0` means hold until a human decides. |
 | `dashboard` | `{ port, requireApproval, pushNotifications, webhookUrl }` | Dashboard port (default 3200), which tiers the dashboard surfaces, push on/off. |
-| `recipes` | `{ disabled: [...], timezone }` | Recipes to skip, and the IANA timezone for cron schedules (default UTC). |
+| `recipes` | `{ disabled: [...], timezone }` | Recipes to skip, and the IANA timezone for cron schedules (default UTC). `timezone` is also settable at runtime via `POST /settings` `{ "timezone": "Europe/London" }` (`""` resets to UTC); cron jobs are re-registered in the new zone without a restart, and `GET /status` reports the effective zone as `patchwork.timezone`. |
 | `recipesDir` | path | Where recipes live; defaults to `recipes/` under the home. |
 | `plugins.allow` | `[{ spec, version?, integrity? }]` | The allowlist of recipe `servers:` plugins. Under `governed` a plugin not listed is refused at install, save, lint and load. `integrity` is a `sha256-<base64>` over the entrypoint, checked when present. |
 | `privacy.destinations` | map of id → destination | The **enforcing** information-boundary registry. Each destination: `type: "local" \| "remote"`, `classifications: [...]` it accepts, optional `forbiddenCategories`, optional `approvable`, and `drivers: [...]` naming the model drivers it covers. Registering the first destination is the opt-in; after that the boundary fails closed. |

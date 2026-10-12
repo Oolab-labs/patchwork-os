@@ -253,6 +253,28 @@ function fileStamp(path: string): { mtimeMs: number; size: number } {
   }
 }
 
+/** Default zone for cron schedules when `recipes.timezone` is unset. */
+export const DEFAULT_SCHEDULE_TIMEZONE = "UTC";
+
+/**
+ * The zone cron schedules actually run in. Single calculation shared by the
+ * scheduler and the status payload, so what is reported is what is used.
+ * An empty string is treated as unset.
+ */
+export function effectiveScheduleTimezone(cfg: PatchworkConfig): string {
+  return cfg.recipes?.timezone || DEFAULT_SCHEDULE_TIMEZONE;
+}
+
+/** True when `tz` is an IANA time zone this runtime's Intl data recognises. */
+export function isValidIanaTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Clear the loadConfig cache. Exposed for tests and after saveConfig. */
 export function clearConfigCache(): void {
   _configCache.clear();

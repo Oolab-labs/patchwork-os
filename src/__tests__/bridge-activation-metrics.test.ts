@@ -213,6 +213,80 @@ describe("Bridge activation metrics", () => {
     }
   });
 
+  describe("schedule timezone (GET /status + reschedule wiring)", () => {
+    let prevPatchworkHome: string | undefined;
+    beforeEach(async () => {
+      prevPatchworkHome = process.env.PATCHWORK_HOME;
+      process.env.PATCHWORK_HOME = path.join(tempDir, ".patchwork");
+      fs.mkdirSync(process.env.PATCHWORK_HOME, { recursive: true });
+      const { clearConfigCache } = await import("../patchworkConfig.js");
+      clearConfigCache();
+    });
+    afterEach(async () => {
+      if (prevPatchworkHome === undefined) delete process.env.PATCHWORK_HOME;
+      else process.env.PATCHWORK_HOME = prevPatchworkHome;
+      const { clearConfigCache } = await import("../patchworkConfig.js");
+      clearConfigCache();
+    });
+
+    type StatusServer = {
+      statusFn: (() => { patchwork?: { timezone?: string } }) | null;
+      onScheduleSettingsChangedFn: (() => void) | null;
+    };
+
+    it("reports UTC when recipes.timezone is unset", async () => {
+      const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-tz0-"));
+      const bridge = new Bridge(makeConfig(workspace));
+      try {
+        await bridge.start();
+        const server = (bridge as unknown as { server: StatusServer }).server;
+        expect(server.statusFn?.().patchwork?.timezone).toBe("UTC");
+      } finally {
+        await bridge.stop();
+      }
+    });
+
+    it("reports the configured recipes.timezone", async () => {
+      fs.writeFileSync(
+        path.join(process.env.PATCHWORK_HOME as string, "config.json"),
+        JSON.stringify({ recipes: { timezone: "Asia/Tokyo" } }),
+      );
+      const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-tz1-"));
+      const bridge = new Bridge(makeConfig(workspace));
+      try {
+        await bridge.start();
+        const server = (bridge as unknown as { server: StatusServer }).server;
+        expect(server.statusFn?.().patchwork?.timezone).toBe("Asia/Tokyo");
+      } finally {
+        await bridge.stop();
+      }
+    });
+
+    it("wires onScheduleSettingsChangedFn to restart the recipe scheduler", async () => {
+      const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-tz2-"));
+      const bridge = new Bridge(makeConfig(workspace));
+      try {
+        await bridge.start();
+        const internals = bridge as unknown as {
+          server: StatusServer;
+          recipeScheduler: { restart: () => void } | null;
+        };
+        expect(typeof internals.server.onScheduleSettingsChangedFn).toBe(
+          "function",
+        );
+        expect(internals.recipeScheduler).not.toBeNull();
+        const restart = vi.spyOn(
+          internals.recipeScheduler as { restart: () => void },
+          "restart",
+        );
+        internals.server.onScheduleSettingsChangedFn?.();
+        expect(restart).toHaveBeenCalledTimes(1);
+      } finally {
+        await bridge.stop();
+      }
+    });
+  });
+
   it("records a successful YAML recipe run", async () => {
     yamlRunnerModule.dispatchRecipe.mockResolvedValue({
       success: true,

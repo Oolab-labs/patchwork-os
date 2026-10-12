@@ -57,6 +57,7 @@ import { tryHandleMcpRoute } from "./mcpRoutes.js";
 import type { OAuthServer } from "./oauth.js";
 import { tryHandleOAuthRoute } from "./oauthRoutes.js";
 import {
+  isValidIanaTimezone,
   loadConfig as loadPatchworkConfig,
   type PatchworkConfig,
   defaultConfigPath as patchworkConfigPath,
@@ -502,6 +503,12 @@ export class Server extends EventEmitter<ServerEvents> {
    * the callback as best-effort fire-and-forget.
    */
   public onRecipesChangedFn: (() => void) | null = null;
+  /**
+   * Patchwork: set by bridge to re-register cron jobs after POST /settings
+   * changes a schedule-affecting field (`recipes.timezone`), so the new zone
+   * applies without a bridge restart. Null in tests + headless tooling.
+   */
+  public onScheduleSettingsChangedFn: (() => void) | null = null;
   /** Patchwork: admin-controlled managed settings path (highest rule precedence). */
   public managedSettingsPath: string | undefined = undefined;
   /** Effective bridge config path to update when dashboard saves driver changes. */
@@ -2003,6 +2010,7 @@ export class Server extends EventEmitter<ServerEvents> {
           approvalGate?: string;
           approvalTimeouts?: Record<string, unknown>;
           enableTimeOfDayAnomaly?: boolean;
+          timezone?: string;
           driver?: string;
           model?: string;
           localEndpoint?: string;
@@ -2033,6 +2041,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 "approvalGate",
                 "approvalTimeouts",
                 "enableTimeOfDayAnomaly",
+                "timezone",
                 "driver",
                 "model",
                 "localEndpoint",
@@ -2164,6 +2173,28 @@ export class Server extends EventEmitter<ServerEvents> {
             ) {
               respond400("enableTimeOfDayAnomaly must be a boolean");
               return;
+            }
+
+            // timezone — IANA zone for cron schedules (`recipes.timezone`).
+            // Empty string = reset to the default (UTC).
+            let timezoneValidated: string | undefined;
+            if (body.timezone !== undefined) {
+              if (typeof body.timezone !== "string") {
+                respond400("timezone must be a string");
+                return;
+              }
+              const tz = body.timezone.trim();
+              if (tz.length > 64) {
+                respond400("timezone must be at most 64 characters");
+                return;
+              }
+              if (tz !== "" && !isValidIanaTimezone(tz)) {
+                respond400(
+                  "timezone must be a valid IANA time zone (e.g. Europe/London)",
+                );
+                return;
+              }
+              timezoneValidated = tz;
             }
 
             // driver
@@ -2380,6 +2411,16 @@ export class Server extends EventEmitter<ServerEvents> {
             if (body.enableTimeOfDayAnomaly !== undefined) {
               cfg.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
             }
+            if (timezoneValidated !== undefined) {
+              // Copy, never mutate in place: sibling keys (`disabled`) are
+              // preserved; an empty value removes the key so the scheduler
+              // falls back to its default.
+              const recipes = { ...cfg.recipes };
+              if (timezoneValidated === "") delete recipes.timezone;
+              else recipes.timezone = timezoneValidated;
+              cfg.recipes =
+                Object.keys(recipes).length > 0 ? recipes : undefined;
+            }
             if (driverRaw !== undefined) {
               cfg.driver = driverRaw as NonNullable<PatchworkConfig["driver"]>;
             }
@@ -2530,6 +2571,21 @@ export class Server extends EventEmitter<ServerEvents> {
             if (body.enableTimeOfDayAnomaly !== undefined) {
               this.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
             }
+            if (
+              timezoneValidated !== undefined &&
+              this.onScheduleSettingsChangedFn
+            ) {
+              // Re-register cron jobs in the new zone. Best-effort: the config
+              // is already saved, so a failure here means the zone applies on
+              // the next scheduler start rather than the request failing.
+              try {
+                this.onScheduleSettingsChangedFn();
+              } catch (err) {
+                this.logger.warn(
+                  `[/settings] reschedule after timezone change failed: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            }
             if (hasWebhookUpdate) {
               this.approvalWebhookUrl = webhookRaw || undefined;
             }
@@ -2578,6 +2634,8 @@ export class Server extends EventEmitter<ServerEvents> {
                 changes.approvalTimeouts = approvalTimeoutsValidated;
               if (body.enableTimeOfDayAnomaly !== undefined)
                 changes.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
+              if (timezoneValidated !== undefined)
+                changes.timezone = timezoneValidated;
               if (driverRaw !== undefined) changes.driver = driverRaw;
               if (body.model !== undefined) changes.model = body.model;
               if (body.localEndpoint !== undefined)

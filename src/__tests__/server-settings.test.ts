@@ -1371,3 +1371,175 @@ describe("POST /settings — approvalTimeouts", () => {
     expect(fields).toContain("approvalTimeouts");
   });
 });
+
+describe("POST /settings — schedule timezone", () => {
+  // Cron schedules run in `recipes.timezone` (scheduler.ts). This makes it
+  // settable over HTTP, validated as an IANA zone, and re-primes the
+  // scheduler so the new zone applies without a bridge restart.
+  async function postTimezone(timezone: unknown) {
+    return makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ timezone }),
+    );
+  }
+
+  async function freshConfig(recipes?: Record<string, unknown>) {
+    // A FRESH object per test: the file-level mock returns one shared
+    // reference, and a timezone written by one test must not leak into the
+    // next one's assertions.
+    const pw = await import("../patchworkConfig.js");
+    vi.mocked(pw.loadConfig).mockReturnValueOnce({
+      dashboard: {
+        port: 3000,
+        requireApproval: ["high"],
+        pushNotifications: false,
+      },
+      approvalGate: "high",
+      ...(recipes ? { recipes } : {}),
+    } as ReturnType<typeof pw.loadConfig>);
+    const saveSpy = vi.mocked(pw.saveConfig);
+    saveSpy.mockClear();
+    return saveSpy;
+  }
+
+  // For requests refused BEFORE the config is loaded (400 / 423): queueing a
+  // one-shot loadConfig value there would leak it into the next test.
+  async function saveSpyOnly() {
+    const pw = await import("../patchworkConfig.js");
+    const saveSpy = vi.mocked(pw.saveConfig);
+    saveSpy.mockClear();
+    return saveSpy;
+  }
+
+  it("rejects an unknown zone with 400, writes nothing and does not reschedule", async () => {
+    const saveSpy = await saveSpyOnly();
+    const onChange = vi.fn();
+    server!.onScheduleSettingsChangedFn = onChange;
+    const { status, body } = await postTimezone("Mars/Olympus_Mons");
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/timezone/);
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string zone with 400", async () => {
+    const saveSpy = await saveSpyOnly();
+    const { status } = await postTimezone(42);
+    expect(status).toBe(400);
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects a zone longer than 64 characters with 400", async () => {
+    const saveSpy = await saveSpyOnly();
+    const { status, body } = await postTimezone(`Europe/${"A".repeat(60)}`);
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/64/);
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not persist a valid zone when another field fails validation", async () => {
+    const saveSpy = await saveSpyOnly();
+    const onChange = vi.fn();
+    server!.onScheduleSettingsChangedFn = onChange;
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ timezone: "Asia/Tokyo", enableTimeOfDayAnomaly: "x" }),
+    );
+    expect(status).toBe(400);
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("persists a valid zone, keeps sibling recipe keys and reschedules once", async () => {
+    const saveSpy = await freshConfig({ disabled: ["noisy-recipe"] });
+    const onChange = vi.fn();
+    server!.onScheduleSettingsChangedFn = onChange;
+    const { status, body } = await postTimezone("America/New_York");
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toMatchObject({
+      ok: true,
+      restartRequired: false,
+    });
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    const persisted = saveSpy.mock.calls[0]![0] as unknown as {
+      recipes?: { timezone?: string; disabled?: string[] };
+    };
+    expect(persisted.recipes).toEqual({
+      disabled: ["noisy-recipe"],
+      timezone: "America/New_York",
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("empty string resets to the default by removing the key", async () => {
+    const saveSpy = await freshConfig({
+      disabled: ["noisy-recipe"],
+      timezone: "Asia/Tokyo",
+    });
+    const onChange = vi.fn();
+    server!.onScheduleSettingsChangedFn = onChange;
+    const { status } = await postTimezone("");
+    expect(status).toBe(200);
+    const persisted = saveSpy.mock.calls[0]![0] as unknown as {
+      recipes?: { timezone?: string; disabled?: string[] };
+    };
+    expect(persisted.recipes).toEqual({ disabled: ["noisy-recipe"] });
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reschedule when the body does not touch timezone", async () => {
+    await freshConfig();
+    const onChange = vi.fn();
+    server!.onScheduleSettingsChangedFn = onChange;
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ enableTimeOfDayAnomaly: true }),
+    );
+    expect(status).toBe(200);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("still succeeds when the reschedule callback throws (config is already saved)", async () => {
+    const saveSpy = await freshConfig();
+    server!.onScheduleSettingsChangedFn = () => {
+      throw new Error("boom");
+    };
+    const { status } = await postTimezone("Europe/London");
+    expect(status).toBe(200);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("is refused with 423 while the kill switch is engaged", async () => {
+    const flags = await import("../featureFlags.js");
+    const saveSpy = await saveSpyOnly();
+    flags.setFlag(flags.KILL_SWITCH_WRITES, true);
+    try {
+      const { status } = await postTimezone("Europe/London");
+      expect(status).toBe(423);
+      expect(saveSpy).not.toHaveBeenCalled();
+    } finally {
+      flags.setFlag(flags.KILL_SWITCH_WRITES, false);
+    }
+  });
+});
