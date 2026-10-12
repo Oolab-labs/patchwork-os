@@ -58,6 +58,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-10-12 `feat/text-recipe-inputs` — `trigger.inputs[]` gains `type: text` (+ `maxLength`): prose run inputs validated by declared type (default 16384, cap 65536, no control chars); rendered only into content fields (`text_input_in_identifier` at run time in both runners, and as a lint/save error); wrapped as `input:<name>` untrusted content under governed; held by the value-redaction layer for the run so ledgers record `[text: N chars, sha256:…]`. Run-route body cap 32 KB → 512 KB.
 - 2026-10-12 `fix/inbox-header-on-overwrite` — an inbox `file.write` gets the run header (`recipe/runSeq/trigger/deliveredAt`) on every write, decided by the new content; overwriting a note no longer drops its link to the run. Content with its own `---` block is still written as-is.
 - 2026-10-12 `fix/claude-auth-revoked-token` — a revoked/expired Claude sign-in halts as `agent_auth` with a "Claude needs signing in again" run `errorMessage` (matcher no longer claims a bare 401); `GET /auth/claude/status` reports `loggedIn: false, reason: "needs_signin_again"` when a Claude task was refused for auth after the sign-in was last renewed (`src/claudeAuthHealth.ts`).
 

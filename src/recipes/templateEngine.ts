@@ -47,6 +47,11 @@ export type TemplateError = TemplateCompileError | TemplateEvalError;
  */
 export interface TemplateEvaluateOptions {
   wrap?: (stepId: string, value: string) => string | undefined;
+  /**
+   * Same hook for `{{env.KEY}}` references. Used for `type: text` run inputs,
+   * which reach a chained recipe through `env` (src/recipes/textInputs.ts).
+   */
+  wrapEnv?: (key: string, value: string) => string | undefined;
 }
 
 // Pre-compiled template for performance
@@ -168,6 +173,14 @@ function evaluateCompiled(
       const segs = part.path.split(".");
       if (segs[2] === "data" && segs[1]) {
         const wrapped = opts.wrap(segs[1], result.value);
+        values.push(wrapped === undefined ? result.value : wrapped);
+        continue;
+      }
+    }
+    if (opts?.wrapEnv && part.type === "env") {
+      const key = part.path.split(".")[1];
+      if (key) {
+        const wrapped = opts.wrapEnv(key, result.value);
         values.push(wrapped === undefined ? result.value : wrapped);
         continue;
       }

@@ -71,6 +71,7 @@ import { toolFactsFor } from "../governance/toolFacts.js";
 import {
   isConnectorSource,
   provenanceOf,
+  runInputProvenance,
   type UntrustedProvenance,
   wrapUntrusted,
 } from "../governance/untrustedContent.js";
@@ -163,6 +164,13 @@ import {
   detectSilentFail,
   redactSecretsForPrompt,
 } from "./stepObservation.js";
+import {
+  findTextInputsInIdentifiers,
+  holdTextInputValues,
+  TEXT_INPUT_IN_IDENTIFIER,
+  textInputInIdentifierMessage,
+  textInputNamesOf,
+} from "./textInputs.js";
 import { enforceToolPolicy } from "./toolPolicyCheck.js";
 // Import tool registry and trigger tool self-registration
 import {
@@ -1469,6 +1477,25 @@ export async function runYamlRecipe(
   deps: RunnerDeps = {},
   seedContext: RunContext = {},
 ): Promise<RunResult> {
+  // `type: text` inputs are held by the value-redaction layer for exactly the
+  // life of the run, so no ledger written during it records the prose
+  // (src/recipes/textInputs.ts). Released whatever way the run ends.
+  const releaseTextInputs = holdTextInputValues(
+    textInputNamesOf(recipe),
+    seedContext,
+  );
+  try {
+    return await runYamlRecipeHeld(recipe, deps, seedContext);
+  } finally {
+    releaseTextInputs();
+  }
+}
+
+async function runYamlRecipeHeld(
+  recipe: YamlRecipe,
+  deps: RunnerDeps,
+  seedContext: RunContext,
+): Promise<RunResult> {
   if (recipe.servers?.length) {
     await loadRecipeServers(recipe.servers);
   }
@@ -1494,6 +1521,15 @@ export async function runYamlRecipe(
   // rendered; tool params, `expect` and the run log see the raw value.
   const untrustedProvenance = new Map<string, UntrustedProvenance>();
   const envelopeActive = (deps.governance ?? activeProfile()).untrustedEnvelope;
+  // `type: text` inputs: operator-pasted prose. In a prompt they are data —
+  // the same envelope, under the same profile, as connector output — and they
+  // may never be rendered outside a content field (checked per step below).
+  const textInputNames = textInputNamesOf(recipe);
+  if (envelopeActive) {
+    for (const name of textInputNames) {
+      untrustedProvenance.set(name, runInputProvenance(name));
+    }
+  }
   /**
    * Origins collected during the LAST agent-prompt render.
    *
@@ -2469,6 +2505,44 @@ export async function runYamlRecipe(
           error: msg,
           haltReason: msg,
           haltCategory: "unsupported_step" as HaltCategory,
+          durationMs: 0,
+        });
+        runError = runError ?? msg;
+        haltAfterFailure = true;
+        stepsRun++;
+        persistLiveStepResults();
+        emit("recipe_step_done", {
+          runSeq,
+          recipeName: recipe.name,
+          stepId: stepIdForEmit,
+          status: "error",
+          durationMs: 0,
+          ts: Date.now(),
+        });
+        continue;
+      }
+
+      // A `type: text` input rendered anywhere but a content field. Checked
+      // before ANY of the step renders — the `when:` guard included — so the
+      // value never reaches a path, URL, ref, channel, recipient or id. The
+      // path jail stays as the backstop; this is the rule.
+      const textPlacement = findTextInputsInIdentifiers(
+        step,
+        textInputNames,
+      )[0];
+      if (textPlacement) {
+        const msg = textInputInIdentifierMessage(
+          textPlacement,
+          `step "${stepIdForEmit}"`,
+        );
+        stepResults.push({
+          id: stepIdForEmit,
+          tool: step.agent ? "agent" : step.tool,
+          status: "error",
+          error: msg,
+          errorCode: TEXT_INPUT_IN_IDENTIFIER,
+          haltReason: msg,
+          haltCategory: "policy_denied",
           durationMs: 0,
         });
         runError = runError ?? msg;

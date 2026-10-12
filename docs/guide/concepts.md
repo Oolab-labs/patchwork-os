@@ -24,6 +24,24 @@ A recipe is a YAML file in `~/.patchwork/recipes/` with a `trigger` and `steps`.
 
 Two engines run them. **Flat** recipes (manual, cron, webhook) run their steps top to bottom. **Chained** recipes (`trigger.type: chained`) and the event-triggered kinds run through a second engine that needs an `id` on every step — a missing `id` means the recipe never registers, which `patchwork recipe lint` and `recipe doctor` both report.
 
+A recipe declares its run inputs under `trigger.inputs` (or its alias `trigger.vars`): each has a `name`, and optionally `description`, `required`, `default` and `type`. An input with no type, or `type: string`, is a short token — letters, digits, underscores, spaces and `- . : + @ ,` only, at most 1024 characters — and so is any value supplied for a name the recipe does not declare. To hand a run real prose (pasted notes, a draft, a transcript) declare it `type: text`: any Unicode text including quotes, slashes and line breaks, at most `maxLength` characters (default 16384, never above 65536), with no NUL or other control characters besides newlines and tabs. In exchange a text input may only be rendered into a **content field** — an agent step's `prompt`, the `content` of `file.write`/`file.append`, or the body of a message (`http.post` `body`, Slack `text`/`blocks`, an email's `text`/`html`, …). Referencing it anywhere else — a path, URL, ref, channel, recipient or id — fails the step with `text_input_in_identifier`, and `recipe lint` (and so saving the recipe) reports it first. Under `governed` a text input is wrapped as untrusted content in a prompt, like connector output, labelled `input:<name>`. Its value is never written to a ledger: the run log, approval queue and activity log record `[text: N chars, sha256:…]` instead.
+
+```yaml
+trigger:
+  type: manual
+  inputs:
+    - name: materials
+      type: text
+      maxLength: 20000
+steps:
+  - agent:
+      prompt: "Turn these notes into a one-page pack:\n\n{{materials}}"
+      into: pack
+  - tool: file.write
+    path: ~/.patchwork/inbox/pack.md   # a text input may NOT appear here
+    content: "{{pack}}"
+```
+
 A step may carry an `expect` block: a completion contract checked against the step's output after it runs (a JSON Schema, a regex, a set of expected `outputs`). A failed contract halts the step by default; `required: true` makes a step skipped by its `when:` guard count as a failure too. `patchwork halts` shows these alongside ordinary errors.
 
 Two deliberate behaviours surprise people. A tool id that nothing is registered under **skips** the step silently under `compat` (forward compatibility for a plugin that is not loaded) and **halts** the run under `governed`; `recipe doctor` names the unresolved tool either way. And `recipe test` is offline: an unmocked tool or an unstubbed agent step is refused, never run live.

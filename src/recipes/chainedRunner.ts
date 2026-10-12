@@ -23,6 +23,7 @@ import { toolFactsFor } from "../governance/toolFacts.js";
 import {
   isConnectorSource,
   provenanceOf,
+  runInputProvenance,
   type UntrustedProvenance,
   wrapUntrusted,
 } from "../governance/untrustedContent.js";
@@ -81,6 +82,12 @@ import type {
   TemplateEvaluateOptions,
 } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
+import {
+  findTextInputsInIdentifiers,
+  holdTextInputValues,
+  textInputInIdentifierMessage,
+  textInputNamesOf,
+} from "./textInputs.js";
 import {
   classifyHttpStepResult,
   httpFailureEvidence,
@@ -197,6 +204,13 @@ export interface RunOptions {
   maxDepth: number;
   dryRun: boolean;
   sourcePath?: string;
+  /**
+   * `type: text` input names in force for this run, inherited by nested
+   * recipes: a child sees its parent's `env`, so a text value the parent was
+   * handed is still a text value inside the child even though the child does
+   * not declare it (src/recipes/textInputs.ts).
+   */
+  textInputNames?: ReadonlySet<string>;
   /**
    * Run-level cancellation. Nested recipes inherit the parent's signal; the
    * top-level run also registers its own AbortController via the run registry
@@ -697,6 +711,21 @@ export async function executeChainedStep(
     Object.keys(declaredRecipeEnv(recipe, options.env)),
   );
 
+  // `type: text` inputs may only be rendered into content fields. Checked
+  // before anything in the step renders — the flat runner holds the same
+  // rule through the same function, so the two cannot drift.
+  const textInputNames = new Set<string>([
+    ...(options.textInputNames ?? []),
+    ...textInputNamesOf(recipe),
+  ]);
+  const textPlacement = findTextInputsInIdentifiers(step, textInputNames)[0];
+  if (textPlacement) {
+    return {
+      success: false,
+      error: textInputInIdentifierMessage(textPlacement, `step "${step.id}"`),
+    };
+  }
+
   // Resolve templates
   // Untrusted envelope (Phase 0 step 10): agent prompts only. Tool params,
   // `when:` guards and `expect` evaluate against the raw registry value.
@@ -710,6 +739,13 @@ export async function executeChainedStep(
         wrap: (stepId, value) => {
           const prov = untrustedProvenanceFor(registry).get(stepId);
           if (prov === undefined) return undefined;
+          for (const o of prov.origins) promptOrigins.add(o);
+          return wrapUntrusted(value, prov);
+        },
+        // A text run input reaches a chained recipe as `{{env.<name>}}`.
+        wrapEnv: (key, value) => {
+          if (!textInputNames.has(key)) return undefined;
+          const prov = runInputProvenance(key);
           for (const o of prov.origins) promptOrigins.add(o);
           return wrapUntrusted(value, prov);
         },
@@ -1121,6 +1157,7 @@ export async function executeChainedStep(
         maxDepth: options.maxDepth,
         sourcePath: nestedRecipe.sourcePath,
         env: { ...options.env, ...resolvedVars }, // Merge resolved vars into env
+        textInputNames,
         budget: ctx.budget, // share the single per-run budget across the tree
         priceTable: ctx.priceTable, // reuse the once-loaded price table
       };
@@ -1682,6 +1719,33 @@ export async function runChainedRecipe(
   deps: ExecutionDeps,
   existingRegistry?: OutputRegistry,
   depth = 0,
+): Promise<ChainedRunResult> {
+  // `type: text` input values are held by the value-redaction layer for the
+  // life of the top-level run, so no ledger written during it records the
+  // prose (src/recipes/textInputs.ts). Nested calls run inside that window.
+  const releaseTextInputs =
+    depth === 0
+      ? holdTextInputValues(textInputNamesOf(recipe), options.env)
+      : () => {};
+  try {
+    return await runChainedRecipeHeld(
+      recipe,
+      options,
+      deps,
+      existingRegistry,
+      depth,
+    );
+  } finally {
+    releaseTextInputs();
+  }
+}
+
+async function runChainedRecipeHeld(
+  recipe: ChainedRecipe,
+  options: RunOptions,
+  deps: ExecutionDeps,
+  existingRegistry: OutputRegistry | undefined,
+  depth: number,
 ): Promise<ChainedRunResult> {
   // Load plugin servers declared in the recipe before executing any steps.
   // Only done at the top-level call (depth 0) to avoid redundant loads in nested recipes.

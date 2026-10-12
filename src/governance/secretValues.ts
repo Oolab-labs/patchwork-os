@@ -94,8 +94,8 @@ export function isSensitiveKeyName(key: string): boolean {
 interface Needle {
   /** The literal text to find. */
   text: string;
-  /** Short label naming where the secret came from — never the key or value. */
-  source: string;
+  /** What replaces it — never the key and never any part of the value. */
+  replacement: string;
 }
 
 class SecretRegistry {
@@ -133,7 +133,9 @@ class SecretRegistry {
       }
     }
     const out: Needle[] = [];
-    for (const [text, source] of seen) out.push({ text, source });
+    for (const [text, source] of seen) {
+      out.push({ text, replacement: marker(source) });
+    }
     out.sort((a, b) => b.text.length - a.text.length);
     this.needles = out;
     return out;
@@ -178,6 +180,128 @@ function encodings(value: string): string[] {
 }
 
 const registry = new SecretRegistry();
+
+/**
+ * Run-scoped `type: text` input values (`src/recipes/textInputs.ts`).
+ *
+ * Not secrets — prose an operator handed one run — but held to the same rule
+ * at every sink this module already guards: the ledgers record that a value
+ * existed (its length and a hash prefix), never the value. Unlike the secret
+ * registry this one is TRANSIENT: a runner registers each value when the run
+ * starts and releases it when the run ends (refcounted, so two concurrent runs
+ * handed the same text do not release each other's), because prose is large
+ * and an ever-growing index of it would be both a memory leak and the largest
+ * plaintext copy of exactly what is being kept out of the ledgers.
+ *
+ * A value shorter than `MIN_SECRET_LENGTH` is replaced only where a whole
+ * string IS the value (a field holding exactly it). Substring replacement of a
+ * three-character value would rewrite unrelated text in every log line written
+ * while the run is live.
+ */
+class TextValueRegistry {
+  private readonly values = new Map<
+    string,
+    { replacement: string; refs: number }
+  >();
+  private needles: Needle[] | null = null;
+
+  add(value: string, replacement: string): void {
+    const existing = this.values.get(value);
+    if (existing) {
+      existing.refs++;
+      return;
+    }
+    this.values.set(value, { replacement, refs: 1 });
+    this.needles = null;
+  }
+
+  release(value: string): void {
+    const existing = this.values.get(value);
+    if (!existing) return;
+    existing.refs--;
+    if (existing.refs <= 0) {
+      this.values.delete(value);
+      this.needles = null;
+    }
+  }
+
+  count(): number {
+    return this.values.size;
+  }
+
+  clear(): void {
+    this.values.clear();
+    this.needles = null;
+  }
+
+  exact(text: string): string | undefined {
+    return this.values.get(text)?.replacement;
+  }
+
+  getNeedles(): Needle[] {
+    if (this.needles) return this.needles;
+    const seen = new Map<string, string>();
+    for (const [value, { replacement }] of this.values) {
+      if (value.length < MIN_SECRET_LENGTH) continue;
+      for (const enc of encodings(value)) {
+        if (enc.length < MIN_SECRET_LENGTH) continue;
+        if (!seen.has(enc)) seen.set(enc, replacement);
+      }
+    }
+    const out: Needle[] = [];
+    for (const [text, replacement] of seen) out.push({ text, replacement });
+    this.needles = out;
+    return out;
+  }
+
+  // ── Never reveal contents ──────────────────────────────────────────────
+  toJSON(): { textValues: number } {
+    return { textValues: this.values.size };
+  }
+  toString(): string {
+    return `[TextValueRegistry ${this.values.size} value(s)]`;
+  }
+  [inspect.custom](): string {
+    return this.toString();
+  }
+}
+
+const textValues = new TextValueRegistry();
+
+/**
+ * Register one run's text input value for ledger redaction and return the
+ * release function the runner calls when the run ends. `replacement` is what
+ * every sink records instead (`textInputLedgerMarker`).
+ */
+export function registerTextInputValue(
+  value: string,
+  replacement: string,
+): () => void {
+  if (typeof value !== "string" || value.length === 0) return () => {};
+  textValues.add(value, replacement);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    textValues.release(value);
+  };
+}
+
+export function textInputValueCount(): number {
+  return textValues.count();
+}
+
+/** Secret needles and text needles as one list, longest first. */
+function allNeedles(): Needle[] {
+  const secretNeedles = registry.getNeedles();
+  if (textValues.count() === 0) return secretNeedles;
+  // Longest first ACROSS both lists: a secret inside a text value must not be
+  // replaced first, or the text needle stops matching and the rest of the
+  // prose is written out around the secret's marker.
+  return [...textValues.getNeedles(), ...secretNeedles].sort(
+    (a, b) => b.text.length - a.text.length,
+  );
+}
 
 /**
  * Register one secret value. `source` is a short label — `env`,
@@ -257,6 +381,7 @@ export function secretValueCount(): number {
 
 export function _resetSecretValuesForTesting(): void {
   registry.clear();
+  textValues.clear();
 }
 
 function marker(source: string): string {
@@ -269,12 +394,17 @@ function marker(source: string): string {
  * nothing matches, so the hot path allocates nothing.
  */
 export function redactKnownSecrets(text: string): string {
-  if (typeof text !== "string" || text.length < MIN_SECRET_LENGTH) return text;
-  const needles = registry.getNeedles();
+  if (typeof text !== "string") return text;
+  if (textValues.count() > 0) {
+    const whole = textValues.exact(text);
+    if (whole !== undefined) return whole;
+  }
+  if (text.length < MIN_SECRET_LENGTH) return text;
+  const needles = allNeedles();
   if (needles.length === 0) return text;
   let out = text;
   for (const n of needles) {
-    if (out.includes(n.text)) out = out.split(n.text).join(marker(n.source));
+    if (out.includes(n.text)) out = out.split(n.text).join(n.replacement);
   }
   return out;
 }
@@ -292,7 +422,7 @@ export function redactKnownSecrets(text: string): string {
  * braces, never a requirement.
  */
 export function redactKnownSecretsDeep(value: unknown): unknown {
-  if (registry.count() === 0) return value;
+  if (registry.count() === 0 && textValues.count() === 0) return value;
   return deep(value, new WeakSet<object>());
 }
 
