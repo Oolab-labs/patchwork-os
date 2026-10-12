@@ -149,3 +149,94 @@ describe("what must NOT move", () => {
     ).toBe("auth_failure");
   });
 });
+
+/**
+ * A REVOKED or expired Claude sign-in. Observed on a live deployment: the
+ * Claude CLI exited 1 with "Failed to authenticate. API Error: 401 OAuth
+ * access token has been revoked…", and the run's `errorMessage` read
+ * `silent-fail detected (agent step skipped or failed (string placeholder)):
+ * [agent step failed: …` — the contentless silent-fail sentence, whose remedy
+ * ("inspect the prompt") is wrong. The operator needs to be told that Claude
+ * needs signing in again, on every surface: the step's halt, the run's
+ * `errorMessage`, and the chained runner's sentence.
+ */
+const revokedOrchestrated = agentTextFromTask({
+  status: "error",
+  errorMessage: "Process exited with code 1",
+  output:
+    "Failed to authenticate. API Error: 401 OAuth access token has been revoked. Please obtain a new token or refresh your existing token.",
+});
+
+describe("a revoked or expired Claude sign-in", () => {
+  it("the observed marker is what the orchestrated path really emits", () => {
+    expect(revokedOrchestrated).toContain(
+      "[agent step failed: Process exited with code 1 — Failed to authenticate. API Error: 401 OAuth access token has been revoked",
+    );
+  });
+
+  it("halts as agent_auth, and the RUN's errorMessage says Claude needs signing in again", async () => {
+    const result = await runWithAgentResult(revokedOrchestrated);
+    const halt = result.stepResults.find((s) => s.status === "error");
+    expect(halt?.haltCategory).toBe("agent_auth");
+    expect(halt?.haltReason).toMatch(/Claude needs signing in again/);
+    expect(categoriseHaltReason(halt?.haltReason)).toBe("agent_auth");
+    // The run-level message is what the run list and run-detail page show.
+    expect(result.errorMessage).toMatch(/Claude needs signing in again/);
+    expect(result.errorMessage).not.toMatch(/^silent-fail detected/);
+    expect(categoriseHaltReason(result.errorMessage)).toBe("agent_auth");
+    // The provider's own words stay as evidence.
+    expect(result.errorMessage).toContain("Failed to authenticate");
+  });
+
+  it("the chained runner's sentence names the sign-in, too", () => {
+    const sentence = deriveHaltReasonFromError({
+      stepId: "summarise",
+      isAgent: true,
+      status: "error",
+      error: `silent-fail detected (agent step skipped or failed (string placeholder)): ${revokedOrchestrated}`,
+    });
+    expect(sentence).toMatch(/Claude needs signing in again/);
+    expect(categoriseHaltReason(sentence)).toBe("agent_auth");
+  });
+
+  for (const [label, marker] of [
+    [
+      "revoked, no 401 in the text",
+      "[agent step failed: claude exited 1 — OAuth access token has been revoked. Please obtain a new token or refresh your existing token.]",
+    ],
+    [
+      "expired access token",
+      "[agent step failed: claude exited 1 — OAuth access token has expired.]",
+    ],
+  ] as const) {
+    it(`recognises ${label}`, async () => {
+      const result = await runWithAgentResult(marker);
+      const halt = result.stepResults.find((s) => s.status === "error");
+      expect(halt?.haltCategory).toBe("agent_auth");
+    });
+  }
+});
+
+describe("the agent_auth matcher stays tight", () => {
+  // A bare "401" or "Unauthorized" inside an agent marker is not, by itself,
+  // a provider sign-in failure: an agent's own tool (an MCP server, a
+  // connector) can be refused while the provider is signed in perfectly well.
+  // Telling that operator to sign in to Claude again sends them the wrong way.
+  for (const [label, marker] of [
+    [
+      "a tool's 401",
+      "[agent step failed: claude exited 1 — the issue tracker MCP server returned 401 while listing issues]",
+    ],
+    [
+      "a fetch's Unauthorized",
+      "[agent step failed: claude exited 1 — fetch to example.test: Unauthorized]",
+    ],
+  ] as const) {
+    it(`does not claim ${label}`, async () => {
+      const result = await runWithAgentResult(marker);
+      const halt = result.stepResults.find((s) => s.status === "error");
+      expect(halt?.haltCategory).not.toBe("agent_auth");
+      expect(result.errorMessage ?? "").not.toMatch(/signing in again/);
+    });
+  }
+});

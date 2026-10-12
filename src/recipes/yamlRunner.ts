@@ -119,9 +119,11 @@ import {
   stepRollbackability,
 } from "./fileWriteRollbackability.js";
 import {
+  agentAuthHaltReason,
   approvalHaltFor,
   categoriseHaltReason,
   type HaltCategory,
+  isAgentAuthFailure,
 } from "./haltCategory.js";
 import {
   assertValidManualRunId,
@@ -2995,7 +2997,15 @@ export async function runYamlRecipe(
             const reason = agentSilentFail
               ? `silent-fail detected (${agentSilentFail.reason}): ${agentSilentFail.matched}`
               : agentResult;
-            runError = runError ?? reason;
+            // The provider refused the sign-in (not logged in, revoked or
+            // expired token). Say THAT on the run and the step, not the
+            // silent-fail sentence whose remedy ("inspect the prompt") is
+            // wrong. Detected on the full result, not the detector's
+            // truncated capture, so a phrase past the cut still counts.
+            const authHalt = isAgentAuthFailure(agentResult)
+              ? agentAuthHaltReason(stepId, agentResult)
+              : undefined;
+            runError = runError ?? authHalt ?? reason;
             if (!failOpenAgent) haltAfterFailure = true;
             // The MARKER, not the name of the pattern that matched it. The
             // detector's capture was widened to hold the whole marker on the
@@ -3009,11 +3019,13 @@ export async function runYamlRecipe(
             // the information boundary refusing a dispatch while naming its
             // own one-line remedy).
             const marker = agentSilentFail?.matched?.trim();
-            const haltReason = agentSilentFail
-              ? marker
-                ? `Agent step "${stepId}" returned no usable output: ${marker}`
-                : `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
-              : `Agent step "${stepId}" reported failure.`;
+            const haltReason = authHalt
+              ? authHalt
+              : agentSilentFail
+                ? marker
+                  ? `Agent step "${stepId}" returned no usable output: ${marker}`
+                  : `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
+                : `Agent step "${stepId}" reported failure.`;
             // Derived from the sentence that is actually stored, so a reader
             // that trusts `haltCategory` and one that re-derives from
             // `haltReason` cannot disagree — `summariseHalts` does both. A
@@ -3027,7 +3039,7 @@ export async function runYamlRecipe(
               error: reason,
               haltReason,
               haltCategory:
-                agentSilentFail && derived !== "unknown"
+                (authHalt || agentSilentFail) && derived !== "unknown"
                   ? derived
                   : "agent_silent_fail",
               durationMs: Date.now() - stepStart,
