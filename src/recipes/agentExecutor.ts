@@ -30,6 +30,7 @@ import {
   parseRegistry,
   resolveDestination,
 } from "../privacy/destinationRegistry.js";
+import { uploadReadGrant } from "./fileInputs.js";
 import { resolveLocalModel } from "./localSettings.js";
 
 /**
@@ -161,6 +162,8 @@ export interface AgentExecutorDeps {
       /** Resolved containment — the runner MUST forward it to the driver as
        * `ProviderTaskInput.containment` (or `providerOptions.containment`). */
       containment?: AgentContainment;
+      /** Extra READ-only directories (`--add-dir`); see AgentExecutorInput. */
+      readOnlyDirs?: string[];
       /**
        * Governed-only. The subprocess implementation keeps its own
        * profile-gated fallback for callers that do not come through
@@ -250,6 +253,14 @@ export interface AgentExecutorInput {
   allowedTools?: string[];
   /** Deny rules via --disallowed-tools (any mode). */
   disallowedTools?: string[];
+  /**
+   * Directories the agent may READ in addition to its workspace — the uploads
+   * directory, for a run handed a `type: file` input (fileInputs.ts). Reaches
+   * the Claude CLI as `--add-dir`, with a deny rule on every write tool for
+   * each, merged into `disallowedTools`. Only the CLI driver has file tools;
+   * every other driver ignores it (the prompt still carries the path).
+   */
+  readOnlyDirs?: string[];
   /**
    * Information-boundary context (ADR-0021). Absent means the step declared no
    * `data_policy` and no destination is registered, which is byte-identical to
@@ -587,7 +598,7 @@ export async function executeAgent(
     mcpAccess,
     sandbox,
     allowedTools,
-    disallowedTools,
+    disallowedTools: stepDisallowedTools,
     providerOptions,
     enforceSandbox,
   } = input;
@@ -751,6 +762,16 @@ export async function executeAgent(
   // Under compat with no `sandbox:` this is `{ enforced: false }` and the
   // legacy keys below carry today's behaviour unchanged; it is forwarded to
   // the driver only when enforced, so an unconstrained call keeps its shape.
+  // `type: file` inputs (fileInputs.ts): extra directories the CLI agent may
+  // READ. Their write-tool denies join the step's own deny list HERE, before
+  // containment is resolved, so the governed containment and the compat
+  // `--disallowed-tools` carry them alike — and a deny beats a step's own
+  // write-tool widening. No dirs: nothing changes, not even the call shape.
+  const readGrant = uploadReadGrant(input.readOnlyDirs ?? []);
+  const disallowedTools =
+    readGrant.denyRules.length > 0
+      ? [...(stepDisallowedTools ?? []), ...readGrant.denyRules]
+      : stepDisallowedTools;
   const containment = resolveAgentContainment(
     activeProfile(),
     stepSandboxRequest({ sandbox, allowedTools, disallowedTools, mcpAccess }),
@@ -771,6 +792,7 @@ export async function executeAgent(
           ...(allowedTools !== undefined && { allowedTools }),
           ...(disallowedTools !== undefined && { disallowedTools }),
           ...(containment.enforced && { containment }),
+          ...(readGrant.dirs.length > 0 && { readOnlyDirs: readGrant.dirs }),
         }
       : undefined;
 

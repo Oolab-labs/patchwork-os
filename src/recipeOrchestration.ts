@@ -1860,11 +1860,20 @@ export class RecipeOrchestration {
         containment?: import("./governance/profile.js").AgentContainment;
         allowedTools?: string[];
         disallowedTools?: string[];
+        /** `type: file` inputs: dirs the agent may READ (`--add-dir`). */
+        readOnlyDirs?: string[];
       },
     ): Promise<string> => {
       const task = await orch.runAndWait({
         prompt,
         triggerSource: `${opts.triggerSourceSuffix}:agent`,
+        // The driver turns `contextFiles` into `--add-dir`. The write-tool
+        // denies for these dirs already ride in `disallowedTools` and the
+        // containment (agentExecutor.ts), so this only makes them reachable.
+        ...(callOpts?.readOnlyDirs !== undefined &&
+          callOpts.readOnlyDirs.length > 0 && {
+            contextFiles: callOpts.readOnlyDirs,
+          }),
         timeoutMs: 1_800_000,
         ...(await governedSystemPrompt()),
         ...(callOpts?.mcpAccess !== undefined && {

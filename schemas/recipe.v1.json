@@ -99,7 +99,7 @@
               },
               "type": {
                 "type": "string",
-                "description": "string (default): a short token — letters, digits, underscores, spaces and - . : + @ , only, ≤1024 chars. text: prose (any Unicode text, line breaks and tabs, no other control characters), which may be rendered ONLY into content fields — an agent prompt, a file's content, a message body — never into a path, URL, ref, channel, recipient or id. Any other value (e.g. the descriptive `enum`) is validated as string."
+                "description": "string (default): a short token — letters, digits, underscores, spaces and - . : + @ , only, ≤1024 chars. text: prose (any Unicode text, line breaks and tabs, no other control characters), which may be rendered ONLY into content fields — an agent prompt, a file's content, a message body — never into a path, URL, ref, channel, recipient or id. file: the name of a workspace upload (POST /uploads); rendered as the upload's absolute path, ONLY into an agent prompt or file.write/file.append content, and a Claude CLI agent in that run may read (never write) the uploads directory. Any other value (e.g. the descriptive `enum`) is validated as string."
               },
               "maxLength": {
                 "type": "integer",
@@ -134,7 +134,7 @@
               },
               "type": {
                 "type": "string",
-                "description": "string (default): a short token — letters, digits, underscores, spaces and - . : + @ , only, ≤1024 chars. text: prose (any Unicode text, line breaks and tabs, no other control characters), which may be rendered ONLY into content fields — an agent prompt, a file's content, a message body — never into a path, URL, ref, channel, recipient or id. Any other value (e.g. the descriptive `enum`) is validated as string."
+                "description": "string (default): a short token — letters, digits, underscores, spaces and - . : + @ , only, ≤1024 chars. text: prose (any Unicode text, line breaks and tabs, no other control characters), which may be rendered ONLY into content fields — an agent prompt, a file's content, a message body — never into a path, URL, ref, channel, recipient or id. file: the name of a workspace upload (POST /uploads); rendered as the upload's absolute path, ONLY into an agent prompt or file.write/file.append content, and a Claude CLI agent in that run may read (never write) the uploads directory. Any other value (e.g. the descriptive `enum`) is validated as string."
               },
               "maxLength": {
                 "type": "integer",
