@@ -4,6 +4,10 @@ import { parse as parseYaml } from "yaml";
 import { writeFileAtomicSync } from "../writeFileAtomic.js";
 import type { CompiledRecipe } from "./compiler.js";
 import { compileRecipeFull } from "./compiler.js";
+import {
+  removeTopLevelProvenance,
+  writeTopLevelProvenance,
+} from "./installProvenance.js";
 import { parseRecipe } from "./parser.js";
 
 /**
@@ -23,6 +27,14 @@ export interface InstallOptions {
     copyFile?: (src: string, dest: string) => void;
     mkdir?: (p: string) => void;
   };
+  /**
+   * Where this recipe came from. When given, a provenance sidecar is written
+   * at `<recipesDir>/.install/<name>.json.json` (see installProvenance.ts),
+   * bound to the installed bytes. Any previous sidecar for the same file is
+   * removed first, so an unrecordable source leaves no record rather than a
+   * stale one. Uses the real filesystem even when `fs` is injected.
+   */
+  provenance?: { source: string; resolvedRef?: string };
 }
 
 export interface InstallResult {
@@ -112,7 +124,23 @@ export function installRecipeFromFile(
   } catch {
     // file doesn't exist — creating
   }
-  writeFile(destPath, JSON.stringify(recipe, null, 2));
+  const content = JSON.stringify(recipe, null, 2);
+  // Drop any record for the file being replaced BEFORE replacing it: whatever
+  // happens next, the old origin must not survive onto new content. (The
+  // sha256 binding would ignore it anyway; removing it keeps the dir honest.)
+  if (opts.provenance) removeTopLevelProvenance(destPath);
+  writeFile(destPath, content);
+  if (opts.provenance) {
+    // The recipe is already installed; a sidecar that cannot be written
+    // leaves "unknown" (no record), never a failed install.
+    try {
+      writeTopLevelProvenance(destPath, content, opts.provenance.source, {
+        resolvedRef: opts.provenance.resolvedRef,
+      });
+    } catch {
+      removeTopLevelProvenance(destPath);
+    }
+  }
 
   // Permissions sidecar (`<name>.permissions.json`) was decorative — never read by toolRegistry.
   // Removed in alpha.36 per recipe-dogfood-2026-05-01/PLAN-MASTER-V2.md A-PR4.

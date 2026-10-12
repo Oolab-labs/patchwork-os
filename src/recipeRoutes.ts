@@ -3264,6 +3264,9 @@ export function tryHandleRecipeRoute(
                 writeFileSync(tmpFile, yamlText, "utf-8");
                 const installResult = installRecipeFromFile(tmpFile, {
                   recipesDir,
+                  // The bundle source as requested — the truthful origin
+                  // of every recipe this bundle installed.
+                  provenance: { source },
                 });
                 installed.push({ name: r, action: installResult.action });
                 // Per-recipe connector preflight — same shape as the
@@ -3718,6 +3721,9 @@ export function tryHandleRecipeRoute(
           );
           const installResult = installRecipeFromFile(tmpFile, {
             recipesDir,
+            // Recorded exactly as requested, so GET /recipes can report
+            // `installedFrom` for this file (validated in the writer).
+            provenance: { source },
           });
           // Soft preflight: detect which connectors the recipe uses
           // and surface the unconfigured ones as a warning. The recipe
