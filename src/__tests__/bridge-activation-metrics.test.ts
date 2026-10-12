@@ -286,6 +286,36 @@ describe("Bridge activation metrics", () => {
         await bridge.stop();
       }
     });
+
+    it("wires nextRunTimesFn to the recipe scheduler's nextRunTimes", async () => {
+      const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-tz3-"));
+      const bridge = new Bridge(makeConfig(workspace));
+      try {
+        await bridge.start();
+        const internals = bridge as unknown as {
+          server: {
+            nextRunTimesFn: (() => ReadonlyMap<string, number>) | null;
+          };
+          recipeScheduler: {
+            nextRunTimes: () => Map<string, number>;
+          } | null;
+        };
+        expect(internals.recipeScheduler).not.toBeNull();
+        const sentinel = new Map([["sentinel", 1_800_000_000_000]]);
+        const spy = vi
+          .spyOn(
+            internals.recipeScheduler as {
+              nextRunTimes: () => Map<string, number>;
+            },
+            "nextRunTimes",
+          )
+          .mockReturnValue(sentinel);
+        expect(internals.server.nextRunTimesFn?.()).toBe(sentinel);
+        expect(spy).toHaveBeenCalledTimes(1);
+      } finally {
+        await bridge.stop();
+      }
+    });
   });
 
   it("records a successful YAML recipe run", async () => {

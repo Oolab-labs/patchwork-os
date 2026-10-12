@@ -1500,6 +1500,10 @@ export class Bridge {
             "[patchwork] scheduler re-primed after schedule timezone change",
           );
         };
+        // GET /recipes reports each scheduled recipe's next fire time from
+        // the scheduler that will fire it, so the zone is the one it uses.
+        this.server.nextRunTimesFn = () =>
+          this.recipeScheduler?.nextRunTimes() ?? new Map();
       }
     }
 

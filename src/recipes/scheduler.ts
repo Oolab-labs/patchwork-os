@@ -139,6 +139,11 @@ export class RecipeScheduler {
    * `claimCronSlot` (./cronClaim.ts), taken immediately before dispatch.
    */
   private readonly inflight = new Set<string>();
+  /**
+   * Last tick (or start) instant per `@every` recipe, so `nextRunTimes()` can
+   * report last + interval. `setInterval` exposes no next-fire time of its own.
+   */
+  private readonly intervalAnchors = new Map<string, number>();
 
   constructor(private readonly opts: SchedulerOptions) {
     this.setIntervalFn = opts.setInterval ?? setInterval;
@@ -327,7 +332,9 @@ export class RecipeScheduler {
             `[scheduler] "${name}" uses @every — not deduped across processes; ` +
               "use a cron expression if more than one bridge runs (#1458)",
           );
+          this.intervalAnchors.set(name, Date.now());
           const timer = this.setIntervalFn(() => {
+            this.intervalAnchors.set(name, Date.now());
             this.fire(name);
           }, intervalMs);
           if (typeof timer === "object" && "unref" in timer) timer.unref();
@@ -386,6 +393,7 @@ export class RecipeScheduler {
       this.clearIntervalFn(entry.timer);
     }
     this.scheduled = [];
+    this.intervalAnchors.clear();
   }
 
   restart(): void {
@@ -395,6 +403,37 @@ export class RecipeScheduler {
 
   list(): ReadonlyArray<Omit<ScheduledRecipe, "timer" | "cronJob">> {
     return this.scheduled.map(({ timer: _t, cronJob: _c, ...rest }) => rest);
+  }
+
+  /**
+   * Next fire time (epoch ms) per scheduled recipe name.
+   *
+   * Cron recipes ask the registered node-cron task itself (`getNextRun()`), so
+   * the answer comes from the same matcher, in the same zone, that will fire
+   * it. `@every` recipes report the last tick (or start) plus the interval.
+   * A recipe with no answer is absent — disabled and unscheduled recipes are
+   * never in `this.scheduled`, and a stopped task reports null.
+   */
+  nextRunTimes(): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const entry of this.scheduled) {
+      let next: number | undefined;
+      if (entry.cronJob) {
+        try {
+          const d = entry.cronJob.getNextRun();
+          next = d ? d.getTime() : undefined;
+        } catch {
+          next = undefined;
+        }
+      } else if (entry.intervalMs > 0) {
+        const anchor = this.intervalAnchors.get(entry.name);
+        if (anchor !== undefined) next = anchor + entry.intervalMs;
+      }
+      if (typeof next === "number" && Number.isFinite(next) && next > 0) {
+        out.set(entry.name, next);
+      }
+    }
+    return out;
   }
 
   /**
