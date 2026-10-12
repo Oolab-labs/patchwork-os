@@ -867,6 +867,17 @@ function generateRecipeSchema(
                   type: "string",
                   description: "Human-readable description of the variable.",
                 },
+                type: {
+                  type: "string",
+                  description:
+                    "string (default): a short token — letters, digits, underscores, spaces and - . : + @ , only, ≤1024 chars. text: prose (any Unicode text, line breaks and tabs, no other control characters), which may be rendered ONLY into content fields — an agent prompt, a file's content, a message body — never into a path, URL, ref, channel, recipient or id. Any other value (e.g. the descriptive `enum`) is validated as string.",
+                },
+                maxLength: {
+                  type: "integer",
+                  minimum: 1,
+                  description:
+                    "text inputs only: maximum length in characters (default 16384; capped at 65536).",
+                },
               },
             },
           },
@@ -894,6 +905,17 @@ function generateRecipeSchema(
                 description: {
                   type: "string",
                   description: "Human-readable description of the variable.",
+                },
+                type: {
+                  type: "string",
+                  description:
+                    "string (default): a short token — letters, digits, underscores, spaces and - . : + @ , only, ≤1024 chars. text: prose (any Unicode text, line breaks and tabs, no other control characters), which may be rendered ONLY into content fields — an agent prompt, a file's content, a message body — never into a path, URL, ref, channel, recipient or id. Any other value (e.g. the descriptive `enum`) is validated as string.",
+                },
+                maxLength: {
+                  type: "integer",
+                  minimum: 1,
+                  description:
+                    "text inputs only: maximum length in characters (default 16384; capped at 65536).",
                 },
               },
             },

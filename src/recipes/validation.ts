@@ -25,6 +25,14 @@ import {
   RESERVED_VAR_NAMES,
 } from "./names.js";
 import { generateSchemaSet } from "./schemaGenerator.js";
+import {
+  findTextInputsInIdentifiers,
+  TEXT_INPUT_HARD_MAX_LENGTH,
+  TEXT_INPUT_IN_IDENTIFIER,
+  textInputInIdentifierMessage,
+  textInputNamesOf,
+  textInputValueError,
+} from "./textInputs.js";
 import { listToolOutputContextKeys } from "./toolRegistry.js";
 import { findUnsupportedOperator } from "./whenGuard.js";
 
@@ -678,6 +686,7 @@ export function validateRecipeDefinition(
       validateAwaitsTargets(r, recipe, issues);
       validateJudgeReviewsTargets(r, issues);
       validateWhenGuards(r, issues);
+      validateTextInputPlacements(r, issues);
 
       validateTemplateReferences(r, issues, collectParallelEachKeys(recipe));
     }
@@ -1117,7 +1126,113 @@ function validateTriggerVarsList(
         message: `trigger.${fieldName}[${i}].name "${name}" shadows a reserved built-in context key — pick a different name`,
       });
     }
+    validateTriggerInputType(
+      entry as Record<string, unknown>,
+      `trigger.${fieldName}.${i}`,
+      issues,
+    );
   }
+}
+
+/**
+ * `type` / `maxLength` on a declared input, and a `text` input's default.
+ *
+ * Only `text` changes runtime behaviour; every other type — absent, `string`,
+ * and the descriptive `enum` (with `values:`) that shipped examples already
+ * use — is validated as a short `string`. An unrecognised type is therefore a
+ * WARNING, not an error: erroring would break recipes that run today, but
+ * saying nothing would let an author who meant `text` (and typed `textarea`,
+ * say) watch every prose value be refused at the route with no hint why.
+ */
+const DESCRIPTIVE_INPUT_TYPES = new Set(["string", "text", "enum"]);
+
+function validateTriggerInputType(
+  entry: Record<string, unknown>,
+  path: string,
+  issues: LintIssue[],
+): void {
+  const type = entry.type;
+  if (type !== undefined && typeof type !== "string") {
+    issues.push({
+      level: "error",
+      message: `${path}.type must be a string — "string" (the default) or "text"`,
+      code: "trigger-input-type",
+      path: `${path}.type`,
+    });
+    return;
+  }
+  if (typeof type === "string" && !DESCRIPTIVE_INPUT_TYPES.has(type)) {
+    issues.push({
+      level: "warning",
+      message: `${path}.type "${type}" is not a known input type, so the value is validated as a short "string" (letters, digits, spaces and - . : + @ , only). Use type: text to accept prose.`,
+      code: "trigger-input-type",
+      path: `${path}.type`,
+    });
+  }
+  const maxLength = entry.maxLength;
+  if (maxLength !== undefined) {
+    if (type !== "text") {
+      issues.push({
+        level: "error",
+        message: `${path}.maxLength applies only to a "text" input`,
+        code: "trigger-input-maxlength",
+        path: `${path}.maxLength`,
+      });
+    } else if (
+      typeof maxLength !== "number" ||
+      !Number.isInteger(maxLength) ||
+      maxLength < 1
+    ) {
+      issues.push({
+        level: "error",
+        message: `${path}.maxLength must be a positive integer (values above ${TEXT_INPUT_HARD_MAX_LENGTH} are capped at ${TEXT_INPUT_HARD_MAX_LENGTH})`,
+        code: "trigger-input-maxlength",
+        path: `${path}.maxLength`,
+      });
+    }
+  }
+  if (
+    type === "text" &&
+    entry.default !== undefined &&
+    entry.default !== null
+  ) {
+    const reason = textInputValueError(
+      String(entry.default),
+      typeof maxLength === "number" ? maxLength : undefined,
+    );
+    if (reason) {
+      issues.push({
+        level: "error",
+        message: `${path}.default is not a valid text value: it ${reason}`,
+        code: "text-input-default-invalid",
+        path: `${path}.default`,
+      });
+    }
+  }
+}
+
+/**
+ * A `type: text` input rendered outside a content field. The runners refuse
+ * the step at run time (`text_input_in_identifier`); reporting it here makes
+ * save-time validation refuse the recipe, so the author hears about it before
+ * a run rather than from one.
+ */
+function validateTextInputPlacements(
+  r: Record<string, unknown>,
+  issues: LintIssue[],
+): void {
+  const names = textInputNamesOf(r);
+  if (names.size === 0 || !Array.isArray(r.steps)) return;
+  (r.steps as unknown[]).forEach((step, i) => {
+    for (const p of findTextInputsInIdentifiers(step, names)) {
+      issues.push({
+        level: "error",
+        message: `Step ${i + 1}: ${textInputInIdentifierMessage(p, `step ${i + 1}`)}`,
+        code: TEXT_INPUT_IN_IDENTIFIER,
+        path: `steps.${i}.${p.field}`,
+      });
+    }
+  });
 }
 
 function normalizeRecipeForValidation(recipe: unknown): unknown {

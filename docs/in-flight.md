@@ -58,6 +58,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-10-12 `feat/text-recipe-inputs` — `trigger.inputs[]` gains `type: text` (+ `maxLength`): prose run inputs validated by declared type (default 16384, cap 65536, no control chars); rendered only into content fields (`text_input_in_identifier` at run time in both runners, and as a lint/save error); wrapped as `input:<name>` untrusted content under governed; held by the value-redaction layer for the run so ledgers record `[text: N chars, sha256:…]`. Run-route body cap 32 KB → 512 KB.
 - 2026-10-12 `fix/inbox-header-on-overwrite` — an inbox `file.write` gets the run header (`recipe/runSeq/trigger/deliveredAt`) on every write, decided by the new content; overwriting a note no longer drops its link to the run. Content with its own `---` block is still written as-is.
 - 2026-10-12 `fix/recipe-listing-trigger-vars` (#1688) — `GET /recipes` reports `vars` from `trigger.inputs[]`/`trigger.vars[]` via one shared reader (`declaredTriggerInputs`, also used by `applyTriggerInputDefaults`); root-level `vars:` (ignored at runtime) is no longer listed as inputs.
 - 2026-10-12 `fix/recipes-dir-scan-hidden-entries` — every recipes-dir scanner skips dot-entries (`.archive/` was scheduled and listed as an install); promote audit record moves under `.audit/`, legacy top-level `*.promote-audit.json` excluded by one shared predicate.

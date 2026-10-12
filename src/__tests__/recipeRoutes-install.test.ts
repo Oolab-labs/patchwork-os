@@ -7,7 +7,7 @@
  *   - install-body-cap          : 1 MB JSON body → 413
  *   - install-redirect-allowlist: redirect to private host → 502 (fetch_network_error)
  *   - install-shorthand         : github:foo@bar:bad/repo → 400
- *   - recipes-name-run-cap      : 300 KB body to /recipes/:name/run → 413
+ *   - recipes-name-run-cap      : 600 KB body to /recipes/:name/run → 413
  *   - install-allowlist-env     : with env, public host allowed; without env, 403
  *
  * Tests spawn a real HTTP server (matches existing server-recipes-content
@@ -717,9 +717,9 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
   });
 });
 
-describe("Server /recipes/:name/run — A-PR2 body cap (32 KB)", () => {
-  it("recipes-name-run-cap: 300 KB body → 413", async () => {
-    const big = "x".repeat(300 * 1024);
+describe("Server /recipes/:name/run — A-PR2 body cap (512 KB, sized for text inputs)", () => {
+  it("recipes-name-run-cap: 600 KB body → 413", async () => {
+    const big = "x".repeat(600 * 1024);
     const { status, body } = await makeRequest(
       {
         method: "POST",

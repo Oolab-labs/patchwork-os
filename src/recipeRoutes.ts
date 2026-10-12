@@ -31,6 +31,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
   computeSummary as computeActivationSummary,
   loadMetrics as loadActivationMetrics,
@@ -62,6 +63,11 @@ import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import { patchworkHome, patchworkPath } from "./patchworkHome.js";
 import { summariseBoundaryReceipts } from "./privacy/boundaryReceipts.js";
 import { cancelRunChecked } from "./recipes/runRegistry.js";
+import { textInputValueError } from "./recipes/textInputs.js";
+import {
+  type DeclaredTriggerInput,
+  declaredTriggerInputs,
+} from "./recipes/triggerVars.js";
 import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { invalidateRecipesCache } from "./recipesHttp.js";
@@ -237,13 +243,43 @@ export function _resetRepairRateLimitForTests(): void {
 // instead of a generic 500 from the runner. Validation rules:
 //
 //   - keys      — `/^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/`     (identifier-ish, ≤64)
-//   - values    — `/^[\w\-. :+@,]+$/u`                  (no `/`, no `..`, no
-//                                                        `~`, no control chars)
+//   - values    — by the input's DECLARED type:
+//       string (the default, and every undeclared key) — an ALLOW-list,
+//         `/^[\w\-. :+@,]+$/u` with no `..`, 1..1024 chars. Letters, digits,
+//         underscore, space and `- . : + @ ,` — so no `/`, `~`, quotes,
+//         apostrophes or line breaks, by omission rather than by a deny-list.
+//       text — any Unicode prose up to the declared `maxLength` (default
+//         16384, never above 65536), no NUL or other control characters
+//         except `\n` `\r` `\t`. Admitted ONLY because the runners refuse to
+//         render a text value anywhere but a content field
+//         (`src/recipes/textInputs.ts`).
 //   - type      — strings only; numbers/objects/arrays → 400 (type-strict
 //                 per R3 amendment 4 / I-3, prevents JSON.stringify smuggling
 //                 a `..` segment into a coerced value at render time).
 const VARS_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
 const VARS_VALUE_RE = /^(?!.*\.\.)([\w\-. :+@,]+)$/u;
+
+/**
+ * The inputs the named recipe declares, read through the same loader the
+ * dashboard edit view uses. Fails CLOSED to "nothing declared": a recipe that
+ * cannot be resolved here has every value held to the `string` rule, so prose
+ * is refused rather than admitted on a guess.
+ */
+function declaredInputsForRun(
+  deps: Pick<RecipeRouteDeps, "loadRecipeContentFn">,
+  name: string | undefined,
+): DeclaredTriggerInput[] {
+  if (!deps.loadRecipeContentFn || typeof name !== "string" || !name) {
+    return [];
+  }
+  try {
+    const loaded = deps.loadRecipeContentFn(name);
+    if (!loaded) return [];
+    return declaredTriggerInputs(parseYaml(loaded.content));
+  } catch {
+    return [];
+  }
+}
 
 export interface VarsValidationError {
   ok: false;
@@ -252,9 +288,20 @@ export interface VarsValidationError {
   offendingKey?: string;
 }
 
-/** Validate the HTTP-supplied `vars` object. Returns null on success. */
-export function validateRecipeVars(vars: unknown): VarsValidationError | null {
+/**
+ * Validate the HTTP-supplied `vars` object against the recipe's declared
+ * inputs (`declaredTriggerInputs`). Returns null on success. With no
+ * declarations every value is held to the `string` rule.
+ */
+export function validateRecipeVars(
+  vars: unknown,
+  declared: readonly DeclaredTriggerInput[] = [],
+): VarsValidationError | null {
   if (vars == null) return null;
+  const textInputs = new Map<string, DeclaredTriggerInput>();
+  for (const d of declared) {
+    if (d.type === "text" && !textInputs.has(d.name)) textInputs.set(d.name, d);
+  }
   if (typeof vars !== "object" || Array.isArray(vars)) {
     return {
       ok: false,
@@ -279,6 +326,19 @@ export function validateRecipeVars(vars: unknown): VarsValidationError | null {
         offendingKey: key,
       };
     }
+    const textInput = textInputs.get(key);
+    if (textInput) {
+      const reason = textInputValueError(value, textInput.maxLength);
+      if (reason) {
+        return {
+          ok: false,
+          error: `vars["${key}"] is a text input and ${reason}`,
+          field: "value",
+          offendingKey: key,
+        };
+      }
+      continue;
+    }
     if (value.length === 0 || value.length > 1024) {
       return {
         ok: false,
@@ -290,7 +350,10 @@ export function validateRecipeVars(vars: unknown): VarsValidationError | null {
     if (!VARS_VALUE_RE.test(value)) {
       return {
         ok: false,
-        error: `vars["${key}"] contains disallowed characters (no "/", "..", "~", or control chars)`,
+        error:
+          `vars["${key}"] may contain only letters, digits, underscores, ` +
+          `spaces and - . : + @ , (and no ".."). To pass prose, declare the ` +
+          `input with type: text.`,
         field: "value",
         offendingKey: key,
       };
@@ -345,8 +408,15 @@ export const RECIPE_ROUTE_BODY_CAPS = {
   install: 4 * 1024,
   /** /recipes/generate — NL prompt. */
   generate: 4 * 1024,
-  /** /recipes/:name/run + /recipes/run — vars envelope. */
-  run: 32 * 1024,
+  /**
+   * /recipes/:name/run + /recipes/run — vars envelope. Sized for `type: text`
+   * inputs: one at the 65536-char hard cap is 393 KB in the worst case (every
+   * code unit JSON-escaped to `\uXXXX`), and one at the 16384-char default of
+   * non-ASCII prose is ~48 KB — over the 32 KB this used to be. The cap
+   * bounds the whole envelope; per-value limits are enforced by
+   * `validateRecipeVars`.
+   */
+  run: 512 * 1024,
   /** /recipes (POST), PUT/PATCH /recipes/:name, /recipes/lint — yaml content. */
   content: 256 * 1024,
   /**
@@ -962,7 +1032,7 @@ export function tryHandleRecipeRoute(
       ? /^\/recipes\/([^/]+)\/run$/.exec(parsedUrl.pathname)
       : null;
   if (recipeNameRunMatch) {
-    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.run (32 KB).
+    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.run.
     const nameFromPath = decodeURIComponent(recipeNameRunMatch[1] ?? "");
     void (async () => {
       const parsedBody = await readJsonBody<{
@@ -981,7 +1051,10 @@ export function tryHandleRecipeRoute(
         const parsed = parsedBody.value ?? {};
         if (respondIfUnknownBodyKeys(res, parsed, ["vars", "inputs"])) return;
         const varsRaw = parsed.vars ?? parsed.inputs;
-        const varsErr = validateRecipeVars(varsRaw);
+        const varsErr = validateRecipeVars(
+          varsRaw,
+          declaredInputsForRun(deps, nameFromPath),
+        );
         if (varsErr) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify(varsErr));
@@ -1015,7 +1088,7 @@ export function tryHandleRecipeRoute(
   }
 
   if (parsedUrl.pathname === "/recipes/run" && req.method === "POST") {
-    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.run (32 KB).
+    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.run.
     void (async () => {
       const parsedBody = await readJsonBody<{
         name?: string;
@@ -1037,7 +1110,10 @@ export function tryHandleRecipeRoute(
         const name = parsed.name;
         // #605 symmetry — accept `inputs` here like /recipes/:name/run does.
         const varsRaw = parsed.vars ?? parsed.inputs;
-        const varsErr = validateRecipeVars(varsRaw);
+        const varsErr = validateRecipeVars(
+          varsRaw,
+          declaredInputsForRun(deps, name),
+        );
         if (varsErr) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify(varsErr));

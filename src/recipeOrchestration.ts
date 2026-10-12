@@ -1396,7 +1396,10 @@ export class RecipeOrchestration {
           // backticks could bias the prompt (prompt-injection-by-var).
           if (vars && Object.keys(vars).length > 0) {
             const { validateRecipeVars } = await import("./recipeRoutes.js");
-            const varsErr = validateRecipeVars(vars);
+            // A JSON prompt recipe declares no typed inputs, so every value
+            // is held to the `string` rule — a `type: text` input exists only
+            // on YAML recipes, whose runners enforce where it may render.
+            const varsErr = validateRecipeVars(vars, []);
             if (varsErr) {
               return { ok: false, error: `invalid_vars:${varsErr.field}` };
             }
