@@ -58,6 +58,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-10-12 `fix/recipes-dir-scan-hidden-entries` — every recipes-dir scanner skips dot-entries (`.archive/` was scheduled and listed as an install); promote audit record moves under `.audit/`, legacy top-level `*.promote-audit.json` excluded by one shared predicate.
 - 2026-10-11 `fix/receipts-summary-skips-chain-markers` — `summariseBoundaryReceipts` skips chain-start/rotation marker rows instead of reporting them as unreadable lines.
 - 2026-10-11 `fix/failed-agent-task-not-an-answer` — `agentTextFromTask` decides by task status: a failed, cancelled or interrupted orchestrator task is marked `[agent step failed: …]` even when it carries output (a missing Claude sign-in previously became the step's answer and the run finished `done`).
 - 2026-10-11 `feat/inbox-attachments` — `GET /inbox` also lists `attachments` (regular non-markdown files); `GET /inbox/attachments/<name>` serves one byte for byte. Plain names only, never a symlink, never `.partial`.

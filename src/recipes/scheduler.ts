@@ -19,6 +19,10 @@ import {
   getConfigDisabledNames,
   isInstallDirDisabled,
 } from "./disabledMarkers.js";
+import {
+  isReservedRecipeDirEntry,
+  isTopLevelRecipeFile,
+} from "./recipeDirEntries.js";
 
 /**
  * RecipeScheduler — runs cron-triggered recipes on a simple interval or
@@ -202,6 +206,8 @@ export class RecipeScheduler {
     const candidates: Candidate[] = [];
 
     for (const f of entries) {
+      // `.archive/`, `.install/`, `.audit/` — never an install dir or recipe.
+      if (isReservedRecipeDirEntry(f)) continue;
       const fullPath = path.join(this.opts.recipesDir, f);
       let isDir = false;
       try {
@@ -259,9 +265,8 @@ export class RecipeScheduler {
         continue;
       }
 
-      const isJson = f.endsWith(".json") && !f.endsWith(".permissions.json");
-      const isYaml = f.endsWith(".yaml") || f.endsWith(".yml");
-      if (!isJson && !isYaml) continue;
+      if (!isTopLevelRecipeFile(f)) continue;
+      const isJson = f.endsWith(".json");
       candidates.push({
         filePath: fullPath,
         kind: isJson ? "json" : "yaml",

@@ -190,9 +190,9 @@ describe("promoteRecipeVariant", () => {
     expect(result.ok).toBe(true);
     expect(result.path).toBe(path.join(tmp, "morning-brief.yaml"));
     expect(existsSync(path.join(tmp, "morning-brief-v2.yaml"))).toBe(false);
-    expect(existsSync(path.join(tmp, "morning-brief.promote-audit.json"))).toBe(
-      true,
-    );
+    expect(
+      existsSync(path.join(tmp, ".audit", "morning-brief.promote-audit.json")),
+    ).toBe(true);
   });
 
   it("rejects JSON-backed variants with a clear error", async () => {

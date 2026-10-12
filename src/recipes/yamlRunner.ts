@@ -145,6 +145,7 @@ import {
   type PriceTable,
   costUsd as priceCostUsd,
 } from "./pricing/priceTable.js";
+import { isTopLevelRecipeFile } from "./recipeDirEntries.js";
 import {
   type ReplayedFailure,
   ReplayIncompleteError,
@@ -5731,9 +5732,7 @@ export function listYamlRecipes(
     trigger: string;
   }> = [];
   for (const f of readdirSync(recipesDir) as string[]) {
-    if (!f.endsWith(".yaml") && !f.endsWith(".yml") && !f.endsWith(".json"))
-      continue;
-    if (f.endsWith(".permissions.json")) continue;
+    if (!isTopLevelRecipeFile(f)) continue;
     try {
       const full = path.join(recipesDir, f);
       const text = readFileSync(full, "utf-8");
