@@ -62,6 +62,7 @@ import { chainSidecarPaths } from "./ledgerChain.js";
 import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import { patchworkHome, patchworkPath } from "./patchworkHome.js";
 import { summariseBoundaryReceipts } from "./privacy/boundaryReceipts.js";
+import { fileInputValueError } from "./recipes/fileInputs.js";
 import { recipeChangedSince } from "./recipes/recipeSourceHash.js";
 import { cancelRunChecked } from "./recipes/runRegistry.js";
 import { textInputValueError } from "./recipes/textInputs.js";
@@ -254,6 +255,10 @@ export function _resetRepairRateLimitForTests(): void {
 //         except `\n` `\r` `\t`. Admitted ONLY because the runners refuse to
 //         render a text value anywhere but a content field
 //         (`src/recipes/textInputs.ts`).
+//       file — the name of an existing workspace upload (`src/uploadStore.ts`
+//         name rules, regular file, no symlink). Rendered as the upload's
+//         absolute path, in an agent prompt or file content only
+//         (`src/recipes/fileInputs.ts`).
 //   - type      — strings only; numbers/objects/arrays → 400 (type-strict
 //                 per R3 amendment 4 / I-3, prevents JSON.stringify smuggling
 //                 a `..` segment into a coerced value at render time).
@@ -303,6 +308,9 @@ export function validateRecipeVars(
   for (const d of declared) {
     if (d.type === "text" && !textInputs.has(d.name)) textInputs.set(d.name, d);
   }
+  const fileInputs = new Set(
+    declared.filter((d) => d.type === "file").map((d) => d.name),
+  );
   if (typeof vars !== "object" || Array.isArray(vars)) {
     return {
       ok: false,
@@ -326,6 +334,20 @@ export function validateRecipeVars(
         field: "type",
         offendingKey: key,
       };
+    }
+    if (fileInputs.has(key)) {
+      // A file input names an existing workspace upload — a plain name, never
+      // a path (src/recipes/fileInputs.ts). The runner re-checks at run start.
+      const reason = fileInputValueError(value);
+      if (reason) {
+        return {
+          ok: false,
+          error: `vars["${key}"] is a file input and ${reason}`,
+          field: "value",
+          offendingKey: key,
+        };
+      }
+      continue;
     }
     const textInput = textInputs.get(key);
     if (textInput) {

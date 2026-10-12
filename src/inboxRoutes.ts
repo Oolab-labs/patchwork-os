@@ -17,6 +17,7 @@
 import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
+import { sendAttachment } from "./attachmentResponse.js";
 import { respond500 } from "./httpErrorResponse.js";
 import { patchworkPath } from "./patchworkHome.js";
 
@@ -236,14 +237,11 @@ export function tryHandleInboxRoute(
           return;
         }
         const bytes = await readFile(filePath);
-        res.writeHead(200, {
-          "Content-Type": attachmentContentType(name),
-          "Content-Disposition": `attachment; filename="${name}"`,
-          "Content-Length": String(bytes.length),
-          "X-Content-Type-Options": "nosniff",
-          "Cache-Control": "no-store",
+        sendAttachment(res, {
+          name,
+          bytes,
+          contentType: attachmentContentType(name),
         });
-        res.end(bytes);
       } catch (err) {
         respond500(res, err);
       }

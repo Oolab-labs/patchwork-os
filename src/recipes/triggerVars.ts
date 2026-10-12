@@ -57,12 +57,13 @@ export interface DeclaredTriggerInput {
   required?: boolean;
   default?: string;
   /**
-   * `text` admits prose (see `src/recipes/textInputs.ts`); `string`, or no
-   * type at all, keeps the short-token allow-list. Only these two values are
+   * `text` admits prose (see `src/recipes/textInputs.ts`); `file` takes the
+   * name of a workspace upload (`src/recipes/fileInputs.ts`); `string`, or no
+   * type at all, keeps the short-token allow-list. Only these values are
    * reported — an unrecognised type is omitted, which makes it a `string`
    * input at runtime (the strict rule) while `recipe lint` reports it.
    */
-  type?: "string" | "text";
+  type?: "string" | "text" | "file";
   /** Declared maximum length of a `text` value (positive integer only). */
   maxLength?: number;
 }
@@ -113,7 +114,9 @@ export function declaredTriggerInputs(parsed: unknown): DeclaredTriggerInput[] {
       }
       if (typeof rec.required === "boolean") entry.required = rec.required;
       if (dflt !== undefined) entry.default = dflt;
-      if (rec.type === "string" || rec.type === "text") entry.type = rec.type;
+      if (rec.type === "string" || rec.type === "text" || rec.type === "file") {
+        entry.type = rec.type;
+      }
       if (
         typeof rec.maxLength === "number" &&
         Number.isInteger(rec.maxLength) &&

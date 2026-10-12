@@ -25,6 +25,7 @@ import {
   provenanceOf,
   runInputProvenance,
   type UntrustedProvenance,
+  uploadInputProvenance,
   wrapUntrusted,
 } from "../governance/untrustedContent.js";
 import { classifyTool } from "../riskTier.js";
@@ -44,6 +45,14 @@ import {
   fanOutChildReversibilityCeiling,
   fanOutChildToolId,
 } from "./fanOutChild.js";
+import {
+  agentReadDirsFor,
+  fileInputInIdentifierMessage,
+  fileInputNamesOf,
+  findFileInputsInIdentifiers,
+  holdFileInputValues,
+  resolveFileInputs,
+} from "./fileInputs.js";
 import { reversibilityCeilingFor } from "./fileWriteRollbackability.js";
 import {
   approvalHaltFor,
@@ -213,6 +222,17 @@ export interface RunOptions {
    */
   textInputNames?: ReadonlySet<string>;
   /**
+   * `type: file` input names in force for this run, inherited by nested
+   * recipes like `textInputNames` (src/recipes/fileInputs.ts).
+   */
+  fileInputNames?: ReadonlySet<string>;
+  /**
+   * READ-only directories this run's CLI agent steps get — the uploads dir
+   * when the top-level run resolved a file input, else absent. Set by
+   * `runChainedRecipe` at depth 0 and inherited by nested recipes.
+   */
+  agentReadDirs?: readonly string[];
+  /**
    * Run-level cancellation. Nested recipes inherit the parent's signal; the
    * top-level run also registers its own AbortController via the run registry
    * (keyed by RunLog seq) so `POST /runs/:seq/cancel` can abort it. When it
@@ -350,6 +370,8 @@ export type AgentExecutor = (
     disallowedTools?: string[];
     containment?: import("../governance/profile.js").AgentContainment;
     boundary?: AgentExecutorInput["boundary"];
+    /** Extra READ-only dirs (`type: file` inputs); see AgentExecutorInput. */
+    readOnlyDirs?: string[];
     /** Names the step in a replay refusal; never affects dispatch. */
     stepId?: string;
   },
@@ -726,6 +748,18 @@ export async function executeChainedStep(
       error: textInputInIdentifierMessage(textPlacement, `step "${step.id}"`),
     };
   }
+  // `type: file` inputs: the same rule over a narrower list (fileInputs.ts).
+  const fileInputNames = new Set<string>([
+    ...(options.fileInputNames ?? []),
+    ...fileInputNamesOf(recipe),
+  ]);
+  const filePlacement = findFileInputsInIdentifiers(step, fileInputNames)[0];
+  if (filePlacement) {
+    return {
+      success: false,
+      error: fileInputInIdentifierMessage(filePlacement, `step "${step.id}"`),
+    };
+  }
 
   // Resolve templates
   // Untrusted envelope (Phase 0 step 10): agent prompts only. Tool params,
@@ -745,8 +779,12 @@ export async function executeChainedStep(
         },
         // A text run input reaches a chained recipe as `{{env.<name>}}`.
         wrapEnv: (key, value) => {
-          if (!textInputNames.has(key)) return undefined;
-          const prov = runInputProvenance(key);
+          const prov = textInputNames.has(key)
+            ? runInputProvenance(key)
+            : fileInputNames.has(key)
+              ? uploadInputProvenance(key)
+              : undefined;
+          if (prov === undefined) return undefined;
           for (const o of prov.origins) promptOrigins.add(o);
           return wrapUntrusted(value, prov);
         },
@@ -1159,6 +1197,7 @@ export async function executeChainedStep(
         sourcePath: nestedRecipe.sourcePath,
         env: { ...options.env, ...resolvedVars }, // Merge resolved vars into env
         textInputNames,
+        fileInputNames,
         budget: ctx.budget, // share the single per-run budget across the tree
         priceTable: ctx.priceTable, // reuse the once-loaded price table
       };
@@ -1261,6 +1300,11 @@ export async function executeChainedStep(
             ...(step.agent.data_policy !== undefined && {
               boundary: { dataPolicy: step.agent.data_policy },
             }),
+            // A run handed a `type: file` input may READ the uploads dir.
+            ...(options.agentReadDirs !== undefined &&
+              options.agentReadDirs.length > 0 && {
+                readOnlyDirs: [...options.agentReadDirs],
+              }),
           }),
           step.timeout_ms,
           step.id,
@@ -1724,19 +1768,35 @@ export async function runChainedRecipe(
   // `type: text` input values are held by the value-redaction layer for the
   // life of the top-level run, so no ledger written during it records the
   // prose (src/recipes/textInputs.ts). Nested calls run inside that window.
-  const releaseTextInputs =
-    depth === 0
-      ? holdTextInputValues(textInputNamesOf(recipe), options.env)
-      : () => {};
+  if (depth !== 0) {
+    return runChainedRecipeHeld(recipe, options, deps, existingRegistry, depth);
+  }
+  // `type: file` inputs: the top-level run's upload NAMES become the uploads'
+  // absolute paths before anything renders, and a missing upload stops the run
+  // here (src/recipes/fileInputs.ts). Nested recipes inherit the resolved env,
+  // the names and the read grant.
+  const files = resolveFileInputs(recipe, options.env);
+  if (!files.ok) throw new Error(files.error);
+  const env = files.values as RunOptions["env"];
+  const readDirs = agentReadDirsFor(files.uploads);
+  const heldOptions: RunOptions = {
+    ...options,
+    env,
+    fileInputNames: fileInputNamesOf(recipe),
+    ...(readDirs.length > 0 && { agentReadDirs: readDirs }),
+  };
+  const releaseTextInputs = holdTextInputValues(textInputNamesOf(recipe), env);
+  const releaseFileInputs = holdFileInputValues(files.uploads);
   try {
     return await runChainedRecipeHeld(
       recipe,
-      options,
+      heldOptions,
       deps,
       existingRegistry,
       depth,
     );
   } finally {
+    releaseFileInputs();
     releaseTextInputs();
   }
 }

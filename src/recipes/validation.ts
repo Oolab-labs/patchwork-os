@@ -16,6 +16,13 @@ import {
   unclassifiedToolEnabledAgent,
 } from "./dataPolicyPlacement.js";
 import {
+  FILE_INPUT_IN_IDENTIFIER,
+  fileInputDefaultError,
+  fileInputInIdentifierMessage,
+  fileInputNamesOf,
+  findFileInputsInIdentifiers,
+} from "./fileInputs.js";
+import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "./migrations/index.js";
@@ -1144,7 +1151,7 @@ function validateTriggerVarsList(
  * saying nothing would let an author who meant `text` (and typed `textarea`,
  * say) watch every prose value be refused at the route with no hint why.
  */
-const DESCRIPTIVE_INPUT_TYPES = new Set(["string", "text", "enum"]);
+const DESCRIPTIVE_INPUT_TYPES = new Set(["string", "text", "file", "enum"]);
 
 function validateTriggerInputType(
   entry: Record<string, unknown>,
@@ -1155,7 +1162,7 @@ function validateTriggerInputType(
   if (type !== undefined && typeof type !== "string") {
     issues.push({
       level: "error",
-      message: `${path}.type must be a string — "string" (the default) or "text"`,
+      message: `${path}.type must be a string — "string" (the default), "text" or "file"`,
       code: "trigger-input-type",
       path: `${path}.type`,
     });
@@ -1209,6 +1216,23 @@ function validateTriggerInputType(
       });
     }
   }
+  // A file input's default names an upload. Whether it EXISTS is a run-time
+  // fact (uploads come and go); whether it could ever name one is not.
+  if (
+    type === "file" &&
+    entry.default !== undefined &&
+    entry.default !== null
+  ) {
+    const reason = fileInputDefaultError(String(entry.default));
+    if (reason) {
+      issues.push({
+        level: "error",
+        message: `${path}.default is not an upload name: it ${reason}`,
+        code: "file-input-default-invalid",
+        path: `${path}.default`,
+      });
+    }
+  }
 }
 
 /**
@@ -1221,14 +1245,25 @@ function validateTextInputPlacements(
   r: Record<string, unknown>,
   issues: LintIssue[],
 ): void {
+  if (!Array.isArray(r.steps)) return;
   const names = textInputNamesOf(r);
-  if (names.size === 0 || !Array.isArray(r.steps)) return;
+  const fileNames = fileInputNamesOf(r);
+  if (names.size === 0 && fileNames.size === 0) return;
   (r.steps as unknown[]).forEach((step, i) => {
     for (const p of findTextInputsInIdentifiers(step, names)) {
       issues.push({
         level: "error",
         message: `Step ${i + 1}: ${textInputInIdentifierMessage(p, `step ${i + 1}`)}`,
         code: TEXT_INPUT_IN_IDENTIFIER,
+        path: `steps.${i}.${p.field}`,
+      });
+    }
+    // `type: file` — the same rule over a narrower content list (fileInputs.ts).
+    for (const p of findFileInputsInIdentifiers(step, fileNames)) {
+      issues.push({
+        level: "error",
+        message: `Step ${i + 1}: ${fileInputInIdentifierMessage(p, `step ${i + 1}`)}`,
+        code: FILE_INPUT_IN_IDENTIFIER,
         path: `steps.${i}.${p.field}`,
       });
     }

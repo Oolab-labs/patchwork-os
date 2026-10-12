@@ -72,6 +72,7 @@ import {
 } from "./recipeRoutes.js";
 import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
+import { tryHandleUploadsRoute } from "./uploadsRoutes.js";
 import { PACKAGE_VERSION } from "./version.js";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -1850,6 +1851,12 @@ export class Server extends EventEmitter<ServerEvents> {
 
       // ── Inbox routes (extracted to src/inboxRoutes.ts) ───────────────────
       if (tryHandleInboxRoute(req, res, parsedUrl)) {
+        return;
+      }
+
+      // ── Workspace uploads (src/uploadsRoutes.ts) ─────────────────────────
+      // Documents a user hands a `type: file` recipe input.
+      if (tryHandleUploadsRoute(req, res, parsedUrl)) {
         return;
       }
 

@@ -196,10 +196,17 @@ function collect(
   }
 }
 
+/** Decides whether `field` of a step running `tool` is a content position. */
+export type ContentFieldPredicate = (
+  tool: string | undefined,
+  field: string,
+) => boolean;
+
 function scanStep(
   step: Record<string, unknown>,
   prefix: string,
   names: ReadonlySet<string>,
+  isContent: ContentFieldPredicate,
   out: TextInputPlacement[],
 ): void {
   const tool = typeof step.tool === "string" ? step.tool : undefined;
@@ -213,28 +220,39 @@ function scanStep(
     }
     // A fan_out body is a step of its own, judged by its own tool.
     if (key === "do" && tool === "fan_out" && isPlainObject(value)) {
-      scanStep(value, `${prefix}do.`, names, out);
+      scanStep(value, `${prefix}do.`, names, isContent, out);
       continue;
     }
-    if (isTextContentField(tool, key)) continue;
+    if (isContent(tool, key)) continue;
     collect(value, `${prefix}${key}`, names, out);
   }
 }
 
 /**
- * Every place a step references a text input outside a content field. Static
- * over the step as written — the same answer before and after rendering,
- * because rendering is single-pass substitution and cannot introduce a
- * reference that was not in the template.
+ * Every place a step references one of `names` outside a content field, where
+ * `isContent` says which tool params are content (an agent's `prompt` always
+ * is). Static over the step as written — the same answer before and after
+ * rendering, because rendering is single-pass substitution and cannot
+ * introduce a reference that was not in the template. Shared by `type: text`
+ * and `type: file` inputs (`fileInputs.ts`), which differ only in the list.
  */
+export function findInputsOutsideContent(
+  step: unknown,
+  names: ReadonlySet<string>,
+  isContent: ContentFieldPredicate,
+): TextInputPlacement[] {
+  if (names.size === 0 || !isPlainObject(step)) return [];
+  const out: TextInputPlacement[] = [];
+  scanStep(step, "", names, isContent, out);
+  return out;
+}
+
+/** Every place a step references a text input outside a content field. */
 export function findTextInputsInIdentifiers(
   step: unknown,
   names: ReadonlySet<string>,
 ): TextInputPlacement[] {
-  if (names.size === 0 || !isPlainObject(step)) return [];
-  const out: TextInputPlacement[] = [];
-  scanStep(step, "", names, out);
-  return out;
+  return findInputsOutsideContent(step, names, isTextContentField);
 }
 
 /** The step-failure / lint message for one placement. */

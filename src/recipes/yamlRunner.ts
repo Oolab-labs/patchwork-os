@@ -73,6 +73,7 @@ import {
   provenanceOf,
   runInputProvenance,
   type UntrustedProvenance,
+  uploadInputProvenance,
   wrapUntrusted,
 } from "../governance/untrustedContent.js";
 import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
@@ -113,6 +114,15 @@ import {
   fanOutChildReversibilityCeiling,
   fanOutChildToolId,
 } from "./fanOutChild.js";
+import {
+  agentReadDirsFor,
+  FILE_INPUT_IN_IDENTIFIER,
+  fileInputInIdentifierMessage,
+  fileInputNamesOf,
+  findFileInputsInIdentifiers,
+  holdFileInputValues,
+  resolveFileInputs,
+} from "./fileInputs.js";
 import { FileRollbackLog } from "./fileRollback.js";
 import {
   assertRollbackNotWorsened,
@@ -746,6 +756,8 @@ export interface RunnerDeps {
       disallowedTools?: string[];
       /** Resolved governed containment (Phase 0); forwarded to the driver. */
       containment?: import("../governance/profile.js").AgentContainment;
+      /** Extra READ-only directories for the agent (`--add-dir`); fileInputs.ts. */
+      readOnlyDirs?: string[];
       /** Governed-only; the impl keeps its own fallback for direct callers. */
       systemPrompt?: string;
     },
@@ -1486,16 +1498,28 @@ export async function runYamlRecipe(
   deps: RunnerDeps = {},
   seedContext: RunContext = {},
 ): Promise<RunResult> {
+  // `type: file` inputs: each upload NAME becomes the upload's absolute path
+  // before anything renders. Fails CLOSED — an upload that no longer exists
+  // stops the run here, before any step (src/recipes/fileInputs.ts).
+  const files = resolveFileInputs(recipe, seedContext);
+  if (!files.ok) throw new Error(files.error);
+  const resolvedSeed = files.values as RunContext;
   // `type: text` inputs are held by the value-redaction layer for exactly the
   // life of the run, so no ledger written during it records the prose
-  // (src/recipes/textInputs.ts). Released whatever way the run ends.
+  // (src/recipes/textInputs.ts). File inputs' paths likewise, as
+  // `[upload: <name>, sha256:…]`. Released whatever way the run ends.
   const releaseTextInputs = holdTextInputValues(
     textInputNamesOf(recipe),
-    seedContext,
+    resolvedSeed,
   );
+  const releaseFileInputs = holdFileInputValues(files.uploads);
   try {
-    return await runYamlRecipeHeld(recipe, deps, seedContext);
+    return await runYamlRecipeHeld(recipe, deps, resolvedSeed, {
+      fileInputNames: fileInputNamesOf(recipe),
+      agentReadDirs: agentReadDirsFor(files.uploads),
+    });
   } finally {
+    releaseFileInputs();
     releaseTextInputs();
   }
 }
@@ -1504,6 +1528,12 @@ async function runYamlRecipeHeld(
   recipe: YamlRecipe,
   deps: RunnerDeps,
   seedContext: RunContext,
+  fileInputs: {
+    /** Declared `type: file` inputs — may render into content fields only. */
+    fileInputNames: ReadonlySet<string>;
+    /** READ-only dirs for this run's CLI agent steps (empty: no file input). */
+    agentReadDirs: string[];
+  },
 ): Promise<RunResult> {
   if (recipe.servers?.length) {
     await loadRecipeServers(recipe.servers);
@@ -1534,9 +1564,16 @@ async function runYamlRecipeHeld(
   // the same envelope, under the same profile, as connector output — and they
   // may never be rendered outside a content field (checked per step below).
   const textInputNames = textInputNamesOf(recipe);
+  // `type: file` inputs render as an upload's path; the envelope's note says
+  // the FILE's content is data, not instructions (fileInputs.ts).
+  const fileInputNames = fileInputs.fileInputNames;
+  const agentReadDirs = fileInputs.agentReadDirs;
   if (envelopeActive) {
     for (const name of textInputNames) {
       untrustedProvenance.set(name, runInputProvenance(name));
+    }
+    for (const name of fileInputNames) {
+      untrustedProvenance.set(name, uploadInputProvenance(name));
     }
   }
   /**
@@ -2044,6 +2081,8 @@ async function runYamlRecipeHeld(
     );
     const agentReturn = await _executeAgent(
       {
+        // A run handed a `type: file` input may READ the uploads dir.
+        ...(agentReadDirs.length > 0 && { readOnlyDirs: agentReadDirs }),
         prompt,
         driver: routed.driver === "api" ? "anthropic" : routed.driver,
         model: routed.model,
@@ -2158,6 +2197,8 @@ async function runYamlRecipeHeld(
     }
     const agentReturn = await _executeAgent(
       {
+        // A run handed a `type: file` input may READ the uploads dir.
+        ...(agentReadDirs.length > 0 && { readOnlyDirs: agentReadDirs }),
         prompt: input.prompt,
         driver: input.driver === "api" ? "anthropic" : input.driver,
         model: input.model,
@@ -2539,21 +2580,32 @@ async function runYamlRecipeHeld(
       // before ANY of the step renders — the `when:` guard included — so the
       // value never reaches a path, URL, ref, channel, recipient or id. The
       // path jail stays as the backstop; this is the rule.
+      // A `type: file` input is held to the same rule over a narrower list.
       const textPlacement = findTextInputsInIdentifiers(
         step,
         textInputNames,
       )[0];
-      if (textPlacement) {
-        const msg = textInputInIdentifierMessage(
-          textPlacement,
-          `step "${stepIdForEmit}"`,
-        );
+      const filePlacement = textPlacement
+        ? undefined
+        : findFileInputsInIdentifiers(step, fileInputNames)[0];
+      if (textPlacement || filePlacement) {
+        const msg = textPlacement
+          ? textInputInIdentifierMessage(
+              textPlacement,
+              `step "${stepIdForEmit}"`,
+            )
+          : fileInputInIdentifierMessage(
+              filePlacement as NonNullable<typeof filePlacement>,
+              `step "${stepIdForEmit}"`,
+            );
         stepResults.push({
           id: stepIdForEmit,
           tool: step.agent ? "agent" : step.tool,
           status: "error",
           error: msg,
-          errorCode: TEXT_INPUT_IN_IDENTIFIER,
+          errorCode: textPlacement
+            ? TEXT_INPUT_IN_IDENTIFIER
+            : FILE_INPUT_IN_IDENTIFIER,
           haltReason: msg,
           haltCategory: "policy_denied",
           durationMs: 0,
@@ -2996,6 +3048,8 @@ async function runYamlRecipeHeld(
           );
           const agentReturn = await _executeAgent(
             {
+              // A run handed a `type: file` input may READ the uploads dir.
+              ...(agentReadDirs.length > 0 && { readOnlyDirs: agentReadDirs }),
               prompt: renderedPrompt,
               driver: routed.driver === "api" ? "anthropic" : routed.driver,
               model: routed.model,
@@ -4622,6 +4676,8 @@ function buildAgentExecutorDeps(
       disallowedTools?: string[];
       /** Resolved governed containment (Phase 0); forwarded to the driver. */
       containment?: import("../governance/profile.js").AgentContainment;
+      /** Extra READ-only directories for the agent (`--add-dir`); fileInputs.ts. */
+      readOnlyDirs?: string[];
     },
   ) => Promise<string | AgentResult>,
   /**
@@ -4809,6 +4865,9 @@ function buildAgentExecutorDeps(
             ...(opts.containment !== undefined && {
               containment: opts.containment,
             }),
+            ...(opts.readOnlyDirs !== undefined && {
+              readOnlyDirs: opts.readOnlyDirs,
+            }),
             ...(opts.systemPrompt !== undefined && {
               systemPrompt: opts.systemPrompt,
             }),
@@ -4908,6 +4967,8 @@ export function defaultClaudeCodeFn(
      * and it must not be a way around containment.
      */
     containment?: import("../governance/profile.js").AgentContainment;
+    /** Extra READ-only directories for the agent (`--add-dir`); fileInputs.ts. */
+    readOnlyDirs?: string[];
   },
 ): Promise<string> {
   const binary = resolveClaudeBinary();
@@ -5006,6 +5067,15 @@ export function defaultClaudeCodeFn(
     // Deny rules apply in ANY mode.
     if (sandboxDenied.length > 0) {
       localArgs.push("--disallowed-tools", ...sandboxDenied);
+    }
+  }
+  // Extra READ-only directories (a run handed a `type: file` input). The
+  // matching write-tool denies already arrived in `disallowedTools` from
+  // `executeAgent`; this only makes the directory reachable. Same argv rule as
+  // the subprocess driver's `contextFiles` → `--add-dir`.
+  for (const d of opts?.readOnlyDirs ?? []) {
+    if (typeof d === "string" && d.length > 0 && !d.startsWith("-")) {
+      localArgs.push("--add-dir", d);
     }
   }
   try {
@@ -5423,6 +5493,8 @@ export function buildChainedDeps(
       disallowedTools?: string[];
       /** Resolved governed containment (Phase 0); forwarded to the driver. */
       containment?: import("../governance/profile.js").AgentContainment;
+      /** Extra READ-only directories for the agent (`--add-dir`); fileInputs.ts. */
+      readOnlyDirs?: string[];
     },
   ) => Promise<string | AgentResult>,
   /**
@@ -5529,6 +5601,8 @@ export function buildChainedDeps(
       disallowedTools?: string[];
       /** Resolved governed containment (Phase 0); forwarded to the driver. */
       containment?: import("../governance/profile.js").AgentContainment;
+      /** Extra READ-only directories for the agent (`--add-dir`); fileInputs.ts. */
+      readOnlyDirs?: string[];
       boundary?: import("./agentExecutor.js").AgentExecutorInput["boundary"];
       /** Names the step in a replay refusal; never affects dispatch. */
       stepId?: string;
@@ -5555,6 +5629,9 @@ export function buildChainedDeps(
           allowedTools: opts.allowedTools,
         }),
         ...(opts?.boundary !== undefined && { boundary: opts.boundary }),
+        ...(opts?.readOnlyDirs !== undefined && {
+          readOnlyDirs: opts.readOnlyDirs,
+        }),
         // Worker.autonomy: single chokepoint for the CHAINED path — fold the
         // worker's agent-step deny list into every chained agent call so the
         // subprocess can't bypass the per-step gate (mirrors the flat branch).

@@ -42,6 +42,20 @@ steps:
     content: "{{pack}}"
 ```
 
+To run a workflow over a document — notes, a receipt PDF, a photo — upload it to the workspace and declare the input `type: file`. Uploads live in `~/.patchwork/uploads/` and are managed over the bridge's HTTP API (same bearer token as every other route): `POST /uploads` with the raw bytes as the body and the file name, percent-encoded, in an `X-Upload-Filename` header; `GET /uploads` lists `name`, `size`, `sha256`, `contentType` and `uploadedAt`; `GET /uploads/<name>` downloads (always as an attachment, never rendered); `DELETE /uploads/<name>` removes one. Accepted types are `.txt`, `.md`, `.csv`, `.json`, `.pdf`, `.png`, `.jpg`/`.jpeg` and `.webp`, checked by extension **and** content (a `.pdf` that is not a PDF is refused, as is anything HTML, SVG or executable); a file may be at most 10 MB and a workspace holds at most 200 MB. A stored name is plain — letters, digits, spaces and `. _ -`; a name carrying a path separator, `..`, a leading dot or a control character is refused, other characters become `_`, and a name already in use gets a `-1`, `-2`… suffix rather than overwriting. A run supplies the upload's **name** as the input's value; it must name an existing upload, and at render it becomes the file's absolute path. A file input may be rendered only into an agent `prompt` or the `content` of `file.write`/`file.append` — never a path, URL, id or message body — or the step fails with `file_input_in_identifier` (and lint reports it first). A Claude CLI agent step in a run handed a file input may **read** the uploads directory (it is added to the agent's directories, with every write tool denied for it); runs without a file input get nothing extra. Under `governed` the path is wrapped as untrusted content labelled `upload:<name>`, telling the model the file's content is data, not instructions. The bytes are never copied into a ledger, and the path is recorded there as `[upload: <name>, sha256:…]`.
+
+```yaml
+trigger:
+  type: manual
+  inputs:
+    - name: receipt
+      type: file
+steps:
+  - agent:
+      prompt: "Read the receipt at {{receipt}} and list the line items."
+      into: items
+```
+
 A step may carry an `expect` block: a completion contract checked against the step's output after it runs (a JSON Schema, a regex, a set of expected `outputs`). A failed contract halts the step by default; `required: true` makes a step skipped by its `when:` guard count as a failure too. `patchwork halts` shows these alongside ordinary errors.
 
 Two deliberate behaviours surprise people. A tool id that nothing is registered under **skips** the step silently under `compat` (forward compatibility for a plugin that is not loaded) and **halts** the run under `governed`; `recipe doctor` names the unresolved tool either way. And `recipe test` is offline: an unmocked tool or an unstubbed agent step is refused, never run live.
