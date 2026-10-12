@@ -1,6 +1,10 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Logger } from "../logger.js";
+import { listInstalledRecipes } from "../recipesHttp.js";
 import { Server } from "../server.js";
 
 /**
@@ -94,5 +98,64 @@ describe("GET /recipes — nextRunAt", () => {
     for (const r of parsed.recipes) {
       expect(Object.hasOwn(r, "nextRunAt")).toBe(false);
     }
+  });
+});
+
+describe("GET /recipes — schedule", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), "patchwork-recipes-schedule-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function steps(): string {
+    return "steps:\n  - id: main\n    agent: true\n    prompt: hi\n";
+  }
+
+  it("reports the expression the scheduler parses (`at:` and `schedule:`), and omits it for a manual recipe", async () => {
+    // Flat YAML using `at:` — the form the scheduler reads first.
+    writeFileSync(
+      path.join(dir, "morning.yaml"),
+      `name: morning\ntrigger:\n  type: cron\n  at: "0 9 * * *"\n${steps()}`,
+    );
+    // Install-dir recipe using `at:` with an interval.
+    mkdirSync(path.join(dir, "poller"));
+    writeFileSync(
+      path.join(dir, "poller", "recipe.yaml"),
+      `name: poller\ntrigger:\n  type: cron\n  at: "@every 5m"\n${steps()}`,
+    );
+    // Flat JSON using `schedule:`.
+    writeFileSync(
+      path.join(dir, "nightly.json"),
+      JSON.stringify({
+        name: "nightly",
+        trigger: { type: "cron", schedule: "30 2 * * *" },
+        steps: [{ id: "main", agent: true, prompt: "hi" }],
+      }),
+    );
+    writeFileSync(
+      path.join(dir, "by-hand.yaml"),
+      `name: by-hand\ntrigger:\n  type: manual\n${steps()}`,
+    );
+    server!.recipesFn = () =>
+      listInstalledRecipes(dir, { disabledRecipes: [] }) as unknown as Record<
+        string,
+        unknown
+      >;
+
+    const { status, body } = await getRecipes();
+    expect(status).toBe(200);
+    const parsed = JSON.parse(body) as Listed;
+    const byName = new Map(parsed.recipes.map((r) => [r.name, r]));
+    expect(byName.get("morning")?.schedule).toBe("0 9 * * *");
+    expect(byName.get("poller")?.schedule).toBe("@every 5m");
+    expect(byName.get("nightly")?.schedule).toBe("30 2 * * *");
+    const byHand = byName.get("by-hand");
+    expect(byHand).toBeDefined();
+    expect(Object.hasOwn(byHand as object, "schedule")).toBe(false);
   });
 });

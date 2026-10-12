@@ -1146,6 +1146,29 @@ export function setTrustLevel(
   }
 }
 
+/**
+ * The schedule expression a recipe's trigger declares, read in the same
+ * precedence the scheduler uses (`at` first, then `schedule` — see
+ * RecipeScheduler.start), with the legacy `cron` key last. Returns undefined
+ * for non-schedule triggers or when no non-empty string is present.
+ *
+ * The scheduler reads `at` first and most recipes declare only `at`, so a
+ * listing that read `schedule` alone reported no expression for them.
+ */
+export function scheduleExpressionOf(
+  trigger:
+    | { type?: string; at?: unknown; schedule?: unknown; cron?: unknown }
+    | undefined,
+): string | undefined {
+  if (trigger?.type !== "cron" && trigger?.type !== "schedule") {
+    return undefined;
+  }
+  for (const v of [trigger.at, trigger.schedule, trigger.cron]) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
 export interface RecipeSummary {
   name: string;
   description?: string;
@@ -1233,6 +1256,7 @@ export function listInstalledRecipes(
         trigger?: {
           type?: string;
           path?: string;
+          at?: string;
           schedule?: string;
           cron?: string;
         };
@@ -1277,15 +1301,8 @@ export function listInstalledRecipes(
           ? parsed.trigger.path
           : undefined;
       // Cron/schedule expression for the trigger column. Surfaces `0 9 * * *`
-      // in the UI without forcing a YAML fetch. Either field shape is valid.
-      const schedule =
-        parsed.trigger?.type === "cron" || parsed.trigger?.type === "schedule"
-          ? typeof parsed.trigger?.schedule === "string"
-            ? parsed.trigger.schedule
-            : typeof parsed.trigger?.cron === "string"
-              ? parsed.trigger.cron
-              : undefined
-          : undefined;
+      // in the UI without forcing a YAML fetch.
+      const schedule = scheduleExpressionOf(parsed.trigger);
       recipes.push({
         name: parsedName,
         description: parsed.description,
@@ -1337,6 +1354,7 @@ export function listInstalledRecipes(
         trigger?: {
           type?: string;
           path?: string;
+          at?: string;
           schedule?: string;
           cron?: string;
         };
@@ -1370,15 +1388,8 @@ export function listInstalledRecipes(
           ? parsed.trigger.path
           : undefined;
       // Cron/schedule expression for the trigger column. Surfaces `0 9 * * *`
-      // in the UI without forcing a YAML fetch. Either field shape is valid.
-      const schedule =
-        parsed.trigger?.type === "cron" || parsed.trigger?.type === "schedule"
-          ? typeof parsed.trigger?.schedule === "string"
-            ? parsed.trigger.schedule
-            : typeof parsed.trigger?.cron === "string"
-              ? parsed.trigger.cron
-              : undefined
-          : undefined;
+      // in the UI without forcing a YAML fetch.
+      const schedule = scheduleExpressionOf(parsed.trigger);
       recipes.push({
         name: parsedName,
         description: parsed.description,
