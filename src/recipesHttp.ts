@@ -22,6 +22,12 @@ import {
   getConfigDisabledNames,
   isInstallDirDisabled,
 } from "./recipes/disabledMarkers.js";
+import {
+  moveTopLevelProvenance,
+  readInstallProvenance,
+  readTopLevelProvenance,
+  removeTopLevelProvenance,
+} from "./recipes/installProvenance.js";
 import { RECIPE_NAME_RE } from "./recipes/names.js";
 import {
   type LintIssue,
@@ -762,6 +768,8 @@ export function deleteRecipeContent(
   }
   try {
     rmSync(resolved, { force: true });
+    // Install provenance: a later file with this name must not inherit it.
+    removeTopLevelProvenance(resolved);
     const sidecar = `${resolved}.permissions.json`;
     if (existsSync(sidecar)) {
       try {
@@ -819,6 +827,8 @@ export function archiveRecipe(
       dest = path.join(archiveDir, `${stem}.${stamp}${ext}`);
     }
     renameSync(resolved, dest);
+    // Install provenance moves with the file, out of the live recipes dir.
+    moveTopLevelProvenance(resolved, dest);
     const sidecar = `${resolved}.permissions.json`;
     if (existsSync(sidecar)) {
       try {
@@ -1181,6 +1191,14 @@ export interface RecipeSummary {
   path: string;
   installedAt: number;
   source: "user" | "project" | "unknown";
+  /**
+   * The install source recorded at install time, exactly as given: an
+   * install dir's `.install.json` (`recipe install`), or a top-level file's
+   * `.install/<file>.json` sidecar (`POST /recipes/install`), the latter only
+   * while the file still has the bytes it was installed with. Absent when no
+   * valid record exists — never inferred.
+   */
+  installedFrom?: string;
   enabled: boolean;
   trustLevel?: TrustLevel;
   vars?: Array<{
@@ -1303,6 +1321,8 @@ export function listInstalledRecipes(
       // Cron/schedule expression for the trigger column. Surfaces `0 9 * * *`
       // in the UI without forcing a YAML fetch.
       const schedule = scheduleExpressionOf(parsed.trigger);
+      // Sidecar under `.install/`, bound to these exact bytes (sha256).
+      const provenance = readTopLevelProvenance(fullPath, raw);
       recipes.push({
         name: parsedName,
         description: parsed.description,
@@ -1313,6 +1333,7 @@ export function listInstalledRecipes(
         path: fullPath,
         installedAt: stat.mtimeMs,
         source,
+        ...(provenance ? { installedFrom: provenance.source } : {}),
         // Top-level legacy recipes don't have install dirs to put a marker
         // in, so the `enabled` field still comes from the legacy config list.
         enabled: !disabledSet.has(parsedName),
@@ -1390,6 +1411,7 @@ export function listInstalledRecipes(
       // Cron/schedule expression for the trigger column. Surfaces `0 9 * * *`
       // in the UI without forcing a YAML fetch.
       const schedule = scheduleExpressionOf(parsed.trigger);
+      const provenance = readInstallProvenance(installDir);
       recipes.push({
         name: parsedName,
         description: parsed.description,
@@ -1400,6 +1422,7 @@ export function listInstalledRecipes(
         path: entrypointPath,
         installedAt: stat.mtimeMs,
         source: "user",
+        ...(provenance ? { installedFrom: provenance.source } : {}),
         // Disabled if EITHER the install marker is set OR the legacy config
         // names this recipe — defence-in-depth so a stale config entry can't
         // accidentally re-enable a recipe the user explicitly disabled, and
@@ -1417,7 +1440,6 @@ export function listInstalledRecipes(
           ...(firstError ? { firstError } : {}),
         },
       });
-      void installDir;
     } catch {
       // skip malformed install dir
     }

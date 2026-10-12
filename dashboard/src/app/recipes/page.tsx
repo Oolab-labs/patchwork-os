@@ -162,6 +162,8 @@ interface Recipe {
   description?: string;
   installedAt?: number;
   source?: string;
+  /** Install source recorded by `recipe install`; absent when unknown. */
+  installedFrom?: string;
   trigger?: string;
   webhookPath?: string;
   schedule?: string;

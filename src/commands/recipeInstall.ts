@@ -40,6 +40,10 @@ import {
 } from "../recipes/disabledMarkers.js";
 import { loadAllowlist } from "../recipes/githubInstallSource.js";
 import {
+  buildInstallProvenance,
+  writeInstallProvenance,
+} from "../recipes/installProvenance.js";
+import {
   getManifestRecipeFiles,
   loadManifestFromDir,
   parseManifest,
@@ -530,10 +534,13 @@ export async function runRecipeInstall(
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "patchwork-recipe-"));
 
   try {
+    // The ref actually fetched (a `main` request may fall back to `master`).
+    // Local sources have none.
+    let resolvedRef: string | undefined;
     if (source.type === "local") {
       await stageLocalSource(source, tmpDir);
     } else {
-      await stageGitHubSource(source, tmpDir);
+      resolvedRef = await stageGitHubSource(source, tmpDir);
     }
 
     // Read manifest if present
@@ -628,6 +635,14 @@ export async function runRecipeInstall(
         cpSync(src, dest);
       }
 
+      // Provenance: written only after every recipe file is in the staging
+      // dir and before the rename, so a half-finished install never carries
+      // one and a reinstall replaces it with the rest of the directory. An
+      // unrecordable source (too long, multi-line, URL userinfo) writes
+      // nothing — absence means "unknown", never a placeholder.
+      const provenance = buildInstallProvenance(rawSource, { resolvedRef });
+      if (provenance) writeInstallProvenance(stagingDir, provenance);
+
       if (isReinstall) {
         // Move the old install dir aside rather than deleting it first —
         // if the process dies between removing the old dir and renaming
@@ -707,15 +722,17 @@ async function stageLocalSource(
   cpSync(resolvedPath, tmpDir, { recursive: true });
 }
 
+/** Returns the ref that was actually downloaded. */
 async function stageGitHubSource(
   source: GitHubInstallSource,
   tmpDir: string,
-): Promise<void> {
+): Promise<string> {
   const ref = source.ref ?? "main";
   const dirPath = source.subdir ?? "";
 
   try {
     await downloadGitHubDir(source.owner, source.repo, dirPath, ref, tmpDir);
+    return ref;
   } catch (err) {
     // If main branch fails, try master
     if (ref === "main") {
@@ -727,7 +744,7 @@ async function stageGitHubSource(
           "master",
           tmpDir,
         );
-        return;
+        return "master";
       } catch {
         // fall through to original error
       }
