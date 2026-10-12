@@ -27,6 +27,8 @@ export interface BridgeStatus {
     port?: number;
     workspace?: string;
     approvalGate?: string;
+    /** IANA zone cron schedules run in (`recipes.timezone`); "UTC" when unset. */
+    timezone?: string;
     driver?: string;
     model?: string;
     version?: string;

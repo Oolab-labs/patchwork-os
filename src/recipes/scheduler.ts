@@ -8,7 +8,7 @@ import path from "node:path";
 import cron, { type ScheduledTask } from "node-cron";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "../logger.js";
-import { loadConfig } from "../patchworkConfig.js";
+import { effectiveScheduleTimezone, loadConfig } from "../patchworkConfig.js";
 import { findYamlRecipePath, loadRecipePrompt } from "../recipesHttp.js";
 import {
   type ClaimOptions,
@@ -71,7 +71,8 @@ export interface SchedulerOptions {
   disabledRecipes?: ReadonlyArray<string>;
   /**
    * IANA timezone for cron expressions, e.g. "America/New_York". Defaults to
-   * `loadConfig().recipes?.timezone ?? "UTC"` at start time. Tests can inject
+   * `effectiveScheduleTimezone(loadConfig())` (`recipes.timezone`, else
+   * "UTC") at start time, so `restart()` picks up a changed zone. Tests can inject
    * this to avoid depending on the dev machine's config.
    */
   timezone?: string;
@@ -342,7 +343,7 @@ export class RecipeScheduler {
         } else {
           // cron5
           const timezone =
-            this.opts.timezone ?? loadConfig().recipes?.timezone ?? "UTC";
+            this.opts.timezone ?? effectiveScheduleTimezone(loadConfig());
           const cronJob = cron.schedule(
             parsed2.expression,
             (ctx?: { date?: Date }) => {

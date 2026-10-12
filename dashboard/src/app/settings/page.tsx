@@ -22,6 +22,8 @@ interface StatusResponse {
     approvalGate?: string;
     approvalTimeouts?: Partial<Record<"low" | "medium" | "high", number>> | null;
     enableTimeOfDayAnomaly?: boolean;
+    /** IANA zone cron schedules run in (`recipes.timezone`); "UTC" when unset. */
+    timezone?: string;
     fullMode?: boolean;
     driver?: string;
     model?: string;

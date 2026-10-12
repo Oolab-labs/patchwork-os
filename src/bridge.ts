@@ -44,6 +44,7 @@ import { Logger } from "./logger.js";
 import { OAuthServerImpl } from "./oauth.js";
 import {
   defaultConfigPath,
+  effectiveScheduleTimezone,
   getApiKeysPresent,
   loadConfig as loadPatchworkConfig,
 } from "./patchworkConfig.js";
@@ -1489,6 +1490,16 @@ export class Bridge {
           // prior recipe set, so this is idempotent.
           this.registerRecipeTriggerPrograms();
         };
+        // Re-register cron jobs after POST /settings changes the schedule
+        // zone. restart() re-reads `recipes.timezone` from config, so the
+        // new zone applies without a bridge restart.
+        this.server.onScheduleSettingsChangedFn = () => {
+          if (!this.recipeScheduler) return;
+          this.recipeScheduler.restart();
+          this.logger.info(
+            "[patchwork] scheduler re-primed after schedule timezone change",
+          );
+        };
       }
     }
 
@@ -2115,6 +2126,8 @@ export class Bridge {
             approvalGate: this.server.approvalGate,
             approvalTimeouts: this.server.approvalTimeouts ?? null,
             enableTimeOfDayAnomaly: this.server.enableTimeOfDayAnomaly,
+            // Zone cron schedules run in (`recipes.timezone`, default UTC).
+            timezone: effectiveScheduleTimezone(cfg),
             fullMode: this.config.fullMode,
             driver: this.config.driver,
             model: cfg.model,
