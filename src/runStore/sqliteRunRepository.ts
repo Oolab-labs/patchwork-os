@@ -108,7 +108,8 @@ CREATE TABLE IF NOT EXISTS runs (
   owner_pid       INTEGER,
   had_step_errors INTEGER,
   step_results    TEXT,
-  extra           TEXT
+  extra           TEXT,
+  recipe_sha256   TEXT
 );
 CREATE INDEX IF NOT EXISTS runs_created_at ON runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS runs_seq        ON runs(seq);
@@ -190,6 +191,7 @@ export class SqliteRunRepository implements RunRepository {
     this.db.exec("PRAGMA journal_mode=WAL");
     this.db.exec("PRAGMA foreign_keys=ON");
     this.db.exec(SCHEMA);
+    this.migrate();
     this.seq = this.maxSeq();
     this.sweepInterrupted();
   }
@@ -211,6 +213,25 @@ export class SqliteRunRepository implements RunRepository {
       this.opts.logger?.warn?.(
         `[sqlite-runstore] close failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  /**
+   * Bring a database created by an older build up to the current columns.
+   *
+   * `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists,
+   * so a column added to SCHEMA reaches only NEW databases. Each addition is
+   * applied here when missing. Existing rows get NULL, which reads back as an
+   * ABSENT field — "not recorded" — and is never backfilled.
+   */
+  private migrate(): void {
+    const cols = new Set(
+      (this.db.prepare("PRAGMA table_info(runs)").all() as Row[]).map((c) =>
+        String(c.name),
+      ),
+    );
+    if (!cols.has("recipe_sha256")) {
+      this.db.exec("ALTER TABLE runs ADD COLUMN recipe_sha256 TEXT");
     }
   }
 
@@ -295,6 +316,9 @@ export class SqliteRunRepository implements RunRepository {
       ...(r.parent_seq != null && { parentSeq: Number(r.parent_seq) }),
       ...(r.manual_run_id != null && { manualRunId: String(r.manual_run_id) }),
       ...(r.owner_pid != null && { ownerPid: Number(r.owner_pid) }),
+      ...(r.recipe_sha256 != null && {
+        recipeSha256: String(r.recipe_sha256),
+      }),
       ...(r.had_step_errors != null && {
         hadStepErrors: Boolean(r.had_step_errors),
       }),
@@ -314,11 +338,13 @@ export class SqliteRunRepository implements RunRepository {
     this.db
       .prepare(
         `INSERT INTO runs (task_id, seq, recipe_name, trigger, status, created_at,
-                           started_at, model, parent_seq, manual_run_id, owner_pid)
-         VALUES (?,?,?,?,'running',?,?,?,?,?,?)
+                           started_at, model, parent_seq, manual_run_id, owner_pid,
+                           recipe_sha256)
+         VALUES (?,?,?,?,'running',?,?,?,?,?,?,?)
          ON CONFLICT(task_id) DO UPDATE SET
            seq=excluded.seq, status='running', created_at=excluded.created_at,
-           started_at=excluded.started_at, owner_pid=excluded.owner_pid`,
+           started_at=excluded.started_at, owner_pid=excluded.owner_pid,
+           recipe_sha256=excluded.recipe_sha256`,
       )
       .run(
         input.taskId,
@@ -331,6 +357,7 @@ export class SqliteRunRepository implements RunRepository {
         input.parentSeq ?? null,
         input.manualRunId ?? null,
         input.ownerPid ?? process.pid,
+        input.recipeSha256 ?? null,
       );
     return seq;
   }
@@ -423,14 +450,15 @@ export class SqliteRunRepository implements RunRepository {
         `INSERT INTO runs (task_id, seq, recipe_name, trigger, status, created_at,
                            started_at, done_at, duration_ms, model, output_tail,
                            error_message, parent_seq, manual_run_id, owner_pid,
-                           had_step_errors, step_results, extra)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                           had_step_errors, step_results, extra, recipe_sha256)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(task_id) DO UPDATE SET
            seq=excluded.seq, status=excluded.status, done_at=excluded.done_at,
            duration_ms=excluded.duration_ms, output_tail=excluded.output_tail,
            error_message=excluded.error_message,
            had_step_errors=excluded.had_step_errors,
-           step_results=excluded.step_results, extra=excluded.extra`,
+           step_results=excluded.step_results, extra=excluded.extra,
+           recipe_sha256=excluded.recipe_sha256`,
       )
       .run(
         run.taskId,
@@ -451,6 +479,7 @@ export class SqliteRunRepository implements RunRepository {
         hadStepErrors ? 1 : 0,
         run.stepResults ? JSON.stringify(run.stepResults) : null,
         Object.keys(extra).length > 0 ? JSON.stringify(extra) : null,
+        run.recipeSha256 ?? null,
       );
   }
 
@@ -480,15 +509,16 @@ export class SqliteRunRepository implements RunRepository {
         `INSERT INTO runs (task_id, seq, recipe_name, trigger, status, created_at,
                            started_at, done_at, duration_ms, model, output_tail,
                            error_message, parent_seq, manual_run_id, owner_pid,
-                           had_step_errors, step_results, extra)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                           had_step_errors, step_results, extra, recipe_sha256)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(task_id) DO UPDATE SET
            seq=excluded.seq, status=excluded.status, done_at=excluded.done_at,
            duration_ms=excluded.duration_ms, output_tail=excluded.output_tail,
            error_message=excluded.error_message,
            had_step_errors=excluded.had_step_errors,
            step_results=excluded.step_results, extra=excluded.extra,
-           started_at=excluded.started_at, owner_pid=excluded.owner_pid`,
+           started_at=excluded.started_at, owner_pid=excluded.owner_pid,
+           recipe_sha256=excluded.recipe_sha256`,
       )
       .run(
         run.taskId,
@@ -515,6 +545,7 @@ export class SqliteRunRepository implements RunRepository {
         run.hadStepErrors === undefined ? null : run.hadStepErrors ? 1 : 0,
         run.stepResults ? JSON.stringify(run.stepResults) : null,
         Object.keys(extra).length > 0 ? JSON.stringify(extra) : null,
+        run.recipeSha256 ?? null,
       );
   }
 

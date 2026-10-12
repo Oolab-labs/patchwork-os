@@ -41,6 +41,7 @@ import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "../recipes/migrations/index.js";
+import { recipeSourceSha256 } from "../recipes/recipeSourceHash.js";
 import { tryResolveRecipePath } from "../recipes/resolveRecipePath.js";
 import { findAttemptByRun, runLedgersRoot } from "../recipes/runLedgers.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
@@ -1611,6 +1612,12 @@ export interface RecipeDryRunPlan {
     errors: string[];
     warnings: string[];
   };
+  /**
+   * Hex sha256 of the recipe file's exact bytes this plan was built from — the
+   * same read the plan parsed. Compared against a run's recorded
+   * `recipeSha256` to say whether the recipe changed since that run.
+   */
+  recipeSha256?: string;
 }
 
 function enrichStepFromRegistry(
@@ -1844,6 +1851,9 @@ export async function runRecipeDryPlan(
 ): Promise<RecipeDryRunPlan> {
   const recipePath = resolveRecipePath(recipeRef);
   const recipe = loadYamlRecipe(recipePath);
+  // The hash of the bytes `loadYamlRecipe` just parsed — not a second read,
+  // which could see a different file than the one this plan describes.
+  const recipeSha256 = recipeSourceSha256(recipe);
   const triggerType = (
     recipe.trigger as unknown as Record<string, unknown> | undefined
   )?.type;
@@ -1902,6 +1912,7 @@ export async function runRecipeDryPlan(
       maxDepth: plan.maxDepth,
       ...summarizePlanSteps(steps),
       lint,
+      ...(recipeSha256 !== undefined && { recipeSha256 }),
     };
   }
 
@@ -1919,6 +1930,7 @@ export async function runRecipeDryPlan(
     steps,
     ...summarizePlanSteps(steps),
     lint,
+    ...(recipeSha256 !== undefined && { recipeSha256 }),
   };
 }
 

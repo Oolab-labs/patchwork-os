@@ -62,6 +62,7 @@ import { chainSidecarPaths } from "./ledgerChain.js";
 import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import { patchworkHome, patchworkPath } from "./patchworkHome.js";
 import { summariseBoundaryReceipts } from "./privacy/boundaryReceipts.js";
+import { recipeChangedSince } from "./recipes/recipeSourceHash.js";
 import { cancelRunChecked } from "./recipes/runRegistry.js";
 import { textInputValueError } from "./recipes/textInputs.js";
 import {
@@ -959,7 +960,16 @@ function writeReplayResult(res: ServerResponse, result: ReplayFnResult): void {
   res.end(JSON.stringify(result));
 }
 
-/** The dry-run plan for the recipe that produced `run`. Shared by seq/taskId routes. */
+/**
+ * A dry-run plan of the recipe NAMED by `run`, built from the recipe file on
+ * disk NOW and the current tool registry — not a plan of the version the run
+ * executed, which is not stored. Shared by the seq and taskId routes.
+ *
+ * So the response says what it is: `basis: "current"`, the hash the run
+ * recorded (when it has one), and `recipeChangedSinceRun` — `true`/`false`
+ * when both hashes exist, `"unknown"` when either is missing (a run that
+ * predates the field is never reported as unchanged).
+ */
 async function writePlanForRun(
   res: ServerResponse,
   deps: RecipeRouteDeps,
@@ -986,8 +996,19 @@ async function writePlanForRun(
   // triggerSource appends ":agent" suffix — strip before file lookup
   const recipeName = (run.recipeName as string).replace(/:agent$/, "");
   const plan = await deps.runPlanFn(recipeName);
+  const recorded =
+    typeof run.recipeSha256 === "string" && run.recipeSha256.length > 0
+      ? run.recipeSha256
+      : undefined;
   res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ plan }));
+  res.end(
+    JSON.stringify({
+      plan,
+      basis: "current",
+      ...(recorded !== undefined && { recordedRecipeSha256: recorded }),
+      recipeChangedSinceRun: recipeChangedSince(recorded, plan?.recipeSha256),
+    }),
+  );
 }
 
 /**
@@ -2001,7 +2022,8 @@ export function tryHandleRecipeRoute(
     return true;
   }
 
-  // GET /runs/:seq/plan — dry-run plan for the recipe that produced this run
+  // GET /runs/:seq/plan — dry-run plan of the run's recipe AS IT IS NOW, with
+  // whether it changed since the run (see writePlanForRun)
   const runPlanMatch =
     req.method === "GET"
       ? /^\/runs\/(\d+)\/plan$/.exec(parsedUrl.pathname)

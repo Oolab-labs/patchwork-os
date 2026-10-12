@@ -63,6 +63,7 @@ import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
 import type { RouteCandidate } from "./pricing/costRouter.js";
 import { loadPriceTable, type PriceTable } from "./pricing/priceTable.js";
+import { recipeSourceSha256 } from "./recipeSourceHash.js";
 import {
   type ReplayedFailure,
   replayRefusalMessage,
@@ -1809,6 +1810,9 @@ async function runChainedRecipeHeld(
   // handed over through the shared cell it created. Same const the run log
   // writes below, never a second expression.
   if (deps.runTaskIdRef) deps.runTaskIdRef.current = runTaskId;
+  // The bytes this run executes, as loaded — never a later re-read. Absent
+  // when the recipe object did not come straight from a file.
+  const recipeSha256 = recipeSourceSha256(recipe);
   let runSeq: number | undefined;
   if (depth === 0 && options.runLog) {
     try {
@@ -1823,6 +1827,7 @@ async function runChainedRecipeHeld(
         }),
         // Marks the row so trust replay never folds it (runLog isReplayRun).
         ...(options.replayOnly === true && { replay: true }),
+        ...(recipeSha256 !== undefined && { recipeSha256 }),
       });
     } catch {
       // Non-fatal — run-log failures must never break recipe execution.
@@ -1870,6 +1875,7 @@ async function runChainedRecipeHeld(
             durationMs,
             errorMessage: fatalGraphError,
             stepResults: [],
+            ...(recipeSha256 !== undefined && { recipeSha256 }),
           });
         }
       } catch {
@@ -2442,6 +2448,7 @@ async function runChainedRecipeHeld(
           ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
           ...(tokenTotals ? { tokenTotals } : {}),
           ...(budgetTotals ? { budgetTotals } : {}),
+          ...(recipeSha256 !== undefined && { recipeSha256 }),
         });
       }
     } catch {

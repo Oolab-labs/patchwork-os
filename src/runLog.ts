@@ -236,6 +236,18 @@ export interface RecipeRun {
    * case, which would be misleading). Additive + optional.
    */
   budgetTotals?: import("./recipes/runBudget.js").BudgetTotals;
+  /**
+   * Hex sha256 of the recipe file's exact bytes AS THIS RUN LOADED THEM —
+   * which version of the recipe actually executed. Stamped by both runners
+   * from the read that produced the recipe object, never a later re-read.
+   *
+   * ABSENT means "not recorded" (a run that predates the field, or a recipe
+   * that did not come straight from a file) and is NEVER backfilled: hashing
+   * today's file onto an old row would claim a version nobody observed. The
+   * run-plan routes compare it to the plan's own hash and answer "unknown"
+   * when it is missing, never "unchanged".
+   */
+  recipeSha256?: string;
 }
 
 const MAX_OUTPUT_TAIL = 2_000;
@@ -745,6 +757,8 @@ export class RecipeRunLog {
     replay?: true;
     /** Test seam — defaults to this process. See `RecipeRun.ownerPid`. */
     ownerPid?: number;
+    /** See `RecipeRun.recipeSha256`. */
+    recipeSha256?: string;
   }): number {
     const seq = ++this.seq;
     const run: RecipeRun = {
@@ -765,6 +779,9 @@ export class RecipeRunLog {
       ...(opts.parentSeq !== undefined && { parentSeq: opts.parentSeq }),
       ...(opts.manualRunId !== undefined && { manualRunId: opts.manualRunId }),
       ...(opts.replay === true && { replay: true }),
+      ...(opts.recipeSha256 !== undefined && {
+        recipeSha256: opts.recipeSha256,
+      }),
     };
     this.runs.push(run);
     if (this.runs.length > this.memoryCap) this.runs.shift();
