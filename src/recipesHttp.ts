@@ -33,6 +33,7 @@ import {
   isReservedRecipeDirEntry,
   isTopLevelRecipeFile,
 } from "./recipes/recipeDirEntries.js";
+import { declaredTriggerInputs } from "./recipes/triggerVars.js";
 import {
   type LintIssue,
   validateRecipeDefinition,
@@ -1287,12 +1288,6 @@ export function listInstalledRecipes(
           cron?: string;
         };
         steps?: unknown[];
-        vars?: Array<{
-          name: string;
-          description?: string;
-          required?: boolean;
-          default?: string;
-        }>;
       };
       const stat = statSync(fullPath);
       const resolvedRecipesDir = path.resolve(recipesDir);
@@ -1331,6 +1326,9 @@ export function listInstalledRecipes(
       const schedule = scheduleExpressionOf(parsed.trigger);
       // Sidecar under `.install/`, bound to these exact bytes (sha256).
       const provenance = readTopLevelProvenance(fullPath, raw);
+      // Declared inputs as the runtime reads them (trigger.inputs/vars);
+      // a root-level `vars:` is ignored at runtime, so it is not reported.
+      const declaredInputs = declaredTriggerInputs(parsed);
       recipes.push({
         name: parsedName,
         description: parsed.description,
@@ -1346,9 +1344,7 @@ export function listInstalledRecipes(
         // in, so the `enabled` field still comes from the legacy config list.
         enabled: !disabledSet.has(parsedName),
         trustLevel: (trustLevels[parsedName] ?? "draft") as TrustLevel,
-        ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
-          ? { vars: parsed.vars }
-          : {}),
+        ...(declaredInputs.length > 0 ? { vars: declaredInputs } : {}),
         lint: {
           ok: errCount === 0,
           errorCount: errCount,
@@ -1388,12 +1384,6 @@ export function listInstalledRecipes(
           cron?: string;
         };
         steps?: unknown[];
-        vars?: Array<{
-          name: string;
-          description?: string;
-          required?: boolean;
-          default?: string;
-        }>;
       };
       const stat = statSync(entrypointPath);
       const parsedName =
@@ -1420,6 +1410,9 @@ export function listInstalledRecipes(
       // in the UI without forcing a YAML fetch.
       const schedule = scheduleExpressionOf(parsed.trigger);
       const provenance = readInstallProvenance(installDir);
+      // Declared inputs as the runtime reads them (trigger.inputs/vars);
+      // a root-level `vars:` is ignored at runtime, so it is not reported.
+      const declaredInputs = declaredTriggerInputs(parsed);
       recipes.push({
         name: parsedName,
         description: parsed.description,
@@ -1438,9 +1431,7 @@ export function listInstalledRecipes(
         // through the legacy file.
         enabled: installEnabled && !disabledSet.has(parsedName),
         trustLevel: (trustLevels[parsedName] ?? "draft") as TrustLevel,
-        ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
-          ? { vars: parsed.vars }
-          : {}),
+        ...(declaredInputs.length > 0 ? { vars: declaredInputs } : {}),
         lint: {
           ok: errCount === 0,
           errorCount: errCount,

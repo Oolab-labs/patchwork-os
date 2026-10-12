@@ -30,10 +30,6 @@ export function applyTriggerInputDefaults(
     | null
     | undefined;
 
-  // Collect defaults from both trigger.inputs and trigger.vars (array forms).
-  // trigger.vars holds recipe-declared defaults; trigger.inputs holds
-  // user-overrideable parameters. Both use {name, default} entries.
-  const defaults: Record<string, string> = {};
   for (const key of ["inputs", "vars"] as const) {
     const arr = trigger?.[key];
     if (arr !== undefined && !Array.isArray(arr) && typeof arr === "object") {
@@ -44,17 +40,72 @@ export function applyTriggerInputDefaults(
           `got a plain object in ${ymlPath}. Vars will not be substituted.`,
       );
     }
-    if (!Array.isArray(arr)) continue;
-    for (const item of arr) {
-      if (!item || typeof item !== "object") continue;
-      const name = (item as { name?: unknown }).name;
-      const dflt = (item as { default?: unknown }).default;
-      if (typeof name !== "string" || name.length === 0) continue;
-      if (dflt === undefined || dflt === null) continue;
-      if (!(name in defaults)) defaults[name] = String(dflt);
-    }
+  }
+
+  const defaults: Record<string, string> = {};
+  for (const input of declaredTriggerInputs(parsed)) {
+    if (input.default !== undefined) defaults[input.name] = input.default;
   }
 
   if (Object.keys(defaults).length === 0) return vars;
   return { ...defaults, ...(vars ?? {}) };
+}
+
+export interface DeclaredTriggerInput {
+  name: string;
+  description?: string;
+  required?: boolean;
+  default?: string;
+}
+
+/**
+ * The inputs a recipe declares, as the runtime reads them: `trigger.inputs[]`
+ * then `trigger.vars[]` (array form only). A root-level `vars:` key is NOT
+ * read — the runner ignores it, so reporting it would advertise inputs that
+ * never reach the recipe.
+ *
+ * Shared by `applyTriggerInputDefaults` (default merging) and the recipe
+ * listing (`GET /recipes`), so what the listing offers and what a run
+ * receives cannot drift. Precedence matches the runtime exactly: the first
+ * entry with a given name wins (inputs before vars), except that `default`
+ * comes from the first entry with that name that HAS one — an `inputs` entry
+ * with no default does not hide a `vars` default the runtime would apply.
+ * Entries without a non-empty string `name` are skipped; a non-null `default`
+ * is normalised with `String()`, as the runtime does.
+ */
+export function declaredTriggerInputs(parsed: unknown): DeclaredTriggerInput[] {
+  const trigger = (parsed as { trigger?: unknown } | null | undefined)
+    ?.trigger as Record<string, unknown> | null | undefined;
+  if (!trigger || typeof trigger !== "object") return [];
+
+  const byName = new Map<string, DeclaredTriggerInput>();
+  for (const key of ["inputs", "vars"] as const) {
+    const arr = trigger[key];
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      const name = rec.name;
+      if (typeof name !== "string" || name.length === 0) continue;
+      const dflt =
+        rec.default === undefined || rec.default === null
+          ? undefined
+          : String(rec.default);
+      const existing = byName.get(name);
+      if (existing) {
+        if (existing.default === undefined && dflt !== undefined) {
+          existing.default = dflt;
+        }
+        continue;
+      }
+      const entry: DeclaredTriggerInput = { name };
+      if (typeof rec.description === "string") {
+        entry.description = rec.description;
+      }
+      if (typeof rec.required === "boolean") entry.required = rec.required;
+      if (dflt !== undefined) entry.default = dflt;
+      byName.set(name, entry);
+    }
+  }
+  return [...byName.values()];
 }
