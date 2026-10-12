@@ -46,11 +46,18 @@ import { findAttemptByRun, runLedgersRoot } from "../recipes/runLedgers.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
 import { projectCost } from "../recipes/simulation/costProjector.js";
 import {
+  type ProjectPolicyOptions,
+  projectRecipePolicy,
+} from "../recipes/simulation/policyProjection.js";
+import {
   simulateFromPlan,
   simulateMockedFromPlan,
 } from "../recipes/simulation/simulate.js";
 import { simulateMockedRun } from "../recipes/simulation/simulateMockedRun.js";
-import type { RecipeSimulationReport } from "../recipes/simulation/types.js";
+import type {
+  RecipeSimulationReport,
+  SimulationPolicy,
+} from "../recipes/simulation/types.js";
 import {
   getTool,
   isConnectorNamespace,
@@ -1920,15 +1927,43 @@ export async function runRecipeDryPlan(
  *
  * Produces the dry-run plan first (no execution), then transforms it into a
  * {@link RecipeSimulationReport} that projects actions, side-effect taxonomy,
- * blast-radius-aware risk, a tier-only approval projection (honestly flagged as
- * NOT gated on recipe steps today), a low-confidence cost estimate, and the
- * conditional branches it refuses to resolve statically. Zero side effects.
+ * blast-radius-aware risk, the approval projection (per step, the verdict of
+ * `computeEffectivePolicy` — the calculation both runners consult — so it says
+ * truthfully whether each step would wait for a human), a low-confidence cost
+ * estimate, and the conditional branches it refuses to resolve statically.
+ * Zero side effects.
  */
 export async function runRecipeSimulate(
   recipeRef: string,
-  options: RunRecipeOptions & { runLog?: RecipeRunLog } = {},
+  options: RunRecipeOptions & {
+    runLog?: RecipeRunLog;
+    /** Inputs for the effective-policy projection (defaults: live config). */
+    policy?: Omit<ProjectPolicyOptions, "selectedIndex">;
+  } = {},
 ): Promise<RecipeSimulationReport> {
   const plan = await runRecipeDryPlan(recipeRef, options);
+
+  // Approval projection — the runtime's own verdict per step. Fail-soft to
+  // UNAVAILABLE (never to "not gated"): a preview that cannot evaluate the
+  // policy must say so rather than claim an answer.
+  let policy: SimulationPolicy | undefined;
+  try {
+    const recipePath = resolveRecipePath(recipeRef);
+    let selectedIndex: number | undefined;
+    if (options.step) {
+      const recipe = loadYamlRecipe(recipePath);
+      selectedIndex = recipe.steps.indexOf(
+        selectRecipeStep(recipe, options.step).step,
+      );
+    }
+    policy = await projectRecipePolicy(recipePath, plan, {
+      ...options.policy,
+      ...(selectedIndex !== undefined &&
+        selectedIndex >= 0 && { selectedIndex }),
+    });
+  } catch {
+    policy = undefined;
+  }
 
   // P2 mocked sandbox — ONLY for chained recipes WITH run history and a
   // provided runLog. Flat recipes ALWAYS stay static (hard guard: the runner
@@ -1946,14 +1981,14 @@ export async function runRecipeSimulate(
         recipeToPlan as unknown as import("../recipes/chainedRunner.js").ChainedRecipe;
       const mocked = await simulateMockedRun(chainedRecipe, options.runLog);
       if (mocked.sampleRuns > 0) {
-        report = simulateMockedFromPlan(plan, mocked);
+        report = simulateMockedFromPlan(plan, mocked, policy);
       }
     } catch {
       // Fail-soft: fall through to the static report.
     }
   }
 
-  if (!report) report = simulateFromPlan(plan);
+  if (!report) report = simulateFromPlan(plan, policy);
 
   // P3 cost projection — whenever a runLog is available (any fidelity/topology),
   // overlay a history-backed cost estimate. Degrades to the chars/4 heuristic /

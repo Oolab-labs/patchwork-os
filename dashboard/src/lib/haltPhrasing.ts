@@ -53,6 +53,14 @@ export function ownerHaltPhrase(
         fix: "reconnect",
         fixLabel: "Reconnect",
       };
+    case "agent_auth":
+      // Not "reconnect": that button opens /connections, and the AI provider
+      // is signed in where the agent driver runs, not there.
+      return {
+        sentence:
+          "It isn't signed in to its AI provider, so it stopped before doing anything. Sign in, then run it again.",
+        fix: "none",
+      };
     case "missing_connector":
       return {
         sentence: `It needs ${svc} connected before it can run.`,

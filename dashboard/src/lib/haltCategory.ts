@@ -28,6 +28,8 @@ export type HaltCategory =
   | "http_unverified"
   | "judge_revisions_exhausted"
   | "auth_failure"
+  /** An agent step's AI provider is not signed in (no login, bad API key, expired token). */
+  | "agent_auth"
   | "rate_limited"
   | "network_error"
   | "missing_connector"
@@ -65,6 +67,7 @@ export const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   http_unverified: "target error, outcome unverified",
   judge_revisions_exhausted: "judge revisions exhausted",
   auth_failure: "auth failure",
+  agent_auth: "AI provider not signed in",
   rate_limited: "rate limited",
   network_error: "network error",
   missing_connector: "missing connector",
@@ -111,6 +114,8 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "The judge→refine loop used its max_revisions budget and the judge still asked for changes. Raise max_revisions, refine the prompt, or set on_exhausted: proceed.",
   auth_failure:
     "Connector token expired or scopes insufficient. Reconnect from /connections.",
+  agent_auth:
+    "The agent step's AI provider is not signed in (no login, an invalid API key, or an expired token). Sign in to the AI provider this step's driver uses — run its login command or set a valid API key — then re-run.",
   rate_limited:
     "External service rate-limited the request. Back off the cron cadence or wait and retry.",
   network_error:

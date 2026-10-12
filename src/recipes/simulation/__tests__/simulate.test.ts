@@ -171,13 +171,80 @@ describe("summarizeRunRisk", () => {
 });
 
 describe("simulateFromPlan", () => {
-  it("is honest about the approval gate on every report", () => {
+  it("claims nothing about gating when no effective policy was supplied", () => {
     const report = simulateFromPlan(makePlan({}));
-    expect(report.gatedOnRecipeSteps).toBe(false);
-    expect(report.approvals.gatedOnRecipeSteps).toBe(false);
+    // Unknown is not "not gated": the transform never derives a verdict.
+    expect(report.gatedOnRecipeSteps).toBeNull();
+    expect(report.approvals.gatedOnRecipeSteps).toBeNull();
+    expect(report.approvals.basis).toBe("unavailable");
     expect(report.kind).toBe("what-if-preview");
     expect(report.fidelity).toBe("static");
-    expect(report.notes.some((n) => n.includes("NOT gated"))).toBe(true);
+    expect(report.notes.some((n) => n.includes("NOT gated"))).toBe(false);
+    expect(report.notes.some((n) => n.includes("unavailable"))).toBe(true);
+  });
+
+  it("takes every approval verdict from the supplied policy, never from the tier", () => {
+    const plan = makePlan({
+      triggerType: "manual",
+      steps: [
+        {
+          id: "write",
+          type: "tool",
+          tool: "github.create_pr",
+          risk: "high",
+          isWrite: true,
+          resolved: true,
+        },
+        {
+          id: "read",
+          type: "tool",
+          tool: "git.log",
+          risk: "low",
+          resolved: true,
+        },
+      ],
+    });
+    const notGated = simulateFromPlan(plan, {
+      profile: "compat",
+      trigger: "manual",
+      steps: new Map([
+        ["write", { final: "ALLOW", consultsApproval: false, reason: "off" }],
+        ["read", { final: "ALLOW", consultsApproval: false, reason: "off" }],
+      ]),
+    });
+    expect(notGated.gatedOnRecipeSteps).toBe(false);
+    const w = notGated.approvals.projected.find((p) => p.stepId === "write");
+    // High tier, but the policy says nobody is asked — so neither does the report.
+    expect(w?.wouldRequireApproval).toBe(false);
+    expect(w?.verdict).toBe("ALLOW");
+
+    const gated = simulateFromPlan(plan, {
+      profile: "compat",
+      trigger: "manual",
+      steps: new Map([
+        [
+          "write",
+          {
+            final: "HUMAN_APPROVAL_REQUIRED",
+            consultsApproval: true,
+            reason: "tool tier high",
+          },
+        ],
+        [
+          "read",
+          {
+            final: "HUMAN_APPROVAL_REQUIRED",
+            consultsApproval: true,
+            reason: "all",
+          },
+        ],
+      ]),
+    });
+    expect(gated.gatedOnRecipeSteps).toBe(true);
+    expect(gated.approvals.basis).toBe("effective-policy");
+    // A low-tier read the policy holds is listed too.
+    const r = gated.approvals.projected.find((p) => p.stepId === "read");
+    expect(r?.wouldRequireApproval).toBe(true);
   });
 
   it("reuses the plan timestamp (pure, no clock dependency)", () => {
@@ -277,9 +344,11 @@ describe("simulateFromPlan", () => {
     expect(openPr?.effectiveRisk).toBe("high");
     expect(report.risk.tier).toBe("high");
 
-    // approval projection: the high write would gate; flagged not-gated-today
+    // approval projection: the high write is listed with its tier; with no
+    // policy supplied its verdict is unknown, never guessed from the tier
     const proj = report.approvals.projected.find((a) => a.stepId === "open_pr");
-    expect(proj?.wouldRequireApproval).toBe(true);
+    expect(proj?.wouldRequireApproval).toBeNull();
+    expect(proj?.verdict).toBe("unknown");
     expect(proj?.tier).toBe("high");
 
     // honest branches: the condition is left undetermined, never faked

@@ -48,7 +48,12 @@ export interface SimulationReport {
   /** Prior runs sampled for a mocked simulation (P2). */
   sampleRuns?: number;
   topology: "chained" | "flat";
-  gatedOnRecipeSteps: boolean;
+  /**
+   * Computed from the effective policy the runners consult (schemaVersion 3):
+   * true = at least one step consults the approval gate, false = none,
+   * null = the policy could not be evaluated.
+   */
+  gatedOnRecipeSteps: boolean | null;
   steps: SimulationStep[];
   summary: {
     totalSteps: number;
@@ -73,12 +78,18 @@ export interface SimulationReport {
     highestStepRisk: RiskTier;
   };
   approvals: {
-    gatedOnRecipeSteps: boolean;
+    gatedOnRecipeSteps: boolean | null;
+    basis?: "effective-policy" | "unavailable";
+    profile?: "governed" | "compat";
+    trigger?: string;
     projected: Array<{
       stepId: string;
       tool?: string;
       tier: RiskTier;
-      wouldRequireApproval: boolean;
+      /** The runner would hold this step for a human; null = unknown. */
+      wouldRequireApproval: boolean | null;
+      verdict?: "ALLOW" | "HUMAN_APPROVAL_REQUIRED" | "REFUSED" | "unknown";
+      consultsApproval?: boolean;
       reason: string;
     }>;
     note: string;

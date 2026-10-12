@@ -448,8 +448,8 @@ describe("runRecipeSimulate routing", () => {
 
 // ── Schema v2 ──────────────────────────────────────────────────────────────
 
-describe("simulation schema v2", () => {
-  it("validates a real mocked report; schemaVersion const 2; fidelity accepts mocked", async () => {
+describe("simulation schema v3", () => {
+  it("validates a real mocked report; schemaVersion const 3; fidelity accepts mocked", async () => {
     const { log } = makeRunLog([
       {
         recipeName: "r",
@@ -474,11 +474,25 @@ describe("simulation schema v2", () => {
         condition: "{{ steps.a.data }}",
       },
     ]);
-    const report = simulateMockedFromPlan(plan, mocked);
+    const report = simulateMockedFromPlan(plan, mocked, {
+      profile: "governed",
+      trigger: "manual",
+      steps: new Map([
+        [
+          "b",
+          {
+            final: "HUMAN_APPROVAL_REQUIRED",
+            consultsApproval: true,
+            reason: "tool tier high",
+          },
+        ],
+      ]),
+    });
+    expect(report.gatedOnRecipeSteps).toBe(true);
 
     const schema = generateSimulationSchema() as Record<string, unknown>;
     const props = schema.properties as Record<string, { const?: number }>;
-    expect(props.schemaVersion?.const).toBe(2);
+    expect(props.schemaVersion?.const).toBe(3);
 
     const ajv = new Ajv({ strict: false });
     const validate = ajv.compile(schema as object);
@@ -490,6 +504,6 @@ describe("simulation schema v2", () => {
     }
     expect(ok).toBe(true);
     expect(report.fidelity).toBe("mocked");
-    expect(report.schemaVersion).toBe(2);
+    expect(report.schemaVersion).toBe(3);
   });
 });

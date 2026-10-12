@@ -1,8 +1,8 @@
 /**
  * Tests for SimulatePanel — the recipe-detail "What-If Preview" panel that
  * calls GET /api/bridge/recipes/simulate and renders the static simulation.
- * Mocks fetch; asserts risk, projected actions, the gatedOnRecipeSteps honesty
- * caveat, and the error path.
+ * Mocks fetch; asserts risk, projected actions, the computed approval verdict
+ * (gated / not gated / unknown), and the error path.
  */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -27,14 +27,14 @@ afterEach(() => {
 });
 
 const REPORT: SimulationReport = {
-  schemaVersion: 1,
+  schemaVersion: 3,
   kind: "what-if-preview",
   recipe: "demo",
   triggerType: "chained",
   generatedAt: "2026-06-05T00:00:00.000Z",
   fidelity: "static",
   topology: "chained",
-  gatedOnRecipeSteps: false,
+  gatedOnRecipeSteps: true,
   steps: [
     {
       id: "open_pr",
@@ -73,17 +73,22 @@ const REPORT: SimulationReport = {
     highestStepRisk: "high",
   },
   approvals: {
-    gatedOnRecipeSteps: false,
+    gatedOnRecipeSteps: true,
+    basis: "effective-policy",
+    profile: "governed",
+    trigger: "manual",
     projected: [
       {
         stepId: "open_pr",
         tool: "github.create_pr",
         tier: "high",
         wouldRequireApproval: true,
-        reason: "high-risk connector-write",
+        verdict: "HUMAN_APPROVAL_REQUIRED",
+        consultsApproval: true,
+        reason: "tool tier high",
       },
     ],
-    note: "not gated today",
+    note: "1 step(s) would wait for a human.",
   },
   cost: {
     basis: "unavailable",
@@ -106,7 +111,7 @@ const REPORT: SimulationReport = {
 };
 
 describe("SimulatePanel", () => {
-  it("renders risk, actions and the not-gated honesty caveat", async () => {
+  it("renders risk, actions and the computed approval verdict", async () => {
     mockFetchOnce({ report: REPORT });
     render(<SimulatePanel recipeName="demo" />);
     fireEvent.click(screen.getByRole("button", { name: /run simulation/i }));
@@ -117,12 +122,60 @@ describe("SimulatePanel", () => {
     // projected action with its tool + side-effect class
     expect(screen.getByText("github.create_pr")).toBeTruthy();
     expect(screen.getByText(/\[connector-write\]/)).toBeTruthy();
-    // the honesty caveat — approval projection is NOT a live gate
-    expect(screen.getByText(/NOT gated today/)).toBeTruthy();
+    // the runtime's verdict, with the profile/trigger it was computed for
+    expect(screen.getByText(/1 step\(s\) would wait for approval/)).toBeTruthy();
+    expect(screen.getByText(/governed profile/)).toBeTruthy();
+    expect(screen.queryByText(/NOT gated/)).toBeNull();
     // static fidelity badge
     expect(screen.getByText(/^static$/)).toBeTruthy();
     // undetermined branch surfaced (per-outcome summary)
     expect(screen.getByText(/1 undetermined/)).toBeTruthy();
+  });
+
+  it("says no step would wait when the policy does not gate this recipe", async () => {
+    mockFetchOnce({
+      report: {
+        ...REPORT,
+        gatedOnRecipeSteps: false,
+        approvals: {
+          ...REPORT.approvals,
+          gatedOnRecipeSteps: false,
+          profile: "compat",
+          projected: [
+            {
+              ...REPORT.approvals.projected[0]!,
+              wouldRequireApproval: false,
+              verdict: "ALLOW",
+              consultsApproval: false,
+            },
+          ],
+        },
+      },
+    });
+    render(<SimulatePanel recipeName="demo" autoRun />);
+    await waitFor(() => {
+      expect(screen.getByText(/no step would wait for approval/)).toBeTruthy();
+    });
+  });
+
+  it("says unknown, not 'not gated', when the policy could not be evaluated", async () => {
+    mockFetchOnce({
+      report: {
+        ...REPORT,
+        gatedOnRecipeSteps: null,
+        approvals: {
+          gatedOnRecipeSteps: null,
+          basis: "unavailable",
+          projected: [],
+          note: "unavailable",
+        },
+      },
+    });
+    render(<SimulatePanel recipeName="demo" autoRun />);
+    await waitFor(() => {
+      expect(screen.getByText(/unknown — the effective policy/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/no step would wait/)).toBeNull();
   });
 
   it("renders mocked fidelity, history cost band, per-branch outcome and synth steps", async () => {

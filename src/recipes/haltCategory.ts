@@ -61,6 +61,15 @@ export type HaltCategory =
    */
   | "auth_failure"
   /**
+   * An AGENT step's AI provider refused the call because nothing is signed
+   * in (the provider CLI has no login, the API key is invalid, the OAuth
+   * token expired). Not `agent_silent_fail`: the prompt and the trace are
+   * fine, and "inspect prompt" sends the operator the wrong way. Not
+   * `auth_failure` either: that one is a CONNECTOR token, fixed from
+   * /connections, while this one is fixed by signing in to the provider.
+   */
+  | "agent_auth"
+  /**
    * External service returned 429 / rate limit. Actionable: retry later
    * or back off the cron cadence.
    */
@@ -141,6 +150,7 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   http_unverified: "target error, outcome unverified",
   judge_revisions_exhausted: "judge revisions exhausted",
   auth_failure: "auth failure",
+  agent_auth: "AI provider not signed in",
   rate_limited: "rate limited",
   network_error: "network error",
   missing_connector: "missing connector",
@@ -183,6 +193,8 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   judge_revisions_exhausted:
     "raise max_revisions, refine the prompt, or set on_exhausted: proceed",
   auth_failure: "reconnect from /connections",
+  agent_auth:
+    "sign in to the AI provider this step's driver uses (run its login command, or set a valid API key), then re-run",
   rate_limited: "back off cron cadence or wait",
   network_error: "check connectivity to upstream",
   missing_connector: "install/connect from /connections",
@@ -210,6 +222,15 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
 const HTTP_FAILURE_SENTENCE =
   /^(?:Tool "(?:http\.post|fan_out|\?)" in step ".*" (?:reported an error|threw)(?: after \d+ attempts?)?: )?(http_rejected|http_unverified): /s;
 
+/**
+ * What a provider says when nothing is signed in. "Not logged in · Please run
+ * /login" and "Invalid API key · Please run /login" are the Claude CLI's
+ * result text (see `agentTextFromTask`); `authentication_error` / 401 /
+ * "OAuth token has expired" are the API's answer surfaced by API drivers.
+ */
+const AGENT_AUTH_PHRASES =
+  /not logged in|please run \/login|invalid[_ -]?api[_ -]?key|authentication[_ -]?error|authentication[_ -]?failed|failed to authenticate|oauth token (?:has )?expired|\b401\b|unauthori[sz]ed/i;
+
 export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (!reason) return "unknown";
   // http.post failures (see tools/httpOutcome.ts) come FIRST. The sentence
@@ -222,6 +243,17 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   const http = HTTP_FAILURE_SENTENCE.exec(reason);
   if (http?.[1] === "http_rejected") return "http_rejected";
   if (http?.[1] === "http_unverified") return "http_unverified";
+  // An agent step whose provider is not signed in. Scoped to AGENT sentences
+  // (the flat runner's `Agent step …` and the `[agent step failed: …]`
+  // marker), so a connector's 401 inside a tool envelope stays
+  // `auth_failure`. Ahead of every agent matcher: the sentence otherwise
+  // derives `unknown`, which the runner stores as `agent_silent_fail`, or
+  // `agent_threw` on the chained path.
+  if (
+    /^Agent step |\[agent step failed:/i.test(reason) &&
+    AGENT_AUTH_PHRASES.test(reason)
+  )
+    return "agent_auth";
   // Order matters: more specific phrases (silent-fail, narration, kill
   // switch) must match before the general "Agent step ... threw" /
   // "Tool ... threw" patterns. The phrases below mirror
@@ -471,6 +503,13 @@ export function deriveHaltReasonFromError(opts: {
 }): string | undefined {
   if (opts.status !== "error" || !opts.error) return undefined;
   if (/silent-fail/i.test(opts.error)) {
+    // An agent whose provider is not signed in: keep the marker, as the flat
+    // runner does, so the sentence categorises as `agent_auth` rather than a
+    // contentless silent-fail with the wrong remedy.
+    if (opts.isAgent && AGENT_AUTH_PHRASES.test(opts.error)) {
+      const marker = /\[agent step failed:[^\]]*\]?/i.exec(opts.error)?.[0];
+      return `Agent step "${opts.stepId}" returned no usable output: ${marker ?? opts.error}`;
+    }
     return `Step "${opts.stepId}" returned no usable output (silent-fail).`;
   }
   if (/narration|whitespace|no content/i.test(opts.error)) {
