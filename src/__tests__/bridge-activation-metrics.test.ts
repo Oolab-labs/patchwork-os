@@ -223,6 +223,7 @@ describe("Bridge activation metrics", () => {
       clearConfigCache();
     });
     afterEach(async () => {
+      vi.restoreAllMocks();
       if (prevPatchworkHome === undefined) delete process.env.PATCHWORK_HOME;
       else process.env.PATCHWORK_HOME = prevPatchworkHome;
       const { clearConfigCache } = await import("../patchworkConfig.js");
