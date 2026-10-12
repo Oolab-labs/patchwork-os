@@ -22,6 +22,7 @@ import {
   getConfigDisabledNames,
   isInstallDirDisabled,
 } from "./recipes/disabledMarkers.js";
+import { readInstallProvenance } from "./recipes/installProvenance.js";
 import { RECIPE_NAME_RE } from "./recipes/names.js";
 import {
   type LintIssue,
@@ -1181,6 +1182,13 @@ export interface RecipeSummary {
   path: string;
   installedAt: number;
   source: "user" | "project" | "unknown";
+  /**
+   * The install source recorded by `recipe install` (its `.install.json`),
+   * exactly as given. Install-dir recipes only, and only when the record
+   * exists and parses — never inferred. Absent for top-level recipe files and
+   * for installs made before provenance was recorded.
+   */
+  installedFrom?: string;
   enabled: boolean;
   trustLevel?: TrustLevel;
   vars?: Array<{
@@ -1390,6 +1398,7 @@ export function listInstalledRecipes(
       // Cron/schedule expression for the trigger column. Surfaces `0 9 * * *`
       // in the UI without forcing a YAML fetch.
       const schedule = scheduleExpressionOf(parsed.trigger);
+      const provenance = readInstallProvenance(installDir);
       recipes.push({
         name: parsedName,
         description: parsed.description,
@@ -1400,6 +1409,7 @@ export function listInstalledRecipes(
         path: entrypointPath,
         installedAt: stat.mtimeMs,
         source: "user",
+        ...(provenance ? { installedFrom: provenance.source } : {}),
         // Disabled if EITHER the install marker is set OR the legacy config
         // names this recipe — defence-in-depth so a stale config entry can't
         // accidentally re-enable a recipe the user explicitly disabled, and
@@ -1417,7 +1427,6 @@ export function listInstalledRecipes(
           ...(firstError ? { firstError } : {}),
         },
       });
-      void installDir;
     } catch {
       // skip malformed install dir
     }
