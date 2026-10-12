@@ -30,7 +30,7 @@ import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { RecipeRun } from "../../runLog.js";
+import type { RecipeRun, RecipeRunLog } from "../../runLog.js";
 import { createRecipeRunLog } from "../../runStore/createRunLog.js";
 import { runChainedRecipe } from "../chainedRunner.js";
 import { OUTPUT_WITHHELD_REASON } from "../withheldOutputs.js";
@@ -65,6 +65,12 @@ const BASE_DEPS = {
 };
 
 let dir: string;
+const openLogs: RecipeRunLog[] = [];
+function openLog(): RecipeRunLog {
+  const log = createRecipeRunLog({ dir });
+  openLogs.push(log);
+  return log;
+}
 let prevHome: string | undefined;
 let prevClaudeDir: string | undefined;
 beforeEach(() => {
@@ -76,6 +82,9 @@ beforeEach(() => {
   mkdirSync(join(dir, "claude", "ide"), { recursive: true });
 });
 afterEach(() => {
+  // Release the sqlite mirror's file handle before removing the directory —
+  // Windows refuses to delete an open database file (EPERM).
+  for (const log of openLogs.splice(0)) log.close();
   if (prevHome === undefined) delete process.env.PATCHWORK_HOME;
   else process.env.PATCHWORK_HOME = prevHome;
   if (prevClaudeDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
@@ -205,7 +214,7 @@ async function runFlat(
         testMode: false,
         logDir: dir,
         workdir: dir,
-        runLog: createRecipeRunLog({ dir }),
+        runLog: openLog(),
         claudeCodeFn: model(judge),
       } as never,
       { materials: inputs === TEXT_INPUT ? NOTES : "short-topic" },
@@ -288,7 +297,7 @@ describe("flat runner — assertion failures and judge text in a protected run",
           testMode: false,
           logDir: dir,
           workdir: dir,
-          runLog: createRecipeRunLog({ dir }),
+          runLog: openLog(),
         } as never,
         { materials: NOTES },
       ),
@@ -437,7 +446,7 @@ async function runChained(inputs: Record<string, unknown>[]) {
         maxConcurrency: 1,
         maxDepth: 3,
         dryRun: false,
-        runLog: createRecipeRunLog({ dir }),
+        runLog: openLog(),
       } as never,
       deps,
     ),
