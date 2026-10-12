@@ -223,13 +223,50 @@ const HTTP_FAILURE_SENTENCE =
   /^(?:Tool "(?:http\.post|fan_out|\?)" in step ".*" (?:reported an error|threw)(?: after \d+ attempts?)?: )?(http_rejected|http_unverified): /s;
 
 /**
- * What a provider says when nothing is signed in. "Not logged in · Please run
- * /login" and "Invalid API key · Please run /login" are the Claude CLI's
- * result text (see `agentTextFromTask`); `authentication_error` / 401 /
- * "OAuth token has expired" are the API's answer surfaced by API drivers.
+ * What a provider says when nothing is signed in, or the sign-in it holds was
+ * refused. "Not logged in · Please run /login" and "Invalid API key · Please
+ * run /login" are the Claude CLI's result text (see `agentTextFromTask`);
+ * "Failed to authenticate. API Error: 401 OAuth access token has been
+ * revoked…" is its text for a revoked or expired sign-in; `authentication_error`
+ * and "OAuth token has expired" are the API's answer surfaced by API drivers.
+ *
+ * Deliberately NO bare `401` / `Unauthorized`: an agent's own tool (an MCP
+ * server, a fetch) can be refused while the provider is signed in perfectly
+ * well, and "sign in to Claude again" is then the wrong remedy. A 401 counts
+ * only in the CLI's `API Error: 401` shape, which is the provider's own reply.
  */
 const AGENT_AUTH_PHRASES =
-  /not logged in|please run \/login|invalid[_ -]?api[_ -]?key|authentication[_ -]?error|authentication[_ -]?failed|failed to authenticate|oauth token (?:has )?expired|\b401\b|unauthori[sz]ed/i;
+  /not logged in|please run \/login|invalid[_ -]?api[_ -]?key|authentication[_ -]?error|authentication[_ -]?failed|failed to authenticate|oauth (?:access )?token (?:has )?(?:been )?(?:expired|revoked)|api error: 401\b/i;
+
+/**
+ * Is this agent failure text an AI-provider sign-in failure? The one
+ * classifier for that question: the halt category below, and the bridge's
+ * Claude sign-in health (`claudeAuthHealth.ts`), both ask it here so they
+ * cannot disagree about which failures mean "sign in again".
+ */
+export function isAgentAuthFailure(text: string | undefined): boolean {
+  return !!text && AGENT_AUTH_PHRASES.test(text);
+}
+
+/** Shapes that are Claude's own (the Claude CLI or the Anthropic API). */
+const CLAUDE_AUTH_SHAPE =
+  /claude|please run \/login|failed to authenticate|oauth (?:access )?token|authentication_error|x-api-key|process exited with code/i;
+
+/**
+ * The halt sentence for an agent step whose provider refused the sign-in.
+ * Shared by both runners so the run's `errorMessage`, the step's
+ * `haltReason` and the chained sentence say the same thing. Names Claude when
+ * the failure is Claude's own (an orchestrated Claude task, the Claude CLI,
+ * the Anthropic API); otherwise says "its AI provider" rather than guessing.
+ * Keeps the provider's text as evidence, and starts `Agent step ` so
+ * `categoriseHaltReason` re-derives `agent_auth` from the stored sentence.
+ */
+export function agentAuthHaltReason(stepId: string, failure: string): string {
+  const who = CLAUDE_AUTH_SHAPE.test(failure)
+    ? "Claude needs signing in again"
+    : "its AI provider needs signing in again";
+  return `Agent step "${stepId}" could not run: ${who} (agent_auth) — ${failure.trim().slice(0, 400)}`;
+}
 
 export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (!reason) return "unknown";
@@ -502,14 +539,15 @@ export function deriveHaltReasonFromError(opts: {
   error?: string;
 }): string | undefined {
   if (opts.status !== "error" || !opts.error) return undefined;
+  // An agent whose provider is not signed in (or whose sign-in was revoked):
+  // the same sentence the flat runner stores, so it categorises as
+  // `agent_auth` rather than a contentless silent-fail with the wrong remedy.
+  // Ahead of the silent-fail branch, and covering a bare marker too.
+  if (opts.isAgent && AGENT_AUTH_PHRASES.test(opts.error)) {
+    const marker = /\[agent step failed:[^\]]*\]?/i.exec(opts.error)?.[0];
+    return agentAuthHaltReason(opts.stepId, marker ?? opts.error);
+  }
   if (/silent-fail/i.test(opts.error)) {
-    // An agent whose provider is not signed in: keep the marker, as the flat
-    // runner does, so the sentence categorises as `agent_auth` rather than a
-    // contentless silent-fail with the wrong remedy.
-    if (opts.isAgent && AGENT_AUTH_PHRASES.test(opts.error)) {
-      const marker = /\[agent step failed:[^\]]*\]?/i.exec(opts.error)?.[0];
-      return `Agent step "${opts.stepId}" returned no usable output: ${marker ?? opts.error}`;
-    }
     return `Step "${opts.stepId}" returned no usable output (silent-fail).`;
   }
   if (/narration|whitespace|no content/i.test(opts.error)) {

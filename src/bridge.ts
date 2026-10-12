@@ -18,6 +18,7 @@ import { loadOrCreateBridgeToken } from "./bridgeToken.js";
 import { repairBridgeToolsRulesIfStale } from "./bridgeToolsRules.js";
 import { ButlerFactStore } from "./butler/factStore.js";
 import { buildMemoryCard } from "./butler/memoryCard.js";
+import { observeClaudeTaskForAuth } from "./claudeAuthHealth.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { CommitIssueLinkLog } from "./commitIssueLinkLog.js";
 import type { Config } from "./config.js";
@@ -1383,6 +1384,14 @@ export class Bridge {
           (taskId, status) => {
             this.extensionClient.notifyTaskDone(taskId, status);
             const task = this.orchestrator?.getTask(taskId);
+            // A Claude CLI task refused for authentication (revoked or expired
+            // sign-in) is the evidence `GET /auth/claude/status` needs to stop
+            // reporting mere credential presence as "logged in"; a successful
+            // one clears it. Claude CLI driver only — another provider's
+            // refusal says nothing about the Claude sign-in.
+            if (task && driver.name === "subprocess") {
+              observeClaudeTaskForAuth(task);
+            }
             if (task && this.recipeRunLog) {
               this.recipeRunLog.record({
                 id: task.id,
