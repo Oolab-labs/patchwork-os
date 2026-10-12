@@ -200,6 +200,8 @@ patchwork privacy destinations [--json]
 | `undeclared [--dir <path>]` | Which agent steps carry no `data_policy`, and which tool outputs feed them. Suggests no classification, on purpose. |
 | `suggest` | A starter `privacy.shadow` block derived from the drivers your recipes declare. Emits the shadow key only, never the enforcing one. |
 
+`GET /privacy/receipts` serves the same summary as `receipts --json` (bridge token required). It takes `sinceMs`, `limit` (rows in `recent`) and `run=<taskId>`. With `run`, every count describes only the receipts whose `correlationId` equals that run's `taskId`, and the response carries `scope: { "run": "<taskId>" }` so a per-run answer cannot be mistaken for the whole ledger. Receipts written before `correlationId` existed carry no run and never match. An empty `run`, one longer than 128 characters or one containing a control character is a 400. Each row in `recent` includes `correlationId` only when the stored receipt has one.
+
 **Every `privacy` verb exits 0**: inert, wide-open and undeclared are all legitimate operator states. `receipts` and `undeclared` name real recipes, so quote a measurement from them and never paste the rows.
 
 ### `pr-outcomes`

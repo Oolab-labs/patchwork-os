@@ -1154,9 +1154,31 @@ export function tryHandleRecipeRoute(
       const sinceMs = sinceMsRaw ? Number.parseInt(sinceMsRaw, 10) : Number.NaN;
       const limitRaw = sp.get("limit");
       const limit = limitRaw ? Number.parseInt(limitRaw, 10) : Number.NaN;
+      // `?run=<taskId>` narrows the report to one run's receipts (a
+      // run-detail page's "what this run sent where"). Present-but-invalid is
+      // a 400, never silently ignored: falling back to the whole ledger would
+      // answer a question about one run with every run's data.
+      const run = sp.has("run") ? (sp.get("run") ?? "") : undefined;
+      if (
+        run !== undefined &&
+        (run.length === 0 ||
+          run.length > 128 ||
+          /[\u0000-\u001f\u007f]/.test(run))
+      ) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error:
+              "invalid run: must be 1-128 characters with no control characters",
+          }),
+        );
+        return true;
+      }
       const summary = summariseBoundaryReceipts({
         ...(Number.isFinite(sinceMs) && { since: sinceMs }),
         ...(Number.isFinite(limit) && limit > 0 && { recentLimit: limit }),
+        ...(run !== undefined && { run }),
       });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(summary));

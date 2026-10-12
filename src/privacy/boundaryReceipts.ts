@@ -127,6 +127,12 @@ export interface BoundaryReceiptsSummary {
   latest?: number;
   /** Echoed back so a filtered report cannot be mistaken for the whole ledger. */
   since?: number;
+  /**
+   * Present ONLY when the report was narrowed to one run. Every count above
+   * then describes that run's receipts, not the ledger — and says so, for the
+   * same reason `since` is echoed. Absent on an unfiltered report.
+   */
+  scope?: { run: string };
   /** Lines that could not be parsed. Reported, never silently skipped. */
   unreadableLines: number;
   /** True only if a caller-supplied row limit actually cut the ledger short. */
@@ -143,6 +149,12 @@ export interface SummariseReceiptsOptions {
   recentLimit?: number;
   /** Stop after this many rows. Sets `truncated` when it bites. */
   maxRows?: number;
+  /**
+   * Only count receipts whose `correlationId` equals this run's `taskId`.
+   * A row with no `correlationId` (it pre-dates the field) never matches —
+   * its run is unknown, and is not guessed.
+   */
+  run?: string;
 }
 
 function view(r: Record<string, unknown>): BoundaryReceiptView | null {
@@ -206,6 +218,7 @@ export function summariseBoundaryReceipts(
     truncated: false,
     recent: [],
     ...(opts.since !== undefined ? { since: opts.since } : {}),
+    ...(opts.run !== undefined ? { scope: { run: opts.run } } : {}),
   };
 
   let text: string;
@@ -242,6 +255,7 @@ export function summariseBoundaryReceipts(
       continue;
     }
     if (opts.since !== undefined && v.at < opts.since) continue;
+    if (opts.run !== undefined && v.correlationId !== opts.run) continue;
 
     s.recorded += 1;
     s.byDecision[v.decision] = (s.byDecision[v.decision] ?? 0) + 1;
