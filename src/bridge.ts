@@ -1404,6 +1404,12 @@ export class Bridge {
                 ...(task.doneAt !== undefined && { doneAt: task.doneAt }),
                 ...(task.model !== undefined && { model: task.model }),
                 ...(task.output !== undefined && { output: task.output }),
+                // A protected run's agent task (src/recipes/withheldOutputs.ts):
+                // the orchestrator has already removed the output; the row
+                // records the marker so "withheld" never reads as "empty".
+                ...(task.outputWithheld !== undefined && {
+                  outputWithheld: task.outputWithheld,
+                }),
                 ...(task.errorMessage !== undefined && {
                   errorMessage: task.errorMessage,
                 }),

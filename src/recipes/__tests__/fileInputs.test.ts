@@ -613,8 +613,11 @@ describe("ledgers hold the upload name and hash, never the bytes or the path", (
     expect(log).toContain("noisy-recipe");
     expect(log).not.toContain("UNIQUE-UPLOAD-CONTENT");
     expect(log).not.toContain(uploadPath());
-    // The path DID reach the row (the file.write output names what it was
-    // asked to write) — as the ledger marker, so this is not a vacuous pass.
-    expect(log).toMatch(/\[upload: receipt\.txt, sha256:[0-9a-f]{12}…\]/);
+    // A run with a file input records no step outputs at all
+    // (withheldOutputs.ts): each step that produced something carries the
+    // withheld marker instead, so this is not a vacuous pass.
+    expect(log).toMatch(
+      /"outputWithheld":\{"reason":"text_or_file_input","length":\d+,"sha256":"[0-9a-f]{64}"\}/,
+    );
   });
 });

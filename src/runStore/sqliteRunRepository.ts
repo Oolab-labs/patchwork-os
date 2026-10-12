@@ -136,6 +136,10 @@ const EXTRA_KEYS = [
   "budgetWarnings",
   "tokenTotals",
   "budgetTotals",
+  // The marker an orchestrator task row carries instead of `outputTail`
+  // (src/recipes/withheldOutputs.ts) — mirrored so "withheld" never reads as
+  // "no output" in the mirror.
+  "outputWithheld",
 ] as const;
 
 type Row = Record<string, unknown>;

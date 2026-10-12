@@ -10,6 +10,7 @@ import {
 import path from "node:path";
 import { withFileLockSync } from "./fileLockSync.js";
 import type { Logger } from "./logger.js";
+import type { OutputWithheld } from "./recipes/withheldOutputs.js";
 import {
   appendStepEvidence,
   isEvidenceBearing,
@@ -95,6 +96,13 @@ export interface RunStepResult {
   resolvedParams?: unknown;
   /** Step output value (`result.data` from the executor). */
   output?: unknown;
+  /**
+   * Present INSTEAD of `output` (and, on chained rows, of `resolvedParams`
+   * and `registrySnapshot`) when the run used a `text` or `file` input: the
+   * step produced something, and it was deliberately not recorded. Length +
+   * sha256 only. See `src/recipes/withheldOutputs.ts`.
+   */
+  outputWithheld?: OutputWithheld;
   /** Snapshot of `OutputRegistry` AFTER this step completed —
    *  `Map<stepId, StepOutput>`. Used by Phase-3 diff hover. */
   registrySnapshot?: Record<string, unknown>;
@@ -140,6 +148,12 @@ export interface RecipeRun {
   model?: string;
   /** Truncated output tail — first 2KB, enough for a "RECIPE DONE:" line. */
   outputTail?: string;
+  /**
+   * Present INSTEAD of `outputTail` on an orchestrator task row
+   * (`<recipe>:agent`) that served an agent step of a run with a `text` or
+   * `file` input. See `src/recipes/withheldOutputs.ts`.
+   */
+  outputWithheld?: OutputWithheld;
   /** Error message for failed runs. */
   errorMessage?: string;
   /** Duration ms = doneAt - (startedAt ?? createdAt). */
@@ -493,6 +507,8 @@ export class RecipeRunLog {
     doneAt?: number;
     model?: string;
     output?: string;
+    /** The task's output was withheld — never write an `outputTail`. */
+    outputWithheld?: OutputWithheld;
     errorMessage?: string;
   }): RecipeRun | null {
     const parsed = RecipeRunLog.parseTrigger(task.triggerSource);
@@ -520,9 +536,13 @@ export class RecipeRunLog {
       ...(startedAt !== undefined && { startedAt }),
       doneAt,
       ...(task.model !== undefined && { model: task.model }),
-      ...(task.output !== undefined && {
-        outputTail: task.output.slice(-MAX_OUTPUT_TAIL),
-      }),
+      // A withheld marker wins over any output a caller still passes: the
+      // marker exists precisely so the tail is never written.
+      ...(task.outputWithheld !== undefined
+        ? { outputWithheld: task.outputWithheld }
+        : task.output !== undefined && {
+            outputTail: task.output.slice(-MAX_OUTPUT_TAIL),
+          }),
       ...(task.errorMessage !== undefined && {
         errorMessage: task.errorMessage,
       }),

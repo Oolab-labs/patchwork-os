@@ -56,6 +56,9 @@ export function synthesizeMockedOutputs(
     for (const step of run.stepResults ?? []) {
       if (historyStepIds.has(step.id)) continue;
       if (step.status === "skipped") continue;
+      // Withheld (a run with a text or file input — withheldOutputs.ts): not
+      // an empty value. Skipped so an older run's real capture can serve.
+      if (step.outputWithheld !== undefined) continue;
       const out = step.output;
       if (out === undefined) continue;
       if (isTruncated(out)) continue;

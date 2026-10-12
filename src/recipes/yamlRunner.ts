@@ -196,6 +196,11 @@ import {
   isHttpFailureFromTool,
 } from "./tools/httpOutcome.js";
 import { evaluateWhen } from "./whenGuard.js";
+import {
+  type OutputWithheld,
+  outputWithheldMarker,
+  runWithholdsOutputs,
+} from "./withheldOutputs.js";
 import { resolveWorkspaceRoot } from "./workspaceRoot.js";
 import "./tools/index.js";
 import { patchworkPath } from "../patchworkHome.js";
@@ -760,6 +765,12 @@ export interface RunnerDeps {
       readOnlyDirs?: string[];
       /** Governed-only; the impl keeps its own fallback for direct callers. */
       systemPrompt?: string;
+      /**
+       * Present (true) only when the step belongs to a run with a `text` or
+       * `file` input: the caller must not keep the answer anywhere but its
+       * return value (src/recipes/withheldOutputs.ts). Absent otherwise.
+       */
+      withholdOutput?: boolean;
     },
   ) => Promise<string | AgentResult>;
   /** Optional local LLM caller (Ollama / LM Studio) for agent steps with driver: local or model: local. */
@@ -1002,6 +1013,11 @@ export type StepResult = {
    * (VD-2) — feeds `replayFlatMockedRun`'s mocked replay for flat recipes.
    */
   output?: unknown;
+  /**
+   * In place of `output` (and on an ok agent step) when the run used a
+   * `text` or `file` input — see `src/recipes/withheldOutputs.ts`.
+   */
+  outputWithheld?: OutputWithheld;
 };
 
 export type StepDeps = Required<
@@ -1568,6 +1584,11 @@ async function runYamlRecipeHeld(
   // the FILE's content is data, not instructions (fileInputs.ts).
   const fileInputNames = fileInputs.fileInputNames;
   const agentReadDirs = fileInputs.agentReadDirs;
+  // A run handed a text or file input records NO step outputs — not the
+  // agent's answer (which quotes the material), not any tool result — only a
+  // length + sha256 marker per step (src/recipes/withheldOutputs.ts). False
+  // for every other run, which is recorded exactly as before.
+  const withholdOutputs = runWithholdsOutputs(recipe, seedContext);
   if (envelopeActive) {
     for (const name of textInputNames) {
       untrustedProvenance.set(name, runInputProvenance(name));
@@ -2114,6 +2135,7 @@ async function runYamlRecipeHeld(
         undefined,
         runTaskId,
         currentAgentStepId,
+        withholdOutputs,
       ),
     );
     runBudget.reconcile(
@@ -2226,6 +2248,7 @@ async function runYamlRecipeHeld(
         undefined,
         runTaskId,
         currentAgentStepId,
+        withholdOutputs,
       ),
     );
     runBudget.reconcile(
@@ -3097,6 +3120,7 @@ async function runYamlRecipeHeld(
               undefined,
               runTaskId,
               stepId,
+              withholdOutputs,
             ),
           );
           agentResult = agentReturn.text;
@@ -3236,6 +3260,12 @@ async function runYamlRecipeHeld(
                 tool: "agent",
                 status: "ok",
                 ...(judgeVerdict !== undefined && { judgeVerdict }),
+                // Flat agent rows never capture the answer; in a run with a
+                // text or file input they say so, so a reader can tell
+                // "withheld" from "nothing produced".
+                ...(withholdOutputs && {
+                  outputWithheld: outputWithheldMarker(agentResult),
+                }),
                 durationMs: Date.now() - stepStart,
               };
               stepResults.push(judgeStepResult);
@@ -3641,6 +3671,14 @@ async function runYamlRecipeHeld(
               : toCapture,
           );
         }
+        // A run with a text or file input keeps no step output — whatever a
+        // tool returned may echo the material or an answer derived from it
+        // (src/recipes/withheldOutputs.ts). Marker over the raw result.
+        let stepOutputWithheld: OutputWithheld | undefined;
+        if (withholdOutputs && stepOutput !== undefined) {
+          stepOutputWithheld = outputWithheldMarker(result);
+          stepOutput = undefined;
+        }
         stepResults.push({
           id: stepId,
           tool: step.tool,
@@ -3655,6 +3693,9 @@ async function runYamlRecipeHeld(
               }
             : {}),
           ...(stepOutput !== undefined ? { output: stepOutput } : {}),
+          ...(stepOutputWithheld !== undefined
+            ? { outputWithheld: stepOutputWithheld }
+            : {}),
           durationMs: Date.now() - stepStart,
         });
         if (stepError) {
@@ -3817,6 +3858,12 @@ async function runYamlRecipeHeld(
         // directly into replayFlatMockedRun, never round-tripping through
         // a real runLog persist + reload.
         ...(s.output !== undefined ? { output: s.output } : {}),
+        // Carried for the same reason as `output` above: this whitelist is
+        // what reaches disk, and a marker dropped here would make a withheld
+        // output read as "nothing produced".
+        ...(s.outputWithheld !== undefined
+          ? { outputWithheld: s.outputWithheld }
+          : {}),
       }));
       // P1: run-level token aggregate + budget totals (latter only when a
       // budget was configured — never persist all-zero no-budget totals).
@@ -4678,6 +4725,8 @@ function buildAgentExecutorDeps(
       containment?: import("../governance/profile.js").AgentContainment;
       /** Extra READ-only directories for the agent (`--add-dir`); fileInputs.ts. */
       readOnlyDirs?: string[];
+      /** See `RunnerDeps.claudeCodeFn`. */
+      withholdOutput?: boolean;
     },
   ) => Promise<string | AgentResult>,
   /**
@@ -4696,6 +4745,12 @@ function buildAgentExecutorDeps(
    * back to "agent" only when a caller genuinely does not know.
    */
   stepId?: string,
+  /**
+   * The run used a `text` or `file` input (src/recipes/withheldOutputs.ts):
+   * tell the Claude CLI caller so the orchestrator task serving this step
+   * keeps a marker instead of the answer. Other drivers write no task row.
+   */
+  withholdOutput?: boolean,
 ): AgentExecutorDeps {
   // Replay boundary (replayBoundary.ts, layer 3) — the single place agent
   // executor deps are built for every dispatch site in this runner, so a
@@ -4846,34 +4901,39 @@ function buildAgentExecutorDeps(
     // The orchestrator callback takes a boolean sandbox; the object form
     // (a governed widening) has already been folded into `containment` by
     // the executor, so only "is a sandbox requested" needs to travel here.
-    claudeCliFn: async (prompt, opts) =>
-      toAgentResult(
+    claudeCliFn: async (prompt, opts) => {
+      const mapped = opts && {
+        ...(opts.mcpAccess !== undefined && { mcpAccess: opts.mcpAccess }),
+        ...(opts.sandbox !== undefined && {
+          sandbox: opts.sandbox === true || typeof opts.sandbox === "object",
+        }),
+        ...(opts.allowedTools !== undefined && {
+          allowedTools: opts.allowedTools,
+        }),
+        ...(opts.disallowedTools !== undefined && {
+          disallowedTools: opts.disallowedTools,
+        }),
+        ...(opts.containment !== undefined && {
+          containment: opts.containment,
+        }),
+        ...(opts.readOnlyDirs !== undefined && {
+          readOnlyDirs: opts.readOnlyDirs,
+        }),
+        ...(opts.systemPrompt !== undefined && {
+          systemPrompt: opts.systemPrompt,
+        }),
+      };
+      return toAgentResult(
         await claudeCliFn(
           prompt,
-          opts && {
-            ...(opts.mcpAccess !== undefined && { mcpAccess: opts.mcpAccess }),
-            ...(opts.sandbox !== undefined && {
-              sandbox:
-                opts.sandbox === true || typeof opts.sandbox === "object",
-            }),
-            ...(opts.allowedTools !== undefined && {
-              allowedTools: opts.allowedTools,
-            }),
-            ...(opts.disallowedTools !== undefined && {
-              disallowedTools: opts.disallowedTools,
-            }),
-            ...(opts.containment !== undefined && {
-              containment: opts.containment,
-            }),
-            ...(opts.readOnlyDirs !== undefined && {
-              readOnlyDirs: opts.readOnlyDirs,
-            }),
-            ...(opts.systemPrompt !== undefined && {
-              systemPrompt: opts.systemPrompt,
-            }),
-          },
+          // Only a protected run adds the key, so every other call keeps its
+          // exact shape (src/recipes/withheldOutputs.ts).
+          withholdOutput === true
+            ? { ...(mapped ?? {}), withholdOutput: true }
+            : mapped,
         ),
-      ),
+      );
+    },
     localFn: async (prompt, model, systemPrompt) =>
       toAgentResult(
         systemPrompt === undefined
@@ -5495,6 +5555,8 @@ export function buildChainedDeps(
       containment?: import("../governance/profile.js").AgentContainment;
       /** Extra READ-only directories for the agent (`--add-dir`); fileInputs.ts. */
       readOnlyDirs?: string[];
+      /** See `RunnerDeps.claudeCodeFn`. */
+      withholdOutput?: boolean;
     },
   ) => Promise<string | AgentResult>,
   /**
@@ -5606,6 +5668,8 @@ export function buildChainedDeps(
       boundary?: import("./agentExecutor.js").AgentExecutorInput["boundary"];
       /** Names the step in a replay refusal; never affects dispatch. */
       stepId?: string;
+      /** The run used a text or file input — see `withheldOutputs.ts`. */
+      withholdOutput?: boolean;
     },
   ): Promise<AgentResult> => {
     // Surface the FULL AgentResult (text + usage + servedBy) so the chained
@@ -5655,6 +5719,9 @@ export function buildChainedDeps(
         // computed and published the run's `taskId`.
         runTaskIdRef.current,
         opts?.stepId,
+        // Set by the chained runner per dispatch when the run used a text or
+        // file input (src/recipes/withheldOutputs.ts).
+        opts?.withholdOutput === true,
       ),
     );
   };

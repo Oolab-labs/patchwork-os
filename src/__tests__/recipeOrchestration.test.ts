@@ -595,6 +595,54 @@ describe("RecipeOrchestration", () => {
     );
   });
 
+  it("fireYamlRecipe() — an agent step of a run with a text/file input enqueues a withheld-output task", async () => {
+    const { dispatchRecipe } = await import("../recipes/yamlRunner.js");
+    vi.mocked(dispatchRecipe).mockClear();
+    let capturedDispatchFn:
+      | ((recipe: unknown, deps: unknown, seedContext: unknown) => unknown)
+      | undefined;
+    const fireStub = vi.fn().mockImplementation(async (opts) => {
+      capturedDispatchFn = opts.dispatchFn;
+      return { ok: true, taskId: "t1", name: "foo" };
+    });
+    const mockOrchestrator = {
+      runAndWait: vi.fn().mockResolvedValue({ status: "done", output: "a" }),
+    };
+    const ro = new RecipeOrchestration({
+      server: makeServer(),
+      getOrchestrator: () => mockOrchestrator,
+      recipeOrchestrator: makeRecipeOrchestrator({ fire: fireStub }),
+      recipeRunLog: null,
+      workdir: "/tmp/ws",
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    await ro.fireYamlRecipe({
+      filePath: "/r/foo.yaml",
+      name: "foo",
+      taskIdPrefix: "yaml-recipe-foo",
+      triggerSourceSuffix: "recipe:foo",
+      logLabel: '"foo"',
+    });
+    await capturedDispatchFn?.({ name: "foo" }, {}, {});
+    const passedDeps = vi.mocked(dispatchRecipe).mock.calls[0]![1] as {
+      claudeCodeFn: (p: string, o?: Record<string, unknown>) => Promise<string>;
+    };
+
+    // Protected run: the task is enqueued with the withhold reason.
+    expect(await passedDeps.claudeCodeFn("p", { withholdOutput: true })).toBe(
+      "a",
+    );
+    expect(mockOrchestrator.runAndWait.mock.calls[0]![0]).toMatchObject({
+      withholdOutput: "text_or_file_input",
+    });
+    // Any other run: the enqueue options carry no such key.
+    await passedDeps.claudeCodeFn("p", {});
+    await passedDeps.claudeCodeFn("p");
+    for (const call of mockOrchestrator.runAndWait.mock.calls.slice(1)) {
+      expect(Object.hasOwn(call[0], "withholdOutput")).toBe(false);
+    }
+  });
+
   it("buildScheduler() — returns a RecipeScheduler instance", () => {
     const scheduler = RecipeOrchestration.buildScheduler({
       recipesDir: "/tmp/recipes",
