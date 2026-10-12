@@ -45,6 +45,11 @@ import {
   resolveDestination,
 } from "./privacy/destinationRegistry.js";
 import { recordPrivacyShadow } from "./privacy/shadowLog.js";
+import {
+  type OutputWithheld,
+  type OutputWithheldReason,
+  outputWithheldMarker,
+} from "./recipes/withheldOutputs.js";
 import { resolveWorkspaceRoot } from "./recipes/workspaceRoot.js";
 import { currentWorkspaceId } from "./workspaceId.js";
 import { writeFileAtomic, writeFileAtomicSync } from "./writeFileAtomic.js";
@@ -70,6 +75,17 @@ export interface ClaudeTask {
   doneAt?: number;
   /** Full output text, capped at 50KB. */
   output?: string;
+  /**
+   * Requested at enqueue: this task serves an agent step of a run with a
+   * `text` or `file` input, so its output must not be kept on the task, in the
+   * tasks file or in the run log (src/recipes/withheldOutputs.ts).
+   */
+  withholdOutput?: OutputWithheldReason;
+  /**
+   * Set at completion in place of `output` when `withholdOutput` was
+   * requested. Only the `runAndWait` caller ever receives the text.
+   */
+  outputWithheld?: OutputWithheld;
   errorMessage?: string;
   timeoutMs: number;
   /** Estimated token count for the prompt (used for token-budget concurrency). */
@@ -171,6 +187,13 @@ export type EnqueueOpts = {
   allowedTools?: string[];
   disallowedTools?: string[];
   containment?: import("./governance/profile.js").AgentContainment;
+  /**
+   * The task serves an agent step of a run with a `text` or `file` input:
+   * hand the output to the `runAndWait` caller and keep only a length +
+   * sha256 marker everywhere else (task list, tasks file, run log). Absent ⇒
+   * unchanged behaviour.
+   */
+  withholdOutput?: OutputWithheldReason;
 };
 
 /**
@@ -264,6 +287,10 @@ interface PersistedTask {
   contextFiles: string[];
   status: string;
   output?: string;
+  /** See `ClaudeTask.withholdOutput` — survives a restart so a re-enqueued task stays protected. */
+  withholdOutput?: OutputWithheldReason;
+  /** See `ClaudeTask.outputWithheld`. */
+  outputWithheld?: OutputWithheld;
   errorMessage?: string;
   createdAt: number;
   startedAt?: number;
@@ -554,6 +581,12 @@ export class ClaudeOrchestrator {
   private taskCallbacks = new Map<string, (chunk: string) => void>();
   /** Per-task completion callbacks (set by runAndWait). */
   private completionCallbacks = new Map<string, (task: ClaudeTask) => void>();
+  /**
+   * The output of a finished `withholdOutput` task, held only between the
+   * moment it is removed from the task and the completion callback that hands
+   * it to the `runAndWait` caller. Never persisted, never listed.
+   */
+  private withheldOutputs = new Map<string, string>();
   private queue: string[] = [];
   private running = new Set<string>();
   private controllers = new Map<string, AbortController>();
@@ -661,6 +694,9 @@ export class ClaudeOrchestrator {
         disallowedTools: opts.disallowedTools,
       }),
       ...(containment !== undefined && { containment }),
+      ...(opts.withholdOutput !== undefined && {
+        withholdOutput: opts.withholdOutput,
+      }),
     };
 
     this.tasks.set(id, task);
@@ -763,6 +799,7 @@ export class ClaudeOrchestrator {
       task.doneAt = Date.now();
       task.output = ""; // never ran — ensure output field always exists
       this.queue = this.queue.filter((qid) => qid !== id);
+      this._withholdOutput(task);
       this._fireCompletion(id);
       this.log(
         `[orchestrator] cancelled pending task ${id.slice(0, 8)} (reason=${reason})`,
@@ -1010,6 +1047,10 @@ export class ClaudeOrchestrator {
         `[orchestrator] task ${id.slice(0, 8)} finished: ${task.status} (${task.doneAt - (task.startedAt ?? task.doneAt)}ms)`,
       );
 
+      // Before ANY reader sees the finished task — the done listener writes
+      // the run log row, the checkpoint writes the tasks file — so a listener
+      // that forgets the marker still has no output to leak.
+      this._withholdOutput(task);
       this.notifyDone?.(id, task.status);
       this._fireCompletion(id);
       void Promise.resolve(this.checkpoint?.save()).catch((err) => {
@@ -1025,11 +1066,32 @@ export class ClaudeOrchestrator {
     }
   }
 
+  /**
+   * Replace a finished `withholdOutput` task's output with its marker. The
+   * text is parked in `withheldOutputs` for `_fireCompletion`, which hands it
+   * to the `runAndWait` caller on a COPY of the task and drops it.
+   */
+  private _withholdOutput(task: ClaudeTask): void {
+    if (task.withholdOutput === undefined) return;
+    const text = task.output ?? "";
+    task.outputWithheld = outputWithheldMarker(text);
+    this.withheldOutputs.set(task.id, text);
+    delete task.output;
+  }
+
   private _fireCompletion(id: string): void {
+    const withheld = this.withheldOutputs.get(id);
+    this.withheldOutputs.delete(id);
     const cb = this.completionCallbacks.get(id);
     if (cb) {
       this.completionCallbacks.delete(id);
-      const task = this.tasks.get(id);
+      const stored = this.tasks.get(id);
+      // Only the caller that asked for the task gets the withheld text, on a
+      // copy — the shared task (listed, persisted, recorded) never holds it.
+      const task =
+        stored && withheld !== undefined
+          ? { ...stored, output: withheld }
+          : stored;
       if (task) {
         try {
           cb(task);
@@ -1053,16 +1115,31 @@ export class ClaudeOrchestrator {
       // interpolated API key or a pasted credential ended up persisting past
       // the process that was handed it.
       const promptEncrypted = encryptPromptForPersistence(t.prompt);
+      // A task serving a run with a text/file input carries that material in
+      // its PROMPT as well. The value-redaction hold ends with the run, and
+      // this file is rewritten on every later task completion — so a clear
+      // preview here would outlive the hold. Encrypted prompt + hash only.
+      const withheld = t.withholdOutput !== undefined;
       result.push({
         id: t.id,
         sessionId: t.sessionId,
         promptSha256: createHash("sha256").update(t.prompt).digest("hex"),
-        promptPreview: redactKnownSecrets(t.prompt).slice(0, 200),
+        ...(!withheld && {
+          promptPreview: redactKnownSecrets(t.prompt).slice(0, 200),
+        }),
         ...(promptEncrypted !== undefined && { promptEncrypted }),
         contextFiles: t.contextFiles,
         status: (t.status === "running" ? "interrupted" : t.status) as string,
         output:
-          t.output === undefined ? undefined : redactKnownSecrets(t.output),
+          withheld || t.output === undefined
+            ? undefined
+            : redactKnownSecrets(t.output),
+        ...(t.withholdOutput !== undefined && {
+          withholdOutput: t.withholdOutput,
+        }),
+        ...(t.outputWithheld !== undefined && {
+          outputWithheld: t.outputWithheld,
+        }),
         errorMessage:
           t.errorMessage === undefined
             ? undefined
@@ -1279,6 +1356,9 @@ export class ClaudeOrchestrator {
                 ...(t.isAutomationTask !== undefined && {
                   isAutomationTask: t.isAutomationTask,
                 }),
+                ...(t.withholdOutput !== undefined && {
+                  withholdOutput: t.withholdOutput,
+                }),
               },
               true, // restoring: already accepted once — never re-capped
             );
@@ -1367,6 +1447,12 @@ export class ClaudeOrchestrator {
       }),
       ...(t.isAutomationTask !== undefined && {
         isAutomationTask: t.isAutomationTask,
+      }),
+      ...(t.withholdOutput !== undefined && {
+        withholdOutput: t.withholdOutput,
+      }),
+      ...(t.outputWithheld !== undefined && {
+        outputWithheld: t.outputWithheld,
       }),
     };
     this.tasks.set(task.id, task);

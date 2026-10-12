@@ -566,7 +566,10 @@ describe("a text input's value is not copied into the run log", () => {
     return readFileSync(join(dir, "runs.jsonl"), "utf-8");
   }
 
-  it("flat: a captured tool output that echoes the input is logged as length + sha256", async () => {
+  // Since withheldOutputs.ts, a run with a text input captures no step output
+  // at all — the echo is recorded as an `outputWithheld` marker (length +
+  // sha256), which is a stronger form of the property these two pinned.
+  it("flat: a tool output that echoes the input is recorded as a withheld marker", async () => {
     const value = `${NOTES}\nUNIQUE-MARKER-7f3a9c`;
     const log = await withEchoServer((url) =>
       persistedRun(
@@ -592,10 +595,12 @@ describe("a text input's value is not copied into the run log", () => {
     expect(log).toContain('"posted"');
     expect(log).not.toContain("UNIQUE-MARKER-7f3a9c");
     expect(log).not.toContain("Q3 planning");
-    expect(log).toMatch(/\[text: \d+ chars, sha256:[0-9a-f]{12}…\]/);
+    expect(log).toMatch(
+      /"outputWithheld":\{"reason":"text_or_file_input","length":\d+,"sha256":"[0-9a-f]{64}"\}/,
+    );
   });
 
-  it("chained: resolvedParams carry length + sha256, never the value", async () => {
+  it("chained: no resolvedParams are recorded, only a withheld marker", async () => {
     const { runChainedRecipe } = await import("../chainedRunner.js");
     const { buildChainedDeps } = await import("../yamlRunner.js");
     const prev = process.env.PATCHWORK_HOME;
@@ -641,7 +646,8 @@ describe("a text input's value is not copied into the run log", () => {
     const log = readFileSync(join(dir, "runs.jsonl"), "utf-8");
     expect(log.length).toBeGreaterThan(0);
     expect(log).not.toContain("CHAINED-MARKER-41be");
-    expect(log).toMatch(/\[text: \d+ chars, sha256:[0-9a-f]{12}…\]/);
+    expect(log).not.toContain('"resolvedParams"');
+    expect(log).toContain('"outputWithheld"');
   });
 
   it("a short `string` input is logged exactly as before", async () => {

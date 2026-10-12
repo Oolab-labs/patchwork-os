@@ -33,6 +33,7 @@ import type {
 import { RecipeScheduler } from "./recipes/scheduler.js";
 import { hasTool } from "./recipes/toolRegistry.js";
 import { applyTriggerInputDefaults } from "./recipes/triggerVars.js";
+import { OUTPUT_WITHHELD_REASON } from "./recipes/withheldOutputs.js";
 import {
   archiveRecipe,
   deleteRecipeContent,
@@ -1862,6 +1863,7 @@ export class RecipeOrchestration {
         disallowedTools?: string[];
         /** `type: file` inputs: dirs the agent may READ (`--add-dir`). */
         readOnlyDirs?: string[];
+        withholdOutput?: boolean;
       },
     ): Promise<string> => {
       const task = await orch.runAndWait({
@@ -1874,6 +1876,12 @@ export class RecipeOrchestration {
           callOpts.readOnlyDirs.length > 0 && {
             contextFiles: callOpts.readOnlyDirs,
           }),
+        // The runner says this agent step belongs to a run with a text or
+        // file input (src/recipes/withheldOutputs.ts): the task row keeps a
+        // marker, never the answer.
+        ...(callOpts?.withholdOutput === true && {
+          withholdOutput: OUTPUT_WITHHELD_REASON,
+        }),
         timeoutMs: 1_800_000,
         ...(await governedSystemPrompt()),
         ...(callOpts?.mcpAccess !== undefined && {

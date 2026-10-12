@@ -56,6 +56,7 @@ import {
   recordedFailure,
   replayRefusalMessage,
 } from "./replayBoundary.js";
+import { replayWithheldMessage, withheldStepIds } from "./withheldOutputs.js";
 import type { RunnerDeps, RunResult, YamlRecipe } from "./yamlRunner.js";
 import {
   buildChainedDeps,
@@ -106,6 +107,13 @@ export function buildMockedOutputs(originalRun: RecipeRun): {
   const unmocked: string[] = [];
   for (const step of originalRun.stepResults ?? []) {
     if (step.status === "skipped") continue;
+    // A withheld output (src/recipes/withheldOutputs.ts) is neither a value
+    // nor a recorded failure. The replay entry points refuse such a run
+    // before reaching here; a direct caller sees the step as unmockable.
+    if (step.outputWithheld !== undefined) {
+      unmocked.push(step.id);
+      continue;
+    }
     const out = step.output;
     // A recorded failure is evidence: replay it as the same failure, never
     // dispatch. Only when nothing was captured — an error step that DID
@@ -160,6 +168,25 @@ function onlyReplayedFailures(
   );
 }
 
+/**
+ * A run that used a text or file input recorded no step outputs
+ * (src/recipes/withheldOutputs.ts). There is nothing to replay from, and
+ * reporting an "unmocked step" would read as a gap in the evidence rather
+ * than a deliberate absence — so it is refused under its own code, before
+ * anything runs.
+ */
+function refuseWithheldRun(
+  originalRun: RecipeRun,
+): { ok: false; error: string; unmockedSteps: string[] } | undefined {
+  const withheld = withheldStepIds(originalRun);
+  if (withheld.length === 0) return undefined;
+  return {
+    ok: false,
+    error: replayWithheldMessage(withheld),
+    unmockedSteps: withheld,
+  };
+}
+
 function isTruncatedCapture(out: unknown): boolean {
   return (
     out !== null &&
@@ -201,6 +228,8 @@ export async function replayMockedRun(opts: {
   deps: ReplayDeps;
 }): Promise<ReplayResult> {
   const { originalRun, recipe, sourcePath, deps } = opts;
+  const withheldRefusal = refuseWithheldRun(originalRun);
+  if (withheldRefusal) return withheldRefusal;
   const { outputs, failures, unmocked } = buildMockedOutputs(originalRun);
 
   // Layer 1 — preflight. Explanatory: names every unmockable step at once.
@@ -327,6 +356,10 @@ export function buildFlatMockedOutputs(originalRun: RecipeRun): {
       unmocked.push(step.id);
       continue;
     }
+    if (step.outputWithheld !== undefined) {
+      unmocked.push(step.id);
+      continue;
+    }
     const out = step.output;
     // See buildMockedOutputs: a recorded failure replays as that failure.
     // After the positional-id rule, which is about identity, not evidence.
@@ -383,6 +416,8 @@ export async function replayFlatMockedRun(opts: {
   deps: ReplayDeps;
 }): Promise<FlatReplayResult> {
   const { originalRun, recipe, deps } = opts;
+  const withheldRefusal = refuseWithheldRun(originalRun);
+  if (withheldRefusal) return withheldRefusal;
   const { outputs, failures, unmocked } = buildFlatMockedOutputs(originalRun);
 
   // Layer 1 — preflight.

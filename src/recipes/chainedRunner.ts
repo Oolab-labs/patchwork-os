@@ -110,6 +110,11 @@ import {
   OUTCOME_UNCERTAIN_TOKEN,
 } from "./uncertainOutcome.js";
 import { evaluateWhen } from "./whenGuard.js";
+import {
+  type OutputWithheld,
+  outputWithheldMarker,
+  runWithholdsOutputs,
+} from "./withheldOutputs.js";
 // TYPE-ONLY on purpose. `yamlRunner` imports this module dynamically to break
 // the cycle (see `loadRecipeServers` below); a value import here would close
 // it. `evaluateExpect` is pulled in with `await import()` at its call site for
@@ -232,6 +237,13 @@ export interface RunOptions {
    * `runChainedRecipe` at depth 0 and inherited by nested recipes.
    */
   agentReadDirs?: readonly string[];
+  /**
+   * The run used a `text` or `file` input, so no step output, resolved
+   * params or registry snapshot is recorded and agent dispatches are flagged
+   * (src/recipes/withheldOutputs.ts). Computed by `runChainedRecipe`;
+   * inherited by nested recipes through the options spread.
+   */
+  withholdOutputs?: boolean;
   /**
    * Run-level cancellation. Nested recipes inherit the parent's signal; the
    * top-level run also registers its own AbortController via the run registry
@@ -374,6 +386,11 @@ export type AgentExecutor = (
     readOnlyDirs?: string[];
     /** Names the step in a replay refusal; never affects dispatch. */
     stepId?: string;
+    /**
+     * The run used a `text` or `file` input: the dispatcher must keep the
+     * answer out of any task record (src/recipes/withheldOutputs.ts).
+     */
+    withholdOutput?: boolean;
   },
 ) => Promise<string | AgentResult>;
 
@@ -1305,6 +1322,7 @@ export async function executeChainedStep(
               options.agentReadDirs.length > 0 && {
                 readOnlyDirs: [...options.agentReadDirs],
               }),
+            ...(options.withholdOutputs === true && { withholdOutput: true }),
           }),
           step.timeout_ms,
           step.id,
@@ -1768,6 +1786,18 @@ export async function runChainedRecipe(
   // `type: text` input values are held by the value-redaction layer for the
   // life of the top-level run, so no ledger written during it records the
   // prose (src/recipes/textInputs.ts). Nested calls run inside that window.
+  //
+  // A run handed a text or file input keeps no step outputs
+  // (src/recipes/withheldOutputs.ts). Once set it stays set for nested runs
+  // (they inherit `options`); a child declaring its own such input sets it
+  // for its own dispatches. Decided on the values as SUPPLIED (an upload
+  // name), before file resolution — presence is what matters.
+  if (
+    options.withholdOutputs !== true &&
+    runWithholdsOutputs(recipe, options.env)
+  ) {
+    options = { ...options, withholdOutputs: true };
+  }
   if (depth !== 0) {
     return runChainedRecipeHeld(recipe, options, deps, existingRegistry, depth);
   }
@@ -1981,6 +2011,7 @@ async function runChainedRecipeHeld(
     {
       resolvedParams?: unknown;
       output?: unknown;
+      outputWithheld?: OutputWithheld;
       registrySnapshot?: Record<string, unknown>;
       startedAt: number;
     }
@@ -2222,7 +2253,25 @@ async function runChainedRecipeHeld(
     // part of their parent's audit) and only when we have a runSeq +
     // runLog to push into. Sensitive keys are redacted; large values
     // truncated to 8 KB.
-    if (depth === 0 && options.runLog && runSeq !== undefined) {
+    if (
+      depth === 0 &&
+      options.runLog &&
+      runSeq !== undefined &&
+      options.withholdOutputs === true
+    ) {
+      // A run with a text or file input (src/recipes/withheldOutputs.ts):
+      // the output, the rendered params (a body built from an answer) and the
+      // registry snapshot (every earlier output) all carry the material, so
+      // none is recorded — only a marker for a step that produced something.
+      capturedStepData.set(stepId, {
+        ...(result.data !== undefined && {
+          outputWithheld: outputWithheldMarker(
+            httpFailed ? httpFailureEvidence(result.data) : result.data,
+          ),
+        }),
+        startedAt: stepStart,
+      });
+    } else if (depth === 0 && options.runLog && runSeq !== undefined) {
       try {
         const snapshot: Record<string, unknown> = {};
         for (const k of registry.keys()) {
@@ -2368,6 +2417,7 @@ async function runChainedRecipeHeld(
         // VD-2 capture (only attached when present in `capturedStepData`).
         resolvedParams?: unknown;
         output?: unknown;
+        outputWithheld?: OutputWithheld;
         registrySnapshot?: Record<string, unknown>;
         startedAt?: number;
         // P1 cost/token corpus.
@@ -2416,6 +2466,9 @@ async function runChainedRecipeHeld(
             resolvedParams: captured.resolvedParams,
           }),
           ...(captured?.output !== undefined && { output: captured.output }),
+          ...(captured?.outputWithheld !== undefined && {
+            outputWithheld: captured.outputWithheld,
+          }),
           ...(captured?.registrySnapshot !== undefined && {
             registrySnapshot: captured.registrySnapshot,
           }),

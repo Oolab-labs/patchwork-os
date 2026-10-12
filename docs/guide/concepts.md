@@ -56,6 +56,8 @@ steps:
       into: items
 ```
 
+A run that uses a `text` input (or a `file` input) — declared with that type and given a value or a default in this run — also records **no step outputs**. An agent asked to organise pasted material quotes it back, so its answer, every tool result, and (in chained recipes) each step's rendered params and registry snapshot are left out of the run log, `run_steps.jsonl` and the orchestrator task that served the agent step. Each step that produced something carries `outputWithheld: { reason: "text_or_file_input", length, sha256 }` instead, so "withheld" never reads as "nothing produced"; the answer still goes wherever the recipe sends it (an inbox note, a message). Such a run cannot be replayed — `POST /runs/:seq/replay` refuses it with `replay_unavailable_outputs_withheld` (409) — and What-If Preview skips its steps when sampling history. Runs without such an input are recorded exactly as before.
+
 A step may carry an `expect` block: a completion contract checked against the step's output after it runs (a JSON Schema, a regex, a set of expected `outputs`). A failed contract halts the step by default; `required: true` makes a step skipped by its `when:` guard count as a failure too. `patchwork halts` shows these alongside ordinary errors.
 
 Two deliberate behaviours surprise people. A tool id that nothing is registered under **skips** the step silently under `compat` (forward compatibility for a plugin that is not loaded) and **halts** the run under `governed`; `recipe doctor` names the unresolved tool either way. And `recipe test` is offline: an unmocked tool or an unstubbed agent step is refused, never run live.

@@ -966,7 +966,10 @@ function writeReplayResult(res: ServerResponse, result: ReplayFnResult): void {
     res.writeHead(404, { "Content-Type": "application/json" });
   } else if (
     result.error === "ambiguous_seq" ||
-    result.error?.startsWith("replay_refused_unmocked_step")
+    result.error?.startsWith("replay_refused_unmocked_step") ||
+    // The run used a text or file input, so its outputs were never recorded
+    // (src/recipes/withheldOutputs.ts) — nothing to replay from, nothing ran.
+    result.error?.startsWith("replay_unavailable_outputs_withheld")
   ) {
     // 409 either way — a conflict with the evidence, not a server fault:
     // `ambiguous_seq` means the seq names more than one run (body carries
