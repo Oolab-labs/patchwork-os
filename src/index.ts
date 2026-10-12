@@ -6196,6 +6196,9 @@ if (process.argv[2] === "privacy") {
           return;
         }
         for (const e of entries) {
+          // `.archive/` etc. hold no live recipe — archived drivers are not
+          // destinations this workspace dispatches to.
+          if (e.startsWith(".")) continue;
           const full = join(dir, e);
           let isDir = false;
           try {

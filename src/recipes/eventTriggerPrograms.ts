@@ -9,6 +9,10 @@ import {
   isInstallDirDisabled,
 } from "./disabledMarkers.js";
 import { parseRecipe } from "./parser.js";
+import {
+  isReservedRecipeDirEntry,
+  isTopLevelRecipeFile,
+} from "./recipeDirEntries.js";
 
 /**
  * Collect AutomationPrograms from installed recipes whose trigger type maps to
@@ -78,6 +82,7 @@ export function collectEventTriggerPrograms(
       : safeDisabledNames();
 
   for (const entry of entries) {
+    if (isReservedRecipeDirEntry(entry)) continue;
     const fullPath = path.join(recipesDir, entry);
     let isDir = false;
     try {
@@ -91,7 +96,7 @@ export function collectEventTriggerPrograms(
       // Honor the per-install `.disabled` marker (parity with the scheduler).
       if (isInstallDirDisabled(fullPath)) continue;
       filePath = resolveInstallEntrypoint(fullPath);
-    } else if (isRecipeFile(entry)) {
+    } else if (isTopLevelRecipeFile(entry)) {
       filePath = fullPath;
     }
     if (!filePath) continue;
@@ -114,13 +119,6 @@ function safeDisabledNames(): Set<string> {
   } catch {
     return new Set();
   }
-}
-
-function isRecipeFile(name: string): boolean {
-  if (name.endsWith(".permissions.json")) return false;
-  return (
-    name.endsWith(".yaml") || name.endsWith(".yml") || name.endsWith(".json")
-  );
 }
 
 /** Resolve an install dir's recipe entrypoint: recipe.json `recipes.main`, else

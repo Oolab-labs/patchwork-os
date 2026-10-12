@@ -30,6 +30,10 @@ import {
 } from "./recipes/installProvenance.js";
 import { RECIPE_NAME_RE } from "./recipes/names.js";
 import {
+  isReservedRecipeDirEntry,
+  isTopLevelRecipeFile,
+} from "./recipes/recipeDirEntries.js";
+import {
   type LintIssue,
   validateRecipeDefinition,
 } from "./recipes/validation.js";
@@ -144,7 +148,7 @@ function* iterateInstallDirs(
   for (const f of entries) {
     // Skip dotfile-prefixed dirs (`.archive/`, `.disabled/`, …). Conventionally
     // hidden; reserves the namespace for archive/recovery features.
-    if (f.startsWith(".")) continue;
+    if (isReservedRecipeDirEntry(f)) continue;
     const fullPath = path.join(recipesDir, f);
     let isDir = false;
     try {
@@ -561,7 +565,7 @@ function resolveJsonRecipePathByName(
 
   try {
     for (const entry of readdirSync(recipesDir)) {
-      if (!entry.endsWith(".json") || entry.endsWith(".permissions.json")) {
+      if (!entry.endsWith(".json") || !isTopLevelRecipeFile(entry)) {
         continue;
       }
       const entryPath = path.join(recipesDir, entry);
@@ -985,9 +989,14 @@ export async function promoteRecipeVariant(
       const priorHash = createHash("sha256")
         .update(existing.content)
         .digest("hex");
-      const auditPath = existing.path.replace(
-        /\.ya?ml$/,
-        ".promote-audit.json",
+      // Under `.audit/` beside the recipe, never beside it: every top-level
+      // scanner accepts `*.json` as a recipe, so a sibling audit record was
+      // listed (and lookup-resolvable) as a recipe of its own.
+      const auditDir = path.join(path.dirname(existing.path), ".audit");
+      mkdirSync(auditDir, { recursive: true });
+      const auditPath = path.join(
+        auditDir,
+        path.basename(existing.path).replace(/\.ya?ml$/, ".promote-audit.json"),
       );
       writeFileSync(
         auditPath,
@@ -1262,9 +1271,8 @@ export function listInstalledRecipes(
 
   const recipes: RecipeSummary[] = [];
   for (const f of entries) {
+    if (!isTopLevelRecipeFile(f)) continue;
     const isYaml = f.endsWith(".yaml") || f.endsWith(".yml");
-    const isJson = f.endsWith(".json") && !f.endsWith(".permissions.json");
-    if (!isYaml && !isJson) continue;
     const fullPath = path.join(recipesDir, f);
     try {
       const raw = readFileSync(fullPath, "utf-8");
@@ -1500,6 +1508,7 @@ export function findYamlRecipePath(
 
   for (const entry of entries) {
     if (!entry.endsWith(".yaml") && !entry.endsWith(".yml")) continue;
+    if (!isTopLevelRecipeFile(entry)) continue;
     const entryPath = path.join(recipesDir, entry);
     if (matches.has(entryPath)) continue;
     try {

@@ -49,6 +49,7 @@ import {
   parseManifest,
   type RecipeManifest,
 } from "../recipes/manifest.js";
+import { isReservedRecipeDirEntry } from "../recipes/recipeDirEntries.js";
 import {
   listInstalledRecipes as listInstalledRecipesSharedView,
   setRecipeEnabled,
@@ -1135,6 +1136,7 @@ export function listInstalledRecipes(
   function scanDir(dir: string, namePrefix: string): void {
     const items = readdirSync(dir);
     for (const item of items) {
+      if (isReservedRecipeDirEntry(item)) continue;
       const itemPath = path.join(dir, item);
       if (!statSync(itemPath).isDirectory()) continue;
 
