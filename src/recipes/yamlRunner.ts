@@ -1682,7 +1682,8 @@ export async function runYamlRecipe(
 
   // Phase 0β — inbox provenance. When a recipe `file.write` / `file.append`
   // step targets `~/.patchwork/inbox/`, prepend a YAML frontmatter block
-  // (first write only) recording recipe + run + trigger, and accumulate the
+  // (on every write; once for an append-only file) recording recipe + run +
+  // trigger, and accumulate the
   // delivered filename onto the run record's `inboxOutputs`. Old recipes /
   // non-inbox paths pass through unchanged.
   //
@@ -1745,13 +1746,15 @@ export async function runYamlRecipe(
   const originalAppend = stepDeps.appendFile;
   stepDeps.writeFile = (p: string, content: string) => {
     if (isInboxPath(p)) {
-      // First-write detection by content shape, not by stat. Empty string
-      // (ENOENT) and any file that does NOT already begin with `---\n`
-      // gets frontmatter; pre-frontmattered files are overwritten as-is
-      // so consumers can replay a recipe without doubling the header.
-      const existing = readExistingOrEmpty(p);
-      const hasFm = existing.startsWith("---\n");
-      const final = hasFm ? content : buildFrontmatter() + content;
+      // A write REPLACES the file, so the header must describe this run:
+      // decide by the NEW content, never by what was on disk. Deciding by the
+      // old file dropped the header on every overwrite (a date-named note
+      // run twice in a day lost its link to the run that wrote it). Content
+      // that already carries its own `---` block is written as-is, so a
+      // replayed or self-headed note is never double-headed.
+      const final = content.startsWith("---\n")
+        ? content
+        : buildFrontmatter() + content;
       originalWrite(p, final);
       recordInboxDelivery(p);
       return;

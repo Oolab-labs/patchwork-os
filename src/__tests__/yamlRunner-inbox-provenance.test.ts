@@ -7,7 +7,7 @@
  *   2. Record the delivered filename onto an `inboxOutputs` array
  *      surfaced via the result + the run-log row.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +19,7 @@ vi.mock("../patchworkConfig.js", async () => {
   return { ...actual, loadConfig: vi.fn(() => ({})) };
 });
 
+import { patchworkPath } from "../patchworkHome.js";
 import {
   isInboxPathFor,
   runYamlRecipe,
@@ -151,6 +152,81 @@ describe("yamlRunner — inbox provenance", () => {
     expect(content).toContain("# Brief");
     // Closing delimiter present + a blank line before body.
     expect(content).toMatch(/---\n\n/);
+  });
+
+  it("re-running over an existing inbox note keeps the header, for the new run", async () => {
+    // A recipe writing the same inbox file twice (e.g. a date-named note run
+    // twice in a day) must not lose the run link on the second write. The
+    // header was skipped whenever the OLD file had one, so every overwrite
+    // dropped it and the note could no longer be traced to its run.
+    // Where the runtime itself resolves `~/.patchwork/inbox` (PATCHWORK_HOME
+    // in tests), or the old note is never seen and the test passes vacuously.
+    const inbox = patchworkPath("inbox");
+    mkdirSync(inbox, { recursive: true });
+    writeFileSync(
+      path.join(inbox, "brief.md"),
+      "---\nrecipe: morning-brief\nrunSeq: 1\ntrigger: recipe\ndeliveredAt: 2026-05-19T08:00:00.000Z\n---\n\n# Old\n",
+    );
+    const written: Record<string, string> = {};
+    const recipe: YamlRecipe = {
+      name: "morning-brief",
+      trigger: { type: "manual" },
+      steps: [
+        {
+          tool: "file.write",
+          path: "~/.patchwork/inbox/brief.md",
+          content: "# New\n",
+        },
+      ],
+    } as YamlRecipe;
+    await runYamlRecipe(recipe, {
+      now: () => new Date("2026-05-20T08:00:00Z"),
+      logDir: fakeHome,
+      readFile: () => {
+        throw new Error("not found");
+      },
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+      appendFile: () => {},
+      mkdir: () => {},
+      gitLogSince: () => "",
+      gitStaleBranches: () => "",
+      getDiagnostics: () => "",
+    });
+    const content = Object.values(written)[0] as string;
+    expect(content).toMatch(/^---\nrecipe: morning-brief\n/);
+    expect(content).not.toContain("2026-05-19T08:00:00.000Z");
+    expect(content).toContain("# New");
+    expect(content.match(/^---$/gm)).toHaveLength(2);
+  });
+
+  it("content that already carries its own header is not given a second one", async () => {
+    const written: Record<string, string> = {};
+    const own = "---\ntitle: mine\n---\n\nbody\n";
+    const recipe: YamlRecipe = {
+      name: "morning-brief",
+      trigger: { type: "manual" },
+      steps: [
+        { tool: "file.write", path: "~/.patchwork/inbox/own.md", content: own },
+      ],
+    } as YamlRecipe;
+    await runYamlRecipe(recipe, {
+      now: () => new Date("2026-05-20T08:00:00Z"),
+      logDir: fakeHome,
+      readFile: () => {
+        throw new Error("not found");
+      },
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+      appendFile: () => {},
+      mkdir: () => {},
+      gitLogSince: () => "",
+      gitStaleBranches: () => "",
+      getDiagnostics: () => "",
+    });
+    expect(Object.values(written)[0]).toBe(own);
   });
 
   it("non-inbox paths pass through unchanged", async () => {
