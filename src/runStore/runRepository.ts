@@ -47,6 +47,8 @@ export interface StartRunInput {
   manualRunId?: string;
   /** Test seam — defaults to this process. See `RecipeRun.ownerPid`. */
   ownerPid?: number;
+  /** See `RecipeRun.recipeSha256`. Absent ⇒ not recorded, never backfilled. */
+  recipeSha256?: string;
   /**
    * Adopt this `seq` instead of minting one. MIRRORING ONLY.
    *

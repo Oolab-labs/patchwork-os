@@ -199,6 +199,11 @@ import type {
 } from "../privacy/dataPolicy.js";
 import type { PrivacyConfig } from "../privacy/destinationRegistry.js";
 import { recordPrivacyShadow } from "../privacy/shadowLog.js";
+import {
+  recipeSourceSha256,
+  recordRecipeSourceSha256,
+  sha256Hex,
+} from "./recipeSourceHash.js";
 import { isUncertainOutcome, mustNotRetryWrite } from "./uncertainOutcome.js";
 
 /**
@@ -1172,9 +1177,13 @@ function stripLeadingNarration(text: string): string {
 }
 
 export function loadYamlRecipe(filePath: string): YamlRecipe {
-  const text = readFileSync(filePath, "utf-8");
-  const raw = parseYaml(text) as unknown;
-  return validateYamlRecipe(raw);
+  // Read the bytes ONCE: the hash and the parse must describe the same read,
+  // or a run could record a version it did not execute.
+  const bytes = readFileSync(filePath);
+  const raw = parseYaml(bytes.toString("utf-8")) as unknown;
+  const recipe = validateYamlRecipe(raw);
+  recordRecipeSourceSha256(recipe, sha256Hex(bytes));
+  return recipe;
 }
 
 export function validateYamlRecipe(raw: unknown): YamlRecipe {
@@ -1831,6 +1840,9 @@ async function runYamlRecipeHeld(
       ? recipeTriggerKind
       : "recipe"
   ) as "cron" | "webhook" | "recipe";
+  // The bytes this run executes, as loaded — never a later re-read. Absent
+  // when the recipe object did not come straight from a file.
+  const recipeSha256 = recipeSourceSha256(recipe);
   let runSeq: number | undefined;
   if (deps.runLog && !stepDeps.testMode) {
     try {
@@ -1845,6 +1857,7 @@ async function runYamlRecipeHeld(
         }),
         // Marks the row so trust replay never folds it (runLog isReplayRun).
         ...(deps.replayOnly === true && { replay: true }),
+        ...(recipeSha256 !== undefined && { recipeSha256 }),
       });
     } catch {
       // Non-fatal — run-log failures must never break recipe execution.
@@ -3809,6 +3822,7 @@ async function runYamlRecipeHeld(
           ...(inboxOutputs.length > 0 ? { inboxOutputs } : {}),
           ...(tokenTotals ? { tokenTotals } : {}),
           ...(budgetTotals ? { budgetTotals } : {}),
+          ...(recipeSha256 !== undefined && { recipeSha256 }),
         });
       }
     } catch {

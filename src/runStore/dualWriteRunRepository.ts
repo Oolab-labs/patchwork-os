@@ -89,6 +89,7 @@ const COMPARED = [
   "parentSeq",
   "manualRunId",
   "hadStepErrors",
+  "recipeSha256",
 ] as const;
 
 function stepIds(steps: RunStepResult[] | undefined): string {
