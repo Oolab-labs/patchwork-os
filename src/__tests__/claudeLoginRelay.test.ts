@@ -13,8 +13,10 @@
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -22,6 +24,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  observeClaudeTaskForAuth,
+  recordClaudeAuthFailure,
+} from "../claudeAuthHealth.js";
 import {
   _resetClaudeLoginForTesting,
   handleClaudeAuthCancel,
@@ -115,6 +121,9 @@ beforeEach(() => {
   chmodSync(bin, 0o755);
   process.env.PATCHWORK_CLAUDE_BINARY = bin;
   process.env.CLAUDE_CONFIG_DIR = configDir;
+  // The sign-in health marker lives under the patchwork home; never let a
+  // test write the developer's real one.
+  process.env.PATCHWORK_HOME = join(dir, "patchwork-home");
   _resetClaudeLoginForTesting();
 });
 
@@ -122,6 +131,7 @@ afterEach(() => {
   _resetClaudeLoginForTesting();
   delete process.env.PATCHWORK_CLAUDE_BINARY;
   delete process.env.CLAUDE_CONFIG_DIR;
+  delete process.env.PATCHWORK_HOME;
 });
 
 // The fake CLI is a `#!/usr/bin/env node` script, which Windows cannot
@@ -242,3 +252,119 @@ describe.skipIf(process.platform === "win32")("claude sign-in relay", () => {
     expect(src).not.toMatch(/code_verifier|codeVerifier/);
   });
 });
+
+/**
+ * "Logged in" must not mean "credentials are present".
+ *
+ * Observed live: `GET /auth/claude/status` said `{loggedIn: true}` while
+ * Claude rejected the stored sign-in ("OAuth access token has been revoked")
+ * on every agent step. `claude auth status` reads local state; it does not ask
+ * Anthropic whether the token still works. The runtime already holds better
+ * evidence — the refusal itself — so a Claude auth failure recorded AFTER the
+ * credentials were last updated makes status report `loggedIn: false` with
+ * `reason: "needs_signin_again"`. A newer sign-in, a newer credentials file,
+ * or a later successful Claude task clears it. No model call is made.
+ */
+describe.skipIf(process.platform === "win32")(
+  "status reports a refused sign-in, not credential presence",
+  () => {
+    const credsPath = () => join(configDir, ".credentials.json");
+    /** Credentials written by Claude Code at `atMs` (e.g. a terminal sign-in). */
+    function credentialsWrittenAt(atMs: number) {
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(credsPath(), JSON.stringify({ secret: "x" }));
+      utimesSync(credsPath(), atMs / 1000, atMs / 1000);
+    }
+    const REVOKED = {
+      status: "error",
+      errorMessage: "Process exited with code 1",
+      output:
+        "Failed to authenticate. API Error: 401 OAuth access token has been revoked. Please obtain a new token or refresh your existing token.",
+    };
+
+    it("credentials exist but an auth failure was recorded after them → loggedIn false", async () => {
+      const t0 = Date.now() - 60_000;
+      credentialsWrittenAt(t0);
+      recordClaudeAuthFailure(t0 + 10_000);
+      const r = await call(handleClaudeAuthStatus);
+      expect(r.status).toBe(200);
+      expect(r.body.loggedIn).toBe(false);
+      expect(r.body.reason).toBe("needs_signin_again");
+      expect(r.body.authMethod).toBe("claude.ai");
+    });
+
+    it("a newer sign-in through the relay clears it", async () => {
+      const t0 = Date.now() - 60_000;
+      credentialsWrittenAt(t0);
+      recordClaudeAuthFailure(t0 + 10_000);
+      const start = await call(handleClaudeAuthStart);
+      const done = await call(handleClaudeAuthComplete, {
+        sessionId: start.body.sessionId,
+        code: "good-code",
+      });
+      expect(done.body).toEqual({
+        ok: true,
+        loggedIn: true,
+        authMethod: "claude.ai",
+      });
+      // Pin the credentials file back before the refusal, as when Claude
+      // Code keeps its login in the OS keychain: only the relay's own record
+      // of the sign-in can clear the refusal now.
+      utimesSync(credsPath(), t0 / 1000, t0 / 1000);
+      const r = await call(handleClaudeAuthStatus);
+      expect(r.body).toEqual({ loggedIn: true, authMethod: "claude.ai" });
+    });
+
+    it("credentials updated after the failure (signed in elsewhere) → loggedIn true", async () => {
+      const t0 = Date.now() - 60_000;
+      recordClaudeAuthFailure(t0);
+      credentialsWrittenAt(t0 + 10_000);
+      const r = await call(handleClaudeAuthStatus);
+      expect(r.body).toEqual({ loggedIn: true, authMethod: "claude.ai" });
+    });
+
+    it("a Claude task refused for auth marks it; a later successful task clears it", async () => {
+      const t0 = Date.now() - 60_000;
+      credentialsWrittenAt(t0);
+      observeClaudeTaskForAuth(REVOKED, t0 + 10_000);
+      expect((await call(handleClaudeAuthStatus)).body.reason).toBe(
+        "needs_signin_again",
+      );
+      observeClaudeTaskForAuth({ status: "done", output: "ok" }, t0 + 20_000);
+      expect((await call(handleClaudeAuthStatus)).body).toEqual({
+        loggedIn: true,
+        authMethod: "claude.ai",
+      });
+    });
+
+    it("a task that failed for any other reason records nothing", async () => {
+      const t0 = Date.now() - 60_000;
+      credentialsWrittenAt(t0);
+      observeClaudeTaskForAuth(
+        {
+          status: "error",
+          errorMessage: "Process exited with code 1",
+          output: "the issue tracker MCP server returned 401",
+        },
+        t0 + 10_000,
+      );
+      expect((await call(handleClaudeAuthStatus)).body).toEqual({
+        loggedIn: true,
+        authMethod: "claude.ai",
+      });
+    });
+
+    it("signed out stays exactly signed out (no reason invented)", async () => {
+      recordClaudeAuthFailure(Date.now());
+      const r = await call(handleClaudeAuthStatus);
+      expect(r.body).toEqual({ loggedIn: false, authMethod: "none" });
+    });
+
+    it("the bridge feeds Claude orchestrator outcomes into it (wiring guard)", () => {
+      const src = readFileSync(join(__dirname, "..", "bridge.ts"), "utf8");
+      expect(src).toMatch(
+        /driver\.name === "subprocess"[\s\S]{0,200}observeClaudeTaskForAuth\(/,
+      );
+    });
+  },
+);

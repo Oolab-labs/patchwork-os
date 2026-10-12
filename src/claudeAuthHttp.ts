@@ -4,7 +4,7 @@
  *   POST /auth/claude/start    → { sessionId, url }
  *   POST /auth/claude/complete → { ok, loggedIn, authMethod }   body { sessionId, code }
  *   POST /auth/claude/cancel   → { ok: true }                   body { sessionId? }
- *   GET  /auth/claude/status   → { loggedIn, authMethod }
+ *   GET  /auth/claude/status   → { loggedIn, authMethod, reason? }
  *   POST /auth/claude/logout   → { ok: true }
  *
  * Sign-in is performed by the UNMODIFIED Claude Code CLI (`claude auth login`),
@@ -27,6 +27,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  claudeCredentialsUpdatedAt,
+  needsSignInAgain,
+  readClaudeAuthHealth,
+  recordClaudeSignIn,
+} from "./claudeAuthHealth.js";
 import { ensureCmdShim } from "./winShim.js";
 
 const URL_TIMEOUT_MS = 20_000;
@@ -328,6 +334,8 @@ export async function handleClaudeAuthComplete(
     });
     return;
   }
+  // A fresh sign-in supersedes any earlier refusal (claudeAuthHealth.ts).
+  recordClaudeSignIn();
   jsonReply(res, 200, { ok: true, ...status });
 }
 
@@ -357,6 +365,22 @@ export async function handleClaudeAuthStatus(
   const status = await readStatus();
   if ("error" in status) {
     jsonReply(res, status.error === "claude_not_installed" ? 503 : 502, status);
+    return;
+  }
+  // `claude auth status` reports that a sign-in is PRESENT, not that Claude
+  // still accepts it. When a Claude task was refused for authentication after
+  // the sign-in was last renewed, the honest answer is "not logged in": the
+  // person must sign in again. `loggedIn` stays a boolean for existing
+  // readers; `reason` says why it is false despite credentials being present.
+  if (
+    status.loggedIn &&
+    needsSignInAgain(readClaudeAuthHealth(), claudeCredentialsUpdatedAt())
+  ) {
+    jsonReply(res, 200, {
+      loggedIn: false,
+      authMethod: status.authMethod,
+      reason: "needs_signin_again",
+    });
     return;
   }
   jsonReply(res, 200, status);
