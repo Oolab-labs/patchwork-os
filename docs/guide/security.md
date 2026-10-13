@@ -48,6 +48,10 @@ patchwork members set-password <memberId>
 
 — logs in to an **attributed** (v2) session that names them, and only such a session can approve a gated action, because an approval needs a subject to record. The roster lives in `members.json`; `patchwork members` lists who holds a credential. The design is in [ADR-0020](../adr/0020-per-member-authentication.md).
 
+## Secret stores and agents
+
+Every agent the bridge spawns — recipe steps on every path, orchestrator tasks, either profile — is denied `Read` and `Edit` on the runtime's own secret stores: `.secrets.json`, `tokens/` (encrypted tokens and the key that decrypts them), `credentials.json` and `.env` under the Patchwork home, and the Claude CLI's `.credentials.json` and `ide/` lock files. These rules sit in the spawned settings file and on `--disallowed-tools`, after containment is resolved, so a step's own `tools:` cannot lift them. A path rule cannot stop a shell: a step granted `Bash` can still read those files, which is one reason the governed profile denies it.
+
 ## Secrets in the ledgers
 
 Values registered as secrets — declared `env` blocks, connector tokens, the bridge bearer — are redacted **by value** from the run log, approval queue, activity log and decision traces, including URL-encoded, base64 and JSON-escaped forms. Orchestrator prompts persist as a hash, a preview and ciphertext, never clear text. Boundary receipts carry no payload field at all. None of that makes the ledgers public: they still hold real task titles and third-party record ids, which is why every reader that prints rows is marked as operator data in the [CLI reference](cli.md).

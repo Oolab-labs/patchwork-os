@@ -198,7 +198,12 @@ describe("SubprocessDriver — governed containment argv", () => {
     expect(args).toContain("--dangerously-skip-permissions");
     expect(args).not.toContain("--permission-mode");
     expect(args).not.toContain("--allowed-tools");
-    expect(args).not.toContain("--disallowed-tools");
+    // Only the secret-store path rules every spawn carries.
+    expect(
+      valuesAfter(args, "--disallowed-tools").filter(
+        (t) => !/^(Read|Edit)\(\/\//.test(t),
+      ),
+    ).toEqual([]);
     // Denylist mode: an unrelated connector token still reaches the child
     // (today's behaviour — the allowlist is governed-only).
     expect(lastSpawnEnv?.JIRA_API_TOKEN).toBe("jira-secret");
@@ -215,7 +220,11 @@ describe("SubprocessDriver — governed containment argv", () => {
     const args = spawnMock.mock.calls[0]![1] as string[];
     expect(args).not.toContain("--dangerously-skip-permissions");
     expect(valuesAfter(args, "--allowed-tools")).toEqual(["Read"]);
-    expect(valuesAfter(args, "--disallowed-tools")).toEqual(["Bash"]);
+    expect(
+      valuesAfter(args, "--disallowed-tools").filter(
+        (t) => !/^(Read|Edit)\(\/\//.test(t),
+      ),
+    ).toEqual(["Bash"]);
   });
 
   it("reads the containment from providerOptions.containment (orchestrator hop)", async () => {

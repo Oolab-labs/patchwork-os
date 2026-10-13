@@ -64,6 +64,20 @@ function valuesAfter(args: string[], flag: string): string[] {
   return out;
 }
 
+/**
+ * The step-supplied deny values, without the secret-store path rules every
+ * spawn now carries (governance/secretPathDenies.ts, covered by its own test).
+ */
+function stepDenies(args: string[]): string[] {
+  const i = args.indexOf("--disallowed-tools");
+  if (i === -1) return [];
+  const out: string[] = [];
+  for (let j = i + 1; j < args.length && !args[j]!.startsWith("--"); j++) {
+    if (!/^(Read|Edit)\(\/\//.test(args[j]!)) out.push(args[j]!);
+  }
+  return out;
+}
+
 describe("SubprocessDriver opt-in tool sandbox (P0-5)", () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.useRealTimers());
@@ -107,7 +121,8 @@ describe("SubprocessDriver opt-in tool sandbox (P0-5)", () => {
     expect(args).toContain("--dangerously-skip-permissions");
     expect(args).not.toContain("--allowed-tools");
     expect(args).not.toContain("--permission-mode");
-    expect(args).not.toContain("--disallowed-tools");
+    // Only the secret-store path rules, which every spawn carries.
+    expect(stepDenies(args)).toEqual([]);
   });
 
   it("sandbox: true but EMPTY allowlist ⇒ falls back to skip-permissions (sandboxActive guard requires non-empty)", async () => {
@@ -135,7 +150,7 @@ describe("SubprocessDriver opt-in tool sandbox (P0-5)", () => {
 
     expect(args).toContain("--dangerously-skip-permissions");
     expect(args).toContain("--disallowed-tools");
-    expect(valuesAfter(args, "--disallowed-tools")).toEqual(["runCommand"]);
+    expect(stepDenies(args)).toEqual(["runCommand"]);
   });
 
   it("disallowedTools applies UNDER sandbox (with allowed-tools, no skip-permissions)", async () => {
@@ -156,7 +171,7 @@ describe("SubprocessDriver opt-in tool sandbox (P0-5)", () => {
     expect(args).toContain("--permission-mode");
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
     expect(valuesAfter(args, "--allowed-tools")).toEqual(["getGitStatus"]);
-    expect(valuesAfter(args, "--disallowed-tools")).toEqual(["runCommand"]);
+    expect(stepDenies(args)).toEqual(["runCommand"]);
     expect(args).not.toContain("--dangerously-skip-permissions");
   });
 
@@ -178,7 +193,7 @@ describe("SubprocessDriver opt-in tool sandbox (P0-5)", () => {
     expect(args).not.toContain("--evil");
     expect(args).not.toContain("-x");
     expect(valuesAfter(args, "--allowed-tools")).toEqual(["getDiagnostics"]);
-    expect(valuesAfter(args, "--disallowed-tools")).toEqual(["runCommand"]);
+    expect(stepDenies(args)).toEqual(["runCommand"]);
   });
 
   it("sandbox where every allowed tool is leading-dash ⇒ FILTERED list empty ⇒ falls back to skip-permissions", async () => {

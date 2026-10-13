@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentContainment } from "../../governance/profile.js";
+import { secretPathDenyRules } from "../../governance/secretPathDenies.js";
 import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
@@ -309,8 +310,10 @@ export class SubprocessDriver implements ProviderDriver {
       : argvSafe(opts.allowedTools);
     // Deny is a union: the step's own list plus the containment's. A deny is
     // never dropped by the presence of a containment.
+    const secretDenies = secretPathDenyRules();
     const disallowedTools = Array.from(
       new Set([
+        ...secretDenies,
         ...argvSafe(opts.disallowedTools),
         ...(contained ? argvSafe(containment?.deniedTools) : []),
       ]),
@@ -366,6 +369,7 @@ export class SubprocessDriver implements ProviderDriver {
       // Governed containment: one implementation for every contained spawn.
       args.push(
         ...containedPermissionArgs(containment, [
+          ...secretDenies,
           ...argvSafeList(opts.disallowedTools),
           ...workspaceDenies,
         ]),
