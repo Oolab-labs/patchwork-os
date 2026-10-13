@@ -6,6 +6,11 @@
 
 import type { Logger } from "../logger.js";
 import type { ChainedRunResult } from "./chainedRunner.js";
+import {
+  maxConcurrentRunsFromEnv,
+  RUN_LIMIT_REACHED,
+  runLimitMessage,
+} from "./runLimits.js";
 import { applyTriggerInputDefaults } from "./triggerVars.js";
 import {
   loadYamlRecipe as defaultLoadYamlRecipe,
@@ -31,7 +36,7 @@ export interface FireRequest {
 
 export type FireResult =
   | { ok: true; taskId: string; name: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; message?: string };
 
 export interface FireDeps {
   loadYamlRecipe?: (filePath: string) => YamlRecipe;
@@ -49,10 +54,18 @@ export interface FireDeps {
    * 30 min. Set to 0 to disable.
    */
   dispatchTimeoutMs?: number;
+  /**
+   * Most workflow runs allowed in progress at once, across every recipe
+   * (`PATCHWORK_MAX_CONCURRENT_RUNS`). Omitted ⇒ read from the environment;
+   * null ⇒ unlimited. See runLimits.ts.
+   */
+  maxConcurrentRuns?: number | null;
   logger?: Logger;
 }
 
-type ResolvedFireDeps = Required<Omit<FireDeps, "logger">> &
+type ResolvedFireDeps = Required<
+  Omit<FireDeps, "logger" | "maxConcurrentRuns">
+> &
   Pick<FireDeps, "logger">;
 
 // M21: safety-net must exceed the per-step task timeout (1_800_000ms) so
@@ -63,6 +76,13 @@ export const DEFAULT_DISPATCH_TIMEOUT_MS = 4 * 1_800_000;
 export class RecipeOrchestrator {
   private readonly inFlight = new Set<string>();
   private readonly inFlightTimers = new Map<string, NodeJS.Timeout>();
+  /**
+   * One token per top-level run in progress — counted separately from
+   * `inFlight` (keyed by NAME) because `dedupPolicy: "allow"` lets one recipe
+   * run more than once at a time, and each of those is a run.
+   */
+  private readonly activeRuns = new Set<symbol>();
+  private readonly maxConcurrentRuns: number | null;
   private readonly fireDeps: ResolvedFireDeps;
   private readonly dispatchTimeoutMs: number;
 
@@ -78,6 +98,10 @@ export class RecipeOrchestrator {
       logger: fireDeps.logger,
     };
     this.dispatchTimeoutMs = this.fireDeps.dispatchTimeoutMs;
+    this.maxConcurrentRuns =
+      fireDeps.maxConcurrentRuns !== undefined
+        ? fireDeps.maxConcurrentRuns
+        : maxConcurrentRunsFromEnv();
   }
 
   /** Free the in-flight slot for `name` and clear any pending safety timer. */
@@ -104,6 +128,24 @@ export class RecipeOrchestrator {
       return { ok: false, error: "already_in_flight" };
     }
 
+    // Operator run limit. Checked before the recipe is even loaded, so a
+    // refused run executes nothing. Nested child recipes never come through
+    // here — they run inside their parent's dispatch — so they cannot use up
+    // a slot of their own.
+    if (
+      this.maxConcurrentRuns !== null &&
+      this.activeRuns.size >= this.maxConcurrentRuns
+    ) {
+      this.fireDeps.logger?.info?.(
+        `[orchestrator] recipe "${name}" refused — ${runLimitMessage(this.maxConcurrentRuns)}`,
+      );
+      return {
+        ok: false,
+        error: RUN_LIMIT_REACHED,
+        message: runLimitMessage(this.maxConcurrentRuns),
+      };
+    }
+
     let recipe: YamlRecipe;
     try {
       recipe = this.fireDeps.loadYamlRecipe(filePath);
@@ -126,6 +168,8 @@ export class RecipeOrchestrator {
 
     const taskId = `${name}-${Date.now()}`;
     this.inFlight.add(name);
+    const runToken = Symbol(name);
+    this.activeRuns.add(runToken);
 
     // Safety net: if the dispatch promise never settles (a hung tool step),
     // free the slot after the TTL so future fires aren't permanently rejected.
@@ -137,6 +181,9 @@ export class RecipeOrchestrator {
           );
           this.clearInFlight(name);
         }
+        // Same reasoning for the run limit: a hung run must not hold a slot
+        // forever and starve every other recipe.
+        this.activeRuns.delete(runToken);
       }, this.dispatchTimeoutMs);
       // Don't keep the process alive just for the safety timer.
       timer.unref?.();
@@ -146,6 +193,7 @@ export class RecipeOrchestrator {
     dispatch(recipe, this.deps, mergedContext)
       .finally(() => {
         this.clearInFlight(name);
+        this.activeRuns.delete(runToken);
       })
       .catch((err: unknown) => {
         this.fireDeps.logger?.warn?.(
@@ -173,6 +221,11 @@ export class RecipeOrchestrator {
 
   isInFlight(name: string): boolean {
     return this.inFlight.has(name);
+  }
+
+  /** Top-level workflow runs currently in progress (the run-limit count). */
+  activeRunCount(): number {
+    return this.activeRuns.size;
   }
 
   listInFlight(): string[] {

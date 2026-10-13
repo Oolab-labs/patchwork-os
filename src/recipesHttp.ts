@@ -33,6 +33,11 @@ import {
   isReservedRecipeDirEntry,
   isTopLevelRecipeFile,
 } from "./recipes/recipeDirEntries.js";
+import {
+  maxRecipesFromEnv,
+  RECIPE_LIMIT_REACHED,
+  recipeLimitMessage,
+} from "./recipes/runLimits.js";
 import { declaredTriggerInputs } from "./recipes/triggerVars.js";
 import {
   type LintIssue,
@@ -478,10 +483,102 @@ function validateRecipeDraft(draft: RecipeDraft): string | null {
   return null;
 }
 
+/**
+ * How many recipes are installed at the top level of `recipesDir`: each
+ * top-level recipe file, plus each install dir (a package counts once, however
+ * many child recipes it carries). Reserved entries (`.archive/`, `.install/`,
+ * `.installing-*`, …) and sidecars are not recipes. Disabled recipes still
+ * count — they are installed, and enabling one must not exceed the limit.
+ */
+export function countInstalledRecipes(recipesDir: string): number {
+  let entries: string[];
+  try {
+    entries = readdirSync(recipesDir);
+  } catch {
+    return 0;
+  }
+  let count = 0;
+  for (const f of entries) {
+    if (!isTopLevelRecipeFile(f)) continue;
+    try {
+      if (statSync(path.join(recipesDir, f)).isFile()) count++;
+    } catch {
+      // vanished between readdir and stat
+    }
+  }
+  for (const _ of iterateInstallDirs(recipesDir, { includeDisabled: true })) {
+    count++;
+  }
+  return count;
+}
+
+/** True when a recipe called `name` is already installed in any layout. */
+export function isRecipeNameInstalled(
+  recipesDir: string,
+  name: string,
+): boolean {
+  const safeName = name.toLowerCase();
+  if (!RECIPE_NAME_RE.test(safeName)) return false;
+  for (const ext of [".yaml", ".yml", ".json"]) {
+    if (existsSync(path.join(recipesDir, `${safeName}${ext}`))) return true;
+  }
+  try {
+    if (statSync(path.join(recipesDir, safeName)).isDirectory()) return true;
+  } catch {
+    // no install dir of that name
+  }
+  try {
+    if (findYamlRecipePath(recipesDir, safeName)) return true;
+  } catch {
+    // RecipeNameConflictError — several recipes already carry this name.
+    return true;
+  }
+  return resolveJsonRecipePathByName(recipesDir, safeName) !== null;
+}
+
+export interface RecipeLimitRefusal {
+  ok: false;
+  error: typeof RECIPE_LIMIT_REACHED;
+  message: string;
+  limit: number;
+}
+
+/**
+ * The `PATCHWORK_MAX_RECIPES` check for adding a recipe. Null when the
+ * addition is allowed: no limit set, below the limit, or `alreadyInstalled`
+ * (an update never grows the count). See runLimits.ts.
+ */
+export function recipeCapacityRefusal(
+  recipesDir: string,
+  alreadyInstalled: boolean,
+): RecipeLimitRefusal | null {
+  const limit = maxRecipesFromEnv();
+  if (limit === null || alreadyInstalled) return null;
+  if (countInstalledRecipes(recipesDir) < limit) return null;
+  return {
+    ok: false,
+    error: RECIPE_LIMIT_REACHED,
+    message: recipeLimitMessage(limit),
+    limit,
+  };
+}
+
+/** `recipeCapacityRefusal` for a recipe identified by name. */
+export function recipeLimitRefusal(
+  recipesDir: string,
+  name: string,
+): RecipeLimitRefusal | null {
+  if (maxRecipesFromEnv() === null) return null;
+  return recipeCapacityRefusal(
+    recipesDir,
+    isRecipeNameInstalled(recipesDir, name),
+  );
+}
+
 export function saveRecipe(
   recipesDir: string,
   draft: RecipeDraft,
-): { ok: boolean; path?: string; error?: string } {
+): { ok: boolean; path?: string; error?: string; message?: string } {
   const safeName = draft.name.toLowerCase().replace(/\s+/g, "-");
   if (!RECIPE_NAME_RE.test(safeName)) {
     return { ok: false, error: "Invalid recipe name" };
@@ -494,6 +591,14 @@ export function saveRecipe(
   const validationError = validateRecipeDraft(draft);
   if (validationError) {
     return { ok: false, error: validationError };
+  }
+  const limitRefusal = recipeLimitRefusal(recipesDir, safeName);
+  if (limitRefusal) {
+    return {
+      ok: false,
+      error: limitRefusal.error,
+      message: limitRefusal.message,
+    };
   }
   try {
     mkdirSync(recipesDir, { recursive: true });
@@ -643,7 +748,14 @@ export function saveRecipeContent(
   recipesDir: string,
   name: string,
   content: string,
-): { ok: boolean; path?: string; error?: string } {
+  options: {
+    /**
+     * Skip the `PATCHWORK_MAX_RECIPES` check. Only for a write that does not
+     * grow the count — promote, which removes the variant it came from.
+     */
+    skipRecipeLimit?: boolean;
+  } = {},
+): { ok: boolean; path?: string; error?: string; message?: string } {
   const safeName = name.toLowerCase();
   if (!RECIPE_NAME_RE.test(safeName)) {
     return { ok: false, error: "Invalid recipe name" };
@@ -715,6 +827,17 @@ export function saveRecipeContent(
       warnings.push(
         `Recipe body name "${oldName}" was rewritten to "${safeName}" to match the filename (text-replace fallback).`,
       );
+    }
+  }
+
+  if (!options.skipRecipeLimit) {
+    const limitRefusal = recipeLimitRefusal(recipesDir, safeName);
+    if (limitRefusal) {
+      return {
+        ok: false,
+        error: limitRefusal.error,
+        message: limitRefusal.message,
+      };
     }
   }
 
@@ -867,6 +990,7 @@ export function duplicateRecipe(
   variantName?: string;
   path?: string;
   error?: string;
+  message?: string;
 } {
   const safeName = sourceName.toLowerCase();
   if (!RECIPE_NAME_RE.test(safeName)) {
@@ -916,7 +1040,11 @@ export function duplicateRecipe(
 
   const saveResult = saveRecipeContent(recipesDir, variantName, newContent);
   if (!saveResult.ok) {
-    return { ok: false, error: saveResult.error };
+    return {
+      ok: false,
+      error: saveResult.error,
+      ...(saveResult.message !== undefined && { message: saveResult.message }),
+    };
   }
   return { ok: true, variantName, path: saveResult.path };
 }
@@ -1025,7 +1153,11 @@ export async function promoteRecipeVariant(
     `name: ${safeTarget}`,
   );
 
-  const saveResult = saveRecipeContent(recipesDir, safeTarget, newContent);
+  // The variant is deleted below, so a promote never grows the count — it
+  // must not be refused by the recipe limit even when the target is new.
+  const saveResult = saveRecipeContent(recipesDir, safeTarget, newContent, {
+    skipRecipeLimit: true,
+  });
   if (!saveResult.ok) {
     return { ok: false, error: saveResult.error };
   }

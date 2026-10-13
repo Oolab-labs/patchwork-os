@@ -558,7 +558,13 @@ export default function RecipesPage() {
           body: JSON.stringify(body),
         },
       );
-      const data = (await res.json()) as { ok: boolean; taskId?: string; seq?: number; error?: string };
+      const data = (await res.json()) as {
+        ok: boolean;
+        taskId?: string;
+        seq?: number;
+        error?: string;
+        message?: string;
+      };
       if (data.ok && data.taskId) {
         setRunning((p) => ({ ...p, [name]: `queued ${data.taskId?.slice(0, 8)}` }));
         const runsHref = data.seq != null
@@ -572,9 +578,11 @@ export default function RecipesPage() {
         const errMsg =
           data.error === "already_in_flight"
             ? "Already running"
-            : `error: ${data.error ?? "unknown"}`;
+            : data.error === "run_limit_reached"
+              ? "Too many runs in progress"
+              : `error: ${data.error ?? "unknown"}`;
         setRunning((p) => ({ ...p, [name]: errMsg }));
-        toast.error(`Run failed: ${data.error ?? "unknown"}`);
+        toast.error(`Run failed: ${data.message ?? data.error ?? "unknown"}`);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
