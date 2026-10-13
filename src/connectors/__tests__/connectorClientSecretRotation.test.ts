@@ -43,28 +43,21 @@ const ENV_KEYS = [
 ];
 
 let tmpHome: string;
-const saved: Record<string, string | undefined> = {};
 
 function writeSecretsFile(values: Record<string, string>): void {
   writeFileSync(join(tmpHome, ".secrets.json"), JSON.stringify(values));
 }
 
 beforeEach(() => {
-  for (const k of ENV_KEYS) {
-    saved[k] = process.env[k];
-    delete process.env[k];
-  }
+  for (const k of ENV_KEYS) vi.stubEnv(k, undefined);
   tmpHome = mkdtempSync(join(tmpdir(), "patchwork-secret-rotation-"));
-  process.env.PATCHWORK_HOME = tmpHome;
-  process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+  vi.stubEnv("PATCHWORK_HOME", tmpHome);
+  vi.stubEnv("PATCHWORK_TOKEN_STORAGE_BACKEND", "file");
   _resetSecretsCacheForTests();
 });
 
 afterEach(() => {
-  for (const k of ENV_KEYS) {
-    if (saved[k] === undefined) delete process.env[k];
-    else process.env[k] = saved[k];
-  }
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   _resetSecretsCacheForTests();
   rmSync(tmpHome, { recursive: true, force: true });
