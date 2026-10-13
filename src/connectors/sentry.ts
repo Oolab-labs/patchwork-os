@@ -22,6 +22,7 @@ import {
   getAccessToken,
   invalidateAccessTokenCache,
   loadTokenFile,
+  markTokenVerified,
   revoke,
   startAuthorize,
   updateTokenProfile,
@@ -41,6 +42,11 @@ export interface ConnectorStatus {
   status: "connected" | "disconnected";
   lastSync?: string;
   org?: string;
+  /**
+   * Present only when a stored token exists: true iff it carries
+   * `verified_at`.
+   */
+  verified?: boolean;
 }
 
 export interface ConnectorHandlerResult {
@@ -83,6 +89,7 @@ export function getStatus(): ConnectorStatus {
     status: file ? "connected" : "disconnected",
     lastSync: file?.connected_at,
     org: file?.profile?.org,
+    ...(file && { verified: typeof file.verified_at === "string" }),
   };
 }
 
@@ -257,7 +264,14 @@ export async function handleSentryTest(): Promise<ConnectorHandlerResult> {
     };
   }
   try {
-    const ok = await client().ping({ timeoutMs: 10_000 });
+    // A fresh client holding the token in use (not the memoized one), so a
+    // pass proves exactly that token. Only the STORED token is ever stamped
+    // verified (markTokenVerified compares); a failure changes nothing.
+    const token = await getAccessToken("sentry");
+    const ok = await new McpClient(SENTRY_MCP_ENDPOINT, async () => token, {
+      onUnauthorized: () => invalidateAccessTokenCache("sentry"),
+    }).ping({ timeoutMs: 10_000 });
+    if (ok) markTokenVerified("sentry", token);
     return {
       status: ok ? 200 : 400,
       contentType: "application/json",

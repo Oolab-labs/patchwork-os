@@ -22,6 +22,7 @@ import {
   getAccessToken,
   invalidateAccessTokenCache,
   loadTokenFile,
+  markTokenVerified,
   revoke,
   startAuthorize,
   updateTokenProfile,
@@ -41,6 +42,11 @@ export interface ConnectorStatus {
   status: "connected" | "disconnected";
   lastSync?: string;
   workspace?: string;
+  /**
+   * Present only when status derives from a stored token: true iff it
+   * carries `verified_at`. Absent for an environment key or no connection.
+   */
+  verified?: boolean;
 }
 
 export interface ConnectorHandlerResult {
@@ -95,6 +101,7 @@ export function getStatus(): ConnectorStatus {
     status: file ? "connected" : "disconnected",
     lastSync: file?.connected_at,
     workspace: file?.profile?.workspace,
+    ...(file && { verified: typeof file.verified_at === "string" }),
   };
 }
 
@@ -301,7 +308,15 @@ export async function handleLinearTest(): Promise<ConnectorHandlerResult> {
     };
   }
   try {
-    const ok = await client().ping({ timeoutMs: 10_000 });
+    // A fresh client holding the token in use (not the memoized one), so a
+    // pass proves exactly that token. Only the STORED token is ever stamped
+    // verified (markTokenVerified compares); a failure changes nothing.
+    const token =
+      process.env.LINEAR_API_KEY || (await getAccessToken("linear"));
+    const ok = await new McpClient(LINEAR_MCP_ENDPOINT, async () => token, {
+      onUnauthorized: () => invalidateAccessTokenCache("linear"),
+    }).ping({ timeoutMs: 10_000 });
+    if (ok) markTokenVerified("linear", token);
     return {
       status: ok ? 200 : 400,
       contentType: "application/json",

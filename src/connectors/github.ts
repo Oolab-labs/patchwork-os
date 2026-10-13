@@ -23,6 +23,7 @@ import {
   invalidateAccessTokenCache,
   isConnected,
   loadTokenFile,
+  markTokenVerified,
   revoke,
   startAuthorize,
   vendorConfig,
@@ -734,8 +735,15 @@ export async function handleGithubTest(): Promise<ConnectorHandlerResult> {
     };
   }
   try {
-    const ok = await client().ping({ timeoutMs: 10_000 });
+    // A fresh client holding the stored token (not the memoized one), so a
+    // pass proves exactly that token and it can be stamped verified. A
+    // failure is reported and changes nothing stored.
+    const token = await getAccessToken("github");
+    const ok = await new McpClient(GITHUB_MCP_ENDPOINT, async () => token, {
+      onUnauthorized: () => invalidateAccessTokenCache("github"),
+    }).ping({ timeoutMs: 10_000 });
     if (ok) {
+      markTokenVerified("github", token);
       return {
         status: 200,
         contentType: "application/json",

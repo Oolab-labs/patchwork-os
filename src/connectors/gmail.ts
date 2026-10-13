@@ -476,18 +476,23 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       id: "github",
       status: gh.connected ? "connected" : "disconnected",
       lastSync: gh.connected ? new Date().toISOString() : undefined,
-      // false = a token stored before the callback verified tokens.
+      // false = a token stored before the callback verified tokens and not
+      // since confirmed by a passing Test. Same rule for every connector
+      // whose tokens go through completeVerifiedAuthorize.
       ...(gh.connected && { verified: gh.verified === true }),
     },
     {
       id: "sentry",
       status: sentry.status,
       lastSync: sentry.lastSync,
+      ...(sentry.verified !== undefined && { verified: sentry.verified }),
     },
     {
       id: "linear",
       status: linear.status,
       lastSync: linear.lastSync,
+      // Absent when the connection is an environment key, not a stored token.
+      ...(linear.verified !== undefined && { verified: linear.verified }),
     },
     {
       id: "google-calendar",
