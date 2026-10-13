@@ -130,6 +130,8 @@ Most installs need none of these; CLI flags cover the common cases. They exist s
 
 Per-connector overrides for OAuth client credentials (when you host your own OAuth app) or for token-style connectors. The dashboard's connections page is the recommended path; these are for headless and scripted deployments.
 
+The GitHub, Linear and Sentry sign-in flows confirm a new token with one authenticated call before reporting the connection; if that call fails the token is removed and the callback page says why ("GitHub sign-in did not complete: …"). Tokens stored before this check existed still report connected, with `verified: false` in `getConnectorStatus` and `GET /connections`.
+
 | Var(s) | Connector | Type |
 |---|---|---|
 | `PATCHWORK_GITHUB_CLIENT_ID` / `PATCHWORK_GITHUB_CLIENT_SECRET` | GitHub | OAuth app override |

@@ -17,14 +17,14 @@
 import { escHtml } from "./htmlEscape.js";
 import { McpClient } from "./mcpClient.js";
 import {
-  completeAuthorize,
+  ConnectionNotVerifiedError,
+  completeVerifiedAuthorize,
   getAccessToken,
   invalidateAccessTokenCache,
   isConnected,
   loadTokenFile,
   revoke,
   startAuthorize,
-  updateTokenProfile,
   vendorConfig,
 } from "./mcpOAuth.js";
 
@@ -110,10 +110,22 @@ function client(): McpClient {
 
 // ── Status ───────────────────────────────────────────────────────────────────
 
-export function getStatus(): { connected: boolean; user?: string } {
-  if (!isConnected("github")) return { connected: false };
+/**
+ * `verified` is false for a token stored before the callback verified tokens:
+ * still connected (it worked when stored), but never confirmed by this code.
+ */
+export function getStatus(): {
+  connected: boolean;
+  verified?: boolean;
+  user?: string;
+} {
   const file = loadTokenFile("github");
-  return { connected: true, user: file?.profile?.login };
+  if (!file) return { connected: false };
+  return {
+    connected: true,
+    verified: typeof file.verified_at === "string",
+    user: file.profile?.login,
+  };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -644,39 +656,72 @@ export async function handleGithubCallback(
   }
   const config = vendorConfig("github");
   try {
-    await completeAuthorize(config, code, state);
-    // Capture user login for status display
-    let login = "";
-    try {
-      const token = await getAccessToken("github");
-      const res = await fetch("https://api.github.com/user", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-      });
-      if (res.ok) {
-        const u = (await res.json()) as { login?: string };
-        login = u.login ?? "";
-        if (login) {
-          updateTokenProfile("github", { login });
-        }
-      }
-    } catch {
-      // Profile fetch is best-effort
-    }
+    const { profile } = await completeVerifiedAuthorize(
+      config,
+      code,
+      state,
+      verifyGithubToken,
+    );
+    const login = profile?.login ?? "";
     return {
       status: 200,
       contentType: "text/html",
       body: `<html><body><h2>GitHub connected${login ? ` as ${escHtml(login)}` : ""}</h2><script>window.close();</script></body></html>`,
     };
   } catch (err) {
+    if (err instanceof ConnectionNotVerifiedError) {
+      return {
+        status: 400,
+        contentType: "text/html",
+        body: `<html><body><h2>GitHub sign-in did not complete: ${escHtml(err.reason)}</h2></body></html>`,
+      };
+    }
     return {
       status: 400,
       contentType: "text/html",
       body: `<html><body><h2>GitHub connect failed</h2><pre>${escHtml(err instanceof Error ? err.message : String(err))}</pre></body></html>`,
     };
   }
+}
+
+/**
+ * One authenticated call with the NEW token (not whatever the cache holds).
+ * The reason it throws is shown to the operator, so it carries the status
+ * and never the response body.
+ */
+async function verifyGithubToken(
+  token: string,
+): Promise<Record<string, string>> {
+  let res: Response;
+  try {
+    res = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    throw new Error(
+      `could not reach GitHub to confirm the token (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+  if (!res.ok) {
+    await res.text().catch(() => {});
+    throw new Error(`GitHub rejected the new token (HTTP ${res.status})`);
+  }
+  let login: string | undefined;
+  try {
+    login = ((await res.json()) as { login?: unknown }).login as
+      | string
+      | undefined;
+  } catch {
+    // handled below
+  }
+  if (typeof login !== "string" || login.length === 0) {
+    throw new Error("GitHub did not return the signed-in account");
+  }
+  return { login };
 }
 
 export async function handleGithubTest(): Promise<ConnectorHandlerResult> {
