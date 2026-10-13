@@ -537,6 +537,26 @@ export async function completeVerifiedAuthorize(
   return { ok: true, profile: merged };
 }
 
+/**
+ * Record that an authenticated call with `provenToken` just succeeded (a
+ * passing connection Test). Stamps `verified_at` on the STORED token in its
+ * existing storage, and only when that stored token is the one proven — an
+ * environment key or a token rotated mid-test proves nothing about the file.
+ * Never deletes and never stores anything new; an existing stamp is kept.
+ * Returns whether the stored token is now verified.
+ */
+export function markTokenVerified(
+  vendor: VendorId,
+  provenToken: string,
+): boolean {
+  const file = loadTokenFile(vendor);
+  if (!file || provenToken.length === 0) return false;
+  if (file.access_token !== provenToken) return false;
+  if (typeof file.verified_at === "string") return true;
+  saveTokenFile({ ...file, verified_at: new Date().toISOString() });
+  return true;
+}
+
 // ── Token refresh ────────────────────────────────────────────────────────────
 
 /**
