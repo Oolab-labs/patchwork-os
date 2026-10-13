@@ -48,6 +48,7 @@ import {
   effectiveScheduleTimezone,
   getApiKeysPresent,
   loadConfig as loadPatchworkConfig,
+  scheduleTimezoneSource,
 } from "./patchworkConfig.js";
 import { patchworkPath } from "./patchworkHome.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
@@ -2147,6 +2148,9 @@ export class Bridge {
             enableTimeOfDayAnomaly: this.server.enableTimeOfDayAnomaly,
             // Zone cron schedules run in (`recipes.timezone`, default UTC).
             timezone: effectiveScheduleTimezone(cfg),
+            // "default" when no zone was chosen, so a client can tell an
+            // explicit UTC from the fallback.
+            timezoneSource: scheduleTimezoneSource(cfg),
             fullMode: this.config.fullMode,
             driver: this.config.driver,
             model: cfg.model,

@@ -265,6 +265,17 @@ export function effectiveScheduleTimezone(cfg: PatchworkConfig): string {
   return cfg.recipes?.timezone || DEFAULT_SCHEDULE_TIMEZONE;
 }
 
+/**
+ * Whether the schedule zone was chosen ("config") or is the built-in default
+ * ("default"). An explicit "UTC" is a choice; an unset or empty value is not.
+ * Lets a client offer to set a zone without overwriting one someone picked.
+ */
+export function scheduleTimezoneSource(
+  cfg: PatchworkConfig,
+): "config" | "default" {
+  return cfg.recipes?.timezone ? "config" : "default";
+}
+
 /** True when `tz` is an IANA time zone this runtime's Intl data recognises. */
 export function isValidIanaTimezone(tz: string): boolean {
   try {
