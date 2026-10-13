@@ -17,7 +17,7 @@
  *   data API calls go.
  *
  * Tokens stored at ~/.patchwork/tokens/salesforce.json (mode 0600).
- * Client credentials read from env: SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET.
+ * Client credentials via readSecret (secrets file, then env): SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET.
  */
 
 import crypto from "node:crypto";
@@ -26,6 +26,7 @@ import path from "node:path";
 import { patchworkPath } from "../patchworkHome.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -224,11 +225,11 @@ export function normalizeError(status: number, body: string): NormalizedError {
 }
 
 function clientId(): string {
-  return process.env.SALESFORCE_CLIENT_ID ?? "";
+  return readSecret("SALESFORCE_CLIENT_ID");
 }
 
 function clientSecret(): string {
-  return process.env.SALESFORCE_CLIENT_SECRET ?? "";
+  return readSecret("SALESFORCE_CLIENT_SECRET");
 }
 
 function isConfigured(): boolean {
@@ -282,8 +283,8 @@ export function getStatus(): ConnectorStatus {
   // refresh_token + client creds as "we can recover" → connected; otherwise
   // we can only mark needs_reauth on a confirmed 401.
   const hasCredentials = Boolean(
-    (process.env.SALESFORCE_CLIENT_ID || tokens._client_id) &&
-      (process.env.SALESFORCE_CLIENT_SECRET || tokens._client_secret),
+    (clientId() || tokens._client_id) &&
+      (clientSecret() || tokens._client_secret),
   );
   const canRefresh = Boolean(tokens.refresh_token) && hasCredentials;
   const expired = tokens.expiry_date ? Date.now() > tokens.expiry_date : false;

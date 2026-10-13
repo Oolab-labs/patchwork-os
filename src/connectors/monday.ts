@@ -17,6 +17,7 @@ import { patchworkPath } from "../patchworkHome.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -182,11 +183,11 @@ export function normalizeGraphQLError(message: string): NormalizedError {
 // ── Credentials / storage ────────────────────────────────────────────────────
 
 function clientId(): string {
-  return process.env.MONDAY_CLIENT_ID ?? "";
+  return readSecret("MONDAY_CLIENT_ID");
 }
 
 function clientSecret(): string {
-  return process.env.MONDAY_CLIENT_SECRET ?? "";
+  return readSecret("MONDAY_CLIENT_SECRET");
 }
 
 function isConfigured(): boolean {
@@ -233,8 +234,8 @@ export function getStatus(): ConnectorStatus {
   if (!tokens) return { id: "monday", status: "disconnected" };
   const expired = tokens.expiry_date ? Date.now() > tokens.expiry_date : false;
   const hasCredentials = Boolean(
-    (process.env.MONDAY_CLIENT_ID || tokens._client_id) &&
-      (process.env.MONDAY_CLIENT_SECRET || tokens._client_secret),
+    (clientId() || tokens._client_id) &&
+      (clientSecret() || tokens._client_secret),
   );
   const canRefresh = Boolean(tokens.refresh_token) && hasCredentials;
   const status = expired && !canRefresh ? "needs_reauth" : "connected";

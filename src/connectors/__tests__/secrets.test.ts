@@ -8,7 +8,13 @@
  *   - parse error (falls back silently to env)
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -124,19 +130,60 @@ describe("readSecret", () => {
     expect(readSecret("GMAIL_CLIENT_SECRET")).toBe("from-env");
   });
 
-  // ── memoization ─────────────────────────────────────────────────────────────
+  // ── reload ──────────────────────────────────────────────────────────────────
 
-  it("memoizes the file read across calls", () => {
-    writeFileSync(join(tmpHome, ".secrets.json"), JSON.stringify({ A: "one" }));
+  it("picks up a rewritten file on the next call without a reset", () => {
+    const f = join(tmpHome, ".secrets.json");
+    writeFileSync(f, JSON.stringify({ A: "one" }));
     expect(readSecret("A")).toBe("one");
 
-    // Rewrite the file after the first read. Without resetting the cache, the
-    // helper continues serving the old value — that is the documented contract.
-    writeFileSync(join(tmpHome, ".secrets.json"), JSON.stringify({ A: "two" }));
-    expect(readSecret("A")).toBe("one");
+    writeFileSync(f, JSON.stringify({ A: "rotated-value" }));
+    expect(readSecret("A")).toBe("rotated-value");
+  });
 
-    // After the explicit reset hook, the next read picks up the new value.
-    _resetSecretsCacheForTests();
-    expect(readSecret("A")).toBe("two");
+  it("picks up a file created after a first read found none", () => {
+    setEnv("A", "from-env");
+    expect(readSecret("A")).toBe("from-env");
+    writeFileSync(
+      join(tmpHome, ".secrets.json"),
+      JSON.stringify({ A: "file" }),
+    );
+    expect(readSecret("A")).toBe("file");
+  });
+
+  it("a half-written file does not poison later reads", () => {
+    const f = join(tmpHome, ".secrets.json");
+    setEnv("A", "from-env");
+    writeFileSync(f, JSON.stringify({ A: "good" }));
+    expect(readSecret("A")).toBe("good");
+
+    // Mid-write: truncated JSON. Keep serving the last good value.
+    writeFileSync(f, '{"A": "new');
+    expect(readSecret("A")).toBe("good");
+    // Empty (truncate-then-write) is also a partial state.
+    writeFileSync(f, "");
+    expect(readSecret("A")).toBe("good");
+
+    // Write completes: the new value is served.
+    writeFileSync(f, JSON.stringify({ A: "new-value" }));
+    expect(readSecret("A")).toBe("new-value");
+  });
+
+  it("a parse failure on first load is retried, not cached", () => {
+    const f = join(tmpHome, ".secrets.json");
+    setEnv("A", "from-env");
+    writeFileSync(f, "{partial");
+    expect(readSecret("A")).toBe("from-env");
+    writeFileSync(f, JSON.stringify({ A: "complete" }));
+    expect(readSecret("A")).toBe("complete");
+  });
+
+  it("deleting the file returns to env", () => {
+    const f = join(tmpHome, ".secrets.json");
+    setEnv("A", "from-env");
+    writeFileSync(f, JSON.stringify({ A: "file" }));
+    expect(readSecret("A")).toBe("file");
+    unlinkSync(f);
+    expect(readSecret("A")).toBe("from-env");
   });
 });
