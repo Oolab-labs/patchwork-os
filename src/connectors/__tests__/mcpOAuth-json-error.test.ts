@@ -5,8 +5,9 @@
  * if it were a token, so every refusal surfaced as "empty access_token" /
  * "no access_token" and the actual reason was lost.
  *
- * The reason must be surfaced, and nothing else from the body may be: no
- * token value and no other field ever reaches the thrown message.
+ * The `error` code must be surfaced, and nothing else from the body may be:
+ * no token value, no `error_description` and no other field ever reaches the
+ * thrown message (same rule as `safeOAuthErrorCode`).
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -78,33 +79,33 @@ describe("mcpOAuth JSON error bodies on HTTP 200", () => {
         access_token: LEAK,
       }),
     );
-    expect(caught?.message).toBe(
-      "github: The code passed is incorrect or expired.",
-    );
+    expect(caught?.message).toBe("github: bad_verification_code");
+    expect(caught?.message).not.toContain("incorrect or expired");
     expect(caught?.message).not.toContain(LEAK);
     expect(caught?.message).not.toContain("example.test");
     expect(isConnected("github")).toBe(false);
   });
 
-  it("code exchange: 200 + JSON error without a description falls back to the code", async () => {
+  it("code exchange: 200 + JSON error without a description names the code", async () => {
     const { caught } = await exchangeWith(
       jsonResponse({ error: "incorrect_client_credentials" }),
     );
     expect(caught?.message).toBe("github: incorrect_client_credentials");
   });
 
-  it("code exchange: an oversized description is capped and carries no body field", async () => {
+  it("code exchange: a hostile error code is sanitized and capped", async () => {
     const { caught } = await exchangeWith(
       jsonResponse({
-        error: "redirect_uri_mismatch",
-        error_description: `x${"y".repeat(5000)}\n${LEAK}`,
+        error: `redirect_uri_mismatch\n${"y".repeat(5000)} ${LEAK}`,
+        error_description: `detail ${LEAK}`,
         access_token: LEAK,
       }),
     );
     expect(caught).toBeDefined();
-    expect(caught?.message.length).toBeLessThanOrEqual(220);
-    expect(caught?.message).not.toContain(LEAK);
+    expect(caught?.message.length).toBeLessThanOrEqual(80);
+    expect(caught?.message).not.toContain("detail");
     expect(caught?.message).not.toContain("\n");
+    expect(caught?.message).not.toContain(LEAK);
   });
 
   it("code exchange: 200 + JSON success is unchanged", async () => {
@@ -160,9 +161,8 @@ describe("mcpOAuth JSON error bodies on HTTP 200", () => {
     } catch (e) {
       caught = e as Error;
     }
-    expect(caught?.message).toContain(
-      "The refresh token passed is incorrect or expired.",
-    );
+    expect(caught?.message).toContain("refused: bad_refresh_token");
+    expect(caught?.message).not.toContain("incorrect or expired");
     expect(caught?.message).not.toContain("no access_token");
     expect(caught?.message).not.toContain(LEAK);
     expect(caught?.message).not.toContain("ghr_stored");
