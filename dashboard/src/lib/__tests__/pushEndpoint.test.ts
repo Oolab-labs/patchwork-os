@@ -19,6 +19,21 @@ describe("validatePushEndpoint", () => {
     ).toEqual({ ok: true });
   });
 
+  // The REAL push-service hosts, deliberately not placeholders. These are
+  // protocol-level facts — the major browsers' push services live on these —
+  // and the fixture above used only `push.example.test`, which is how a
+  // validator that rejected every Firebase endpoint (Chrome, Edge, Brave,
+  // Opera, Android) shipped green: `isPrivateHost` read the leading "fc" of
+  // `fcm.googleapis.com` as an IPv6 unique-local prefix.
+  it.each([
+    ["FCM (Chrome, Edge, Brave, Opera, Android)", "https://fcm.googleapis.com/fcm/send/abc:def"],
+    ["Mozilla autopush", "https://updates.push.services.mozilla.com/wpush/v2/abc"],
+    ["Apple", "https://web.push.apple.com/abc"],
+    ["WNS", "https://example.notify.windows.com/w/?token=abc"],
+  ])("accepts a real push service endpoint (%s)", (_label, endpoint) => {
+    expect(validatePushEndpoint(endpoint)).toEqual({ ok: true });
+  });
+
   it.each([
     ["not a URL", "push.example.test/send"],
     ["http", "http://push.example.test/send"],
@@ -35,6 +50,8 @@ describe("validatePushEndpoint", () => {
     ["RFC1918 192.168/16", "https://192.168.1.1:8443/send"],
     ["link-local / metadata", "https://169.254.169.254/latest"],
     ["IPv6 loopback", "https://[::1]/send"],
+    ["IPv6 unique-local fd00::/8", "https://[fd00::1]/send"],
+    ["IPv6 unique-local fc00::/8", "https://[fc00::1]/send"],
     ["decimal IPv4", "https://2130706433/send"],
   ])("rejects a private or loopback host (%s)", (_label, endpoint) => {
     expect(validatePushEndpoint(endpoint).ok).toBe(false);

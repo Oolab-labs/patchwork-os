@@ -121,7 +121,12 @@ export function isPrivateHost(hostname: string): boolean {
     if (a === 0) return true; // 0.0.0.0/8
   }
 
-  // IPv6 checks
+  // IPv6 checks — only on an IPv6 literal. These are prefixes of an ADDRESS;
+  // a DNS name never contains ":", and without this gate "fcm.googleapis.com"
+  // read as a unique-local fc00::/7 address and every Firebase push endpoint
+  // was refused. No bypass: every IPv6 literal (and every AAAA answer)
+  // contains ":".
+  if (!host.includes(":")) return false;
   if (host === "::1") return true; // loopback
   if (host.startsWith("fe80:")) return true; // link-local
   if (host.startsWith("fc") || host.startsWith("fd")) return true; // ULA (RFC 4193)
