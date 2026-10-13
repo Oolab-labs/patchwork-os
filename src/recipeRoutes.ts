@@ -64,6 +64,11 @@ import { patchworkHome, patchworkPath } from "./patchworkHome.js";
 import { summariseBoundaryReceipts } from "./privacy/boundaryReceipts.js";
 import { fileInputValueError } from "./recipes/fileInputs.js";
 import { recipeChangedSince } from "./recipes/recipeSourceHash.js";
+import {
+  RECIPE_LIMIT_REACHED,
+  RecipeLimitError,
+  RUN_LIMIT_REACHED,
+} from "./recipes/runLimits.js";
 import { cancelRunChecked } from "./recipes/runRegistry.js";
 import { textInputValueError } from "./recipes/textInputs.js";
 import {
@@ -86,6 +91,27 @@ import type { OutcomeStore } from "./workers/outcomeStore.js";
  * like a filesystem error (identified by Node.js errno code prefix);
  * otherwise returns the message unchanged.
  */
+/**
+ * HTTP status for a failed run start. The operator run limit
+ * (`PATCHWORK_MAX_CONCURRENT_RUNS`) is a transient refusal — try again when a
+ * run finishes — so it is a 429; every other failure keeps its existing 400.
+ */
+function runFailureStatus(error: string | undefined): number {
+  return error === RUN_LIMIT_REACHED ? 429 : 400;
+}
+
+/**
+ * HTTP status for a failed recipe write. The operator recipe limit
+ * (`PATCHWORK_MAX_RECIPES`) conflicts with what is installed — remove one to
+ * add another — so it is a 409; every other failure keeps `fallback`.
+ */
+function recipeWriteFailureStatus(
+  error: string | undefined,
+  fallback: number,
+): number {
+  return error === RECIPE_LIMIT_REACHED ? 409 : fallback;
+}
+
 function sanitizeStorageError(msg: string): string {
   // Node.js filesystem errors always start with an errno code such as
   // "ENOENT:", "EACCES:", "EPERM:", "EBUSY:", "EISDIR:", etc.
@@ -1122,7 +1148,7 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = await deps.runRecipeFn(nameFromPath, vars);
-        res.writeHead(result.ok ? 200 : 400, {
+        res.writeHead(result.ok ? 200 : runFailureStatus(result.error), {
           "Content-Type": "application/json",
         });
         res.end(JSON.stringify(result));
@@ -1186,7 +1212,7 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = await deps.runRecipeFn(name, vars);
-        res.writeHead(result.ok ? 200 : 400, {
+        res.writeHead(result.ok ? 200 : runFailureStatus(result.error), {
           "Content-Type": "application/json",
         });
         res.end(JSON.stringify(result));
@@ -2358,9 +2384,10 @@ export function tryHandleRecipeRoute(
         }
         const result = deps.saveRecipeFn(draft);
         if (result.ok) fireOnRecipesChanged(deps);
-        res.writeHead(result.ok ? 201 : 400, {
-          "Content-Type": "application/json",
-        });
+        res.writeHead(
+          result.ok ? 201 : recipeWriteFailureStatus(result.error, 400),
+          { "Content-Type": "application/json" },
+        );
         res.end(JSON.stringify(result));
       } catch {
         respondInvalidJson(res);
@@ -2652,9 +2679,12 @@ export function tryHandleRecipeRoute(
         // or trigger type entirely — re-prime the scheduler so the new
         // shape takes effect without a bridge restart.
         if (result.ok) fireOnRecipesChanged(deps);
-        res.writeHead(result.ok ? 200 : 400, {
-          "Content-Type": "application/json",
-        });
+        res.writeHead(
+          result.ok ? 200 : recipeWriteFailureStatus(result.error, 400),
+          {
+            "Content-Type": "application/json",
+          },
+        );
         const safeResult = result.error
           ? { ...result, error: sanitizeStorageError(result.error) }
           : result;
@@ -2742,7 +2772,7 @@ export function tryHandleRecipeRoute(
       ? 201
       : result.error === "Recipe not found"
         ? 404
-        : 400;
+        : recipeWriteFailureStatus(result.error, 400);
     res.writeHead(status, { "Content-Type": "application/json" });
     const safeDuplicateResult = result.error
       ? { ...result, error: sanitizeStorageError(result.error) }
@@ -3293,7 +3323,11 @@ export function tryHandleRecipeRoute(
             name: string;
             action: "created" | "replaced";
           }> = [];
-          const failures: Array<{ name: string; error: string }> = [];
+          const failures: Array<{
+            name: string;
+            error: string;
+            message?: string;
+          }> = [];
           // Wave 1 fix: aggregate connector preflight across every
           // bundle-installed recipe so the dashboard can surface a
           // single "you need to connect Gmail + Slack + Calendar before
@@ -3455,6 +3489,14 @@ export function tryHandleRecipeRoute(
               }
             } catch (err) {
               clearTimeout(recipeTimeout);
+              if (err instanceof RecipeLimitError) {
+                failures.push({
+                  name: r,
+                  error: RECIPE_LIMIT_REACHED,
+                  message: err.message,
+                });
+                continue;
+              }
               console.error(`[recipes/install] recipe "${r}" failed:`, err);
               failures.push({
                 name: r,
@@ -3471,9 +3513,16 @@ export function tryHandleRecipeRoute(
           if (typeof manifest.policy_template === "string") {
             advisory.policy_template = `Bundle declares policy template "${manifest.policy_template}" — not applied; review and apply manually.`;
           }
-          // 200 if any recipe installed; 502 otherwise. Always include both
+          // 200 if any recipe installed; 409 when every recipe was refused by
+          // the operator recipe limit; 502 otherwise. Always include both
           // arrays so callers (CLI + dashboard) can render partial-success.
-          const status = installed.length > 0 ? 200 : 502;
+          const status =
+            installed.length > 0
+              ? 200
+              : failures.length > 0 &&
+                  failures.every((f) => f.error === RECIPE_LIMIT_REACHED)
+                ? 409
+                : 502;
           // Notify the scheduler so cron-trigger recipes in the bundle
           // start firing without a bridge restart. Fired once per bundle
           // (not per recipe inside) since scheduler.start() reads the
@@ -3918,6 +3967,19 @@ export function tryHandleRecipeRoute(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, ...result }));
       } catch (err) {
+        // Operator recipe limit (PATCHWORK_MAX_RECIPES): nothing was written.
+        if (err instanceof RecipeLimitError) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: RECIPE_LIMIT_REACHED,
+              code: RECIPE_LIMIT_REACHED,
+              message: err.message,
+            }),
+          );
+          return;
+        }
         // Distinguish "the recipe YAML is malformed" (user-actionable, 400)
         // from "the installer itself crashed" (server bug, 500). Before this
         // every parser error came back as the same opaque 500 — dashboards

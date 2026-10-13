@@ -50,8 +50,10 @@ import {
   type RecipeManifest,
 } from "../recipes/manifest.js";
 import { isReservedRecipeDirEntry } from "../recipes/recipeDirEntries.js";
+import { RecipeLimitError } from "../recipes/runLimits.js";
 import {
   listInstalledRecipes as listInstalledRecipesSharedView,
+  recipeCapacityRefusal,
   setRecipeEnabled,
 } from "../recipesHttp.js";
 
@@ -597,6 +599,10 @@ export async function runRecipeInstall(
     // and snapshot the existing enabled state so the upgrade doesn't
     // silently re-disable a recipe the user explicitly opted into.
     const isReinstall = existsSync(installDir);
+    // PATCHWORK_MAX_RECIPES: a new package is refused before anything is
+    // staged; a reinstall (upgrade in place) is always allowed.
+    const limitRefusal = recipeCapacityRefusal(recipesDir, isReinstall);
+    if (limitRefusal) throw new RecipeLimitError(limitRefusal.limit);
     const wasEnabled = isReinstall ? !isInstallDirDisabled(installDir) : false;
 
     // Stage the new install content in a sibling directory inside

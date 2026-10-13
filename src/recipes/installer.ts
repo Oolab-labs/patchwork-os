@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { recipeLimitRefusal } from "../recipesHttp.js";
 import { writeFileAtomicSync } from "../writeFileAtomic.js";
 import type { CompiledRecipe } from "./compiler.js";
 import { compileRecipeFull } from "./compiler.js";
@@ -9,6 +10,7 @@ import {
   writeTopLevelProvenance,
 } from "./installProvenance.js";
 import { parseRecipe } from "./parser.js";
+import { RecipeLimitError } from "./runLimits.js";
 
 /**
  * Recipe installer — loads a recipe file, validates, compiles, and copies it
@@ -99,6 +101,11 @@ export function installRecipeFromFile(
         suggestedPermissions: { allow: [], ask: [], deny: [] },
       }
     : compileRecipeFull(recipe);
+
+  // PATCHWORK_MAX_RECIPES: refuse a NEW recipe before anything is written.
+  // Replacing one already installed is always allowed.
+  const limitRefusal = recipeLimitRefusal(opts.recipesDir, recipe.name);
+  if (limitRefusal) throw new RecipeLimitError(limitRefusal.limit);
 
   mkdir(opts.recipesDir);
   const destPath = path.join(opts.recipesDir, `${recipe.name}.json`);

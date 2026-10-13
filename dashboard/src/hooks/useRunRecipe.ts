@@ -8,6 +8,8 @@ interface RunResponse {
   ok: boolean;
   taskId?: string;
   error?: string;
+  /** Plain-language reason, e.g. for `run_limit_reached`. */
+  message?: string;
 }
 
 /**
@@ -44,6 +46,10 @@ export function useRunRecipe() {
         }
         if (data.error === "already_in_flight") {
           toast.warn(`${name} is already running.`);
+        } else if (data.error === "run_limit_reached") {
+          toast.warn(
+            `Couldn't run ${name}: ${data.message ?? "too many runs are already in progress"}`,
+          );
         } else {
           toast.error(`Couldn't run ${name}: ${data.error ?? `HTTP ${res.status}`}`);
         }
