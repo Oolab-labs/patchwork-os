@@ -43,6 +43,11 @@ import {
   type ConnectorStatus,
   type OAuthConfig,
 } from "./baseConnector.js";
+import {
+  attemptRevoke,
+  disconnectBody,
+  type RevokeOutcome,
+} from "./connectionChecks.js";
 import { getLastConnectorSuccess } from "./connectorActivity.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
@@ -57,6 +62,7 @@ import {
 const ASANA_API_BASE = "https://app.asana.com/api/1.0";
 const ASANA_AUTH_URL = "https://app.asana.com/-/oauth_authorize";
 const ASANA_TOKEN_URL = "https://app.asana.com/-/oauth_token";
+const ASANA_REVOKE_URL = "https://app.asana.com/-/oauth_revoke";
 const SCOPES = ["default"];
 
 export interface AsanaTokens {
@@ -853,11 +859,32 @@ export async function handleAsanaTest(): Promise<ConnectorHandlerResult> {
  * settings.
  */
 export async function handleAsanaDisconnect(): Promise<ConnectorHandlerResult> {
+  const tokens = loadTokens();
+  // Asana revokes by refresh token (it rejects an access token there).
+  // Without a refresh token or client credentials the revoke cannot be
+  // sent, so the grant may still be live: a failed revoke.
+  let revoked: RevokeOutcome | undefined;
+  if (tokens) {
+    const id = clientId() || tokens._client_id || "";
+    const secret = clientSecret() || tokens._client_secret || "";
+    revoked =
+      tokens.refresh_token && id && secret
+        ? await attemptRevoke(ASANA_REVOKE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              client_id: id,
+              client_secret: secret,
+              token: tokens.refresh_token,
+            }).toString(),
+          })
+        : "failed";
+  }
   clearTokens();
   resetAsanaConnector();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }

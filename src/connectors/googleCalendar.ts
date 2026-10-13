@@ -14,6 +14,11 @@
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
+import {
+  attemptRevoke,
+  disconnectBody,
+  type RevokeOutcome,
+} from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { readSecret } from "./secrets.js";
 import {
@@ -283,11 +288,11 @@ export async function getValidAccessToken(): Promise<string> {
   return tokens.access_token;
 }
 
-async function revokeToken(token: string): Promise<void> {
-  await fetch(
+async function revokeToken(token: string): Promise<RevokeOutcome> {
+  return attemptRevoke(
     `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
     { method: "POST" },
-  ).catch(() => {});
+  );
 }
 
 // ── State map (in-memory CSRF protection) ────────────────────────────────────
@@ -507,11 +512,11 @@ export async function handleCalendarTest(): Promise<ConnectorHandlerResult> {
 export async function handleCalendarDisconnect(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
   const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
-  if (tokenToRevoke) await revokeToken(tokenToRevoke);
+  const revoked = tokenToRevoke ? await revokeToken(tokenToRevoke) : undefined;
   deleteTokens();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }

@@ -39,6 +39,11 @@ import {
   type ConnectorStatus,
   type OAuthConfig,
 } from "./baseConnector.js";
+import {
+  attemptRevoke,
+  disconnectBody,
+  type RevokeOutcome,
+} from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
@@ -668,26 +673,27 @@ export async function handleDiscordDisconnect(): Promise<ConnectorHandlerResult>
   // Best-effort revoke at Discord. Slack doesn't do this but Discord exposes
   // a standard RFC 7009 revocation endpoint, and the spec allowlist permits
   // it. Failure to revoke must NOT block the local disconnect.
-  if (tokens?.access_token && isConfigured()) {
-    try {
-      await fetch(DISCORD_REVOKE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          token: tokens.access_token,
-          client_id: clientId(),
-          client_secret: clientSecret(),
-        }).toString(),
-      });
-    } catch {
-      // ignore — still drop local tokens
-    }
+  // Without client credentials the revoke cannot be sent, so the token may
+  // still be live at Discord: that is a failed revoke, not an unsupported one.
+  let revoked: RevokeOutcome | undefined;
+  if (tokens?.access_token) {
+    revoked = isConfigured()
+      ? await attemptRevoke(DISCORD_REVOKE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            token: tokens.access_token,
+            client_id: clientId(),
+            client_secret: clientSecret(),
+          }).toString(),
+        })
+      : "failed";
   }
   clearTokens();
   resetDiscordConnector();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }

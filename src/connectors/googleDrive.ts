@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
+import {
+  attemptRevoke,
+  disconnectBody,
+  type RevokeOutcome,
+} from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
 import { readSecret } from "./secrets.js";
@@ -244,11 +249,11 @@ export async function getValidAccessToken(): Promise<string> {
   return tokens.access_token;
 }
 
-async function revokeToken(token: string): Promise<void> {
-  await fetch(
+async function revokeToken(token: string): Promise<RevokeOutcome> {
+  return attemptRevoke(
     `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
     { method: "POST" },
-  ).catch(() => {});
+  );
 }
 
 export function extractFileId(urlOrId: string): string {
@@ -457,11 +462,11 @@ export async function handleDriveDisconnect(): Promise<ConnectorHandlerResult> {
   // Prefer revoking the refresh_token — it invalidates the entire grant.
   // Falling back to access_token only short-circuits the current session.
   const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
-  if (tokenToRevoke) await revokeToken(tokenToRevoke);
+  const revoked = tokenToRevoke ? await revokeToken(tokenToRevoke) : undefined;
   deleteTokens();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }

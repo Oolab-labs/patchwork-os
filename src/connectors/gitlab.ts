@@ -37,6 +37,11 @@ import {
   type ConnectorStatus,
   type OAuthConfig,
 } from "./baseConnector.js";
+import {
+  attemptRevoke,
+  disconnectBody,
+  type RevokeOutcome,
+} from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
@@ -744,26 +749,27 @@ export async function handleGitLabTest(): Promise<ConnectorHandlerResult> {
  */
 export async function handleGitLabDisconnect(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
-  if (tokens?.access_token && isConfigured()) {
-    try {
-      await fetch(revokeUrl(), {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          token: tokens.access_token,
-          client_id: clientId(),
-          client_secret: clientSecret(),
-        }).toString(),
-      });
-    } catch {
-      // ignore — still drop local tokens
-    }
+  // Without client credentials the revoke cannot be sent, so the token may
+  // still be live at GitLab: that is a failed revoke, not an unsupported one.
+  let revoked: RevokeOutcome | undefined;
+  if (tokens?.access_token) {
+    revoked = isConfigured()
+      ? await attemptRevoke(revokeUrl(), {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            token: tokens.access_token,
+            client_id: clientId(),
+            client_secret: clientSecret(),
+          }).toString(),
+        })
+      : "failed";
   }
   clearTokens();
   resetGitLabConnector();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }

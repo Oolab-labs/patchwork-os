@@ -443,7 +443,8 @@ describe("handleGithubDisconnect", () => {
   it("returns ok:true even when no token file", async () => {
     const result = await handleGithubDisconnect();
     expect(result.status).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ ok: true });
+    // Nothing was stored, so there is no revoke outcome to report.
+    expect(JSON.parse(result.body)).toEqual({ ok: true, removed: true });
   });
 });
 

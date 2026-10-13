@@ -20,6 +20,7 @@
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { patchworkPath } from "../patchworkHome.js";
+import { attemptRevoke, type RevokeOutcome } from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { readSecret } from "./secrets.js";
 import {
@@ -777,9 +778,18 @@ export async function getAccessToken(vendor: VendorId): Promise<string> {
 
 // ── Revocation ───────────────────────────────────────────────────────────────
 
-export async function revoke(vendor: VendorId): Promise<void> {
+/**
+ * Revoke at the provider (when it has a revocation endpoint), then delete the
+ * stored token whatever the outcome. Returns what is known about the token at
+ * the provider; undefined when nothing was stored, so nothing was revoked.
+ */
+export async function revoke(
+  vendor: VendorId,
+): Promise<RevokeOutcome | undefined> {
   const file = loadTokenFile(vendor);
   const config = vendorConfig(vendor);
+  let outcome: RevokeOutcome | undefined;
+  if (file && !config.revocationEndpoint) outcome = "unsupported";
   if (file && config.revocationEndpoint) {
     // RFC 7009 §2.1: revoking a refresh_token also revokes the access_token
     // it minted. Sending the access_token only leaves the refresh_token live
@@ -795,13 +805,14 @@ export async function revoke(vendor: VendorId): Promise<void> {
       body.set("token_type_hint", "refresh_token");
     }
     if (file.client_secret) body.set("client_secret", file.client_secret);
-    await fetch(config.revocationEndpoint, {
+    outcome = await attemptRevoke(config.revocationEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
-    }).catch(() => {});
+    });
   }
   deleteTokenFile(vendor);
+  return outcome;
 }
 
 export function isConnected(vendor: VendorId): boolean {

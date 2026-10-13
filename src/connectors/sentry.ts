@@ -14,6 +14,7 @@
  * the stack trace string, ready to pass into enrichStackTrace.
  */
 
+import { disconnectBody } from "./connectionChecks.js";
 import { escHtml } from "./htmlEscape.js";
 import { McpClient } from "./mcpClient.js";
 import {
@@ -290,11 +291,11 @@ export async function handleSentryTest(): Promise<ConnectorHandlerResult> {
 }
 
 export async function handleSentryDisconnect(): Promise<ConnectorHandlerResult> {
-  await revoke("sentry");
+  const revoked = await revoke("sentry");
   _client = null;
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }
