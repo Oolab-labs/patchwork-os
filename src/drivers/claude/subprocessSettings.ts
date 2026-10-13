@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { secretPathDenyRules } from "../../governance/secretPathDenies.js";
 
 /** Deny list applied to all bridge-spawned subprocess tasks. */
 const DENY_LIST = [
@@ -64,7 +65,13 @@ function settingsContent(
     // (observed against the real CLI). A strict contained run turns every
     // hook off, the operator's user hooks included.
     ...(strict && { disableAllHooks: true }),
-    permissions: { deny: Array.from(new Set([...DENY_LIST, ...extraDeny])) },
+    // The runtime's own secret stores, in every settings file (contained or
+    // not): secrets are never legitimate agent input.
+    permissions: {
+      deny: Array.from(
+        new Set([...DENY_LIST, ...secretPathDenyRules(), ...extraDeny]),
+      ),
+    },
   });
 }
 

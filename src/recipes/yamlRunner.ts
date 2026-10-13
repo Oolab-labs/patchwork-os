@@ -63,6 +63,7 @@ import {
   COMPAT_PROFILE,
   resolveAgentContainment,
 } from "../governance/profile.js";
+import { secretPathDenyRules } from "../governance/secretPathDenies.js";
 import {
   redactKnownSecrets,
   registerEnvBlock,
@@ -5108,9 +5109,12 @@ export function defaultClaudeCodeFn(
   const sandboxAllowed = (
     Array.isArray(opts?.allowedTools) ? opts.allowedTools : []
   ).filter((t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"));
-  const sandboxDenied = (
-    Array.isArray(opts?.disallowedTools) ? opts.disallowedTools : []
-  ).filter((t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"));
+  // The runtime's own secret stores are denied first, in every mode and
+  // profile (governance/secretPathDenies.ts).
+  const sandboxDenied = [
+    ...secretPathDenyRules(),
+    ...(Array.isArray(opts?.disallowedTools) ? opts.disallowedTools : []),
+  ].filter((t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"));
   // A contained run gets the same settings deny file the driver writes. If it
   // cannot be written, refuse rather than run the agent uncontained.
   let containedSettingsPath: string | undefined;
