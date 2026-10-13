@@ -45,3 +45,21 @@ function sanitizeCode(code: string): string {
   const cleaned = code.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 64);
   return cleaned || "unknown";
 }
+
+/**
+ * Some token endpoints refuse a request with HTTP 200 and a JSON body
+ * `{ "error": ..., "error_description": ... }` — GitHub does, for both a code
+ * exchange and a refresh. A caller that only checks `res.ok` reads that body
+ * as a token response, loses the reason, and may even adopt an
+ * `access_token` field sitting beside the `error`.
+ *
+ * Returns the sanitized `error` code when `body` carries a string `error`, or
+ * null when it does not. Like `safeOAuthErrorCode`, it never returns
+ * free-form text: `error_description` and every other field are ignored.
+ */
+export function oauthJsonRefusal(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const { error } = body as { error?: unknown };
+  if (typeof error !== "string" || error.length === 0) return null;
+  return sanitizeCode(error);
+}

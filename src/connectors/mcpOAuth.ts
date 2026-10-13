@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { patchworkPath } from "../patchworkHome.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
+import { oauthJsonRefusal } from "./oauthError.js";
 import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
@@ -416,12 +417,17 @@ async function exchangeCode(
       scope: p.get("scope") ?? undefined,
     };
   }
-  return (await res.json()) as {
+  const json = (await res.json()) as {
     access_token: string;
     refresh_token?: string;
     expires_in?: number;
     scope?: string;
   };
+  // A refusal can arrive as HTTP 200 with a JSON `error` (GitHub does this).
+  // Never read it as a token response — any access_token beside it is not one.
+  const refusal = oauthJsonRefusal(json);
+  if (refusal !== null) throw new Error(`${config.vendor}: ${refusal}`);
+  return json;
 }
 
 /** Complete the authorize flow. Persists token file. */
@@ -668,6 +674,14 @@ async function doRefresh(
     // Malformed success body — treat as transient
     throw new Error(
       `${file.vendor}: token refresh returned malformed JSON; keeping existing token`,
+    );
+  }
+  // HTTP 200 with a JSON `error` is a refusal (GitHub answers a bad refresh
+  // token this way). Surface the reason; never adopt a token beside it.
+  const refusal = oauthJsonRefusal(json);
+  if (refusal !== null) {
+    throw new Error(
+      `${file.vendor}: token refresh refused: ${refusal}; keeping existing token. Re-authorize via GET /connections/${file.vendor}/authorize`,
     );
   }
   // Validate the success body before adopting. A 200 with `{}` or
