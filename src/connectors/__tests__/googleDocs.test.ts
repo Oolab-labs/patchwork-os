@@ -504,11 +504,11 @@ describe("handleDocsDisconnect", () => {
   it("returns 200 even when no tokens", async () => {
     const result = await handleDocsDisconnect();
     expect(result.status).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ ok: true });
+    expect(JSON.parse(result.body)).toEqual({ ok: true, removed: true });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("calls Google revoke endpoint when access_token present", async () => {
+  it("revokes the refresh token (the whole grant) at Google", async () => {
     mockTokens();
     mockFetch.mockResolvedValueOnce(jsonResponse({}));
     const result = await handleDocsDisconnect();
@@ -516,7 +516,12 @@ describe("handleDocsDisconnect", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url] = mockFetch.mock.calls[0] as unknown as [string];
     expect(url).toContain("oauth2.googleapis.com/revoke");
-    expect(url).toContain("token=at_test");
+    expect(url).toContain("token=rt_test");
+    expect(JSON.parse(result.body)).toEqual({
+      ok: true,
+      removed: true,
+      revoked: "yes",
+    });
   });
 
   it("still returns ok when revoke throws", async () => {
@@ -524,6 +529,10 @@ describe("handleDocsDisconnect", () => {
     mockFetch.mockRejectedValueOnce(new Error("network"));
     const result = await handleDocsDisconnect();
     expect(result.status).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ ok: true });
+    expect(JSON.parse(result.body)).toEqual({
+      ok: true,
+      removed: true,
+      revoked: "failed",
+    });
   });
 });

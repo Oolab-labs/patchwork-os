@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
+import {
+  attemptRevoke,
+  disconnectBody,
+  type RevokeOutcome,
+} from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
 import { readSecret } from "./secrets.js";
@@ -314,11 +319,11 @@ export async function getValidAccessToken(): Promise<string> {
   return tokens.access_token;
 }
 
-async function revokeToken(token: string): Promise<void> {
-  await fetch(
+async function revokeToken(token: string): Promise<RevokeOutcome> {
+  return attemptRevoke(
     `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
     { method: "POST" },
-  ).catch(() => {});
+  );
 }
 
 /** Extract a Doc ID from a Google Docs URL or pass-through a bare ID. */
@@ -565,11 +570,13 @@ export async function handleDocsTest(): Promise<ConnectorHandlerResult> {
 
 export async function handleDocsDisconnect(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
-  if (tokens?.access_token) await revokeToken(tokens.access_token);
+  // Prefer the refresh_token — revoking it invalidates the whole grant.
+  const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
+  const revoked = tokenToRevoke ? await revokeToken(tokenToRevoke) : undefined;
   deleteTokens();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }

@@ -15,6 +15,16 @@
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
+import {
+  attemptRevoke,
+  type ConnectionCheckRecord,
+  disconnectBody,
+  isRecordedTime,
+  type LastCheck,
+  type RevokeOutcome,
+  readConnectionChecks,
+  storedConnectionMeta,
+} from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { CONNECTORS } from "./connectorRegistry.js";
 import { readSecret } from "./secrets.js";
@@ -65,6 +75,15 @@ export interface ConnectorStatus {
   tokenExpiresAt?: string;
   /** ISO timestamp of the most recent successful API call, when known. */
   lastSuccessAt?: string;
+  /** When the stored credential was connected, as the connector recorded it. */
+  connectedAt?: string;
+  /** Account or workspace label the connector stored at connect time. */
+  account?: string;
+  /** When a connection Test (or the connect flow) last proved the credential. */
+  verifiedAt?: string;
+  /** Outcome of the most recent connection Test. */
+  lastCheck?: LastCheck;
+  verified?: boolean;
 }
 
 function clientId(): string {
@@ -255,11 +274,11 @@ export async function getValidAccessToken(): Promise<string> {
   return tokens.access_token;
 }
 
-async function revokeToken(token: string): Promise<void> {
-  await fetch(
+async function revokeToken(token: string): Promise<RevokeOutcome> {
+  return attemptRevoke(
     `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
     { method: "POST" },
-  ).catch(() => {});
+  );
 }
 
 async function fetchUserEmail(accessToken: string): Promise<string> {
@@ -310,21 +329,41 @@ function gmailStatus(tokens: GmailTokens | null): ConnectorStatus["status"] {
 }
 
 export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
+  // Anything stamped at or after this moment was made up during this read
+  // (several loadTokens() synthesise connected_at for an environment key),
+  // so it is not a recorded time and is not reported. See isRecordedTime.
+  const readStartedAt = Date.now();
   const tokens = loadTokens();
   const { getStatus: getGitHubStatus } = await import("./github.js");
   const { getStatus: getSentryStatus } = await import("./sentry.js");
   const { getStatus: getLinearStatus } = await import("./linear.js");
   const { getStatus: getCalendarStatus } = await import("./googleCalendar.js");
   const { getStatus: getDriveStatus } = await import("./googleDrive.js");
-  const { isConnected: isSlackConnected, getProfile: getSlackProfile } =
+  const { isConnected: isSlackConnected, loadTokens: loadSlackTokens } =
     await import("./slack.js");
+  const { loadTokens: loadCalendarTokens } = await import(
+    "./googleCalendar.js"
+  );
+  const { loadTokens: loadDriveTokens } = await import("./googleDrive.js");
+  const { loadTokenFile } = await import("./mcpOAuth.js");
   const gh = getGitHubStatus();
   const sentry = getSentryStatus();
   const linear = getLinearStatus();
   const calendar = getCalendarStatus();
   const drive = getDriveStatus();
   const slackConnected = isSlackConnected();
-  const slackProfile = getSlackProfile();
+  const meta = (stored: unknown) => storedConnectionMeta(stored, readStartedAt);
+  /** An MCP-OAuth token file's stored metadata, profile fields included. */
+  const mcpMeta = (vendor: "github" | "linear" | "sentry") => {
+    const file = loadTokenFile(vendor);
+    if (!file) return {};
+    return {
+      ...meta({ ...(file.profile ?? {}), connected_at: file.connected_at }),
+      ...(isRecordedTime(file.verified_at, readStartedAt) && {
+        verifiedAt: file.verified_at,
+      }),
+    };
+  };
 
   // Token-paste connectors expose loadTokens() which returns null when
   // no credentials are stored. Probe each one so the dashboard reflects
@@ -408,7 +447,8 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
           // hardcoding 30+ class names here.
           [key: string]: unknown;
         };
-        const connected = m.loadTokens ? m.loadTokens() !== null : false;
+        const storedTokens = m.loadTokens ? m.loadTokens() : null;
+        const connected = storedTokens !== null && storedTokens !== undefined;
         if (!connected) {
           return {
             id: probe.id,
@@ -446,9 +486,12 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
                   status.status === "connected"
                     ? ("connected" as const)
                     : ("disconnected" as const),
-                lastSync: status.lastSync ?? new Date().toISOString(),
+                lastSync: isRecordedTime(status.lastSync, readStartedAt)
+                  ? status.lastSync
+                  : undefined,
                 tokenExpiresAt: status.tokenExpiresAt,
                 lastSuccessAt: status.lastSuccessAt,
+                ...meta(storedTokens),
               };
             } catch {
               break;
@@ -458,7 +501,7 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
         return {
           id: probe.id,
           status: "connected" as const,
-          lastSync: new Date().toISOString(),
+          ...meta(storedTokens),
         };
       } catch {
         return {
@@ -474,12 +517,12 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     {
       id: "gmail",
       status: gmailStatus(tokens),
-      lastSync: tokens ? new Date().toISOString() : undefined,
+      ...meta(tokens),
     },
     {
       id: "github",
       status: gh.connected ? "connected" : "disconnected",
-      lastSync: gh.connected ? new Date().toISOString() : undefined,
+      ...mcpMeta("github"),
       // false = a token stored before the callback verified tokens and not
       // since confirmed by a passing Test. Same rule for every connector
       // whose tokens go through completeVerifiedAuthorize.
@@ -489,12 +532,16 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       id: "sentry",
       status: sentry.status,
       lastSync: sentry.lastSync,
+      ...mcpMeta("sentry"),
       ...(sentry.verified !== undefined && { verified: sentry.verified }),
     },
     {
       id: "linear",
       status: linear.status,
       lastSync: linear.lastSync,
+      // An environment key is in use: the stored token's metadata is not
+      // about the connection being reported.
+      ...(!process.env.LINEAR_API_KEY && mcpMeta("linear")),
       // Absent when the connection is an environment key, not a stored token.
       ...(linear.verified !== undefined && { verified: linear.verified }),
     },
@@ -502,20 +549,36 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       id: "google-calendar",
       status: calendar.status,
       lastSync: calendar.lastSync,
+      ...meta(loadCalendarTokens()),
     },
     {
       id: "google-drive",
       status: drive.status,
       lastSync: drive.lastSync,
+      ...meta(loadDriveTokens()),
     },
     {
       id: "slack",
       status: slackConnected ? "connected" : "disconnected",
-      lastSync:
-        slackConnected && slackProfile ? new Date().toISOString() : undefined,
+      ...(slackConnected && meta(loadSlackTokens())),
     },
     ...tokenPasteStatuses,
   ];
+  // Connection checks are reported only for a connection that exists: a
+  // check recorded against a credential that is no longer there says
+  // nothing about the current state.
+  let checks: Record<string, ConnectionCheckRecord> = {};
+  try {
+    checks = readConnectionChecks();
+  } catch {
+    checks = {};
+  }
+  for (const c of connectors) {
+    const rec = checks[c.id];
+    if (!rec || c.status === "disconnected") continue;
+    if (rec.verifiedAt) c.verifiedAt = rec.verifiedAt;
+    if (rec.lastCheck) c.lastCheck = rec.lastCheck;
+  }
   return {
     status: 200,
     contentType: "application/json",
@@ -614,14 +677,14 @@ export async function handleGmailDisconnect(): Promise<ConnectorHandlerResult> {
   // Prefer revoking the refresh_token — it invalidates the entire grant.
   // Falling back to access_token only short-circuits the current session.
   const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
-  if (tokenToRevoke) {
-    await revokeToken(tokenToRevoke);
-  }
+  // Nothing stored ⇒ nothing to revoke ⇒ no claim either way.
+  const revoked = tokenToRevoke ? await revokeToken(tokenToRevoke) : undefined;
+  // Removed locally whatever the provider said.
   deleteTokens();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }
 

@@ -24,6 +24,11 @@ import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { patchworkPath } from "../patchworkHome.js";
+import {
+  attemptRevoke,
+  disconnectBody,
+  type RevokeOutcome,
+} from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
 import {
@@ -439,14 +444,14 @@ export async function getValidAccessToken(): Promise<string> {
   return tokens.access_token;
 }
 
-async function revokeToken(token: string): Promise<void> {
+async function revokeToken(token: string): Promise<RevokeOutcome> {
   const storedHost = loadTokens()?._login_host;
   const host =
     storedHost && isAllowedLoginHost(storedHost) ? storedHost : loginHost();
-  await fetch(
+  return attemptRevoke(
     `https://${host}/services/oauth2/revoke?token=${encodeURIComponent(token)}`,
     { method: "POST" },
-  ).catch(() => {});
+  );
 }
 
 /**
@@ -861,11 +866,15 @@ export async function handleSalesforceTest(): Promise<ConnectorHandlerResult> {
 
 export async function handleSalesforceDisconnect(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
-  if (tokens?.access_token) await revokeToken(tokens.access_token);
+  // Revoking the refresh token ends the whole grant, including every access
+  // token minted from it; an access token alone would leave the refresh token
+  // able to mint new ones.
+  const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
+  const revoked = tokenToRevoke ? await revokeToken(tokenToRevoke) : undefined;
   deleteTokens();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }

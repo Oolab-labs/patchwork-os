@@ -17,6 +17,11 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { patchworkPath } from "../patchworkHome.js";
 import { writeFileAtomicSync } from "../writeFileAtomic.js";
+import {
+  attemptRevoke,
+  disconnectBody,
+  type RevokeOutcome,
+} from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
 import { readSecret } from "./secrets.js";
@@ -511,25 +516,34 @@ export async function handleSlackTest(): Promise<ConnectorHandlerResult> {
  * (Discord, Google*, mcpOAuth) already calls the vendor's revoke;
  * Slack was the outlier (called out in discord.ts's comment).
  */
-async function revokeUpstream(accessToken: string): Promise<void> {
+async function revokeUpstream(accessToken: string): Promise<RevokeOutcome> {
   // 3-second timeout — disconnect must not hang the dashboard request.
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 3_000);
   try {
-    await fetch("https://slack.com/api/auth.revoke", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/x-www-form-urlencoded",
+    // Slack answers HTTP 200 either way; `{ok: true}` is the acceptance.
+    // Only that flag is read — the body is never logged or returned, since
+    // it could carry account details.
+    return await attemptRevoke(
+      "https://slack.com/api/auth.revoke",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        signal: ac.signal,
       },
-      signal: ac.signal,
-    });
-    // Discard the response body — Slack returns `{ok: true|false}` but
-    // we don't gate on it. Either way the next step is to delete the
-    // local token; logging the result risks emitting the bearer token
-    // into bridge logs.
-  } catch {
-    // Best-effort: network errors, timeout, fetch abort — fall through.
+      async (res) => {
+        if (!res.ok) return false;
+        try {
+          const body = (await res.json()) as { ok?: unknown };
+          return body.ok === true;
+        } catch {
+          return false;
+        }
+      },
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -539,13 +553,13 @@ export async function handleSlackDisconnect(): Promise<ConnectorHandlerResult> {
   // Capture the token BEFORE deleting it locally — auth.revoke needs
   // the bearer to identify the install to revoke.
   const tokens = loadTokens();
-  if (tokens?.access_token) {
-    await revokeUpstream(tokens.access_token);
-  }
+  const revoked = tokens?.access_token
+    ? await revokeUpstream(tokens.access_token)
+    : undefined;
   deleteTokens();
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }
