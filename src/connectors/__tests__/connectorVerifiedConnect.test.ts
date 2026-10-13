@@ -146,7 +146,7 @@ async function linearFlow(mcpStatus: number) {
     const u = String(url);
     if (u.endsWith("/register")) return json({ client_id: "lin-client" });
     if (u.endsWith("/token")) return json({ access_token: "lin_newtoken" });
-    if (u.startsWith("https://mcp.linear.app")) {
+    if (new URL(u).hostname === "mcp.linear.app") {
       if (mcpStatus !== 200) return new Response("denied", { status: 401 });
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         id?: number;
