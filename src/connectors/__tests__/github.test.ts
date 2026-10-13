@@ -75,7 +75,12 @@ describe("getStatus", () => {
 
   it("returns connected with user login from profile", () => {
     mockConnected();
-    expect(getStatus()).toEqual({ connected: true, user: "octocat" });
+    // A token stored before verification existed: connected, unverified.
+    expect(getStatus()).toEqual({
+      connected: true,
+      verified: false,
+      user: "octocat",
+    });
   });
 
   it("returns connected with undefined user when profile absent", () => {

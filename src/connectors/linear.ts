@@ -17,7 +17,8 @@
 import { escHtml } from "./htmlEscape.js";
 import { McpClient } from "./mcpClient.js";
 import {
-  completeAuthorize,
+  ConnectionNotVerifiedError,
+  completeVerifiedAuthorize,
   getAccessToken,
   invalidateAccessTokenCache,
   loadTokenFile,
@@ -231,7 +232,27 @@ export async function handleLinearCallback(
     };
   }
   try {
-    await completeAuthorize(vendorConfig("linear"), code, state);
+    // Verified with the NEW token on a fresh client — not the memoized one,
+    // which may hold another credential (or an env key) — before reporting.
+    await completeVerifiedAuthorize(
+      vendorConfig("linear"),
+      code,
+      state,
+      async (token) => {
+        try {
+          await new McpClient(LINEAR_MCP_ENDPOINT, async () => token).listTools(
+            {
+              timeoutMs: 10_000,
+            },
+          );
+        } catch (err) {
+          throw new Error(
+            `could not confirm the token with Linear (${err instanceof Error ? err.message : String(err)})`,
+          );
+        }
+        return undefined;
+      },
+    );
     // Best-effort profile capture (workspace name)
     try {
       const res = await client().callTool(
@@ -256,6 +277,13 @@ export async function handleLinearCallback(
       body: `<html><body><h2>Linear connected</h2><script>window.close();</script></body></html>`,
     };
   } catch (err) {
+    if (err instanceof ConnectionNotVerifiedError) {
+      return {
+        status: 400,
+        contentType: "text/html",
+        body: `<html><body><h2>Linear sign-in did not complete: ${escHtml(err.reason)}</h2></body></html>`,
+      };
+    }
     return {
       status: 400,
       contentType: "text/html",

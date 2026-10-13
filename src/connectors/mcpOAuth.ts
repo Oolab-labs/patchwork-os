@@ -117,6 +117,13 @@ export interface McpTokenFile {
   expires_at?: number;
   scope?: string;
   connected_at: string;
+  /**
+   * When an authenticated call with this token first succeeded (set by
+   * `completeVerifiedAuthorize`). Absent on tokens stored before
+   * verification existed: those are reported connected but unverified,
+   * never silently upgraded.
+   */
+  verified_at?: string;
   /** Vendor-specific profile info captured at connect-time for UI display. */
   profile?: Record<string, string>;
 }
@@ -464,6 +471,72 @@ export async function completeAuthorize(
   return { ok: true, profile };
 }
 
+// ── Verified connect ─────────────────────────────────────────────────────────
+
+/**
+ * The new token was stored but an authenticated call with it did not
+ * succeed, so it has been removed. `reason` is short and safe to show: it
+ * never carries a response body or the token.
+ */
+export class ConnectionNotVerifiedError extends Error {
+  constructor(
+    readonly vendor: VendorId,
+    readonly reason: string,
+  ) {
+    super(`${vendor}: sign-in did not complete: ${reason}`);
+    this.name = "ConnectionNotVerifiedError";
+  }
+}
+
+/**
+ * Complete the authorize flow, then prove the new token works before anyone
+ * is told the connection exists.
+ *
+ * `verify` makes ONE authenticated call with the new access token and
+ * resolves with any profile fields worth keeping, or throws with a short
+ * reason. On success the token is stamped `verified_at`; on failure it is
+ * deleted, so a token the provider rejects is never left behind looking
+ * like a connection.
+ */
+export async function completeVerifiedAuthorize(
+  config: VendorConfig,
+  code: string,
+  state: string,
+  verify: (accessToken: string) => Promise<Record<string, string> | undefined>,
+): Promise<CompleteResult> {
+  await completeAuthorize(config, code, state);
+  const file = loadTokenFile(config.vendor);
+  if (!file) {
+    throw new ConnectionNotVerifiedError(
+      config.vendor,
+      "the new token could not be stored",
+    );
+  }
+  let profile: Record<string, string> | undefined;
+  try {
+    profile = await verify(file.access_token);
+  } catch (err) {
+    try {
+      deleteTokenFile(config.vendor);
+    } catch {
+      // best-effort: the error below is what the caller acts on
+    }
+    const raw = err instanceof Error ? err.message : String(err);
+    const reason =
+      file.access_token.length > 0
+        ? raw.split(file.access_token).join("[redacted]")
+        : raw;
+    throw new ConnectionNotVerifiedError(config.vendor, reason.slice(0, 200));
+  }
+  const merged = { ...(file.profile ?? {}), ...(profile ?? {}) };
+  saveTokenFile({
+    ...file,
+    verified_at: new Date().toISOString(),
+    ...(Object.keys(merged).length > 0 && { profile: merged }),
+  });
+  return { ok: true, profile: merged };
+}
+
 // ── Token refresh ────────────────────────────────────────────────────────────
 
 /**
@@ -616,6 +689,11 @@ async function doRefresh(
 export interface ConnectorStatus {
   vendor: VendorId;
   connected: boolean;
+  /**
+   * An authenticated call succeeded when this token was stored. False for a
+   * token stored before verification existed (connected, unverified).
+   */
+  verified: boolean;
   expiresAt?: number;
   expiresInMs?: number;
   needsReauth: boolean;
@@ -624,7 +702,8 @@ export interface ConnectorStatus {
 
 export function getConnectorStatus(vendor: VendorId): ConnectorStatus {
   const file = loadTokenFile(vendor);
-  if (!file) return { vendor, connected: false, needsReauth: false };
+  if (!file)
+    return { vendor, connected: false, verified: false, needsReauth: false };
   const now = Date.now();
   const expiresAt = file.expires_at;
   const expiresInMs = expiresAt ? expiresAt - now : undefined;
@@ -633,6 +712,7 @@ export function getConnectorStatus(vendor: VendorId): ConnectorStatus {
   return {
     vendor,
     connected: true,
+    verified: typeof file.verified_at === "string",
     expiresAt,
     expiresInMs,
     needsReauth,

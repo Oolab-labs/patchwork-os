@@ -25,6 +25,7 @@ describe("createGetConnectorStatusTool", () => {
       {
         vendor: "github",
         connected: true,
+        verified: true,
         expiresAt: Date.now() + 3_600_000,
         expiresInMs: 3_600_000,
         needsReauth: false,
@@ -33,11 +34,17 @@ describe("createGetConnectorStatusTool", () => {
       {
         vendor: "linear",
         connected: true,
+        verified: true,
         expiresAt: Date.now() + 1_800_000,
         expiresInMs: 1_800_000,
         needsReauth: false,
       },
-      { vendor: "sentry", connected: false, needsReauth: false },
+      {
+        vendor: "sentry",
+        connected: false,
+        verified: false,
+        needsReauth: false,
+      },
     ]);
 
     const tool = createGetConnectorStatusTool();
@@ -47,6 +54,8 @@ describe("createGetConnectorStatusTool", () => {
     expect(connectors).toHaveLength(3);
     expect(connectors[0]?.vendor).toBe("github");
     expect(connectors[0]?.connected).toBe(true);
+    expect(connectors[0]?.verified).toBe(true);
+    expect(connectors[2]?.verified).toBe(false);
     expect(connectors[0]?.needsReauth).toBe(false);
     expect(connectors[0]?.profile).toEqual({ login: "alice" });
     expect(connectors[2]?.connected).toBe(false);
@@ -57,6 +66,7 @@ describe("createGetConnectorStatusTool", () => {
       {
         vendor: "linear",
         connected: true,
+        verified: true,
         expiresAt: Date.now() + 3_600_000,
         expiresInMs: 3_600_000,
         needsReauth: false,
@@ -73,7 +83,12 @@ describe("createGetConnectorStatusTool", () => {
 
   it("omits expiresAt and expiresInMs when not present", async () => {
     mockGetAll.mockReturnValue([
-      { vendor: "github", connected: false, needsReauth: false },
+      {
+        vendor: "github",
+        connected: false,
+        verified: false,
+        needsReauth: false,
+      },
     ]);
 
     const tool = createGetConnectorStatusTool();
@@ -90,6 +105,7 @@ describe("createGetConnectorStatusTool", () => {
       {
         vendor: "sentry",
         connected: true,
+        verified: true,
         expiresAt: Date.now() - 1000,
         expiresInMs: -1000,
         needsReauth: true,
@@ -105,7 +121,12 @@ describe("createGetConnectorStatusTool", () => {
 
   it("omits profile when not present", async () => {
     mockGetAll.mockReturnValue([
-      { vendor: "linear", connected: true, needsReauth: false },
+      {
+        vendor: "linear",
+        connected: true,
+        verified: false,
+        needsReauth: false,
+      },
     ]);
 
     const tool = createGetConnectorStatusTool();

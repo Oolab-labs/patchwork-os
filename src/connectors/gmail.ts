@@ -476,6 +476,8 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       id: "github",
       status: gh.connected ? "connected" : "disconnected",
       lastSync: gh.connected ? new Date().toISOString() : undefined,
+      // false = a token stored before the callback verified tokens.
+      ...(gh.connected && { verified: gh.verified === true }),
     },
     {
       id: "sentry",

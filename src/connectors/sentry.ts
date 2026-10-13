@@ -17,7 +17,8 @@
 import { escHtml } from "./htmlEscape.js";
 import { McpClient } from "./mcpClient.js";
 import {
-  completeAuthorize,
+  ConnectionNotVerifiedError,
+  completeVerifiedAuthorize,
   getAccessToken,
   invalidateAccessTokenCache,
   loadTokenFile,
@@ -183,7 +184,27 @@ export async function handleSentryCallback(
     };
   }
   try {
-    await completeAuthorize(vendorConfig("sentry"), code, state);
+    // Verified with the NEW token on a fresh client — not the memoized one,
+    // which may hold another credential (or an env key) — before reporting.
+    await completeVerifiedAuthorize(
+      vendorConfig("sentry"),
+      code,
+      state,
+      async (token) => {
+        try {
+          await new McpClient(SENTRY_MCP_ENDPOINT, async () => token).listTools(
+            {
+              timeoutMs: 10_000,
+            },
+          );
+        } catch (err) {
+          throw new Error(
+            `could not confirm the token with Sentry (${err instanceof Error ? err.message : String(err)})`,
+          );
+        }
+        return undefined;
+      },
+    );
     // Best-effort org capture
     try {
       const res = await client().callTool(
@@ -212,6 +233,13 @@ export async function handleSentryCallback(
       body: `<html><body><h2>Sentry connected</h2><script>window.close();</script></body></html>`,
     };
   } catch (err) {
+    if (err instanceof ConnectionNotVerifiedError) {
+      return {
+        status: 400,
+        contentType: "text/html",
+        body: `<html><body><h2>Sentry sign-in did not complete: ${escHtml(err.reason)}</h2></body></html>`,
+      };
+    }
     return {
       status: 400,
       contentType: "text/html",

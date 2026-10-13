@@ -6,7 +6,7 @@ export function createGetConnectorStatusTool() {
     schema: {
       name: "getConnectorStatus",
       description:
-        "Returns the auth status of all MCP connectors (GitHub, Linear, Sentry). Shows whether each is connected, when the token expires, and whether re-authorization is needed.",
+        "Returns the auth status of all MCP connectors (GitHub, Linear, Sentry). Shows whether each is connected and verified, when the token expires, and whether re-authorization is needed.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -23,6 +23,7 @@ export function createGetConnectorStatusTool() {
               properties: {
                 vendor: { type: "string" },
                 connected: { type: "boolean" },
+                verified: { type: "boolean" },
                 expiresAt: { type: "number" },
                 expiresInMs: { type: "number" },
                 expiresInMinutes: { type: "number" },
@@ -43,6 +44,7 @@ export function createGetConnectorStatusTool() {
         connectors: statuses.map((s) => ({
           vendor: s.vendor,
           connected: s.connected,
+          verified: s.verified,
           ...(s.expiresAt !== undefined && { expiresAt: s.expiresAt }),
           ...(s.expiresInMs !== undefined && {
             expiresInMs: s.expiresInMs,
