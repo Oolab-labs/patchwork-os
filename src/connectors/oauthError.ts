@@ -45,3 +45,36 @@ function sanitizeCode(code: string): string {
   const cleaned = code.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 64);
   return cleaned || "unknown";
 }
+
+const MAX_DESCRIPTION = 200;
+
+/**
+ * Some token endpoints refuse a request with HTTP 200 and a JSON body
+ * `{ "error": ..., "error_description": ... }` — GitHub does, for both a code
+ * exchange and a refresh. A caller that only checks `res.ok` reads that body
+ * as a token response, loses the reason, and may even adopt an
+ * `access_token` field sitting beside the `error`.
+ *
+ * Returns the human-readable reason when `body` carries a string `error`, or
+ * null when it does not. Reads ONLY `error_description` and `error`; every
+ * other field (tokens, URIs) is ignored. The description is collapsed to one
+ * line and capped, so a hostile endpoint cannot push a long value or a forged
+ * log line through it.
+ */
+export function oauthJsonRefusal(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const { error, error_description: description } = body as {
+    error?: unknown;
+    error_description?: unknown;
+  };
+  if (typeof error !== "string" || error.length === 0) return null;
+  if (typeof description === "string") {
+    const cleaned = description
+      .replace(/[\u0000-\u001f\u007f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, MAX_DESCRIPTION);
+    if (cleaned) return cleaned;
+  }
+  return sanitizeCode(error);
+}
