@@ -14,6 +14,7 @@
  * Exports preserved for yamlRunner; listIssues/listPRs are now async.
  */
 
+import { disconnectBody } from "./connectionChecks.js";
 import { escHtml } from "./htmlEscape.js";
 import { McpClient } from "./mcpClient.js";
 import {
@@ -771,11 +772,11 @@ export async function handleGithubTest(): Promise<ConnectorHandlerResult> {
 }
 
 export async function handleGithubDisconnect(): Promise<ConnectorHandlerResult> {
-  await revoke("github");
+  const revoked = await revoke("github");
   _client = null;
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }

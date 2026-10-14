@@ -20,7 +20,9 @@
 import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { patchworkPath } from "../patchworkHome.js";
+import { attemptRevoke, type RevokeOutcome } from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
+import { oauthJsonRefusal } from "./oauthError.js";
 import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
@@ -416,12 +418,17 @@ async function exchangeCode(
       scope: p.get("scope") ?? undefined,
     };
   }
-  return (await res.json()) as {
+  const json = (await res.json()) as {
     access_token: string;
     refresh_token?: string;
     expires_in?: number;
     scope?: string;
   };
+  // A refusal can arrive as HTTP 200 with a JSON `error` (GitHub does this).
+  // Never read it as a token response — any access_token beside it is not one.
+  const refusal = oauthJsonRefusal(json);
+  if (refusal !== null) throw new Error(`${config.vendor}: ${refusal}`);
+  return json;
 }
 
 /** Complete the authorize flow. Persists token file. */
@@ -692,6 +699,14 @@ async function doRefresh(
       `${file.vendor}: token refresh returned malformed JSON; keeping existing token`,
     );
   }
+  // HTTP 200 with a JSON `error` is a refusal (GitHub answers a bad refresh
+  // token this way). Surface the reason; never adopt a token beside it.
+  const refusal = oauthJsonRefusal(json);
+  if (refusal !== null) {
+    throw new Error(
+      `${file.vendor}: token refresh refused: ${refusal}; keeping existing token. Re-authorize via GET /connections/${file.vendor}/authorize`,
+    );
+  }
   // Validate the success body before adopting. A 200 with `{}` or
   // `{access_token: null}` would otherwise persist `Bearer undefined`.
   if (typeof json.access_token !== "string" || json.access_token.length === 0) {
@@ -799,9 +814,18 @@ export async function getAccessToken(vendor: VendorId): Promise<string> {
 
 // ── Revocation ───────────────────────────────────────────────────────────────
 
-export async function revoke(vendor: VendorId): Promise<void> {
+/**
+ * Revoke at the provider (when it has a revocation endpoint), then delete the
+ * stored token whatever the outcome. Returns what is known about the token at
+ * the provider; undefined when nothing was stored, so nothing was revoked.
+ */
+export async function revoke(
+  vendor: VendorId,
+): Promise<RevokeOutcome | undefined> {
   const file = loadTokenFile(vendor);
   const config = vendorConfig(vendor);
+  let outcome: RevokeOutcome | undefined;
+  if (file && !config.revocationEndpoint) outcome = "unsupported";
   if (file && config.revocationEndpoint) {
     // RFC 7009 §2.1: revoking a refresh_token also revokes the access_token
     // it minted. Sending the access_token only leaves the refresh_token live
@@ -818,13 +842,14 @@ export async function revoke(vendor: VendorId): Promise<void> {
     }
     const revokeSecret = clientSecretFor(config, file);
     if (revokeSecret) body.set("client_secret", revokeSecret);
-    await fetch(config.revocationEndpoint, {
+    outcome = await attemptRevoke(config.revocationEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
-    }).catch(() => {});
+    });
   }
   deleteTokenFile(vendor);
+  return outcome;
 }
 
 export function isConnected(vendor: VendorId): boolean {

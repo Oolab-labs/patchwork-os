@@ -445,7 +445,7 @@ describe("handleDriveDisconnect", () => {
   it("returns 200 even when no tokens", async () => {
     const result = await handleDriveDisconnect();
     expect(result.status).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ ok: true });
+    expect(JSON.parse(result.body)).toEqual({ ok: true, removed: true });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -479,7 +479,11 @@ describe("handleDriveDisconnect", () => {
     mockFetch.mockRejectedValueOnce(new Error("network down"));
     const result = await handleDriveDisconnect();
     expect(result.status).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ ok: true });
+    expect(JSON.parse(result.body)).toEqual({
+      ok: true,
+      removed: true,
+      revoked: "failed",
+    });
   });
 });
 

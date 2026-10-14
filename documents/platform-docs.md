@@ -801,10 +801,30 @@ All connectors share the same route shape:
 
 | Route | Purpose |
 |---|---|
-| `GET /connections` | List status of all connectors (`id`, `status`, `lastSync`) |
+| `GET /connections` | List status of all connectors (`id`, `status`, and the optional fields below) |
 | `POST /connections/<id>/connect` | Store + verify credentials |
-| `POST /connections/<id>/test` | Re-verify stored credentials |
-| `DELETE /connections/<id>` | Revoke + delete stored credentials |
+| `POST /connections/<id>/test` | Re-verify stored credentials; records `verifiedAt` / `lastCheck` |
+| `DELETE /connections/<id>` | Revoke + delete stored credentials; answers `{ ok, removed, revoked }` |
+
+Every optional field in `GET /connections` is a value that was recorded, or it
+is absent — absent means "not recorded", never "now":
+
+- `lastSync` — only where the connector recorded one.
+- `connectedAt` / `account` — what the connector stored at connect time (an
+  environment-key connection has no stored time, so none is reported).
+- `verifiedAt` — the most recent passing connection Test (or, for GitHub,
+  Linear and Sentry, the verified connect).
+- `lastCheck: { at, ok, reason? }` — the most recent connection Test. `reason`
+  is a short code (`failed` | `error`), never provider text.
+
+Test outcomes are kept in `tokens/connection-checks.json` (no secret material)
+and dropped whenever the credential is replaced or removed.
+
+`revoked` on a disconnect is `yes` (the provider accepted the revoke),
+`failed` (a revoke was due and did not succeed — the credential may still be
+live at the provider) or `unsupported` (the connector has no provider revoke).
+It is absent when nothing was stored. The local credential is removed in
+every case.
 
 ### Sentry connector
 

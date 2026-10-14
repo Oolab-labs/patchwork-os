@@ -288,6 +288,8 @@ async function exchangeCode(
     token_type?: string;
     scope?: string;
   };
+  if (typeof json.access_token !== "string" || json.access_token.length === 0)
+    throw new Error("Token exchange returned no access_token");
   return {
     access_token: json.access_token,
     refresh_token: json.refresh_token,
@@ -330,6 +332,8 @@ async function refreshAccessToken(tokens: MondayTokens): Promise<MondayTokens> {
     expires_in?: number;
     token_type?: string;
   };
+  if (typeof json.access_token !== "string" || json.access_token.length === 0)
+    throw new Error("Token refresh returned no access_token");
   const updated: MondayTokens = {
     ...tokens,
     access_token: json.access_token,

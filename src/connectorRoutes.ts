@@ -26,6 +26,11 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  afterCredentialChange,
+  disconnectResponse,
+  recordTestOutcome,
+} from "./connectors/connectionChecks.js";
 import { oauthConnectorIds } from "./connectors/connectorRegistry.js";
 import { respond500 } from "./httpErrorResponse.js";
 import { readBodyWithCap, respond413 } from "./recipeRoutes.js";
@@ -80,6 +85,7 @@ interface ConnectorHandlerResult {
 async function dispatchConnectorConnect(
   req: IncomingMessage,
   res: ServerResponse,
+  pathname: string,
   loadHandler: () => Promise<(body: string) => Promise<ConnectorHandlerResult>>,
 ): Promise<void> {
   const read = await readBodyWithCap(req, CONNECTOR_BODY_CAP);
@@ -89,7 +95,7 @@ async function dispatchConnectorConnect(
   }
   try {
     const handler = await loadHandler();
-    const result = await handler(read.body);
+    const result = afterCredentialChange(pathname, await handler(read.body));
     res.writeHead(result.status, {
       "Content-Type": result.contentType ?? "application/json",
     });
@@ -127,7 +133,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleGithubCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleGithubCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -148,7 +157,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleLinearCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleLinearCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -169,7 +181,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleSentryCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleSentryCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -192,7 +207,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleCalendarCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleCalendarCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -215,7 +233,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleDriveCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleDriveCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -238,7 +259,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleDocsCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleDocsCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -259,7 +283,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleMondayCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleMondayCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -282,7 +309,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleSalesforceCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleSalesforceCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -303,7 +333,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleSlackCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleSlackCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -324,7 +357,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleGmailCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleGmailCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "text/html",
         });
@@ -351,7 +387,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleDiscordCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleDiscordCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "text/html",
         });
@@ -372,7 +411,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleAsanaCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleAsanaCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "text/html",
         });
@@ -393,7 +435,10 @@ export function tryHandlePublicConnectorRoute(
         const code = parsedUrl.searchParams.get("code");
         const state = parsedUrl.searchParams.get("state");
         const error = parsedUrl.searchParams.get("error");
-        const result = await handleGitLabCallback(code, state, error);
+        const result = afterCredentialChange(
+          parsedUrl.pathname,
+          await handleGitLabCallback(code, state, error),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "text/html",
         });
@@ -535,7 +580,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleGmailDisconnect } = await import("./connectors/gmail.js");
-        const result = await handleGmailDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleGmailDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -553,7 +601,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleGmailTest } = await import("./connectors/gmail.js");
-        const result = await handleGmailTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleGmailTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -598,7 +649,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleGithubTest } = await import("./connectors/github.js");
-        const result = await handleGithubTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleGithubTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -615,7 +669,10 @@ export function tryHandleConnectorRoute(
         const { handleGithubDisconnect } = await import(
           "./connectors/github.js"
         );
-        const result = await handleGithubDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleGithubDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -663,7 +720,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleSentryTest } = await import("./connectors/sentry.js");
-        const result = await handleSentryTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleSentryTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -680,7 +740,10 @@ export function tryHandleConnectorRoute(
         const { handleSentryDisconnect } = await import(
           "./connectors/sentry.js"
         );
-        const result = await handleSentryDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleSentryDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -728,7 +791,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleLinearTest } = await import("./connectors/linear.js");
-        const result = await handleLinearTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleLinearTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -745,7 +811,10 @@ export function tryHandleConnectorRoute(
         const { handleLinearDisconnect } = await import(
           "./connectors/linear.js"
         );
-        const result = await handleLinearDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleLinearDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -789,7 +858,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleSlackTest } = await import("./connectors/slack.js");
-        const result = await handleSlackTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleSlackTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -804,7 +876,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleSlackDisconnect } = await import("./connectors/slack.js");
-        const result = await handleSlackDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleSlackDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -853,7 +928,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleDiscordTest } = await import("./connectors/discord.js");
-        const result = await handleDiscordTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleDiscordTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -873,7 +951,10 @@ export function tryHandleConnectorRoute(
         const { handleDiscordDisconnect } = await import(
           "./connectors/discord.js"
         );
-        const result = await handleDiscordDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleDiscordDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -920,7 +1001,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleAsanaTest } = await import("./connectors/asana.js");
-        const result = await handleAsanaTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleAsanaTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -935,7 +1019,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleAsanaDisconnect } = await import("./connectors/asana.js");
-        const result = await handleAsanaDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleAsanaDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -984,7 +1071,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleGitLabTest } = await import("./connectors/gitlab.js");
-        const result = await handleGitLabTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleGitLabTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1001,7 +1091,10 @@ export function tryHandleConnectorRoute(
         const { handleGitLabDisconnect } = await import(
           "./connectors/gitlab.js"
         );
-        const result = await handleGitLabDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleGitLabDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1018,7 +1111,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/notion/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/notion.js");
       return m.handleNotionConnect;
     });
@@ -1031,7 +1124,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleNotionTest } = await import("./connectors/notion.js");
-        const result = await handleNotionTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleNotionTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1048,7 +1144,10 @@ export function tryHandleConnectorRoute(
         const { handleNotionDisconnect } = await import(
           "./connectors/notion.js"
         );
-        const result = handleNotionDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleNotionDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1065,7 +1164,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/confluence/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/confluence.js");
       return m.handleConfluenceConnect;
     });
@@ -1080,7 +1179,10 @@ export function tryHandleConnectorRoute(
         const { handleConfluenceTest } = await import(
           "./connectors/confluence.js"
         );
-        const result = await handleConfluenceTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleConfluenceTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1100,7 +1202,10 @@ export function tryHandleConnectorRoute(
         const { handleConfluenceDisconnect } = await import(
           "./connectors/confluence.js"
         );
-        const result = handleConfluenceDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleConfluenceDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1117,7 +1222,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/jira/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/jira.js");
       return m.handleJiraConnect;
     });
@@ -1130,7 +1235,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleJiraTest } = await import("./connectors/jira.js");
-        const result = await handleJiraTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleJiraTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1145,7 +1253,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleJiraDisconnect } = await import("./connectors/jira.js");
-        const result = handleJiraDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleJiraDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1162,7 +1273,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/zendesk/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/zendesk.js");
       return m.handleZendeskConnect;
     });
@@ -1175,7 +1286,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleZendeskTest } = await import("./connectors/zendesk.js");
-        const result = await handleZendeskTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleZendeskTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1195,7 +1309,10 @@ export function tryHandleConnectorRoute(
         const { handleZendeskDisconnect } = await import(
           "./connectors/zendesk.js"
         );
-        const result = handleZendeskDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleZendeskDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1212,7 +1329,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/intercom/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/intercom.js");
       return m.handleIntercomConnect;
     });
@@ -1225,7 +1342,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleIntercomTest } = await import("./connectors/intercom.js");
-        const result = await handleIntercomTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleIntercomTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1245,7 +1365,10 @@ export function tryHandleConnectorRoute(
         const { handleIntercomDisconnect } = await import(
           "./connectors/intercom.js"
         );
-        const result = handleIntercomDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleIntercomDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1262,7 +1385,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/hubspot/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/hubspot.js");
       return m.handleHubSpotConnect;
     });
@@ -1275,7 +1398,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleHubSpotTest } = await import("./connectors/hubspot.js");
-        const result = await handleHubSpotTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleHubSpotTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1295,7 +1421,10 @@ export function tryHandleConnectorRoute(
         const { handleHubSpotDisconnect } = await import(
           "./connectors/hubspot.js"
         );
-        const result = handleHubSpotDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleHubSpotDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1312,7 +1441,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/datadog/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/datadog.js");
       return m.handleDatadogConnect;
     });
@@ -1325,7 +1454,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleDatadogTest } = await import("./connectors/datadog.js");
-        const result = await handleDatadogTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleDatadogTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1345,7 +1477,10 @@ export function tryHandleConnectorRoute(
         const { handleDatadogDisconnect } = await import(
           "./connectors/datadog.js"
         );
-        const result = handleDatadogDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleDatadogDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1362,7 +1497,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/pagerduty/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/pagerduty.js");
       return m.handlePagerDutyConnect;
     });
@@ -1377,7 +1512,10 @@ export function tryHandleConnectorRoute(
         const { handlePagerDutyTest } = await import(
           "./connectors/pagerduty.js"
         );
-        const result = await handlePagerDutyTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handlePagerDutyTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1397,7 +1535,10 @@ export function tryHandleConnectorRoute(
         const { handlePagerDutyDisconnect } = await import(
           "./connectors/pagerduty.js"
         );
-        const result = handlePagerDutyDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handlePagerDutyDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1414,7 +1555,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/telegram/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/telegram.js");
       return m.handleTelegramConnect;
     });
@@ -1427,7 +1568,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleTelegramTest } = await import("./connectors/telegram.js");
-        const result = await handleTelegramTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleTelegramTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1447,7 +1591,10 @@ export function tryHandleConnectorRoute(
         const { handleTelegramDisconnect } = await import(
           "./connectors/telegram.js"
         );
-        const result = handleTelegramDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleTelegramDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1464,7 +1611,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/stripe/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/stripe.js");
       return m.handleStripeConnect;
     });
@@ -1477,7 +1624,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleStripeTest } = await import("./connectors/stripe.js");
-        const result = await handleStripeTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleStripeTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1494,7 +1644,10 @@ export function tryHandleConnectorRoute(
         const { handleStripeDisconnect } = await import(
           "./connectors/stripe.js"
         );
-        const result = handleStripeDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleStripeDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1511,7 +1664,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/postgres/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/postgres.js");
       return m.handlePostgresConnect;
     });
@@ -1524,7 +1677,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handlePostgresTest } = await import("./connectors/postgres.js");
-        const result = await handlePostgresTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handlePostgresTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1544,7 +1700,10 @@ export function tryHandleConnectorRoute(
         const { handlePostgresDisconnect } = await import(
           "./connectors/postgres.js"
         );
-        const result = await handlePostgresDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handlePostgresDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1561,7 +1720,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/mongodb/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/mongodb.js");
       return m.handleMongoConnect;
     });
@@ -1574,7 +1733,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleMongoTest } = await import("./connectors/mongodb.js");
-        const result = await handleMongoTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleMongoTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1594,7 +1756,10 @@ export function tryHandleConnectorRoute(
         const { handleMongoDisconnect } = await import(
           "./connectors/mongodb.js"
         );
-        const result = await handleMongoDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleMongoDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1611,7 +1776,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/redis/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/redis.js");
       return m.handleRedisConnect;
     });
@@ -1624,7 +1789,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleRedisTest } = await import("./connectors/redis.js");
-        const result = await handleRedisTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleRedisTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1639,7 +1807,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleRedisDisconnect } = await import("./connectors/redis.js");
-        const result = await handleRedisDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleRedisDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1656,7 +1827,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/elasticsearch/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/elasticsearch.js");
       return m.handleElasticsearchConnect;
     });
@@ -1671,7 +1842,10 @@ export function tryHandleConnectorRoute(
         const { handleElasticsearchTest } = await import(
           "./connectors/elasticsearch.js"
         );
-        const result = await handleElasticsearchTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleElasticsearchTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1691,7 +1865,10 @@ export function tryHandleConnectorRoute(
         const { handleElasticsearchDisconnect } = await import(
           "./connectors/elasticsearch.js"
         );
-        const result = await handleElasticsearchDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleElasticsearchDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1708,7 +1885,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/sendgrid/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/sendgrid.js");
       return m.handleSendGridConnect;
     });
@@ -1721,7 +1898,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleSendGridTest } = await import("./connectors/sendgrid.js");
-        const result = await handleSendGridTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleSendGridTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1741,7 +1921,10 @@ export function tryHandleConnectorRoute(
         const { handleSendGridDisconnect } = await import(
           "./connectors/sendgrid.js"
         );
-        const result = handleSendGridDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleSendGridDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1758,7 +1941,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/twilio/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/twilio.js");
       return m.handleTwilioConnect;
     });
@@ -1771,7 +1954,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleTwilioTest } = await import("./connectors/twilio.js");
-        const result = await handleTwilioTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleTwilioTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1788,7 +1974,10 @@ export function tryHandleConnectorRoute(
         const { handleTwilioDisconnect } = await import(
           "./connectors/twilio.js"
         );
-        const result = handleTwilioDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleTwilioDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1805,7 +1994,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/figma/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/figma.js");
       return m.handleFigmaConnect;
     });
@@ -1818,7 +2007,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleFigmaTest } = await import("./connectors/figma.js");
-        const result = await handleFigmaTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleFigmaTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1833,7 +2025,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleFigmaDisconnect } = await import("./connectors/figma.js");
-        const result = handleFigmaDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleFigmaDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1850,7 +2045,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/airtable/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/airtable.js");
       return m.handleAirtableConnect;
     });
@@ -1863,7 +2058,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleAirtableTest } = await import("./connectors/airtable.js");
-        const result = await handleAirtableTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleAirtableTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1883,7 +2081,10 @@ export function tryHandleConnectorRoute(
         const { handleAirtableDisconnect } = await import(
           "./connectors/airtable.js"
         );
-        const result = handleAirtableDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleAirtableDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1900,7 +2101,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/webflow/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/webflow.js");
       return m.handleWebflowConnect;
     });
@@ -1913,7 +2114,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleWebflowTest } = await import("./connectors/webflow.js");
-        const result = await handleWebflowTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleWebflowTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1933,7 +2137,10 @@ export function tryHandleConnectorRoute(
         const { handleWebflowDisconnect } = await import(
           "./connectors/webflow.js"
         );
-        const result = handleWebflowDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleWebflowDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -1983,7 +2190,10 @@ export function tryHandleConnectorRoute(
         const { handleCalendarTest } = await import(
           "./connectors/googleCalendar.js"
         );
-        const result = await handleCalendarTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleCalendarTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2003,7 +2213,10 @@ export function tryHandleConnectorRoute(
         const { handleCalendarDisconnect } = await import(
           "./connectors/googleCalendar.js"
         );
-        const result = await handleCalendarDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleCalendarDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2051,7 +2264,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleDriveTest } = await import("./connectors/googleDrive.js");
-        const result = await handleDriveTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleDriveTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2071,7 +2287,10 @@ export function tryHandleConnectorRoute(
         const { handleDriveDisconnect } = await import(
           "./connectors/googleDrive.js"
         );
-        const result = await handleDriveDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleDriveDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2116,7 +2335,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleDocsTest } = await import("./connectors/googleDocs.js");
-        const result = await handleDocsTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleDocsTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2136,7 +2358,10 @@ export function tryHandleConnectorRoute(
         const { handleDocsDisconnect } = await import(
           "./connectors/googleDocs.js"
         );
-        const result = await handleDocsDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleDocsDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2181,7 +2406,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleMondayTest } = await import("./connectors/monday.js");
-        const result = await handleMondayTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleMondayTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2198,7 +2426,10 @@ export function tryHandleConnectorRoute(
         const { handleMondayDisconnect } = await import(
           "./connectors/monday.js"
         );
-        const result = await handleMondayDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleMondayDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2245,7 +2476,10 @@ export function tryHandleConnectorRoute(
         const { handleSalesforceTest } = await import(
           "./connectors/salesforce.js"
         );
-        const result = await handleSalesforceTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleSalesforceTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2265,7 +2499,10 @@ export function tryHandleConnectorRoute(
         const { handleSalesforceDisconnect } = await import(
           "./connectors/salesforce.js"
         );
-        const result = await handleSalesforceDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleSalesforceDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2282,7 +2519,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/shopify/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/shopify.js");
       return m.handleShopifyConnect;
     });
@@ -2295,7 +2532,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleShopifyTest } = await import("./connectors/shopify.js");
-        const result = await handleShopifyTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleShopifyTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2315,7 +2555,10 @@ export function tryHandleConnectorRoute(
         const { handleShopifyDisconnect } = await import(
           "./connectors/shopify.js"
         );
-        const result = await handleShopifyDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleShopifyDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2332,7 +2575,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/snowflake/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/snowflake.js");
       return m.handleSnowflakeConnect;
     });
@@ -2347,7 +2590,10 @@ export function tryHandleConnectorRoute(
         const { handleSnowflakeTest } = await import(
           "./connectors/snowflake.js"
         );
-        const result = await handleSnowflakeTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleSnowflakeTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2367,7 +2613,10 @@ export function tryHandleConnectorRoute(
         const { handleSnowflakeDisconnect } = await import(
           "./connectors/snowflake.js"
         );
-        const result = await handleSnowflakeDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          await handleSnowflakeDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2384,7 +2633,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/resend/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/resend.js");
       return m.handleResendConnect;
     });
@@ -2397,7 +2646,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleResendTest } = await import("./connectors/resend.js");
-        const result = await handleResendTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleResendTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2414,7 +2666,10 @@ export function tryHandleConnectorRoute(
         const { handleResendDisconnect } = await import(
           "./connectors/resend.js"
         );
-        const result = handleResendDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleResendDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2431,7 +2686,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/obsidian/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/obsidian.js");
       return m.handleObsidianConnect;
     });
@@ -2444,7 +2699,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleObsidianTest } = await import("./connectors/obsidian.js");
-        const result = await handleObsidianTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleObsidianTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2464,7 +2722,10 @@ export function tryHandleConnectorRoute(
         const { handleObsidianDisconnect } = await import(
           "./connectors/obsidian.js"
         );
-        const result = handleObsidianDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleObsidianDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2481,7 +2742,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/todoist/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/todoist.js");
       return m.handleTodoistConnect;
     });
@@ -2494,7 +2755,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleTodoistTest } = await import("./connectors/todoist.js");
-        const result = await handleTodoistTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleTodoistTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2514,7 +2778,10 @@ export function tryHandleConnectorRoute(
         const { handleTodoistDisconnect } = await import(
           "./connectors/todoist.js"
         );
-        const result = handleTodoistDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleTodoistDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2531,7 +2798,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/vercel/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/vercel.js");
       return m.handleVercelConnect;
     });
@@ -2544,7 +2811,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleVercelTest } = await import("./connectors/vercel.js");
-        const result = await handleVercelTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleVercelTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2561,7 +2831,10 @@ export function tryHandleConnectorRoute(
         const { handleVercelDisconnect } = await import(
           "./connectors/vercel.js"
         );
-        const result = handleVercelDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleVercelDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2578,7 +2851,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/paystack/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/paystack.js");
       return m.handlePaystackConnect;
     });
@@ -2591,7 +2864,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handlePaystackTest } = await import("./connectors/paystack.js");
-        const result = await handlePaystackTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handlePaystackTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2611,7 +2887,10 @@ export function tryHandleConnectorRoute(
         const { handlePaystackDisconnect } = await import(
           "./connectors/paystack.js"
         );
-        const result = handlePaystackDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handlePaystackDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2628,7 +2907,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/pipedrive/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/pipedrive.js");
       return m.handlePipedriveConnect;
     });
@@ -2643,7 +2922,10 @@ export function tryHandleConnectorRoute(
         const { handlePipedriveTest } = await import(
           "./connectors/pipedrive.js"
         );
-        const result = await handlePipedriveTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handlePipedriveTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2663,7 +2945,10 @@ export function tryHandleConnectorRoute(
         const { handlePipedriveDisconnect } = await import(
           "./connectors/pipedrive.js"
         );
-        const result = handlePipedriveDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handlePipedriveDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2680,7 +2965,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/caldiy/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/caldiy.js");
       return m.handleCalDiyConnect;
     });
@@ -2693,7 +2978,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleCalDiyTest } = await import("./connectors/caldiy.js");
-        const result = await handleCalDiyTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleCalDiyTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2710,7 +2998,10 @@ export function tryHandleConnectorRoute(
         const { handleCalDiyDisconnect } = await import(
           "./connectors/caldiy.js"
         );
-        const result = handleCalDiyDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleCalDiyDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2727,7 +3018,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/grafana/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/grafana.js");
       return m.handleGrafanaConnect;
     });
@@ -2740,7 +3031,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleGrafanaTest } = await import("./connectors/grafana.js");
-        const result = await handleGrafanaTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleGrafanaTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2760,7 +3054,10 @@ export function tryHandleConnectorRoute(
         const { handleGrafanaDisconnect } = await import(
           "./connectors/grafana.js"
         );
-        const result = handleGrafanaDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleGrafanaDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2777,7 +3074,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/posthog/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/posthog.js");
       return m.handlePostHogConnect;
     });
@@ -2790,7 +3087,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handlePostHogTest } = await import("./connectors/posthog.js");
-        const result = await handlePostHogTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handlePostHogTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2810,7 +3110,10 @@ export function tryHandleConnectorRoute(
         const { handlePostHogDisconnect } = await import(
           "./connectors/posthog.js"
         );
-        const result = handlePostHogDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handlePostHogDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2827,7 +3130,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/cloudflare/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/cloudflare.js");
       return m.handleCloudflareConnect;
     });
@@ -2842,7 +3145,10 @@ export function tryHandleConnectorRoute(
         const { handleCloudflareTest } = await import(
           "./connectors/cloudflare.js"
         );
-        const result = await handleCloudflareTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleCloudflareTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2862,7 +3168,10 @@ export function tryHandleConnectorRoute(
         const { handleCloudflareDisconnect } = await import(
           "./connectors/cloudflare.js"
         );
-        const result = handleCloudflareDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleCloudflareDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2879,7 +3188,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/circleci/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/circleci.js");
       return m.handleCircleCIConnect;
     });
@@ -2892,7 +3201,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleCircleCITest } = await import("./connectors/circleci.js");
-        const result = await handleCircleCITest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleCircleCITest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2912,7 +3224,10 @@ export function tryHandleConnectorRoute(
         const { handleCircleCIDisconnect } = await import(
           "./connectors/circleci.js"
         );
-        const result = handleCircleCIDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleCircleCIDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2929,7 +3244,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/woocommerce/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/woocommerce.js");
       return m.handleWooCommerceConnect;
     });
@@ -2944,7 +3259,10 @@ export function tryHandleConnectorRoute(
         const { handleWooCommerceTest } = await import(
           "./connectors/woocommerce.js"
         );
-        const result = await handleWooCommerceTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleWooCommerceTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2964,7 +3282,10 @@ export function tryHandleConnectorRoute(
         const { handleWooCommerceDisconnect } = await import(
           "./connectors/woocommerce.js"
         );
-        const result = handleWooCommerceDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleWooCommerceDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -2981,7 +3302,7 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/supabase/connect" &&
     req.method === "POST"
   ) {
-    void dispatchConnectorConnect(req, res, async () => {
+    void dispatchConnectorConnect(req, res, parsedUrl.pathname, async () => {
       const m = await import("./connectors/supabase.js");
       return m.handleSupabaseConnect;
     });
@@ -2994,7 +3315,10 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleSupabaseTest } = await import("./connectors/supabase.js");
-        const result = await handleSupabaseTest();
+        const result = recordTestOutcome(
+          parsedUrl.pathname,
+          await handleSupabaseTest(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -3014,7 +3338,10 @@ export function tryHandleConnectorRoute(
         const { handleSupabaseDisconnect } = await import(
           "./connectors/supabase.js"
         );
-        const result = handleSupabaseDisconnect();
+        const result = disconnectResponse(
+          parsedUrl.pathname,
+          handleSupabaseDisconnect(),
+        );
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });

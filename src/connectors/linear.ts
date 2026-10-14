@@ -14,6 +14,7 @@
  * that expected { api_key }. Set LINEAR_API_KEY to bypass OAuth for CI/headless.
  */
 
+import { disconnectBody } from "./connectionChecks.js";
 import { escHtml } from "./htmlEscape.js";
 import { McpClient } from "./mcpClient.js";
 import {
@@ -335,12 +336,12 @@ export async function handleLinearTest(): Promise<ConnectorHandlerResult> {
 }
 
 export async function handleLinearDisconnect(): Promise<ConnectorHandlerResult> {
-  await revoke("linear");
+  const revoked = await revoke("linear");
   _client = null;
   return {
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ ok: true }),
+    body: disconnectBody(revoked),
   };
 }
 

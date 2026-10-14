@@ -528,7 +528,7 @@ describe("handleSalesforceDisconnect", () => {
   it("returns 200 even when nothing stored", async () => {
     const result = await handleSalesforceDisconnect();
     expect(result.status).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ ok: true });
+    expect(JSON.parse(result.body)).toEqual({ ok: true, removed: true });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -539,6 +539,7 @@ describe("handleSalesforceDisconnect", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url] = mockFetch.mock.calls[0] as unknown as [string];
     expect(url).toContain("https://test.salesforce.com/services/oauth2/revoke");
-    expect(url).toContain("token=at_test");
+    // The refresh token, so the whole grant ends rather than one session.
+    expect(url).toContain("token=rt_test");
   });
 });
