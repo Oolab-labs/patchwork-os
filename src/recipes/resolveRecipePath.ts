@@ -34,6 +34,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { secretStorePaths } from "../governance/secretPathDenies.js";
 import { patchworkHome } from "../patchworkHome.js";
 
 // TTL cache for jail-root realpaths. Each resolveRecipePath call resolves
@@ -272,6 +273,17 @@ export function resolveRecipePath(
       `recipe path "${rawPath}" escapes jail via symlink (real target "${real}")`,
     );
   }
+  // The jail roots include the Patchwork home, and the runtime keeps its own
+  // secrets there (connector client secrets, encrypted tokens and their key,
+  // member credentials, the session secret). Secrets are never legitimate
+  // recipe input or output, so refuse them for reads AND writes — checked on
+  // both the lexical and the real path, so a link inside the workspace cannot
+  // reach one. Same list as the agent-step denies, so the two cannot drift.
+  if (isSecretStorePath(resolved) || isSecretStorePath(real)) {
+    throw jailError(
+      `recipe path "${rawPath}" is one of the runtime's secret stores; recipes may not read or write it`,
+    );
+  }
 
   // Hardlink guard for write paths — same rationale as `resolveFilePath`'s
   // `opts.write` branch: a hardlink from inside the jail to an outside
@@ -300,6 +312,28 @@ export function resolveRecipePath(
   }
 
   return resolved;
+}
+
+/**
+ * Is `p` one of the runtime's secret stores (see governance/secretPathDenies)?
+ * Entries ending in `/**` cover the directory and everything under it.
+ * Compared case-insensitively where the filesystem usually is (macOS,
+ * Windows), so `.Secrets.json` cannot slip past on those hosts.
+ */
+function isSecretStorePath(p: string): boolean {
+  const fold = process.platform === "darwin" || process.platform === "win32";
+  const norm = (x: string) =>
+    fold ? path.resolve(x).toLowerCase() : path.resolve(x);
+  const target = norm(p);
+  for (const entry of secretStorePaths()) {
+    if (entry.endsWith(`${path.sep}**`) || entry.endsWith("/**")) {
+      const dir = norm(entry.slice(0, -3));
+      if (target === dir || target.startsWith(dir + path.sep)) return true;
+    } else if (target === norm(entry)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
