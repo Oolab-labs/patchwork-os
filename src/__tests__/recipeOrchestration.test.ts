@@ -702,3 +702,118 @@ describe("resolveWorkerIdForRecipe", () => {
     expect(id).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Start source — how the run was STARTED, not what the recipe declares.
+//
+// The runners record it on the run row and hand it to the effective policy,
+// so a dashboard "Run now" of a cron recipe is evaluated as a manual start
+// while a scheduler tick of the same recipe stays a cron start.
+// ---------------------------------------------------------------------------
+
+describe("RecipeOrchestration — start source", () => {
+  async function fireThrough(
+    act: (server: ReturnType<typeof makeServer>) => Promise<unknown>,
+  ): Promise<Record<string, unknown>> {
+    const { dispatchRecipe } = await import("../recipes/yamlRunner.js");
+    vi.mocked(dispatchRecipe).mockClear();
+    const { loadRecipePrompt, findYamlRecipePath, findWebhookRecipe } =
+      await import("../recipesHttp.js");
+    vi.mocked(loadRecipePrompt).mockReturnValue(null as never);
+    vi.mocked(findYamlRecipePath).mockReturnValue("/r/foo.yaml" as never);
+    vi.mocked(findWebhookRecipe).mockReturnValue({
+      name: "foo",
+      filePath: "/r/foo.yaml",
+      format: "yaml",
+    } as never);
+    let capturedDispatchFn:
+      | ((recipe: unknown, deps: unknown, seedContext: unknown) => unknown)
+      | undefined;
+    const fireStub = vi.fn().mockImplementation(async (opts) => {
+      capturedDispatchFn = opts.dispatchFn;
+      return { ok: true, taskId: "t1", name: "foo" };
+    });
+    const server = makeServer();
+    const ro = new RecipeOrchestration({
+      server,
+      getOrchestrator: () => ({ enqueue: vi.fn(), runAndWait: vi.fn() }),
+      recipeOrchestrator: makeRecipeOrchestrator({ fire: fireStub }),
+      recipeRunLog: null,
+      workdir: "/tmp/ws",
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    ro.wireServerFns();
+    await act(server);
+    expect(capturedDispatchFn).toBeDefined();
+    await capturedDispatchFn?.({ name: "foo" }, {}, {});
+    return vi.mocked(dispatchRecipe).mock.calls[0]![1] as Record<
+      string,
+      unknown
+    >;
+  }
+
+  it("a dashboard run (runRecipeFn with no attempt) is a manual start", async () => {
+    const passed = await fireThrough((s) => (s.runRecipeFn as any)("foo"));
+    expect(passed.startSource).toBe("manual");
+    expect(
+      (passed.chainedOptions as { startSource?: string }).startSource,
+    ).toBe("manual");
+  });
+
+  it("a dashboard run with vars is still a manual start", async () => {
+    const passed = await fireThrough((s) =>
+      (s.runRecipeFn as any)("foo", { team: "a" }),
+    );
+    expect(passed.startSource).toBe("manual");
+  });
+
+  it("a scheduler tick with a cron slot is a cron start", async () => {
+    const passed = await fireThrough((s) =>
+      (s.runRecipeFn as any)("foo", undefined, {
+        startSource: "cron",
+        cronSlotEpochMs: 1_700_000_000_000,
+      }),
+    );
+    expect(passed.startSource).toBe("cron");
+  });
+
+  it("a cron slot with no explicit start source is still a cron start", async () => {
+    const passed = await fireThrough((s) =>
+      (s.runRecipeFn as any)("foo", undefined, {
+        cronSlotEpochMs: 1_700_000_000_000,
+      }),
+    );
+    expect(passed.startSource).toBe("cron");
+  });
+
+  it("a webhook delivery is a webhook start", async () => {
+    const passed = await fireThrough((s) =>
+      (s.webhookFn as any)("/hooks/foo", { a: 1 }, "d1"),
+    );
+    expect(passed.startSource).toBe("webhook");
+  });
+
+  it("a webhook with no delivery id is still a webhook start", async () => {
+    const passed = await fireThrough((s) =>
+      (s.webhookFn as any)("/hooks/foo", { a: 1 }),
+    );
+    expect(passed.startSource).toBe("webhook");
+  });
+
+  it("buildScheduler() — every scheduler dispatch is a cron start, slot or not", async () => {
+    const { findYamlRecipePath } = await import("../recipesHttp.js");
+    vi.mocked(findYamlRecipePath).mockReturnValue("/r/foo.yaml" as never);
+    const runRecipeFn = vi.fn().mockResolvedValue({ ok: true });
+    const scheduler = RecipeOrchestration.buildScheduler({
+      recipesDir: "/tmp/recipes",
+      runRecipeFn,
+      enqueue: vi.fn().mockReturnValue("t1"),
+      logger: {},
+    });
+    // An `@every` interval fires with NO cron slot — it must not read as a
+    // hand-started run.
+    scheduler.fireForTest("foo");
+    await vi.waitFor(() => expect(runRecipeFn).toHaveBeenCalledTimes(1));
+    expect(runRecipeFn.mock.calls[0]![1]).toEqual({ startSource: "cron" });
+  });
+});

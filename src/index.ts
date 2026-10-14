@@ -6137,22 +6137,45 @@ if (process.argv[2] === "policy") {
       !args[1]
     ) {
       process.stdout.write(
-        "Usage: patchwork policy explain <recipe|file.yaml> [tool] [--json]\n\n" +
+        "Usage: patchwork policy explain <recipe|file.yaml> [tool] [--start manual|cron|webhook] [--json]\n\n" +
           "What can this recipe / worker / tool actually do right now, and why?\n" +
           "Walks every gate in runtime order — kill switch, tool registration, worker\n" +
           "authority, tool tier, trigger, privacy, standing permission — using the SAME\n" +
           "decision functions the runner enforces with (src/governance/effectivePolicy.ts).\n" +
-          "Pass a tool id (or `agent`) to restrict to matching steps. Reads only.\n",
+          "Pass a tool id (or `agent`) to restrict to matching steps. Reads only.\n\n" +
+          "  --start <s>  explain a run started this way instead of the way the\n" +
+          "               recipe fires on its own: `manual` is a dashboard Run now\n" +
+          "               (a cron recipe started by hand is evaluated as manual).\n",
       );
       process.exit(verb === "explain" && !args[1] ? 2 : 0);
+    }
+    const startIdx = args.indexOf("--start");
+    const startRaw = startIdx >= 0 ? args[startIdx + 1] : undefined;
+    if (
+      startIdx >= 0 &&
+      startRaw !== "manual" &&
+      startRaw !== "cron" &&
+      startRaw !== "webhook"
+    ) {
+      process.stderr.write(
+        "[policy] --start must be one of: manual, cron, webhook\n",
+      );
+      process.exit(2);
     }
     const { explainRecipePolicy, formatExplainReport } = await import(
       "./commands/policyExplain.js"
     );
-    const positional = args.slice(1).filter((a) => !a.startsWith("--"));
+    const positional = args.slice(1).filter(
+      // `i` indexes args.slice(1), so the --start VALUE (args[startIdx + 1])
+      // sits at i === startIdx and must not be read as the recipe or tool.
+      (a, i) => !a.startsWith("--") && !(startIdx >= 0 && i === startIdx),
+    );
     try {
       const report = await explainRecipePolicy(positional[0] as string, {
         ...(positional[1] && { tool: positional[1] }),
+        ...(startRaw !== undefined && {
+          start: startRaw as "manual" | "cron" | "webhook",
+        }),
       });
       process.stdout.write(
         args.includes("--json")

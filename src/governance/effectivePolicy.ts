@@ -23,6 +23,7 @@
 
 import type { BoundaryDecision } from "../privacy/dataPolicy.js";
 import type { RiskTier } from "../riskTier.js";
+import type { RunStartSource } from "../runLog.js";
 import type { WorkerGateAction } from "../workers/workerGate.js";
 import type { GovernanceProfile } from "./profile.js";
 
@@ -39,6 +40,34 @@ export type TriggerKind =
   | "replay"
   | "local"
   | (string & {});
+
+/**
+ * The trigger a run is EVALUATED as: how it was started when the caller says
+ * so, otherwise what the recipe declares.
+ *
+ * A recipe declaring `cron` is started either by the scheduler (a cron start)
+ * or by an operator pressing "Run now" (a manual start). Those are different
+ * facts, and the compat profile consults approval only for the second, so the
+ * declared type alone would evaluate a hand-started run as an automated one.
+ *
+ * An `automation` start keeps the declared event kind (`on_file_save`,
+ * `git_hook`, …): it is equally automated and the more specific name is what
+ * the decision trace should carry.
+ *
+ * The flat runner and `patchwork policy explain --start` both call this, so
+ * the explanation and the enforcement cannot resolve a start differently.
+ */
+export function policyTriggerFor(
+  declared: string | undefined,
+  start: RunStartSource | undefined,
+): TriggerKind {
+  const declaredKind = declared ?? "manual";
+  if (start === undefined) return declaredKind;
+  if (start === "automation") {
+    return declaredKind === "manual" ? "automation" : declaredKind;
+  }
+  return start;
+}
 
 export interface ToolFacts {
   id: string;

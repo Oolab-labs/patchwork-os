@@ -1469,14 +1469,8 @@ export class Bridge {
         this.recipeOrchestration.wireServerFns();
         this.recipeScheduler = RecipeOrchestration.buildScheduler({
           recipesDir,
-          runRecipeFn: async (name, slotEpochMs) =>
-            this.server.runRecipeFn?.(
-              name,
-              undefined,
-              slotEpochMs !== undefined
-                ? { cronSlotEpochMs: slotEpochMs }
-                : undefined,
-            ),
+          runRecipeFn: async (name, attempt) =>
+            this.server.runRecipeFn?.(name, undefined, attempt),
           enqueue: (opts) => this.orchestrator?.enqueue(opts) ?? "",
           logger: this.logger,
         });
@@ -1554,6 +1548,7 @@ export class Bridge {
                 // The hook type is still available to the run via seedContext.
                 triggerSourceSuffix: `automation:${opts.recipeName}`,
                 logLabel: `automation "${opts.recipeName}"`,
+                startSource: "automation",
                 seedContext: Object.fromEntries(Object.entries(opts.eventData)),
               }).then((r) => {
                 if (!r.ok) throw new Error(r.error ?? "recipe fire failed");
@@ -1609,6 +1604,7 @@ export class Bridge {
                   // The hook type is still available to the run via seedContext.
                   triggerSourceSuffix: `automation:${opts.recipeName}`,
                   logLabel: `automation "${opts.recipeName}"`,
+                  startSource: "automation",
                   seedContext: Object.fromEntries(
                     Object.entries(opts.eventData),
                   ),

@@ -56,7 +56,10 @@ import {
   FLAG_ENFORCE_ALLOWWRITES,
   isEnabled,
 } from "../featureFlags.js";
-import { computeEffectivePolicy } from "../governance/effectivePolicy.js";
+import {
+  computeEffectivePolicy,
+  policyTriggerFor,
+} from "../governance/effectivePolicy.js";
 import { readKillSwitch } from "../governance/killSwitchPolicy.js";
 import {
   activeProfile,
@@ -81,7 +84,7 @@ import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import { classifyTool } from "../riskTier.js";
-import type { RecipeRunLog } from "../runLog.js";
+import type { RecipeRunLog, RunTrigger } from "../runLog.js";
 /**
  * Local alias for `sanitizeParsedJson` from `src/sanitizeParsedJson.ts`.
  * Kept under the old name so the existing callsites in this file don't
@@ -847,6 +850,16 @@ export interface RunnerDeps {
    */
   manualRunId?: string;
   /**
+   * How the orchestrator STARTED this run (`manual` / `cron` / `webhook` /
+   * `automation`), as distinct from the trigger the recipe declares. When
+   * set it is the run row's `trigger`, the `recipe_started` event's trigger,
+   * the inbox frontmatter's `trigger:`, and — through `policyTriggerFor` —
+   * the trigger `computeEffectivePolicy` evaluates: a "Run now" of a cron
+   * recipe is a manual start, a scheduler tick of it a cron start. Absent
+   * (CLI, replay, tests) ⇒ derived from `recipe.trigger.type` as before.
+   */
+  startSource?: import("../runLog.js").RunStartSource;
+  /**
    * M3 — flat-runner approval gate. When the bridge injects this (only when
    * `approvalGate != "off"`), the runner calls it before each step on a
    * `manual`-triggered run and HALTS the run if it resolves `false` (human
@@ -1050,6 +1063,9 @@ export type StepDeps = Required<
     | "runLog"
     | "ledgerDir"
     | "manualRunId"
+    // Read once at run start against `deps` (run row + policy input), never
+    // per step.
+    | "startSource"
     | "activityLog"
     // M3 — approval gate runs in the run loop against `deps`, not per-step
     // StepDeps; keep it off StepDeps so it isn't forced Required here.
@@ -1912,13 +1928,17 @@ async function runYamlRecipeHeld(
   // as in flight. Only when a long-lived `runLog` is provided (bridge path);
   // CLI runs fall back to `appendDirect` at end via the existing logDir
   // path. Skip in test mode.
-  const recipeTriggerKind =
-    (recipe.trigger as { type?: string } | undefined)?.type ?? "manual";
-  const yamlTriggerKind = (
-    ["cron", "webhook", "recipe"].includes(recipeTriggerKind)
+  const declaredTriggerType = (recipe.trigger as { type?: string } | undefined)
+    ?.type;
+  // The trigger the effective policy evaluates — the START when the
+  // orchestrator supplied one (see `RunnerDeps.startSource`).
+  const policyTrigger = policyTriggerFor(declaredTriggerType, deps.startSource);
+  const recipeTriggerKind = declaredTriggerType ?? "manual";
+  const yamlTriggerKind: RunTrigger =
+    deps.startSource ??
+    ((["cron", "webhook", "recipe"].includes(recipeTriggerKind)
       ? recipeTriggerKind
-      : "recipe"
-  ) as "cron" | "webhook" | "recipe";
+      : "recipe") as "cron" | "webhook" | "recipe");
   // The bytes this run executes, as loaded — never a later re-read. Absent
   // when the recipe object did not come straight from a file.
   const recipeSha256 = recipeSourceSha256(recipe);
@@ -2867,7 +2887,7 @@ async function runYamlRecipeHeld(
             requireApproval: recipe.requireApproval,
           }),
         },
-        trigger: recipeTriggerKind,
+        trigger: policyTrigger,
         tool: toolFactsFor(
           gateToolId,
           agentContainment ? { containment: agentContainment } : undefined,
@@ -5979,6 +5999,10 @@ export async function dispatchRecipe(
       ...((deps.replayOnly === true ||
         deps.chainedOptions?.replayOnly === true) && { replayOnly: true }),
       taskIdPrefix: deps.chainedOptions?.taskIdPrefix,
+      ...((deps.chainedOptions?.startSource ?? deps.startSource) !==
+        undefined && {
+        startSource: deps.chainedOptions?.startSource ?? deps.startSource,
+      }),
       // Parity (#850): forward the run-level budget, price table, and
       // cancellation signal that the chained runner honours. Without these the
       // chained path silently diverged from the flat path —
