@@ -603,6 +603,27 @@ async function refreshIfNeeded(
   return promise;
 }
 
+/**
+ * The client secret to present on refresh / revoke.
+ *
+ * A pre-registered client's secret is operator configuration (`readSecret`,
+ * re-read by `vendorConfig` on every call), so the CURRENT value wins: after
+ * the operator rotates it, the copy captured in the token file at connect
+ * time is the old one and the provider rejects it. The stored copy is used
+ * only when nothing is configured — which is always the case for a
+ * dynamically registered client, whose secret (if any) came from the
+ * registration response and exists nowhere else.
+ */
+export function clientSecretFor(
+  config: VendorConfig,
+  file: McpTokenFile,
+): string | undefined {
+  if (!config.useDynamicRegistration && config.preregisteredClientSecret) {
+    return config.preregisteredClientSecret;
+  }
+  return file.client_secret || undefined;
+}
+
 async function doRefresh(
   config: VendorConfig,
   file: McpTokenFile,
@@ -634,7 +655,8 @@ async function doRefresh(
     refresh_token: refreshToken,
     client_id: file.client_id,
   });
-  if (file.client_secret) body.set("client_secret", file.client_secret);
+  const refreshSecret = clientSecretFor(config, file);
+  if (refreshSecret) body.set("client_secret", refreshSecret);
 
   const res = await fetch(tokenEndpoint, {
     method: "POST",
@@ -818,7 +840,8 @@ export async function revoke(
     if (file.refresh_token) {
       body.set("token_type_hint", "refresh_token");
     }
-    if (file.client_secret) body.set("client_secret", file.client_secret);
+    const revokeSecret = clientSecretFor(config, file);
+    if (revokeSecret) body.set("client_secret", revokeSecret);
     outcome = await attemptRevoke(config.revocationEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

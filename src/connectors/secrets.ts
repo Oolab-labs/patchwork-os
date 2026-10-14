@@ -17,13 +17,20 @@
  *     "ANTHROPIC_API_KEY": "…"
  *   }
  *
- * The file is read once (lazily) and cached in-memory. A successful parse
- * locks the cache for the lifetime of the process — `readFileSync` on every
- * OAuth call would be a perf footgun. Tests that need to swap the file MUST
- * call `_resetSecretsCacheForTests()`.
+ * Reload: every call `stat`s the file and re-reads it only when its
+ * identity (inode, size, mtime, ctime) differs from the last good read. A
+ * rotated secret is therefore picked up on the next call without a restart,
+ * at the cost of one `stat` per call (microseconds, no read, no parse). A
+ * time-based TTL was rejected: it would serve a rotated-away secret for the
+ * whole window, and make "is the new value live yet?" depend on a clock.
+ *
+ * A read that fails mid-write (truncated file, half-written JSON, a non-object
+ * value, EACCES) is NEVER cached: the last good contents keep being served
+ * and the next call tries again. Only a confirmed-absent file (ENOENT) clears
+ * the cache, because deleting the file is how an operator returns to env.
  *
  * Fail-soft: a missing file, EACCES, malformed JSON, or any read error all
- * route silently to the env-fallback path. We deliberately do NOT log on
+ * route silently to the last good contents, or to env when there are none. We deliberately do NOT log on
  * these — single-bridge installs simply will not have a secrets file, and a
  * noisy warning every connector call would be operator-hostile.
  *
@@ -34,7 +41,7 @@
  * takes over when present", documented here so operators can reason about it.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { registerSecretValue } from "../governance/secretValues.js";
 import { patchworkPath } from "../patchworkHome.js";
 
@@ -46,32 +53,63 @@ export function secretsFilePath(): string {
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
 /**
- * Loaded JSON object, or `null` when the file is absent / unreadable /
- * malformed. `undefined` means "not loaded yet". The two distinct states let
- * us only attempt the read once per process — even if the file is missing.
+ * Last successfully parsed contents, and the identity of the file they came
+ * from. `cachedKey === undefined` means nothing has been loaded yet;
+ * `cachedKey === ABSENT` means the file was confirmed missing.
  */
-let cached: Record<string, string> | null | undefined;
+const ABSENT = "absent";
+let cachedKey: string | undefined;
+let cached: Record<string, string> | null = null;
+
+function fileKey(st: {
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+}): string {
+  return `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
+}
+
+function isMissing(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | null)?.code === "ENOENT";
+}
 
 function load(): Record<string, string> | null {
-  if (cached !== undefined) return cached;
+  const file = secretsFilePath();
+  let key: string;
   try {
-    const raw = readFileSync(secretsFilePath(), "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      // Coerce to Record<string, string>; drop non-string values defensively.
-      const out: Record<string, string> = {};
-      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof v === "string") out[k] = v;
-      }
-      cached = out;
+    key = fileKey(statSync(file));
+  } catch (err) {
+    if (isMissing(err)) {
+      cachedKey = ABSENT;
+      cached = null;
+    }
+    // Any other stat error: keep serving the last good value, retry next call.
+    return cached;
+  }
+  if (key === cachedKey) return cached;
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf-8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      // Not the documented shape — treat like a partial write: do not cache.
       return cached;
     }
-    cached = null;
-    return null;
-  } catch {
-    // ENOENT / EACCES / SyntaxError — silent fallback to env.
-    cached = null;
-    return null;
+    // Coerce to Record<string, string>; drop non-string values defensively.
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "string") out[k] = v;
+    }
+    cached = out;
+    cachedKey = key;
+    return cached;
+  } catch (err) {
+    if (isMissing(err)) {
+      cachedKey = ABSENT;
+      cached = null;
+    }
+    // SyntaxError (half-written) / EACCES: keep the last good value and leave
+    // `cachedKey` alone so the next call reads again.
+    return cached;
   }
 }
 
@@ -103,9 +141,10 @@ export function readSecret(name: string): string {
 }
 
 /**
- * Test hook — clears the cached file read so a test can rewrite the secrets
- * file mid-run and observe the new value. Never called in production code.
+ * Test hook — forgets the cached file read (including the last good value)
+ * so a test starts from a clean process state. Never called in production.
  */
 export function _resetSecretsCacheForTests(): void {
-  cached = undefined;
+  cachedKey = undefined;
+  cached = null;
 }
