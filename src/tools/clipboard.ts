@@ -1,15 +1,21 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
 import { error, successStructured } from "./utils.js";
 
-const execFileAsync = promisify(execFile);
-
 const MAX_CLIPBOARD_BYTES = 100 * 1024; // 100 KB
 const MAX_WRITE_BYTES = 1024 * 1024; // 1 MB (documented limit for writeClipboard)
+
+/**
+ * Upper bound on one native clipboard command. Without it a child that never
+ * exits (a cold or wedged PowerShell on a loaded Windows host, a clipboard
+ * held open by another process) left the tool call pending forever, so the
+ * MCP client got no reply at all. Linux may try two tools, so the worst case
+ * is twice this.
+ */
+export const NATIVE_CLIPBOARD_TIMEOUT_MS = 3_000;
 
 /**
  * Truncate a string so that its UTF-8 byte length does not exceed `maxBytes`.
@@ -29,32 +35,55 @@ function truncateToBytes(str: string, maxBytes: number): string {
   return str.slice(0, len);
 }
 
+/**
+ * Run a native clipboard command, optionally piping `input` to stdin.
+ * Rejects (and kills the child) after NATIVE_CLIPBOARD_TIMEOUT_MS. The bound
+ * is our own timer rather than execFile's `timeout` option, because that
+ * option only settles once the killed child actually exits.
+ */
+function runNative(
+  cmd: string,
+  args: string[],
+  input?: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const proc = execFile(cmd, args, { windowsHide: true }, (err, stdout) => {
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve(String(stdout));
+    });
+    timer = setTimeout(() => {
+      proc.kill();
+      reject(new Error(`${cmd} timed out`));
+    }, NATIVE_CLIPBOARD_TIMEOUT_MS);
+    if (input !== undefined) proc.stdin?.end(input);
+  });
+}
+
 /** Read clipboard text using platform-native CLI tools. */
 async function nativeReadClipboard(): Promise<string | null> {
   try {
     if (process.platform === "darwin") {
-      const { stdout } = await execFileAsync("pbpaste");
+      const stdout = await runNative("pbpaste", []);
       return truncateToBytes(stdout, MAX_CLIPBOARD_BYTES);
     }
     if (process.platform === "linux") {
       // xclip preferred; fall back to xsel
       try {
-        const { stdout } = await execFileAsync("xclip", [
+        const stdout = await runNative("xclip", [
           "-selection",
           "clipboard",
           "-o",
         ]);
         return truncateToBytes(stdout, MAX_CLIPBOARD_BYTES);
       } catch {
-        const { stdout } = await execFileAsync("xsel", [
-          "--clipboard",
-          "--output",
-        ]);
+        const stdout = await runNative("xsel", ["--clipboard", "--output"]);
         return truncateToBytes(stdout, MAX_CLIPBOARD_BYTES);
       }
     }
     if (process.platform === "win32") {
-      const { stdout } = await execFileAsync("powershell", [
+      const stdout = await runNative("powershell", [
         "-NoProfile",
         "-Command",
         "Get-Clipboard",
@@ -62,7 +91,7 @@ async function nativeReadClipboard(): Promise<string | null> {
       return truncateToBytes(stdout, MAX_CLIPBOARD_BYTES);
     }
   } catch {
-    // tool not available or clipboard empty
+    // tool not available, clipboard empty, or timed out
   }
   return null;
 }
@@ -71,40 +100,24 @@ async function nativeReadClipboard(): Promise<string | null> {
 async function nativeWriteClipboard(text: string): Promise<boolean> {
   try {
     if (process.platform === "darwin") {
-      await new Promise<void>((resolve, reject) => {
-        const proc = execFile("pbcopy", (err) =>
-          err ? reject(err) : resolve(),
-        );
-        proc.stdin?.end(text);
-      });
+      await runNative("pbcopy", [], text);
       return true;
     }
     if (process.platform === "linux") {
-      const writeVia = async (cmd: string, args: string[]) => {
-        await new Promise<void>((resolve, reject) => {
-          const proc = execFile(cmd, args, (err) =>
-            err ? reject(err) : resolve(),
-          );
-          proc.stdin?.end(text);
-        });
-      };
       try {
-        await writeVia("xclip", ["-selection", "clipboard"]);
+        await runNative("xclip", ["-selection", "clipboard"], text);
       } catch {
-        await writeVia("xsel", ["--clipboard", "--input"]);
+        await runNative("xsel", ["--clipboard", "--input"], text);
       }
       return true;
     }
     if (process.platform === "win32") {
-      await new Promise<void>((resolve, reject) => {
-        // Use clip.exe — ships with all Windows versions
-        const proc = execFile("clip", (err) => (err ? reject(err) : resolve()));
-        proc.stdin?.end(text);
-      });
+      // Use clip.exe — ships with all Windows versions
+      await runNative("clip", [], text);
       return true;
     }
   } catch {
-    // tool not available
+    // tool not available or timed out
   }
   return false;
 }
