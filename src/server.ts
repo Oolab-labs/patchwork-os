@@ -492,8 +492,14 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((
         name: string,
         vars?: Record<string, string>,
-        /** Logical-attempt facts (the cron slot) — see runLedgers.ts. */
-        attempt?: { cronSlotEpochMs?: number },
+        /**
+         * Logical-attempt facts (the cron slot — see runLedgers.ts) and how
+         * the run was started. No attempt ⇒ an operator start (`manual`).
+         */
+        attempt?: {
+          cronSlotEpochMs?: number;
+          startSource?: import("./runLog.js").RunStartSource;
+        },
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null = null;
   /**

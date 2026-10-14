@@ -284,10 +284,12 @@ patchwork profile [show|governed|compat] [--json]
 ### `policy explain`
 
 ```bash
-patchwork policy explain <recipe|file.yaml> [tool] [--json]
+patchwork policy explain <recipe|file.yaml> [tool] [--start manual|cron|webhook] [--json]
 ```
 
 What this recipe can actually do right now, and why: walks every gate in runtime order — kill switch, tool registration, worker authority, tool tier, trigger, privacy, standing permission — using the same decision functions the runner enforces with. Pass a tool id (or `agent`) to restrict to matching steps. Read-only.
+
+By default the recipe is explained as it fires on its own (its declared trigger). `--start` explains a run started a particular way instead: the runner evaluates how a run was **started**, so a dashboard "Run now" of a recipe that declares `cron` is a manual start (`--start manual`) and is consulted for approval under the compat profile exactly like a manual recipe, while the scheduler's tick of the same recipe stays a cron start. The run row records the same start source in its `trigger` field (`manual`, `cron`, `webhook`, `automation`). A run started with no start source — `recipe run` from the CLI, a replay — keeps the previous derivation from the recipe's declared trigger.
 
 ## Other
 

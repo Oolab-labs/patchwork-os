@@ -51,7 +51,7 @@ import {
   setRecipeEnabled,
   setTrustLevel,
 } from "./recipesHttp.js";
-import type { RecipeRunLog, RunTrigger } from "./runLog.js";
+import type { RecipeRunLog, RunStartSource, RunTrigger } from "./runLog.js";
 import type { Server } from "./server.js";
 import { boundaryForRecipe } from "./workers/boundaryPreview.js";
 import {
@@ -735,9 +735,15 @@ export interface RecipeOrchestrationDeps {
 
 export interface BuildSchedulerDeps {
   recipesDir: string;
+  /**
+   * Every scheduler dispatch is a CRON start — including an `@every` interval,
+   * which carries no cron slot. The start source is stated here rather than
+   * inferred from the slot's presence downstream, because "no slot" also
+   * describes a dashboard run, and the two must never be confused.
+   */
   runRecipeFn: (
     name: string,
-    slotEpochMs?: number,
+    attempt: { startSource: "cron"; cronSlotEpochMs?: number },
   ) => Promise<{ ok: boolean; error?: string } | undefined>;
   enqueue: SchedulerEnqueue;
   logger: { info?: (s: string) => void; warn?: (s: string) => void };
@@ -759,7 +765,10 @@ export class RecipeOrchestration {
       recipesDir: deps.recipesDir,
       enqueue: deps.enqueue,
       runYaml: async (name, slotEpochMs) => {
-        const result = await deps.runRecipeFn(name, slotEpochMs);
+        const result = await deps.runRecipeFn(name, {
+          startSource: "cron",
+          ...(slotEpochMs !== undefined && { cronSlotEpochMs: slotEpochMs }),
+        });
         if (result && !result.ok) {
           throw new Error(result.error ?? "unknown error");
         }
@@ -1335,6 +1344,7 @@ export class RecipeOrchestration {
           logLabel: `webhook "${match.name}"`,
           seedContext,
           deliveryId,
+          startSource: "webhook",
         });
       }
       const loaded = loadRecipePrompt(
@@ -1362,7 +1372,7 @@ export class RecipeOrchestration {
     server.runRecipeFn = async (
       name: string,
       vars?: Record<string, string>,
-      attempt?: { cronSlotEpochMs?: number },
+      attempt?: { cronSlotEpochMs?: number; startSource?: RunStartSource },
     ) => {
       // #605: kill-switch gate. Recipe execution is the largest write
       // surface the bridge exposes (Claude subprocess + tool calls);
@@ -1509,6 +1519,12 @@ export class RecipeOrchestration {
         ...(attempt?.cronSlotEpochMs !== undefined && {
           cronSlotEpochMs: attempt.cronSlotEpochMs,
         }),
+        // How this run was STARTED. The scheduler states `cron`; a caller
+        // passing no attempt is the dashboard / `/recipes/run` route, i.e. an
+        // operator — a manual start even when the recipe declares `cron`.
+        startSource:
+          attempt?.startSource ??
+          (attempt?.cronSlotEpochMs !== undefined ? "cron" : "manual"),
       });
     };
   }
@@ -1842,6 +1858,12 @@ export class RecipeOrchestration {
     deliveryId?: string;
     /** The cron slot this run fills, when fired by the scheduler. */
     cronSlotEpochMs?: number;
+    /**
+     * How this run was STARTED — threaded to both runners as the run row's
+     * trigger and the effective-policy input (see `RunnerDeps.startSource`).
+     * Absent ⇒ the runners derive it from the recipe as before.
+     */
+    startSource?: RunStartSource;
   }): Promise<{ ok: boolean; taskId?: string; name?: string; error?: string }> {
     if (!this.deps.recipeOrchestrator) {
       return { ok: false, error: "recipe orchestrator unavailable" };
@@ -2038,6 +2060,7 @@ export class RecipeOrchestration {
       ...(gateAutomatedRuns && { gateAutomatedRuns: true }),
       ...(agentDisallowedTools && { agentDisallowedTools }),
       ...(workerId && { workerId }),
+      ...(opts.startSource !== undefined && { startSource: opts.startSource }),
       // Every automated run is a logical ATTEMPT with its own durable store
       // (runLedgers.ts): the rollback pre-images INV-1 needs, and the
       // write-effect ledger. `manualRunId` carries the attempt id — the name
@@ -2062,6 +2085,7 @@ export class RecipeOrchestration {
       sourcePath: opts.filePath,
       runLog: this.deps.recipeRunLog ?? undefined,
       activityLog: this.deps.activityLog,
+      ...(opts.startSource !== undefined && { startSource: opts.startSource }),
     };
     const fireResult = await this.deps.recipeOrchestrator
       .fire({

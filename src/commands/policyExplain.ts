@@ -25,6 +25,7 @@ import {
   type EffectivePolicyInput,
   formatEffectivePolicy,
   type PrivacyFacts,
+  policyTriggerFor,
   type TriggerKind,
   type WorkerFacts,
 } from "../governance/effectivePolicy.js";
@@ -47,6 +48,7 @@ import {
   reversibilityCeilingFor,
 } from "../recipes/fileWriteRollbackability.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
+import type { RunStartSource } from "../runLog.js";
 import "../recipes/tools/index.js";
 
 export interface ExplainStep {
@@ -75,6 +77,13 @@ export interface ExplainOptions {
   config?: ReturnType<typeof loadConfig>;
   /** Restrict to steps whose tool id equals this (or "agent"). */
   tool?: string;
+  /**
+   * Explain a run STARTED this way rather than the way the recipe fires on
+   * its own. `manual` is a dashboard "Run now" — for a recipe that declares
+   * `cron`, that start is evaluated as manual, exactly as the runner does
+   * (`policyTriggerFor`). Absent ⇒ the declared trigger.
+   */
+  start?: RunStartSource;
 }
 
 function resolveRecipeFile(ref: string, recipesDir: string): string | null {
@@ -101,7 +110,7 @@ export async function explainRecipePolicy(
   // runner, never to a chained recipe). Explaining it as "chained" made the
   // compat profile report its steps as ungated while the runner gated them.
   const evaluatedTrigger: TriggerKind =
-    trigger === "chained" ? "manual" : trigger;
+    trigger === "chained" ? "manual" : policyTriggerFor(trigger, opts.start);
   let cfg = opts.config;
   if (!cfg) {
     try {

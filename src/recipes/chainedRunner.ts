@@ -311,6 +311,14 @@ export interface RunOptions {
    */
   taskIdPrefix?: string;
   /**
+   * How the orchestrator STARTED this run (see `RunnerDeps.startSource` in
+   * yamlRunner.ts). When set it is the top-level run row's `trigger`; absent
+   * ⇒ derived from the recipe as before (`recipe`). It does NOT change the
+   * policy input here: a top-level chained run is already evaluated as
+   * `manual` (cron and webhooks route to the flat runner).
+   */
+  startSource?: import("../runLog.js").RunStartSource;
+  /**
    * seq of the parent run that caused this recipe to fire. Stored in the
    * run log entry so the dashboard can render the causal chain.
    */
@@ -1892,11 +1900,11 @@ async function runChainedRecipeHeld(
   const recipeTriggerKind =
     (recipe as unknown as { trigger?: { type?: string } }).trigger?.type ??
     "recipe";
-  const triggerKind = (
-    ["cron", "webhook", "recipe"].includes(recipeTriggerKind)
+  const triggerKind: import("../runLog.js").RunTrigger =
+    options.startSource ??
+    ((["cron", "webhook", "recipe"].includes(recipeTriggerKind)
       ? recipeTriggerKind
-      : "recipe"
-  ) as "cron" | "webhook" | "recipe";
+      : "recipe") as "cron" | "webhook" | "recipe");
   const taskIdPrefix = options.taskIdPrefix ?? "chained";
   const runTaskId = `${taskIdPrefix}:${recipe.name}:${runStartedAt}`;
   // Publish this run's identity to dispatch-time writers (the boundary receipt

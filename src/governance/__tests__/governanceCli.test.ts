@@ -198,6 +198,39 @@ steps:
     expect(text).toMatch(/gated like a manual run/);
     expect(text).toMatch(/FINAL RESULT: HUMAN APPROVAL REQUIRED/);
   });
+  it("--start manual explains a hand-started run of the cron recipe as manual (compat consults)", async () => {
+    writeFileSync(path.join(home, "recipes", "invoice-review.yaml"), recipe);
+    writeConfig({ approvalGate: "high" });
+    const opts = {
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+      config: loadConfig(configPath),
+    };
+    const manual = await explainRecipePolicy("invoice-review", {
+      ...opts,
+      start: "manual",
+    });
+    // The recipe still DECLARES cron; the evaluated trigger is the start.
+    expect(manual.trigger).toBe("cron");
+    expect(manual.steps.every((s) => s.input.trigger === "manual")).toBe(true);
+    expect(
+      manual.steps[3]?.result.stages.find((s) => s.stage === "trigger")
+        ?.verdict,
+    ).not.toBe("SKIP");
+    expect(manual.steps.some((s) => s.result.consultsApproval)).toBe(true);
+    expect(formatExplainReport(manual)).toMatch(/TRIGGER: MANUAL/);
+
+    // A scheduler tick is what the bare form already explains.
+    const tick = await explainRecipePolicy("invoice-review", {
+      ...opts,
+      start: "cron",
+    });
+    const bare = await explainRecipePolicy("invoice-review", opts);
+    expect(tick.steps.map((s) => s.result)).toEqual(
+      bare.steps.map((s) => s.result),
+    );
+    expect(tick.steps.some((s) => s.result.consultsApproval)).toBe(false);
+  });
   it("tool filter restricts steps; unknown recipe throws", async () => {
     writeFileSync(path.join(home, "recipes", "invoice-review.yaml"), recipe);
     writeConfig({ profile: "governed" });

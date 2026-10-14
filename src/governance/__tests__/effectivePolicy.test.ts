@@ -24,6 +24,7 @@ import {
 import "../../recipes/tools/index.js";
 import {
   computeEffectivePolicy,
+  policyTriggerFor,
   shouldConsultApproval,
   tierVerdict,
 } from "../effectivePolicy.js";
@@ -311,71 +312,100 @@ describe("preview equals enforcement (flat runner)", () => {
     GOVERNED_PROFILE,
   ]) {
     for (const trigger of ["manual", "cron", "webhook"] as const) {
-      for (const requireApproval of [undefined, false] as const) {
-        for (const t of TOOLS) {
-          const name = `${profile.mode}/gate=${profile.approvalGate} × ${trigger} × requireApproval=${String(requireApproval)} × ${t.label}`;
-          it(name, async () => {
-            const calls: Array<{ toolId: string; effective?: string }> = [];
-            const requireApprovalFn = vi.fn(
-              async (i: { toolId: string; effective?: string }) => {
-                calls.push({ toolId: i.toolId, effective: i.effective });
-                return true;
-              },
-            );
-            const recipe = {
-              name: "pe",
-              trigger: { type: trigger },
-              ...(requireApproval !== undefined && { requireApproval }),
-              steps: [t.step],
-            } as unknown as YamlRecipe;
-            const injected = profile.approvalGate !== "off";
-            const result = await runYamlRecipe(
-              recipe,
-              deps({
-                governance: profile,
-                ...(injected && { requireApprovalFn }),
-              }),
-            );
-            const expected = computeEffectivePolicy({
-              profile,
-              recipe: {
-                name: "pe",
-                ...(requireApproval !== undefined && { requireApproval }),
-              },
-              trigger,
-              // The runner here has no rollback log (no --ledger-dir), which
-              // is exactly what `policy explain` assumes — both must derive
-              // the same instance ceiling, or explain prints ALLOW for a
-              // file.write the runner gates.
-              tool: toolFactsFor(
-                t.toolId,
-                undefined,
-                (() => {
-                  const c = reversibilityCeilingFor(
-                    explainRollbackability(t.toolId),
-                  );
-                  return c ? { reversibilityCeiling: c } : undefined;
-                })(),
-              ),
-              killSwitch: KS_OFF,
-              gate: { approvalFnInjected: injected, workerGateInjected: false },
-            });
-            // 1. consulted iff the calculation says so
-            expect(calls.length > 0).toBe(
-              expected.consultsApproval && expected.final !== "REFUSED",
-            );
-            // 2. the verdict handed to the gate is the calculation's
-            if (calls.length > 0)
-              expect(calls[0]?.effective).toBe(expected.final);
-            // 3. a refusal halts the run with the policy category
-            if (expected.final === "REFUSED") {
-              expect(result.stepResults[0]?.haltCategory).toMatch(
-                /policy_denied|unresolved_tool/,
+      // How the run was STARTED. `undefined` is a caller that passes none
+      // (the CLI, replay): the declared trigger is evaluated, as before.
+      // A start source wins over the declared trigger — a dashboard "Run
+      // now" of a cron recipe is a manual start.
+      for (const start of [undefined, "manual", "cron", "webhook"] as const) {
+        for (const requireApproval of [undefined, false] as const) {
+          for (const t of TOOLS) {
+            const name = `${profile.mode}/gate=${profile.approvalGate} × ${trigger} × start=${String(start)} × requireApproval=${String(requireApproval)} × ${t.label}`;
+            it(name, async () => {
+              const calls: Array<{ toolId: string; effective?: string }> = [];
+              const requireApprovalFn = vi.fn(
+                async (i: { toolId: string; effective?: string }) => {
+                  calls.push({ toolId: i.toolId, effective: i.effective });
+                  return true;
+                },
               );
-            }
-          });
+              const recipe = {
+                name: "pe",
+                trigger: { type: trigger },
+                ...(requireApproval !== undefined && { requireApproval }),
+                steps: [t.step],
+              } as unknown as YamlRecipe;
+              const injected = profile.approvalGate !== "off";
+              const result = await runYamlRecipe(
+                recipe,
+                deps({
+                  governance: profile,
+                  ...(injected && { requireApprovalFn }),
+                  ...(start !== undefined && { startSource: start }),
+                }),
+              );
+              const expected = computeEffectivePolicy({
+                profile,
+                recipe: {
+                  name: "pe",
+                  ...(requireApproval !== undefined && { requireApproval }),
+                },
+                // Stated literally rather than through the resolver, so a
+                // resolver that drifts from the runner fails here.
+                trigger: start ?? trigger,
+                // The runner here has no rollback log (no --ledger-dir), which
+                // is exactly what `policy explain` assumes — both must derive
+                // the same instance ceiling, or explain prints ALLOW for a
+                // file.write the runner gates.
+                tool: toolFactsFor(
+                  t.toolId,
+                  undefined,
+                  (() => {
+                    const c = reversibilityCeilingFor(
+                      explainRollbackability(t.toolId),
+                    );
+                    return c ? { reversibilityCeiling: c } : undefined;
+                  })(),
+                ),
+                killSwitch: KS_OFF,
+                gate: {
+                  approvalFnInjected: injected,
+                  workerGateInjected: false,
+                },
+              });
+              // 1. consulted iff the calculation says so
+              expect(calls.length > 0).toBe(
+                expected.consultsApproval && expected.final !== "REFUSED",
+              );
+              // 2. the verdict handed to the gate is the calculation's
+              if (calls.length > 0)
+                expect(calls[0]?.effective).toBe(expected.final);
+              // 3. a refusal halts the run with the policy category
+              if (expected.final === "REFUSED") {
+                expect(result.stepResults[0]?.haltCategory).toMatch(
+                  /policy_denied|unresolved_tool/,
+                );
+              }
+            });
+          }
         }
       }
     }
   }
+});
+
+describe("policyTriggerFor", () => {
+  it("a start source wins over the declared trigger", () => {
+    expect(policyTriggerFor("cron", "manual")).toBe("manual");
+    expect(policyTriggerFor("webhook", "manual")).toBe("manual");
+    expect(policyTriggerFor("cron", "cron")).toBe("cron");
+    expect(policyTriggerFor("webhook", "webhook")).toBe("webhook");
+  });
+  it("no start source ⇒ the declared trigger, defaulting to manual", () => {
+    expect(policyTriggerFor("cron", undefined)).toBe("cron");
+    expect(policyTriggerFor(undefined, undefined)).toBe("manual");
+  });
+  it("an automation start keeps the declared event kind (still automated)", () => {
+    expect(policyTriggerFor("on_file_save", "automation")).toBe("on_file_save");
+    expect(policyTriggerFor(undefined, "automation")).toBe("automation");
+  });
 });

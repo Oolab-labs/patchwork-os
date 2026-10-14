@@ -50,8 +50,30 @@ import {
  * was not merely a missing label: `record()` bails when `parseTrigger` fails,
  * so those runs were executed and never written down at all. Measured across
  * 1214 live rows, the log held only `cron` and `recipe`.
+ *
+ * `manual` is a run an operator started by hand (dashboard "Run now", the
+ * `/recipes/run` route). It is a START SOURCE, not a declared trigger: a
+ * recipe whose YAML says `cron` and is started by hand records `manual`,
+ * while the scheduler's tick of the same recipe records `cron`. Before it
+ * existed a hand start was recorded under the recipe's declared trigger
+ * (`cron`/`webhook`) or as `recipe`, indistinguishable from a scheduled run
+ * or a nested one.
  */
-export type RunTrigger = "cron" | "webhook" | "recipe" | "automation";
+export type RunTrigger =
+  | "cron"
+  | "webhook"
+  | "recipe"
+  | "automation"
+  | "manual";
+
+/**
+ * How the orchestrator STARTED a top-level run — passed to both runners so the
+ * run row and the effective-policy input describe the start rather than the
+ * recipe's declared trigger. `recipe` is absent on purpose: a nested run is
+ * started by its parent, never by the orchestrator. Absent on a runner call
+ * (CLI, replay, tests) ⇒ the runners fall back to deriving it from the YAML.
+ */
+export type RunStartSource = Exclude<RunTrigger, "recipe">;
 export type RunStatus =
   | "running"
   | "done"
@@ -490,9 +512,10 @@ export class RecipeRunLog {
     if (!triggerSource) return null;
     // Format: "<kind>:<name>" or "<kind>:<name>:p<parentSeq>"
     // parentSeq suffix ":p<N>" is always at the end and uses a numeric-only value.
-    const m = /^(cron|webhook|recipe|automation):(.+?)(?::p(\d+))?$/.exec(
-      triggerSource,
-    );
+    const m =
+      /^(cron|webhook|recipe|automation|manual):(.+?)(?::p(\d+))?$/.exec(
+        triggerSource,
+      );
     if (!m?.[1] || !m[2]) return null;
     return {
       trigger: m[1] as RunTrigger,
