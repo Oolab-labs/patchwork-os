@@ -39,6 +39,10 @@ const URL_TIMEOUT_MS = 20_000;
 const COMPLETE_TIMEOUT_MS = 30_000;
 const STATUS_TIMEOUT_MS = 15_000;
 const SESSION_TTL_MS = 10 * 60 * 1000;
+/** How long a parsed `claude auth status` answer is reused (see readStatusCached). */
+const STATUS_CACHE_TTL_MS = 30_000;
+/** A failed answer is shared briefly so a burst does not stampede the CLI. */
+const STATUS_ERROR_TTL_MS = 5_000;
 /** Anthropic's sign-in pages; any other URL the CLI prints is not relayed. */
 const SIGN_IN_URL_RE = /https:\/\/(?:claude\.com|claude\.ai)\/[^\s"'<>]+/;
 
@@ -92,10 +96,11 @@ function endSession(s: LoginSession | null): void {
   if (s.child.exitCode === null) s.child.kill("SIGTERM");
 }
 
-/** Test seam: drop any in-flight session. */
+/** Test seam: drop any in-flight session and any cached status. */
 export function _resetClaudeLoginForTesting(): void {
   endSession(current);
   current = null;
+  invalidateClaudeAuthStatus();
 }
 
 function run(
@@ -135,7 +140,9 @@ interface AuthStatus {
   authMethod: string;
 }
 
-async function readStatus(): Promise<AuthStatus | { error: string }> {
+type StatusResult = AuthStatus | { error: string };
+
+async function readStatus(): Promise<StatusResult> {
   const r = await run(["auth", "status"], STATUS_TIMEOUT_MS);
   if (r.spawnError) return { error: "claude_not_installed" };
   try {
@@ -150,6 +157,89 @@ async function readStatus(): Promise<AuthStatus | { error: string }> {
   } catch {
     return { error: "status_unreadable" };
   }
+}
+
+// --- status cache -----------------------------------------------------------
+//
+// Spawning `claude auth status` takes seconds on a small machine, and a page
+// that shows sign-in readiness waits for it on every load. The PARSED answer
+// is reused for a short TTL, and concurrent callers share one spawn.
+//
+// The answer is reused only while ALL of these still hold:
+//   - it is younger than the TTL (5 s for an error, 30 s otherwise);
+//   - nothing this module drives has changed sign-in state since (start,
+//     complete, cancel and logout each invalidate);
+//   - the credentials file's mtime is the one seen before the spawn. Claude
+//     Code rewrites that file on sign-in and removes it on sign-out, so a
+//     change made by another process (a terminal sign-in) is seen at once.
+//     Where Claude Code keeps its login in the OS keychain instead (macOS),
+//     there is no file and such an outside change shows within the TTL;
+//   - the binary and config dir are the ones it was read with.
+//
+// Only the CLI's answer is cached. The sign-in health marker (a refusal
+// recorded after the last sign-in) is read on every call in the handler.
+// An error is never stored as, or turned into, a signed-in answer.
+
+interface StatusCacheEntry {
+  result: StatusResult;
+  at: number;
+  credentialsMtime: number | undefined;
+  key: string;
+}
+
+let statusCache: StatusCacheEntry | null = null;
+let statusInFlight: {
+  promise: Promise<StatusResult>;
+  credentialsMtime: number | undefined;
+  key: string;
+} | null = null;
+/** Bumped by every invalidation; a spawn begun before one is not stored. */
+let statusGeneration = 0;
+
+function statusKey(): string {
+  return `${claudeBinary()}\0${process.env.CLAUDE_CONFIG_DIR ?? ""}\0${process.env.HOME ?? ""}`;
+}
+
+/** Drop the cached CLI answer; the next status read spawns the CLI. */
+export function invalidateClaudeAuthStatus(): void {
+  statusGeneration++;
+  statusCache = null;
+  statusInFlight = null;
+}
+
+/** Spawn now (never reuse) and store the answer for later readers. */
+function readStatusFresh(): Promise<StatusResult> {
+  // Read BEFORE spawning: a file that changes during the spawn then no
+  // longer matches, so the next read spawns again rather than trusting an
+  // answer that may predate the change.
+  const credentialsMtime = claudeCredentialsUpdatedAt();
+  const key = statusKey();
+  const generation = statusGeneration;
+  const promise = readStatus().then((result) => {
+    if (generation === statusGeneration) {
+      statusCache = { result, at: Date.now(), credentialsMtime, key };
+    }
+    if (statusInFlight?.promise === promise) statusInFlight = null;
+    return result;
+  });
+  statusInFlight = { promise, credentialsMtime, key };
+  return promise;
+}
+
+function readStatusCached(): Promise<StatusResult> {
+  const credentialsMtime = claudeCredentialsUpdatedAt();
+  const key = statusKey();
+  const c = statusCache;
+  if (c && c.key === key && c.credentialsMtime === credentialsMtime) {
+    const ttl = "error" in c.result ? STATUS_ERROR_TTL_MS : STATUS_CACHE_TTL_MS;
+    const age = Date.now() - c.at;
+    if (age >= 0 && age < ttl) return Promise.resolve(c.result);
+  }
+  const f = statusInFlight;
+  if (f && f.key === key && f.credentialsMtime === credentialsMtime) {
+    return f.promise;
+  }
+  return readStatusFresh();
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -201,6 +291,7 @@ export async function handleClaudeAuthStart(
 ): Promise<void> {
   endSession(current);
   current = null;
+  invalidateClaudeAuthStatus();
 
   let child: ChildProcess;
   try {
@@ -299,6 +390,7 @@ export async function handleClaudeAuthComplete(
     return;
   }
   current = null;
+  invalidateClaudeAuthStatus();
 
   // The code goes to Claude Code's stdin and nowhere else: not logged, not
   // stored, not echoed back.
@@ -311,12 +403,15 @@ export async function handleClaudeAuthComplete(
     ),
   ]);
   endSession(s);
+  // Whatever the CLI did with the code, sign-in state may have changed.
+  invalidateClaudeAuthStatus();
   if (exit === "timeout") {
     jsonReply(res, 504, { error: "sign_in_timeout" });
     return;
   }
 
-  const status = await readStatus();
+  // Never a cached answer here: this read is the proof the code worked.
+  const status = await readStatusFresh();
   if ("error" in status) {
     jsonReply(res, 502, { error: status.error });
     return;
@@ -353,6 +448,7 @@ export async function handleClaudeAuthCancel(
     endSession(current);
     current = null;
   }
+  invalidateClaudeAuthStatus();
   jsonReply(res, 200, { ok: true });
 }
 
@@ -362,7 +458,7 @@ export async function handleClaudeAuthStatus(
   _req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  const status = await readStatus();
+  const status = await readStatusCached();
   if ("error" in status) {
     jsonReply(res, status.error === "claude_not_installed" ? 503 : 502, status);
     return;
@@ -392,7 +488,11 @@ export async function handleClaudeAuthLogout(
   _req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  invalidateClaudeAuthStatus();
   const r = await run(["auth", "logout"], STATUS_TIMEOUT_MS);
+  // Invalidate again: a status read that began during the logout must not
+  // be stored as the answer after it.
+  invalidateClaudeAuthStatus();
   if (r.spawnError) {
     jsonReply(res, 503, { error: "claude_not_installed" });
     return;

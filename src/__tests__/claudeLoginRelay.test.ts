@@ -16,6 +16,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -23,7 +24,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   observeClaudeTaskForAuth,
   recordClaudeAuthFailure,
@@ -40,9 +41,21 @@ import {
 const FAKE_CLAUDE = `#!/usr/bin/env node
 const fs = require("fs"), path = require("path");
 const home = process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME, ".claude");
-const creds = path.join(home, ".credentials.json");
+// Test control files sit beside the config dir: the relay passes the CLI an
+// allowlisted env, so a test cannot steer the fake through env vars.
+const ctl = (n) => path.join(home, "..", n);
+// "Keychain" mode keeps the login somewhere other than the credentials file,
+// as Claude Code does on macOS, so no file mtime moves when it changes.
+const creds = fs.existsSync(ctl("keychain-mode"))
+  ? ctl("keychain-login")
+  : path.join(home, ".credentials.json");
 const [, , a, b] = process.argv;
 if (a === "auth" && b === "status") {
+  fs.appendFileSync(ctl("status-calls.log"), "x\\n");
+  if (fs.existsSync(ctl("status-garbage"))) {
+    process.stdout.write("not json");
+    process.exit(0);
+  }
   process.stdout.write(JSON.stringify(fs.existsSync(creds)
     ? { loggedIn: true, authMethod: "claude.ai" }
     : { loggedIn: false, authMethod: "none" }));
@@ -58,6 +71,7 @@ if (a === "auth" && b === "login") {
     const code = buf.split("\\n")[0].trim();
     if (code === "good-code") {
       fs.mkdirSync(home, { recursive: true });
+      fs.mkdirSync(path.dirname(creds), { recursive: true });
       fs.writeFileSync(creds, JSON.stringify({ secret: "stored-by-claude-only" }));
       process.stdout.write("\\nLogin successful.\\n");
       process.exit(0);
@@ -365,6 +379,162 @@ describe.skipIf(process.platform === "win32")(
       expect(src).toMatch(
         /driver\.name === "subprocess"[\s\S]{0,200}observeClaudeTaskForAuth\(/,
       );
+    });
+  },
+);
+
+/**
+ * `GET /auth/claude/status` spawns the Claude CLI, which costs 2-3 s on a small
+ * machine, and a page that shows readiness waits for it on every load. The
+ * parsed CLI answer is cached for a short TTL with single-flight; every
+ * transition the relay drives invalidates it, and so does a change to the
+ * credentials file's mtime (a sign-in or sign-out by another process). The
+ * sign-in health marker is NOT cached: it stays live on every call.
+ */
+describe.skipIf(process.platform === "win32")(
+  "status caches the CLI answer briefly",
+  () => {
+    const credsPath = () => join(configDir, ".credentials.json");
+    const spawns = () => {
+      try {
+        return readFileSync(join(dir, "status-calls.log"), "utf8")
+          .split("\n")
+          .filter(Boolean).length;
+      } catch {
+        return 0;
+      }
+    };
+    function signedInOnDisk(atMs = Date.now() - 60_000) {
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(credsPath(), JSON.stringify({ secret: "x" }));
+      utimesSync(credsPath(), atMs / 1000, atMs / 1000);
+    }
+    /** The login lives outside the credentials file, so no mtime moves. */
+    function keychainMode() {
+      writeFileSync(join(dir, "keychain-mode"), "1");
+    }
+    async function signInThroughRelay() {
+      const start = await call(handleClaudeAuthStart);
+      return call(handleClaudeAuthComplete, {
+        sessionId: start.body.sessionId,
+        code: "good-code",
+      });
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("10 sequential calls within the TTL spawn the CLI once", async () => {
+      signedInOnDisk();
+      for (let i = 0; i < 10; i++) {
+        const r = await call(handleClaudeAuthStatus);
+        expect(r.body).toEqual({ loggedIn: true, authMethod: "claude.ai" });
+      }
+      expect(spawns()).toBe(1);
+    });
+
+    it("5 concurrent calls share one spawn", async () => {
+      signedInOnDisk();
+      const rs = await Promise.all(
+        Array.from({ length: 5 }, () => call(handleClaudeAuthStatus)),
+      );
+      for (const r of rs) expect(r.body.loggedIn).toBe(true);
+      expect(spawns()).toBe(1);
+    });
+
+    it("spawns again once the TTL has passed", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      signedInOnDisk();
+      await call(handleClaudeAuthStatus);
+      vi.setSystemTime(Date.now() + 29_000);
+      await call(handleClaudeAuthStatus);
+      expect(spawns()).toBe(1);
+      vi.setSystemTime(Date.now() + 2_000);
+      await call(handleClaudeAuthStatus);
+      expect(spawns()).toBe(2);
+    });
+
+    it("a sign-in completed through the relay is visible at once (no file mtime to see)", async () => {
+      keychainMode();
+      expect((await call(handleClaudeAuthStatus)).body.loggedIn).toBe(false);
+      expect((await signInThroughRelay()).status).toBe(200);
+      expect((await call(handleClaudeAuthStatus)).body).toEqual({
+        loggedIn: true,
+        authMethod: "claude.ai",
+      });
+    });
+
+    it("logout through the relay is visible at once (no file mtime to see)", async () => {
+      keychainMode();
+      await signInThroughRelay();
+      expect((await call(handleClaudeAuthStatus)).body.loggedIn).toBe(true);
+      expect((await call(handleClaudeAuthLogout)).status).toBe(200);
+      expect((await call(handleClaudeAuthStatus)).body.loggedIn).toBe(false);
+    });
+
+    it("start and cancel invalidate the cached answer", async () => {
+      keychainMode();
+      await call(handleClaudeAuthStatus);
+      await call(handleClaudeAuthStatus);
+      expect(spawns()).toBe(1);
+      const start = await call(handleClaudeAuthStart);
+      await call(handleClaudeAuthStatus);
+      expect(spawns()).toBe(2);
+      await call(handleClaudeAuthCancel, { sessionId: start.body.sessionId });
+      await call(handleClaudeAuthStatus);
+      expect(spawns()).toBe(3);
+    });
+
+    it("a credentials-file change by another process invalidates it", async () => {
+      expect((await call(handleClaudeAuthStatus)).body.loggedIn).toBe(false);
+      // Signed in from a terminal: the file appears.
+      signedInOnDisk();
+      expect((await call(handleClaudeAuthStatus)).body.loggedIn).toBe(true);
+      expect(spawns()).toBe(2);
+      // Renewed: same file, new mtime.
+      utimesSync(credsPath(), Date.now() / 1000, Date.now() / 1000);
+      await call(handleClaudeAuthStatus);
+      expect(spawns()).toBe(3);
+      // Signed out from a terminal: the file goes.
+      rmSync(credsPath());
+      expect((await call(handleClaudeAuthStatus)).body.loggedIn).toBe(false);
+      expect(spawns()).toBe(4);
+    });
+
+    it("a failed CLI answer is never reported as signed in, and is retried shortly", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      signedInOnDisk();
+      expect((await call(handleClaudeAuthStatus)).body.loggedIn).toBe(true);
+      // The CLI starts failing and the credentials change: the cached
+      // positive must not survive as the answer.
+      writeFileSync(join(dir, "status-garbage"), "1");
+      utimesSync(credsPath(), Date.now() / 1000, Date.now() / 1000);
+      const bad = await call(handleClaudeAuthStatus);
+      expect(bad.status).toBe(502);
+      expect(bad.body).toEqual({ error: "status_unreadable" });
+      expect(bad.body).not.toHaveProperty("loggedIn");
+      // A burst right after a failure shares it rather than stampeding...
+      await call(handleClaudeAuthStatus);
+      expect(spawns()).toBe(2);
+      // ...but it is retried within seconds, not held for the full TTL.
+      rmSync(join(dir, "status-garbage"));
+      vi.setSystemTime(Date.now() + 6_000);
+      expect((await call(handleClaudeAuthStatus)).body).toEqual({
+        loggedIn: true,
+        authMethod: "claude.ai",
+      });
+      expect(spawns()).toBe(3);
+    });
+
+    it("the sign-in health marker stays live on a cached answer", async () => {
+      signedInOnDisk();
+      expect((await call(handleClaudeAuthStatus)).body.loggedIn).toBe(true);
+      recordClaudeAuthFailure(Date.now());
+      const r = await call(handleClaudeAuthStatus);
+      expect(r.body.reason).toBe("needs_signin_again");
+      expect(r.body.loggedIn).toBe(false);
+      expect(spawns()).toBe(1);
     });
   },
 );
