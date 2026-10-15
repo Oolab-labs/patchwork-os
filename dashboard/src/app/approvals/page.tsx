@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
+import { approvalDecisionPath } from "@/lib/approvalDecisionPath";
 import { BlastBadge, CodeBlock, EmptyState, HintCard, KeyChip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
@@ -887,7 +888,7 @@ function ApprovalsContent() {
         init.headers = { "Content-Type": "application/json" };
         init.body = JSON.stringify({ reason: reason.trim().slice(0, 500) });
       }
-      const res = await fetch(`${API}/${decision}/${callId}`, init);
+      const res = await fetch(apiPath(approvalDecisionPath(decision, callId)), init);
       if (!res.ok) {
         if (res.status === 409) {
           // Another session already decided this call — treat as success

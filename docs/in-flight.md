@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-10-15 `fix/overview-approval-decision-path` — Overview Approve/Deny posts to the bridge's real decision route via one shared path helper — side session
+
 
 
 

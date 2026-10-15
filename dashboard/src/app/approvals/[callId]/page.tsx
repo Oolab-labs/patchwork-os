@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiPath } from '@/lib/api';
+import { approvalDecisionPath } from '@/lib/approvalDecisionPath';
 import { BackLink, RelationStrip } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -165,7 +166,7 @@ export default function ApprovalDetailPage() {
       if (approvalToken) {
         headers.Authorization = `Bearer ${approvalToken}`;
       }
-      const res = await fetch(apiPath(`/api/bridge/${choice}/${callId}`), {
+      const res = await fetch(apiPath(approvalDecisionPath(choice, callId)), {
         method: "POST",
         headers,
       });

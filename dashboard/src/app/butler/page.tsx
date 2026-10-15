@@ -33,6 +33,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { approvalDecisionPath } from "@/lib/approvalDecisionPath";
 import "./butler.css";
 // The endpoint shapes live in `homeState.ts` and are imported, not restated.
 // Two declarations of the same payload is how a page and its model come to
@@ -467,7 +468,7 @@ export default function ButlerPage() {
         // "Yes. I will go ahead." for an action that never happened. A
         // governance product telling someone it approved something it did not
         // is the worst failure on this page.
-        await post(`/api/bridge/${decision}/${p.callId}`);
+        await post(approvalDecisionPath(decision, p.callId));
         announce(
           decision === "approve"
             ? "Yes. I will go ahead."
