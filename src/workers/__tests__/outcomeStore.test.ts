@@ -82,6 +82,30 @@ describe("classifyIssueDisposition", () => {
     }
   });
 
+  it("a confirming label must match EXACTLY — a substring is not a confirmation", () => {
+    // Audit 2026-10-15 (H3): `l.includes("confirmed")` classified
+    // "unconfirmed" as confirmed. Ordinary triage labels then earned trust.
+    for (const label of [
+      "unconfirmed",
+      "unverified",
+      "needs-verified-repro",
+      "status: confirmed?",
+      "not-verified",
+    ]) {
+      expect(
+        classifyIssueDisposition({ state: "open", labels: [label] }),
+        label,
+      ).not.toBe("confirmed");
+    }
+    // Case and surrounding whitespace are not a different label.
+    for (const label of ["Confirmed", " verified ", "PATCHWORK:VALID"]) {
+      expect(
+        classifyIssueDisposition({ state: "open", labels: [label] }),
+        label,
+      ).toBe("confirmed");
+    }
+  });
+
   it("JUNK wins over confirmed signals (conservative precedence)", () => {
     // closed-as-completed BUT labelled duplicate → junk, not confirmed.
     expect(
