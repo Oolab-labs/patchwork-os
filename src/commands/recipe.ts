@@ -20,6 +20,7 @@ import { computeApprovedActionIdentity } from "../approvalIdentity.js";
 import "../recipes/tools/index.js";
 import { loadFixtureLibrary } from "../connectors/fixtureLibrary.js";
 import { MockConnector } from "../connectors/mockConnector.js";
+import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
 import { patchworkPath } from "../patchworkHome.js";
 import { applyTriggerInputDefaults } from "../recipeOrchestration.js";
 import {
@@ -41,7 +42,10 @@ import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "../recipes/migrations/index.js";
-import { recipeSourceSha256 } from "../recipes/recipeSourceHash.js";
+import {
+  recordRecipeSourceSha256,
+  sha256Hex,
+} from "../recipes/recipeSourceHash.js";
 import { tryResolveRecipePath } from "../recipes/resolveRecipePath.js";
 import { findAttemptByRun, runLedgersRoot } from "../recipes/runLedgers.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
@@ -65,6 +69,7 @@ import {
   listConnectorNamespaces,
   listTools,
   seedToolOutputPreviewContext,
+  toolRegistryGeneration,
 } from "../recipes/toolRegistry.js";
 import {
   type LintIssue,
@@ -80,12 +85,20 @@ import {
   type RunResult,
   render,
   runYamlRecipe,
+  validateYamlRecipe,
   type YamlRecipe,
   type YamlStep,
 } from "../recipes/yamlRunner.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import type { RecipeRunLog } from "../runLog.js";
 import { findInstalledRecipeEntrypoint } from "./recipeInstall.js";
+import {
+  clockStampOf,
+  declaresServers,
+  PlanCache,
+  pluginPolicyFingerprint,
+  rendersClockToken,
+} from "./recipePlanCache.js";
 
 /**
  * Resolved per CALL, not bound at import (#1265/#1266).
@@ -829,6 +842,15 @@ export function runLint(recipePath: string): LintResult {
     };
   }
 
+  return lintParsedRecipe(parsed, recipePath);
+}
+
+/**
+ * The lint passes `runLint` applies once the file has been read and parsed.
+ * Split out so a caller that already holds the parsed YAML (the dry-run plan)
+ * lints exactly what `runLint` would, without reading and parsing it again.
+ */
+function lintParsedRecipe(parsed: unknown, recipePath: string): LintResult {
   const result = validateRecipeDefinition(parsed);
 
   // For chained recipes, check that chain: file references resolve on disk.
@@ -1845,15 +1867,80 @@ async function detectNestedRecipeWritesInPlan(
   }
 }
 
+function rawTriggerType(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const trigger = (raw as Record<string, unknown>).trigger;
+  if (!trigger || typeof trigger !== "object") return undefined;
+  return (trigger as Record<string, unknown>).type;
+}
+
+/** Dry-run plans, keyed so a hit can never be stale — see recipePlanCache.ts. */
+const recipePlanCache = new PlanCache<RecipeDryRunPlan>();
+
+/** Test seam: drop every cached dry-run plan. */
+export function _clearRecipePlanCacheForTesting(): void {
+  recipePlanCache.clear();
+}
+
+/**
+ * The always-checked part of the plan cache key: every input that can change
+ * any plan. Inputs that only some plans depend on (the clock, the plugin
+ * policy) are recorded on the entry instead — see `PlanCacheEntry`.
+ */
+function recipePlanCacheKey(
+  recipePath: string,
+  recipeSha256: string,
+  options: RunRecipeOptions,
+): string {
+  const vars = options.vars
+    ? Object.entries(options.vars).sort(([a], [b]) =>
+        a < b ? -1 : a > b ? 1 : 0,
+      )
+    : null;
+  return JSON.stringify([
+    recipePath,
+    recipeSha256,
+    toolRegistryGeneration(),
+    options.step ?? null,
+    vars,
+    Boolean(process.env.ANTHROPIC_API_KEY),
+    isEnabled(FLAG_SCHEMA_LINT),
+  ]);
+}
+
 export async function runRecipeDryPlan(
   recipeRef: string,
   options: RunRecipeOptions = {},
 ): Promise<RecipeDryRunPlan> {
   const recipePath = resolveRecipePath(recipeRef);
-  const recipe = loadYamlRecipe(recipePath);
-  // The hash of the bytes `loadYamlRecipe` just parsed — not a second read,
-  // which could see a different file than the one this plan describes.
-  const recipeSha256 = recipeSourceSha256(recipe);
+  // Read the bytes ONCE: the hash, the parse and the lint below all describe
+  // this one read, never a second one that could see a different file.
+  const bytes = readFileSync(recipePath);
+  const recipeSha256 = sha256Hex(bytes);
+  const now = new Date();
+  const generatedAt = now.toISOString();
+
+  // Every input the plan depends on is in the key (or checked on the entry),
+  // so a hit is exactly the plan this call would build. Reading and hashing
+  // the file is cheap; parsing and linting it is the cost being skipped.
+  const cacheKey = recipePlanCacheKey(recipePath, recipeSha256, options);
+  const hit = recipePlanCache.get(cacheKey);
+  if (
+    hit &&
+    (hit.clockStamp === null || hit.clockStamp === clockStampOf(now)) &&
+    (hit.pluginPolicy === null ||
+      hit.pluginPolicy === pluginPolicyFingerprint())
+  ) {
+    return { ...structuredClone(hit.plan), generatedAt };
+  }
+
+  // Same steps as `loadYamlRecipe`, but the raw parse is kept so lint can run
+  // over it instead of reading and parsing the file a second time. The
+  // runtime normaliser gets its own copy, so lint sees exactly the parse
+  // `runLint` would have produced.
+  const raw = parseYaml(bytes.toString("utf-8")) as unknown;
+  const recipe = validateYamlRecipe(structuredClone(raw));
+  recordRecipeSourceSha256(recipe, recipeSha256);
   const triggerType = (
     recipe.trigger as unknown as Record<string, unknown> | undefined
   )?.type;
@@ -1863,10 +1950,15 @@ export async function runRecipeDryPlan(
   const recipeToPlan: YamlRecipe = selection
     ? { ...recipe, steps: [selection.step] }
     : recipe;
-  const generatedAt = new Date().toISOString();
 
-  // Collect lint results for the plan
-  const lintResult = runLint(recipePath);
+  // Taken before lint so a policy change mid-build can only cause a later
+  // miss, never a stale hit.
+  const pluginPolicy = declaresServers(raw, recipe)
+    ? pluginPolicyFingerprint()
+    : null;
+
+  // Collect lint results for the plan — the same passes `runLint` applies.
+  const lintResult = lintParsedRecipe(raw, recipePath);
   const lint = {
     errors: lintResult.issues
       .filter((issue) => issue.level === "error")
@@ -1912,15 +2004,16 @@ export async function runRecipeDryPlan(
       maxDepth: plan.maxDepth,
       ...summarizePlanSteps(steps),
       lint,
-      ...(recipeSha256 !== undefined && { recipeSha256 }),
+      recipeSha256,
     };
   }
 
   const steps = buildSimpleRecipeDryRunSteps(
     recipeToPlan,
     options.vars ?? {},
+    now,
   ).map(enrichStepFromRegistry);
-  return {
+  const plan: RecipeDryRunPlan = {
     schemaVersion: DRY_RUN_PLAN_SCHEMA_VERSION,
     generatedAt,
     recipe: recipe.name,
@@ -1930,8 +2023,20 @@ export async function runRecipeDryPlan(
     steps,
     ...summarizePlanSteps(steps),
     lint,
-    ...(recipeSha256 !== undefined && { recipeSha256 }),
+    recipeSha256,
   };
+  // Lint follows child refs when the RAW parse says `chained`, independently
+  // of the normalised trigger that chose this branch. A plan whose lint read
+  // other files is never cached — its inputs are not all in the key.
+  if (rawTriggerType(raw) === "chained") return plan;
+  recipePlanCache.set(cacheKey, {
+    plan: structuredClone(plan),
+    clockStamp: rendersClockToken(recipeToPlan.steps)
+      ? clockStampOf(now)
+      : null,
+    pluginPolicy,
+  });
+  return plan;
 }
 
 /**
@@ -2714,8 +2819,10 @@ function toStepSelection(
 function buildSimpleRecipeDryRunSteps(
   recipe: YamlRecipe,
   vars: Record<string, string>,
+  // Passed in by the plan cache so the minute it records is the minute these
+  // steps were rendered in — see `clockStampOf`.
+  now: Date = new Date(),
 ): RecipeDryRunPlan["steps"] {
-  const now = new Date();
   const ctx: Record<string, string> = {
     date: now.toISOString().slice(0, 10),
     time: now.toTimeString().slice(0, 5),
