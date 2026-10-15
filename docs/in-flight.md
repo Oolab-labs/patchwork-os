@@ -52,14 +52,13 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- 2026-10-15 `claude/sweep-cron-halt-gate-832cd6` — third `sweep` gate: a cron recipe `done` for ≥7 days whose latest ≥6 runs are all `error` flips healthy→unhealthy (exit 1) and writes one inbox note per flip; snapshot stays counts-only — side session
-
 
 
 
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-10-15 `feat/sweep-cron-halt-gate` (#1712) — third `sweep` gate: a cron recipe `done` for ≥7 consecutive days whose latest ≥6 runs are all `error` flips healthy→unhealthy (exit 1) and writes one inbox note per flip naming the recipe; the snapshot stays counts-only.
 - 2026-10-12 `feat/run-recipe-version` — runs record `recipeSha256` (sha256 of the recipe file bytes the run loaded; both runners, runs.jsonl + sqlite store with an additive column migration; absent ⇒ not recorded, never backfilled). Dry-run plan carries its own `recipeSha256`; `GET /runs/:seq/plan` and `/runs/by-task/:taskId/plan` add `basis: "current"`, `recordedRecipeSha256` and `recipeChangedSinceRun: true | false | "unknown"`.
 - 2026-10-12 `feat/workspace-uploads-file-inputs` — workspace uploads (`POST/GET /uploads`, `GET/DELETE /uploads/:name`; plain names, no symlinks, atomic 0o600 writes, 10 MB/file + 200 MB/workspace, type by extension AND content, collision suffix, attachment-only download) and `type: file` recipe inputs: value is an upload name, rendered as its absolute path into an agent prompt or file.write/append content only (`file_input_in_identifier` at run time in both runners and at lint), enveloped as `upload:<name>` under governed, uploads dir granted to Claude CLI agent steps read-only (`--add-dir` + write-tool denies) only for runs handed a file input, path recorded in ledgers as `[upload: <name>, sha256:…]`.
 
