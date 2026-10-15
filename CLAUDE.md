@@ -819,6 +819,7 @@ So: **design the sentinel, then stamp.** Never the other way round, and never
 - **WebSocket safety**: all `ws.send()` calls must use `safeSend()` or readyState check + try-catch.
 - **Extension dependency**: tools requiring extension must set `extensionRequired: true` in schema.
 - **Tool names**: must match `/^[a-zA-Z0-9_]+$/`.
+- **IDE/LSP tool surface is FROZEN** (decided 2026-10-15): no new editor tools, no removals, tests stay green; revisit only on an explicit user request.
 - **Error handling**: tool execution errors return `isError: true` in content (NOT JSON-RPC errors). JSON-RPC errors (`ErrorCodes`, -32xxx) for protocol issues only. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
 - **`extensionClient` shape validation**: `proxy<T>()` is blind TypeScript cast with no runtime validation — **do NOT use for new methods**. Eight latent shape-mismatch bugs (v2.25.18–v2.25.24) from this pattern. For new methods:
   - `tryRequest<T>(method, params, timeout, signal)` — auto-unwraps `{error}` / `{success: false, error}` to `null`. Use when success path is single T shape and caller doesn't need to distinguish error paths.
