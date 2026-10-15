@@ -61,9 +61,51 @@ const CONNECTIONS_CACHE_TTL_MS = 5_000;
 let connectionsCache: { ts: number; result: ConnectorHandlerResult } | null =
   null;
 
+/**
+ * A computation already running for a cache miss. Concurrent misses join it
+ * instead of each re-running every connector's status probe. Tagged with the
+ * generation it started in: a mutation bumps the generation, so a request
+ * arriving after a connect/disconnect never joins (or caches) a computation
+ * that began before it.
+ */
+let connectionsInFlight: {
+  gen: number;
+  promise: Promise<ConnectorHandlerResult>;
+} | null = null;
+let connectionsGeneration = 0;
+
 /** Drop the cached `GET /connections` payload — call after any mutation. */
 function invalidateConnectionsCache(): void {
   connectionsCache = null;
+  connectionsInFlight = null;
+  connectionsGeneration++;
+}
+
+function computeConnectionsList(): Promise<ConnectorHandlerResult> {
+  const gen = connectionsGeneration;
+  if (connectionsInFlight && connectionsInFlight.gen === gen) {
+    return connectionsInFlight.promise;
+  }
+  const started = Date.now();
+  const promise = (async () => {
+    const { handleConnectionsList } = await import("./connectors/gmail.js");
+    const result = await handleConnectionsList();
+    // Only cache successful list responses; transient errors should be
+    // re-probed on the next request rather than pinned for the TTL. A result
+    // computed before a mutation is still returned to the requests that were
+    // waiting on it, but is never cached.
+    if (result.status === 200 && gen === connectionsGeneration) {
+      connectionsCache = { ts: started, result };
+    }
+    return result;
+  })();
+  const entry = { gen, promise };
+  connectionsInFlight = entry;
+  const clear = () => {
+    if (connectionsInFlight === entry) connectionsInFlight = null;
+  };
+  promise.then(clear, clear);
+  return promise;
 }
 
 interface ConnectorHandlerResult {
@@ -531,15 +573,7 @@ export function tryHandleConnectorRoute(
         ) {
           result = connectionsCache.result;
         } else {
-          const { handleConnectionsList } = await import(
-            "./connectors/gmail.js"
-          );
-          result = await handleConnectionsList();
-          // Only cache successful list responses; transient errors should
-          // be re-probed on the next request rather than pinned for the TTL.
-          if (result.status === 200) {
-            connectionsCache = { ts: now, result };
-          }
+          result = await computeConnectionsList();
         }
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",

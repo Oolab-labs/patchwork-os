@@ -657,14 +657,39 @@ function listWindowsCredentials(): string[] {
 // the risk is lower — but PR #949 only guarded the macOS branch, leaving the
 // Linux path asymmetric (audit 2026-06-09 pr949-1). Guard all three sinks for
 // defence-in-depth so the taint path is provably sanitised on every platform.
+//
+// A host without `secret-tool` installed (e.g. a minimal container image)
+// fails every spawn with ENOENT, and under the default `auto` backend every
+// secret read tries the keychain first — so each read forked the whole Node
+// process just to learn the binary is still absent, synchronously, before the
+// file fallback ran. A burst of reads (one status probe per connector) blocked
+// the event loop for seconds. ENOENT is the only failure memoised: the binary
+// is absent, not momentarily unhappy. A timeout, a non-zero exit or a locked
+// keyring is transient or per-key and keeps spawning exactly as before.
+// The Windows path already caches its helper results (`_dpCache`).
+let _secretToolMissing = false;
+
+function noteSecretToolResult(result: { error?: Error }): void {
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+    _secretToolMissing = true;
+  }
+}
+
+/** Test-only: forget a memoised "secret-tool is not installed" result. */
+export function __resetLinuxSecretToolProbeForTest(): void {
+  _secretToolMissing = false;
+}
+
 export function setLinuxSecretSync(key: string, value: string): boolean {
   if (!isValidKeychainKey(key)) return false;
+  if (_secretToolMissing) return false;
   try {
     const result = spawnSync(
       "secret-tool",
       ["store", "--label", key, "service", SERVICE_NAME, "account", key],
       { input: value, encoding: "utf-8", timeout: 5000 },
     );
+    noteSecretToolResult(result);
     return result.status === 0;
   } catch {
     return false;
@@ -673,12 +698,14 @@ export function setLinuxSecretSync(key: string, value: string): boolean {
 
 export function getLinuxSecretSync(key: string): string | null {
   if (!isValidKeychainKey(key)) return null;
+  if (_secretToolMissing) return null;
   try {
     const result = spawnSync(
       "secret-tool",
       ["lookup", "service", SERVICE_NAME, "account", key],
       { encoding: "utf-8", timeout: 5000 },
     );
+    noteSecretToolResult(result);
     if (result.status === 0 && result.stdout) {
       return result.stdout.trim();
     }
@@ -690,12 +717,14 @@ export function getLinuxSecretSync(key: string): string | null {
 
 export function deleteLinuxSecretSync(key: string): boolean {
   if (!isValidKeychainKey(key)) return false;
+  if (_secretToolMissing) return false;
   try {
     const result = spawnSync(
       "secret-tool",
       ["clear", "service", SERVICE_NAME, "account", key],
       { encoding: "utf-8", timeout: 5000 },
     );
+    noteSecretToolResult(result);
     return result.status === 0;
   } catch {
     return false;
