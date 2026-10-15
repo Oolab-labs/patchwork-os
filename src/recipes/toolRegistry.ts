@@ -85,6 +85,19 @@ export interface RegisteredTool extends ToolMetadata {
 /** Internal registry map */
 const registry = new Map<string, RegisteredTool>();
 
+/**
+ * Bumped on every change to `registry`. Anything that caches a result derived
+ * from the registry (the dry-run plan cache) keys on this, so registering or
+ * clearing a tool can never leave a stale derived value behind. Every write to
+ * `registry` must bump it.
+ */
+let registryGeneration = 0;
+
+/** Current registry generation — see `registryGeneration`. */
+export function toolRegistryGeneration(): number {
+  return registryGeneration;
+}
+
 // Make the recipe tool registry the authoritative source of risk tiers for
 // namespaced tool ids in classifyTool (approval gate, simulation, dashboard).
 // Lazy: resolves at call time so it reflects whatever has registered so far.
@@ -115,6 +128,7 @@ export function registerTool(tool: RegisteredTool): void {
     throw new Error(`Tool "${tool.id}" is already registered`);
   }
   registry.set(tool.id, tool);
+  registryGeneration++;
 }
 
 /**
@@ -235,6 +249,7 @@ export async function executeTool(
  */
 export function clearRegistry(): void {
   registry.clear();
+  registryGeneration++;
 }
 
 /**
