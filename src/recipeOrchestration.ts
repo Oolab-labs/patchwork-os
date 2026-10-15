@@ -51,7 +51,12 @@ import {
   setRecipeEnabled,
   setTrustLevel,
 } from "./recipesHttp.js";
-import type { RecipeRunLog, RunStartSource, RunTrigger } from "./runLog.js";
+import type {
+  RecipeRunLog,
+  RunStartSource,
+  RunStatus,
+  RunTrigger,
+} from "./runLog.js";
 import type { Server } from "./server.js";
 import { boundaryForRecipe } from "./workers/boundaryPreview.js";
 import {
@@ -940,6 +945,22 @@ export class RecipeOrchestration {
         ...(q.after !== undefined && { after: q.after }),
         ...(q.manualRunId !== undefined && { manualRunId: q.manualRunId }),
       }) as unknown as Record<string, unknown>[];
+    };
+
+    server.runsPageFn = (q) => {
+      if (!this.deps.recipeRunLog) return { runs: [], nextBefore: null };
+      return this.deps.recipeRunLog.queryPage({
+        before: q.before,
+        ...(q.limit !== undefined && { limit: q.limit }),
+        ...(q.trigger !== undefined && { trigger: q.trigger as RunTrigger }),
+        ...(q.status !== undefined && { status: q.status as RunStatus }),
+        ...(q.recipe !== undefined && { recipe: q.recipe }),
+        ...(q.manualRunId !== undefined && { manualRunId: q.manualRunId }),
+        ...(q.fields !== undefined && { fields: q.fields }),
+      }) as unknown as {
+        runs: Record<string, unknown>[];
+        nextBefore: string | null;
+      };
     };
 
     server.runsBySeqFn = (seq: number) =>

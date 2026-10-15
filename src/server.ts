@@ -393,6 +393,9 @@ export class Server extends EventEmitter<ServerEvents> {
         manualRunId?: string;
       }) => Record<string, unknown>[])
     | null = null;
+  /** Patchwork: set by bridge — older-than paging over the run log (`GET /runs?before=`). */
+  public runsPageFn: import("./recipeRoutes.js").RecipeRouteDeps["runsPageFn"] =
+    null;
   /** Patchwork: set by bridge to fetch a single run by seq for the detail page. */
   public runDetailFn: ((seq: number) => Record<string, unknown> | null) | null =
     null;
@@ -1906,6 +1909,7 @@ export class Server extends EventEmitter<ServerEvents> {
           saveRecipeFn: this.saveRecipeFn,
           setRecipeEnabledFn: this.setRecipeEnabledFn,
           runsFn: this.runsFn,
+          runsPageFn: this.runsPageFn,
           runDetailFn: this.runDetailFn,
           runsBySeqFn: this.runsBySeqFn,
           haltSummaryFn: this.haltSummaryFn,
