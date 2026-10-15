@@ -168,7 +168,7 @@ patchwork approve <callId>
 patchwork sweep [--dir <path>] [--expect-running [N]] [--no-write] [--json]
 ```
 
-**What moved since the last sweep.** Composes `doctor`, `workers validate`, `evidence`, `privacy undeclared` and `pr-outcomes` into one reading, appends a counts-only snapshot to `sweep_snapshots.jsonl` and diffs it against the previous one. Only two readings are gates — deployment freshness and worker-manifest validity — and **it exits 1 only when one of those flipped healthy to unhealthy**. Everything else is drift and is reported without failing. A first run is a baseline, never "no changes". The snapshot holds counts only, never a recipe name, path or id.
+**What moved since the last sweep.** Composes `doctor`, `workers validate`, `evidence`, `privacy undeclared` and `pr-outcomes` into one reading, appends a counts-only snapshot to `sweep_snapshots.jsonl` and diffs it against the previous one. Only three readings are gates — deployment freshness, worker-manifest validity, and a scheduled (cron) recipe that ran `done` for at least 7 consecutive days and whose latest 6 or more runs are all `error` — and **it exits 1 only when one of those flipped healthy to unhealthy**. A flip of the third gate also writes one note to `~/.patchwork/inbox/` naming the recipe and its first failing run; the note is written on the flip only, not on every sweep while the recipe stays failing, and a recipe with under 7 days of history is never eligible. Everything else is drift and is reported without failing. A first run is a baseline, never "no changes". The snapshot holds counts only, never a recipe name, path or id.
 
 ### `evidence`
 

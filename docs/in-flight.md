@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-10-15 `claude/sweep-cron-halt-gate-832cd6` — third `sweep` gate: a cron recipe `done` for ≥7 days whose latest ≥6 runs are all `error` flips healthy→unhealthy (exit 1) and writes one inbox note per flip; snapshot stays counts-only — side session
+
 
 
 
