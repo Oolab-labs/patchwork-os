@@ -1,16 +1,31 @@
 import {
   appendFileSync,
+  closeSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { withFileLockSync } from "./fileLockSync.js";
 import type { Logger } from "./logger.js";
 import type { OutputWithheld } from "./recipes/withheldOutputs.js";
+import {
+  compareNewestFirst,
+  encodeRunCursor,
+  isOlderThan,
+  type RunCursor,
+  type RunPage,
+  type RunPageQuery,
+  type RunPageRow,
+  runCreatedAt,
+  summarizeRun,
+} from "./runPage.js";
 import {
   appendStepEvidence,
   isEvidenceBearing,
@@ -323,6 +338,39 @@ const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024;
  */
 function runKey(r: RecipeRun): string {
   return r.taskId ? `task:${r.taskId}` : `seq:${r.seq}`;
+}
+
+/**
+ * Call `onLine` for every line of `file`, reading it in fixed-size chunks so a
+ * multi-megabyte archive is never held as one string. A missing file is
+ * silently empty — the archive is absent on most installs.
+ */
+function forEachLineSync(file: string, onLine: (line: string) => void): void {
+  let fd: number;
+  try {
+    fd = openSync(file, "r");
+  } catch {
+    return;
+  }
+  try {
+    const buf = Buffer.alloc(64 * 1024);
+    const decoder = new StringDecoder("utf8");
+    let carry = "";
+    for (;;) {
+      const n = readSync(fd, buf, 0, buf.length, null);
+      if (n === 0) break;
+      const text = carry + decoder.write(buf.subarray(0, n));
+      const lines = text.split("\n");
+      carry = lines.pop() ?? "";
+      for (const line of lines) onLine(line);
+    }
+    carry += decoder.end();
+    if (carry) onLine(carry);
+  } catch {
+    // a read error mid-file ends the scan; rows already seen still count
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
@@ -759,6 +807,90 @@ export class RecipeRunLog {
       }
     }
     return Array.from(byKey.values());
+  }
+
+  /**
+   * One page of runs strictly OLDER than `q.before`, newest first, plus the
+   * cursor for the page after it — the backing for `GET /runs?before=…`.
+   *
+   * `query()` sees only the in-memory ring, so a list could never page past
+   * the newest `memoryCap` runs. This reads the durable files instead:
+   * `runs.jsonl.1` (the rotation archive) then `runs.jsonl`, de-duplicated by
+   * `runKey` with the LAST row winning (a run is written once when it starts
+   * and again when it finishes), then the in-memory ring on top, because it
+   * holds this process's live step progress. Filters judge that final row.
+   *
+   * Ordering and cursor are `(createdAt DESC, runKey DESC)`, never `seq` —
+   * see `src/runPage.ts` for why.
+   *
+   * The run store mirror (ADR-0022) is NOT read: it is opt-in, shadow-only,
+   * and holds history only from when it was switched on, so it cannot answer
+   * "everything older than X". The JSONL pair is the authoritative history.
+   *
+   * Bounded work: the page is capped at 500 rows; the scan is bounded by the
+   * two files' own caps (`MAX_PERSIST_BYTES` + `MAX_ARCHIVE_BYTES`). The
+   * archive is read in chunks rather than as one string, and only rows older
+   * than the cursor are retained — projected first when `fields: "summary"`.
+   *
+   * Rotation race: the live file is read BEFORE the archive. Rotation moves
+   * rows live → archive under the file lock, so a rotation between the two
+   * reads can only make a row appear in both (de-duplicated), never in
+   * neither — reading the archive first could miss exactly those rows.
+   */
+  queryPage(q: RunPageQuery): RunPage {
+    this.syncFromDisk();
+    const cursor = q.before;
+    const summary = q.fields === "summary";
+    const byKey = new Map<string, RunPageRow>();
+    const take = (r: RecipeRun): void => {
+      const key = runKey(r);
+      if (!isOlderThan({ createdAt: runCreatedAt(r), key }, cursor)) return;
+      byKey.set(key, summary ? summarizeRun(r) : r);
+    };
+    const takeLine = (line: string): void => {
+      const t = line.trim();
+      if (!t) return;
+      try {
+        const parsed = JSON.parse(t) as RecipeRun;
+        if (typeof parsed.seq !== "number") return;
+        take(parsed);
+      } catch {
+        // skip malformed line — never let one bad row break a page
+      }
+    };
+
+    let live = "";
+    try {
+      live = readFileSync(this.file, "utf-8");
+    } catch {
+      // no live file yet
+    }
+    forEachLineSync(`${this.file}.1`, takeLine);
+    for (const line of live.split("\n")) takeLine(line);
+    for (const r of this.runs) take(r);
+
+    const { trigger, status, recipe, manualRunId } = q;
+    const matched: RunPageRow[] = [];
+    for (const r of byKey.values()) {
+      if (trigger && r.trigger !== trigger) continue;
+      if (status && r.status !== status) continue;
+      if (recipe && r.recipeName !== recipe) continue;
+      if (manualRunId && r.manualRunId !== manualRunId) continue;
+      matched.push(r);
+    }
+    const sortKey = (r: RunPageRow): RunCursor => ({
+      createdAt: runCreatedAt(r),
+      key: runKey(r as RecipeRun),
+    });
+    matched.sort((a, b) => compareNewestFirst(sortKey(a), sortKey(b)));
+    const limit = Math.min(Math.max(q.limit ?? 100, 1), 500);
+    const runs = matched.slice(0, limit);
+    const last = runs[runs.length - 1];
+    return {
+      runs,
+      nextBefore:
+        matched.length > limit && last ? encodeRunCursor(sortKey(last)) : null,
+    };
   }
 
   /** Test/inspection helper — current in-memory size. */

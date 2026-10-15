@@ -459,6 +459,45 @@ describe("RecipeOrchestration", () => {
     expect(result).toEqual([]);
   });
 
+  it("wireServerFns() — runsPageFn is wired to the run log's queryPage", () => {
+    const server = makeServer();
+    const queryPage = vi.fn(() => ({ runs: [], nextBefore: null }));
+    const ro = new RecipeOrchestration({
+      server,
+      getOrchestrator: () => null,
+      recipeOrchestrator: makeRecipeOrchestrator(),
+      recipeRunLog: { queryPage } as any,
+      workdir: "/tmp/ws",
+      logger: {},
+    });
+    ro.wireServerFns();
+
+    const cursor = { createdAt: 1, key: "task:x" };
+    (server as any).runsPageFn({ before: cursor, limit: 3, fields: "summary" });
+    expect(queryPage).toHaveBeenCalledWith({
+      before: cursor,
+      limit: 3,
+      fields: "summary",
+    });
+  });
+
+  it("wireServerFns() — runsPageFn returns an exhausted page when no runLog", () => {
+    const server = makeServer();
+    const ro = new RecipeOrchestration({
+      server,
+      getOrchestrator: () => null,
+      recipeOrchestrator: makeRecipeOrchestrator(),
+      recipeRunLog: null,
+      workdir: "/tmp/ws",
+      logger: {},
+    });
+    ro.wireServerFns();
+    expect((server as any).runsPageFn({ before: null })).toEqual({
+      runs: [],
+      nextBefore: null,
+    });
+  });
+
   it("fireYamlRecipe() — returns {ok:false,error} when recipeOrchestrator.fire() rejects", async () => {
     const fireStub = vi.fn().mockRejectedValue(new Error("boom"));
     const recipeOrch = makeRecipeOrchestrator({ fire: fireStub });

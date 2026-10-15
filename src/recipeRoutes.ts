@@ -78,6 +78,12 @@ import {
 import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { invalidateRecipesCache } from "./recipesHttp.js";
+import {
+  decodeRunCursor,
+  type RunCursor,
+  type RunFields,
+  summarizeRun,
+} from "./runPage.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
 import { AmbiguousActionRefError } from "./workers/actionRef.js";
 import type { OutcomeStore } from "./workers/outcomeStore.js";
@@ -842,7 +848,23 @@ export interface RecipeRouteDeps {
         status?: string;
         recipe?: string;
         after?: number;
+        manualRunId?: string;
       }) => Record<string, unknown>[])
+    | null;
+  /**
+   * Older-than paging (`GET /runs?before=…`) — `RecipeRunLog.queryPage`.
+   * Optional: absent ⇒ a `before` request answers an empty, exhausted page.
+   */
+  runsPageFn?:
+    | ((q: {
+        before: RunCursor | null;
+        limit?: number;
+        trigger?: string;
+        status?: string;
+        recipe?: string;
+        manualRunId?: string;
+        fields?: RunFields;
+      }) => { runs: Record<string, unknown>[]; nextBefore: string | null })
     | null;
   runDetailFn: ((seq: number) => Record<string, unknown> | null) | null;
   /**
@@ -1246,7 +1268,67 @@ export function tryHandleRecipeRoute(
       const manualRunId = sp.get("manualRunId");
       const limit = limitRaw ? Number.parseInt(limitRaw, 10) : Number.NaN;
       const after = afterRaw ? Number.parseInt(afterRaw, 10) : Number.NaN;
-      const runs =
+      const fieldsRaw = sp.get("fields");
+      if (fieldsRaw !== null && fieldsRaw !== "summary") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: "invalid_fields",
+            message: 'fields must be "summary" when given',
+          }),
+        );
+        return true;
+      }
+      const fields = fieldsRaw === "summary" ? "summary" : undefined;
+
+      // Older-than paging. A separate mode with its own response shape
+      // (`nextBefore`) and ordering (`createdAt`, run identity — never `seq`,
+      // which collides across instances); a request without `before` takes
+      // the legacy path below untouched. See src/runPage.ts.
+      const beforeRaw = sp.get("before");
+      if (beforeRaw !== null) {
+        if (afterRaw !== null) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "before_and_after_are_exclusive",
+              message:
+                "before pages by creation time; after pages by seq. Pass one.",
+            }),
+          );
+          return true;
+        }
+        const before =
+          beforeRaw === "latest" ? null : decodeRunCursor(beforeRaw);
+        if (beforeRaw !== "latest" && before === null) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "invalid_cursor",
+              message:
+                'before must be "latest" or a nextBefore value from a previous response',
+            }),
+          );
+          return true;
+        }
+        const page = deps.runsPageFn?.({
+          before,
+          ...(Number.isFinite(limit) && { limit }),
+          ...(trigger && { trigger }),
+          ...(status && { status }),
+          ...(recipe && { recipe }),
+          ...(manualRunId && { manualRunId }),
+          ...(fields && { fields }),
+        }) ?? { runs: [], nextBefore: null };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(page));
+        return true;
+      }
+
+      const rows =
         deps.runsFn?.({
           ...(Number.isFinite(limit) && { limit }),
           ...(trigger && { trigger }),
@@ -1255,6 +1337,7 @@ export function tryHandleRecipeRoute(
           ...(manualRunId && { manualRunId }),
           ...(Number.isFinite(after) && { after }),
         }) ?? [];
+      const runs = fields === "summary" ? rows.map(summarizeRun) : rows;
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ runs }));
     } catch (err) {
