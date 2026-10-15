@@ -137,6 +137,108 @@ describe("http-routes-5 — GET /connections TTL cache", () => {
   });
 });
 
+describe("GET /connections — concurrent misses share one computation", () => {
+  type ListResult = { status: number; body: string; contentType: string };
+  function deferredList() {
+    let resolve!: (r: ListResult) => void;
+    const p = new Promise<ListResult>((r) => {
+      resolve = r;
+    });
+    listSpy.mockImplementationOnce(() => p);
+    return (body = '{"connectors":[]}') =>
+      resolve({ status: 200, body, contentType: "application/json" });
+  }
+
+  function startGet(): {
+    done: Promise<void>;
+    body: () => string | undefined;
+  } {
+    let written: string | undefined;
+    let resolveDone!: () => void;
+    const done = new Promise<void>((r) => {
+      resolveDone = r;
+    });
+    const res = {
+      writeHead() {
+        return this;
+      },
+      end(b?: string) {
+        written = b;
+        resolveDone();
+        return this;
+      },
+    } as unknown as ServerResponse;
+    tryHandleConnectorRoute(
+      makeReq("GET"),
+      res,
+      new URL("http://x/connections"),
+    );
+    return { done, body: () => written };
+  }
+
+  it("two simultaneous misses call handleConnectionsList once", async () => {
+    const finish = deferredList();
+    const a = startGet();
+    const b = startGet();
+    // Let both dispatches reach the cache check before the list resolves.
+    await new Promise((r) => setTimeout(r, 10));
+    finish('{"connectors":["shared"]}');
+    await Promise.all([a.done, b.done]);
+    expect(listSpy).toHaveBeenCalledTimes(1);
+    expect(a.body()).toBe('{"connectors":["shared"]}');
+    expect(b.body()).toBe('{"connectors":["shared"]}');
+  });
+
+  it("a mutation during an in-flight computation stops its result being cached or shared", async () => {
+    const finishStale = deferredList();
+    const stale = startGet();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(listSpy).toHaveBeenCalledTimes(1);
+
+    // A connect/disconnect lands while the first computation is running.
+    invalidateConnectionsCache();
+
+    // A GET after the mutation must NOT join the pre-mutation computation.
+    const finishFresh = deferredList();
+    const fresh = startGet();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(listSpy).toHaveBeenCalledTimes(2);
+
+    finishStale('{"connectors":["stale"]}');
+    await stale.done;
+    finishFresh('{"connectors":["fresh"]}');
+    await fresh.done;
+    expect(fresh.body()).toBe('{"connectors":["fresh"]}');
+
+    // The stale result must not have been written into the cache: the next
+    // GET is served the fresh payload (cached), not the stale one.
+    const next = startGet();
+    await next.done;
+    expect(next.body()).toBe('{"connectors":["fresh"]}');
+    expect(listSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("a stale computation finishing LAST does not overwrite the cache", async () => {
+    const finishStale = deferredList();
+    const stale = startGet();
+    await new Promise((r) => setTimeout(r, 10));
+    invalidateConnectionsCache();
+    const finishFresh = deferredList();
+    const fresh = startGet();
+    await new Promise((r) => setTimeout(r, 10));
+
+    finishFresh('{"connectors":["fresh"]}');
+    await fresh.done;
+    finishStale('{"connectors":["stale"]}');
+    await stale.done;
+
+    const next = startGet();
+    await next.done;
+    expect(next.body()).toBe('{"connectors":["fresh"]}');
+    expect(listSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("http-routes-3 — OAuth callbacks not duplicated in the auth-gated dispatcher", () => {
   // DERIVED from the registry, not hand-listed.
   //
