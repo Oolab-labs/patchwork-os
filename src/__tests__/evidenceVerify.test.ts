@@ -26,7 +26,10 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 const ledger = (name: string) => path.join(dir, name);
 
 describe("verifyEvidenceChains", () => {
-  it("covers every spine ledger and reports absent ones as absent and ok", () => {
+  it("covers every spine ledger, and an EMPTY directory is NOT intact — it verified nothing", () => {
+    // Audit 2026-10-15 (H6): nine ABSENT lines followed by STATUS: INTACT and
+    // exit 0. A wrong --dir, or every ledger deleted, read as a clean spine.
+    // Same rule as audit-shipped-identifiers: a scan of zero files FAILS.
     const r = verifyEvidenceChains(dir);
     // The verifier's list is the spine PLUS non-spine chained ledgers; the
     // spine itself is the coverage/correlation set and must not grow here.
@@ -35,7 +38,73 @@ describe("verifyEvidenceChains", () => {
     );
     expect(r.ledgers.length).toBeGreaterThan(SPINE_LEDGERS.length);
     expect(r.ledgers.every((l) => l.absent)).toBe(true);
+    expect(r.verified).toBe(0);
+    expect(r.absent).toBe(VERIFIED_LEDGERS.length);
+    expect(r.ok).toBe(false);
+    const out = formatEvidenceVerify(r);
+    expect(out).toContain("STATUS: NOTHING VERIFIED");
+    expect(out).not.toContain("STATUS: INTACT");
+  });
+
+  it("one present, intact ledger beside legitimately absent ones IS intact, and says the counts", () => {
+    appendChained(ledger("run_steps.jsonl"), { seq: 1, at: 1 });
+    const r = verifyEvidenceChains(dir);
     expect(r.ok).toBe(true);
+    expect(r.verified).toBe(1);
+    expect(r.absent).toBe(VERIFIED_LEDGERS.length - 1);
+    const out = formatEvidenceVerify(r);
+    expect(out).toMatch(
+      new RegExp(
+        `STATUS: INTACT \\(1 of ${VERIFIED_LEDGERS.length} verified, ${VERIFIED_LEDGERS.length - 1} absent`,
+      ),
+    );
+  });
+
+  it("a ledger whose file is gone but whose .head sidecar remains is a BREAK, not absent", () => {
+    // The sidecar is the only thing that can say the file used to be longer.
+    // With the file deleted it was never consulted, so a deleted ledger passed.
+    const f = ledger("approval_log.jsonl");
+    appendChained(f, { seq: 1, at: 1, kind: "request" });
+    rmSync(f);
+    const r = verifyEvidenceChains(dir);
+    const l = r.ledgers.find((x) => x.file === "approval_log.jsonl");
+    expect(l?.absent).toBe(true);
+    expect(l?.head).toBe("orphaned");
+    expect(l?.ok).toBe(false);
+    expect(l?.breaks.map((b) => b.kind)).toContain("missing-file");
+    expect(r.missingWithHead).toBe(1);
+    expect(r.ok).toBe(false);
+    const out = formatEvidenceVerify(r);
+    expect(out).toContain("MISSING");
+    expect(out).toContain("approval_log.jsonl");
+    expect(out).toContain("STATUS: NOT INTACT");
+  });
+
+  it("legacy rows with no chain are UNCHAINED — non-fatal by default, fatal under expectChained", () => {
+    writeFileSync(
+      ledger("outcome-log.jsonl"),
+      '{"seq":1,"issueUrl":"https://example.test/1","disposition":"junk"}\n',
+    );
+    appendChained(ledger("run_steps.jsonl"), { seq: 1, at: 1 });
+    const r = verifyEvidenceChains(dir);
+    expect(r.unchained).toBe(1);
+    expect(r.verified).toBe(1);
+    expect(r.ok).toBe(true);
+    expect(formatEvidenceVerify(r)).toMatch(/UNCHAINED\s+outcome-log\.jsonl/);
+    const strict = verifyEvidenceChains(dir, { expectChained: true });
+    expect(strict.ok).toBe(false);
+    expect(formatEvidenceVerify(strict)).toContain("STATUS: NOT INTACT");
+  });
+
+  it("--json carries the four counts", () => {
+    appendChained(ledger("run_steps.jsonl"), { seq: 1, at: 1 });
+    const r = verifyEvidenceChains(dir);
+    expect(r).toMatchObject({
+      verified: 1,
+      absent: VERIFIED_LEDGERS.length - 1,
+      unchained: 0,
+      missingWithHead: 0,
+    });
   });
 
   it("is ok when every present ledger verifies, and carries the counts", () => {
