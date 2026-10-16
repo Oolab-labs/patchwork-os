@@ -176,13 +176,37 @@ describe("the snapshot holds counts only", () => {
       ].join("\n"),
     );
 
+    // The same token as a cron recipe that used to work and now fails, so the
+    // cron-halt gate has a name to leak and must not.
+    const HOUR = 60 * 60 * 1000;
+    const now = 20 * 24 * HOUR;
+    const runs: string[] = [];
+    for (let i = 0; i < 8 * 24 + 6; i++) {
+      const createdAt = now - (8 * 24 + 6 - i) * HOUR;
+      runs.push(
+        JSON.stringify({
+          seq: i + 1,
+          taskId: `t-${i}`,
+          recipeName: "sweep-fixture-unique-token",
+          trigger: "cron",
+          status: i < 8 * 24 ? "done" : "error",
+          createdAt,
+          doneAt: createdAt + 1,
+          durationMs: 1,
+        }),
+      );
+    }
+    writeFileSync(path.join(home, "runs.jsonl"), `${runs.join("\n")}\n`);
+
     const { collectSweep } = await import("../sweepCollect.js");
-    const r = collectSweep({ dir: home, now: 1 });
+    const r = collectSweep({ dir: home, now });
 
     // The reading must have SEEN the fixture — otherwise this test passes on an
     // empty scan and proves nothing.
     expect(r.counts["privacy.undeclared"]).toBe(1);
     expect(r.counts["privacy.agentSteps"]).toBe(1);
+    expect(r.gates["cronHalts"]).toBe(false);
+    expect(r.counts["cronHalts.failing"]).toBe(1);
 
     const serialised = JSON.stringify(r);
     expect(serialised).not.toContain("sweep-fixture-unique-token");
@@ -204,5 +228,7 @@ describe("the snapshot holds counts only", () => {
     expect("privacy.undeclared" in r.counts).toBe(false);
     // Same rule for an absent ledger: `evidence` reports ABSENT, not 0 rows.
     expect("evidence.outcome-log.jsonl.rows" in r.counts).toBe(false);
+    // And an absent run log: no cron-halt gate, rather than a green one.
+    expect("cronHalts" in r.gates).toBe(false);
   });
 });
