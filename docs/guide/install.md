@@ -14,7 +14,7 @@ Install globally rather than with `npx`: `npx` does not persist the binary, so t
 | `latest` | `npm install -g patchwork-os` | Currently points at the same build as `beta`; a separate stable line has not been cut. |
 | `canary` | `npm install -g patchwork-os@canary` | Published automatically on every green merge to `main`, versioned `<base>.canary.<run>`. Tracks `main`; untriaged and unsupported, for trying freshly merged changes. |
 
-Pin an exact version (`patchwork-os@1.2.1`) if reproducibility matters more than fast updates. Channel support status is maintained in [SECURITY.md](../../SECURITY.md).
+Pin an exact version (`patchwork-os@1.2.2`) if reproducibility matters more than fast updates. Channel support status is maintained in [SECURITY.md](../../SECURITY.md).
 
 ```bash
 npm install -g patchwork-os@beta

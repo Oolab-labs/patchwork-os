@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.2] — 2026-10-16
+
+### Security
+
+- **Steps inside a nested chained recipe are gated like the parent's**
+  (#1722). The chained runner consulted the effective policy only for the
+  top-level run, so a step inside a recipe called by a `recipe:` step got no
+  approval gate, no worker gate and no forbid rule. A worker-owned chained
+  recipe could reach a forbidden or irreversible tool one call deep. Every
+  depth is now evaluated as part of the parent's run: the same trigger, the
+  same worker gate, and the parent's `requireApproval` setting. A nested
+  recipe's own `requireApproval: false` no longer opts the run out.
+
+  **Expect** approvals or refusals for gated steps inside nested chained
+  recipes that previously ran without asking.
+
 ## [1.2.1] — 2026-10-16
 
 Recipe fixes from the same functionality audit as 1.2.0, plus the release
