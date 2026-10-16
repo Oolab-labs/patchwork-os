@@ -284,15 +284,16 @@ export class RecipeScheduler {
           const raw = readFileSync(cand.filePath, "utf-8");
           const parsed = JSON.parse(raw) as {
             name?: string;
-            trigger?: { type?: string; schedule?: string };
+            trigger?: { type?: string; at?: string; schedule?: string };
           };
           if (parsed.trigger?.type !== "cron") continue;
-          if (
-            !parsed.trigger.schedule ||
-            typeof parsed.trigger.schedule !== "string"
-          )
-            continue;
-          schedule = parsed.trigger.schedule;
+          // `at` as well as `schedule`, matching the YAML branch below: the
+          // installer writes the source recipe unchanged, and YAML recipes
+          // author the expression as `at`. Reading only `schedule` skipped
+          // such a recipe silently.
+          const expr = parsed.trigger.schedule ?? parsed.trigger.at;
+          if (!expr || typeof expr !== "string") continue;
+          schedule = expr;
           name = parsed.name ?? path.basename(f, ".json");
         } else {
           // YAML

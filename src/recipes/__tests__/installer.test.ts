@@ -1,6 +1,7 @@
 import {
   existsSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -113,6 +114,138 @@ steps:
     const result = installRecipeFromFile(src, { recipesDir: dir });
     expect(result.action).toBe("created");
     expect(result.installedPath.endsWith("short-ext.json")).toBe(true);
+  });
+
+  describe("the installed file is the recipe that was installed (audit 2026-10-15, H4)", () => {
+    // The installer used to write JSON.stringify(parseRecipe(raw)), and the
+    // parser keeps only id/prompt/tools/risk/into per step. The installed
+    // copy lost its privacy classification, write acknowledgements,
+    // completion contracts, required vars and guards — every field lint and
+    // doctor check — while 18 tests here stayed green.
+    const GOVERNED_YAML = `name: governed-probe
+description: d
+allowWrites:
+  - file.write
+expect:
+  outputs: [summary]
+trigger:
+  type: manual
+  vars:
+    - name: TOPIC
+      required: true
+steps:
+  - agent:
+      driver: local
+      model: probe-model
+      data_policy:
+        classification: personal
+      prompt: "Summarise {{TOPIC}}"
+    into: summary
+    timeout: 30
+    expect:
+      contains: ok
+  - tool: file.write
+    when: "{{summary}} != ''"
+    path: probe-out.md
+    content: "{{summary}}"
+`;
+
+    it("keeps every governance field on a flat (manual) recipe", () => {
+      const src = path.join(dir, "governed.yaml");
+      writeFileSync(src, GOVERNED_YAML);
+      const recipesDir = path.join(dir, "recipes");
+      const r = installRecipeFromFile(src, { recipesDir });
+      const installed = JSON.parse(readFileSync(r.installedPath, "utf-8"));
+      expect(installed.allowWrites).toEqual(["file.write"]);
+      expect(installed.expect).toEqual({ outputs: ["summary"] });
+      expect(installed.trigger.vars).toEqual([
+        { name: "TOPIC", required: true },
+      ]);
+      expect(installed.steps[0].agent.data_policy).toEqual({
+        classification: "personal",
+      });
+      expect(installed.steps[0].agent.driver).toBe("local");
+      expect(installed.steps[0].timeout).toBe(30);
+      expect(installed.steps[0].expect).toEqual({ contains: "ok" });
+      expect(installed.steps[1].when).toBe("{{summary}} != ''");
+    });
+
+    it("keeps governance fields on an event-triggered (compiled) recipe too", () => {
+      const src = writeRecipe("evt", {
+        ...SIMPLE,
+        allowWrites: ["file.write"],
+        steps: [
+          {
+            ...SIMPLE.steps[0],
+            agent: {
+              prompt: "fix it",
+              data_policy: { classification: "restricted" },
+            },
+          },
+        ],
+      });
+      const r = installRecipeFromFile(src, {
+        recipesDir: path.join(dir, "recipes"),
+      });
+      const installed = JSON.parse(readFileSync(r.installedPath, "utf-8"));
+      expect(installed.allowWrites).toEqual(["file.write"]);
+      expect(installed.steps[0].agent.data_policy).toEqual({
+        classification: "restricted",
+      });
+    });
+
+    it("still normalises a scoped name to its final segment", () => {
+      const src = path.join(dir, "scoped.yaml");
+      writeFileSync(
+        src,
+        GOVERNED_YAML.replace(
+          "name: governed-probe",
+          "name: org/governed-probe",
+        ),
+      );
+      const r = installRecipeFromFile(src, {
+        recipesDir: path.join(dir, "recipes"),
+      });
+      expect(path.basename(r.installedPath)).toBe("governed-probe.json");
+      expect(JSON.parse(readFileSync(r.installedPath, "utf-8")).name).toBe(
+        "governed-probe",
+      );
+    });
+
+    it("still enforces the name pattern on the flat path", () => {
+      const src = path.join(dir, "bad-name.yaml");
+      writeFileSync(
+        src,
+        GOVERNED_YAML.replace("name: governed-probe", "name: Bad_Name"),
+      );
+      expect(() =>
+        installRecipeFromFile(src, { recipesDir: path.join(dir, "recipes") }),
+      ).toThrow(/name must match/);
+    });
+
+    it("installs every shipped template (15 used to fail on a missing step id)", () => {
+      const tdir = path.resolve(
+        import.meta.dirname,
+        "..",
+        "..",
+        "..",
+        "templates",
+        "recipes",
+      );
+      const files = readdirSync(tdir).filter((f) => /\.ya?ml$/.test(f));
+      expect(files.length).toBeGreaterThan(10);
+      const failed: string[] = [];
+      for (const f of files) {
+        try {
+          installRecipeFromFile(path.join(tdir, f), {
+            recipesDir: path.join(dir, "all-templates"),
+          });
+        } catch (err) {
+          failed.push(`${f}: ${(err as Error).message}`);
+        }
+      }
+      expect(failed).toEqual([]);
+    });
   });
 
   it("rejects unknown extensions", () => {
