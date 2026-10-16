@@ -56,7 +56,10 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 
 
+
 ## Recently closed (informal log, prune periodically)
+
+- 2026-10-15 `#1716` — Overview Approve/Deny posts to the bridge's real decision route via one shared path helper
 
 - 2026-10-15 `fix/evidence-verify-absent` (#1715) — `evidence verify`: file-gone-with-`.head` is a `missing-file` break (MISSING), zero verified ledgers is NOTHING VERIFIED exit 1, status line carries counts, legacy-only is UNCHAINED (fatal under `--expect-chained`), `--json` carries the four counts.
 - 2026-10-15 `fix/governance-quiet-off` (#1714) — present-but-unparseable config.json refuses bridge start and local runs (`readProfileConfig` / `ConfigUnreadableError`), non-exact profile value warns + doctor reason; non-list `forbids` reported as `invalid: [0]`; worker-gate build failure refuses under governed (`worker_gate_unavailable`), warns under compat.

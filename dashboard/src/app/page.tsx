@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { apiPath } from "@/lib/api";
+import { approvalDecisionPath } from "@/lib/approvalDecisionPath";
 import { recipeDisplayName } from "@/lib/recipeDisplay";
 import { FirstRunChecklist } from "@/components/FirstRunChecklist";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -1176,7 +1177,7 @@ export default function HomePage() {
         init.headers = { "Content-Type": "application/json" };
         init.body = JSON.stringify({ reason: reason.slice(0, 500) });
       }
-      const res = await fetch(apiPath(`/api/bridge/approvals/${decision}/${p.callId}`), init);
+      const res = await fetch(apiPath(approvalDecisionPath(decision, p.callId)), init);
       if (!res.ok && res.status !== 409) throw new Error(`${decision} failed (${res.status})`);
       toast.success(decision === "approve" ? "Approved" : "Denied");
       setPendingApprovals((prev) => prev.filter((x) => x.callId !== p.callId));
