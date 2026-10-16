@@ -139,7 +139,7 @@ Your preference is stored in `~/.claude/ide/analytics.json` (mode `0600`).
 
 An anonymized summary is POSTed to `https://analytics.patchworkos.com/v1/usage` once a day and once more when the bridge shuts down. Each summary covers only the activity since the previous one, so nothing is counted twice, and activity from before you opted in is never sent:
 
-- Bridge version (e.g. `1.2.0-beta.1`)
+- Bridge version (e.g. `1.2.1`)
 - The length of the period the summary covers, in milliseconds
 - Per-tool counts: `{tool: string, calls: number, errors: number, p50Ms: number, p95Ms: number}`
   - **Built-in tool names** (a fixed allowlist — `getDiagnostics`, `readFile`, `runCommand`, etc.) are sent verbatim

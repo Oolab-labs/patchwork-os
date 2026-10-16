@@ -15,6 +15,11 @@
       "file": "SECURITY.md",
       "version": "0.2.0-alpha.32",
       "reason": "The stale npm `next` dist-tag, recorded in a TODO(owner) asking whether it should be deprecated. Deliberately the old value."
+    },
+    {
+      "file": "SECURITY.md",
+      "version": "1.2.0-beta.3",
+      "reason": "The beta channel is frozen at this version, superseded by the 1.2.x stable line. It is a statement about a past release, not a claim about the current one, and must not track package.json."
     }
   ]
 }
