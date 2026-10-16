@@ -6,6 +6,136 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.0] — 2026-10-16
+
+The first stable release of the 1.2 line. No new work: it is a release of
+what `canary` has carried since `1.2.0-beta.3` (2026-10-01), cut so that
+anyone who needs to pin can pin a named version. The commit log between
+`v1.2.0-beta.3` and this tag is the complete record.
+
+### Security
+
+- **A worker could confirm its own work** (#1713). `github.create_issue`
+  forwarded `labels` untouched, and the outcome classifier matched its
+  confirming labels by substring, so a recipe step could file an issue that
+  was already `confirmed`, and a triage label such as `unconfirmed` counted
+  as confirmation. Either way a worker could climb the trust ramp on evidence
+  it produced itself. `create_issue` now refuses any label the classifier
+  reads as a signal (`disposition_label_refused`), and confirming labels must
+  match exactly.
+- **Governance no longer switches itself off on bad input** (#1714). A
+  `config.json` that exists but cannot be parsed now stops the bridge from
+  starting and refuses `recipe run --local`; it used to resolve silently to
+  the compat profile. A `profile` value that is not exactly `governed` or
+  `compat` warns, and `doctor` names it. A worker's `forbids` written as
+  anything other than a list is reported as unreadable instead of as an empty
+  deny list. When the worker gate cannot be built, the governed profile
+  refuses the run (`worker_gate_unavailable`) instead of running with the
+  worker's authority off.
+- **`evidence verify` can no longer pass having checked nothing** (#1715).
+  An empty or mistyped `--dir` reports `NOTHING VERIFIED` and exits 1. A
+  ledger deleted while its `.head` sidecar remains is reported `MISSING` and
+  fails. The status line carries the counts, and `--expect-chained` makes a
+  legacy-only ledger fatal.
+- **`safeFetch` broke every public HTTPS request** (#1661). The SSRF guard
+  pinned the resolved address by rewriting the URL, which fails the TLS
+  handshake for any name-based certificate; it now pins the connection and
+  leaves the URL alone. The four review follow-ups that `1.2.0-beta.3`
+  listed as open are in: dashboard lockout keyed on the trusted hop, a
+  post-login redirect guard and app-level security headers (#1647); framing
+  headers on the OAuth retry page, proxy-aware limiters and the CIMD fetch
+  under its cap (#1648); decoded route segments re-encoded before proxying
+  to the bridge (#1649); a v2 session must still name an active roster
+  member (#1650).
+- OAuth: RFC 7636 shapes enforced for `code_verifier` and `code_challenge`
+  (#1659); `/oauth/authorize` rate-limited with wrong-token attempts recorded
+  (#1664); a guard against a scope narrower than `mcp` the HTTP gate cannot
+  enforce (#1657).
+- Dashboard: push endpoints validated and the subscription store capped
+  (#1660); placeholder or short session secrets refused (#1665); logout
+  clears the service-worker cache (#1668); bridge security headers kept on
+  proxied HTML (#1667); `/dashboard/data` returns events and perf only with
+  the bearer token (#1669).
+- Identity: scrypt `N=2^17` for new credentials, and the timing-equalising
+  dummy record is now a real one (#1666).
+- Notifications: every send is pinned to the address it checked (#1663).
+- The unique-local IPv6 prefix check ran against every hostname, so any DNS
+  name beginning `fc` or `fd` was treated as private and refused; browsers
+  whose push service lives on such a name could not subscribe. The IPv6 checks
+  now apply only to IPv6 literals (#1677).
+- The recipe path jail refuses the runtime's own secret stores (#1704), and
+  governed agent steps are denied reads of them (#1698).
+- Claude sign-in runs Claude Code's own login; the bridge never handles the
+  credential (#1674). A revoked sign-in halts as `agent_auth`, and status
+  reports a refused sign-in rather than a healthy one (#1690).
+- Dependencies: new high and critical advisories patched in the dashboard and
+  push relay (#1671), `source-map-js` bumped everywhere it is pinned (#1672,
+  #1673); the CVE gate judges a transitive finding by its children (#1662).
+
+### Added
+
+- **`sweep` gates on a scheduled recipe that started failing** (#1712). A
+  cron recipe that ran cleanly for at least seven days and has now failed six
+  times in a row flips a third gate, makes `sweep` exit 1, and writes one
+  inbox note naming it. The snapshot stays counts-only.
+- **Run inputs**: `type: text` inputs for prose (#1691) and `type: file`
+  inputs backed by workspace uploads (#1693). A run with either input
+  captures no step output, assertion actual or judge text; each withheld
+  value is recorded by length and hash instead, and replay refuses such a run
+  (#1694, #1695).
+- **Recipe version on runs**: every run records the version of the recipe it
+  executed (#1692), and install provenance is recorded and reported as
+  `installedFrom` (#1685).
+- **Run paging**: `GET /runs` pages past the in-memory window into the durable
+  store (#1707).
+- **Limits**: optional per-run and per-recipe limits, enforced (#1696).
+- **Telemetry**: a live collector with a daily send, `DO_NOT_TRACK` honoured,
+  and a guarded transport (#1670). Opt-in; see the privacy policy.
+- Scheduling: the cron time zone is set and reported over HTTP (#1682),
+  status says whether it was chosen or defaulted (#1697), and `GET /recipes`
+  reports each scheduled recipe's next run (#1683).
+- Evidence: the verified ledgers download verbatim for offline `evidence
+  verify` (#1678); `GET /privacy/receipts` filters by run (#1684).
+- Inbox: non-markdown files are listed and downloadable (#1680).
+- CLI: `launchd status` (#1655); `scripts/wait-pr-checks` as a tested
+  classifier for "are the checks green" (#1656).
+- Docs: an operator guide, a contributor guide, a CLI reference and a docs
+  index (#1652), the agent contract at `docs/agents.md` (#1653), and
+  `CLAUDE.md` trimmed to the traps with reference moved under `docs/guide`
+  (#1654).
+
+### Fixed
+
+- The Overview page's Approve and Deny buttons posted to a route the bridge
+  does not serve, so every decision from that page failed. All four pages
+  that send a decision now build the path through one helper (#1716).
+- **Connector lifecycle truth** (#1699–#1703): a connection is reported only
+  after an authenticated call succeeds, a passing Test marks the token
+  verified, a JSON error returned with HTTP 200 from a token endpoint is
+  surfaced, rotated secrets are reloaded and used on refresh, and status
+  reports only recorded connection facts and real revoke outcomes.
+- **Governed containment** reaches orchestrator dispatch (#1675) and the local
+  run path, where strict containment is not widened by settings, hooks or the
+  default tool set (#1676).
+- Recipes: how a run was started is recorded and evaluated (#1706); `simulate`
+  reports real gating and a not-signed-in agent halts as `agent_auth` (#1686);
+  a failed agent task is never read as the step's answer (#1679); an
+  overwritten inbox note keeps its run header (#1689); `GET /recipes` lists
+  trigger-declared inputs as vars (#1688); dot-entries are skipped in every
+  recipes-dir scanner and the promote audit lives under `.audit/` (#1687).
+- Privacy: the receipts summary no longer reports chain markers as unreadable
+  (#1681).
+- Clipboard: the native fallback is bounded by a timeout (#1705).
+- Gates: docs-wired counts CLI-reference table rows as documentation (#1658).
+
+### Changed
+
+- Performance: dry-run plans are cached, keyed on every input they depend on
+  (#1709); the Claude sign-in status answer is cached briefly (#1710); a
+  missing `secret-tool` on Linux is no longer re-spawned per call (#1708).
+
+---
+
 ## [1.2.0-beta.3] — 2026-10-01
 
 A security release. It carries one fix that `latest` needs today, and with it
