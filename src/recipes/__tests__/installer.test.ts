@@ -146,7 +146,7 @@ steps:
       contains: ok
   - tool: file.write
     when: "{{summary}} != ''"
-    path: /tmp/probe-out.md
+    path: probe-out.md
     content: "{{summary}}"
 `;
 
