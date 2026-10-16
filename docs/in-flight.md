@@ -59,6 +59,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-10-16 `fix/rollback-dryrun-explain-template` — `recipe rollback --attempt … --dry-run` lists the plan and changes nothing (shared `planRecipeRollback`); `policy explain` with only flags prints usage instead of crashing; `webhook/incident-intake.yaml` calls `linear.createIssue` with a `team` var and acknowledges the write; new guard test: every tool id in a shipped template is registered.
 - 2026-10-15 `feat/sweep-cron-halt-gate` (#1712) — third `sweep` gate: a cron recipe `done` for ≥7 consecutive days whose latest ≥6 runs are all `error` flips healthy→unhealthy (exit 1) and writes one inbox note per flip naming the recipe; the snapshot stays counts-only.
 - 2026-10-15 `#1716` — Overview Approve/Deny posts to the bridge's real decision route via one shared path helper
 
