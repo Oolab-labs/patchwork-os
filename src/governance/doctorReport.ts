@@ -23,7 +23,11 @@ import {
   scanInstalledRecipePlugins,
 } from "./pluginPolicy.js";
 import { policyEnforcementEnabled } from "./policyEnforcement.js";
-import { type GovernanceProfile, resolveProfile } from "./profile.js";
+import {
+  type GovernanceProfile,
+  profileValueWarning,
+  resolveProfile,
+} from "./profile.js";
 import { secretValueCount } from "./secretValues.js";
 import { workerGateEnabled } from "./workerAuthority.js";
 
@@ -87,9 +91,10 @@ export function governanceReport(
       label: "Governed profile",
       value: "UNKNOWN",
       status: "fail",
-      reason: `config.json unreadable (${configError}); runtime resolves to compat`,
+      reason: `config.json unreadable (${configError}); the bridge refuses to start and \`recipe run --local\` refuses to run until it is fixed or removed`,
     });
   } else {
+    const valueWarning = profileValueWarning(cfg?.profile);
     push({
       key: "profile",
       label: "Governed profile",
@@ -98,12 +103,15 @@ export function governanceReport(
           ? "ON"
           : profile.declared
             ? "OFF (compat)"
-            : "OFF (no profile: key — compat)",
+            : valueWarning
+              ? `OFF (profile value ${JSON.stringify(cfg?.profile)} unrecognised — compat)`
+              : "OFF (no profile: key — compat)",
       status: profile.mode === "governed" ? "ok" : "fail",
       reason:
         profile.mode === "governed"
           ? undefined
-          : "profile is compat: approval, automated-run gating, containment, plugin allowlist and fail-closed kill switch are all off by default (`patchwork profile governed` to opt in)",
+          : (valueWarning ??
+            "profile is compat: approval, automated-run gating, containment, plugin allowlist and fail-closed kill switch are all off by default (`patchwork profile governed` to opt in)"),
     });
   }
 

@@ -288,6 +288,47 @@ type ApprovalFn = import("./recipes/approvalRequest.js").ApprovalFn;
  * ADD gating, never remove gating the operator's `approvalGate` required — even
  * on manual runs of a worker-owned recipe. Exported for orchestration tests.
  */
+/**
+ * The worker gate could not be built (trust load, checkpoint, store). Under
+ * the governed profile this REFUSES the run: returning null here would hand
+ * the run to the tier fn alone, with the worker's `forbids` and ramp silently
+ * off — which is widening, however the comment used to read (audit
+ * 2026-10-15, M1).
+ */
+export class WorkerGateUnavailableError extends Error {
+  readonly code = "worker_gate_unavailable";
+  constructor(recipeName: string, cause: unknown) {
+    super(
+      `worker gate for recipe "${recipeName}" could not be built (${
+        cause instanceof Error ? cause.message : String(cause)
+      }); under the governed profile the run is refused rather than run ` +
+        "with the worker's authority silently off",
+    );
+    this.name = "WorkerGateUnavailableError";
+  }
+}
+
+/**
+ * Shared failure policy for the two worker-gate builders. Governed ⇒ throw;
+ * compat ⇒ warn and let the caller fall back, as before but no longer silent.
+ */
+async function workerGateBuildFailed(
+  recipeName: string,
+  what: string,
+  err: unknown,
+): Promise<null> {
+  const { activeProfile } = await import("./governance/profile.js");
+  if (activeProfile().workerAuthority) {
+    throw new WorkerGateUnavailableError(recipeName, err);
+  }
+  console.warn(
+    `[patchwork] worker gate: ${what} for recipe "${recipeName}" failed (${
+      err instanceof Error ? err.message : String(err)
+    }); compat profile falls back to the tier gate — the worker's forbids and ramp are NOT in force for this run`,
+  );
+  return null;
+}
+
 export async function buildWorkerAutonomyGate(
   recipeName: string,
   tierApprovalFn?: ApprovalFn,
@@ -612,10 +653,9 @@ export async function buildWorkerAutonomyGate(
           }
         : { approved: false, refusal: queueDecision };
     };
-  } catch {
-    // Any failure resolving worker trust → fall back to tier gate (never widen
-    // access on an error; never crash the run).
-    return null;
+  } catch (err) {
+    // Governed: refuse (a null here WOULD widen). Compat: warn + tier gate.
+    return workerGateBuildFailed(recipeName, "building the autonomy gate", err);
   }
 }
 
@@ -661,8 +701,12 @@ export async function buildWorkerAgentDisallowedTools(
       pluginTools && pluginTools.length > 0 ? { pluginTools } : undefined,
     );
     return list.length ? list : null;
-  } catch {
-    return null;
+  } catch (err) {
+    return workerGateBuildFailed(
+      recipeName,
+      "deriving the agent step's disallowed tools",
+      err,
+    );
   }
 }
 
