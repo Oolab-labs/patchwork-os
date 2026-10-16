@@ -57,6 +57,47 @@ describe("github.create_issue", () => {
     );
   });
 
+  it("refuses a label that would set the issue's disposition at filing time", async () => {
+    // Audit 2026-10-15 (H3): labels are the one creation-time parameter that
+    // can carry a `confirmed` (or `junk`) signal into the classifier, so a
+    // worker could file an issue already confirmed. Refuse, do not strip:
+    // a silently dropped label would look like success to the recipe.
+    const tool = getTool("github.create_issue");
+    for (const label of [
+      "confirmed",
+      "Verified",
+      "patchwork:valid",
+      "duplicate",
+    ]) {
+      const out = await tool?.execute(
+        ctx({ repo: "o/r", title: "t", labels: ["bug", label] }),
+      );
+      const parsed = JSON.parse(out ?? "{}");
+      expect(parsed.ok, label).toBe(false);
+      expect(parsed.code, label).toBe("disposition_label_refused");
+      expect(parsed.error, label).toContain(label);
+    }
+    expect(createIssue).not.toHaveBeenCalled();
+  });
+
+  it("still accepts ordinary labels, including ones that merely contain a disposition word", async () => {
+    createIssue.mockResolvedValue({ number: 1, url: "u", title: "t" });
+    const tool = getTool("github.create_issue");
+    const out = await tool?.execute(
+      ctx({
+        repo: "o/r",
+        title: "t",
+        labels: ["bug", "unconfirmed", "needs-verified-repro"],
+      }),
+    );
+    expect(JSON.parse(out ?? "{}").ok).toBe(true);
+    expect(createIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        labels: ["bug", "unconfirmed", "needs-verified-repro"],
+      }),
+    );
+  });
+
   it("forwards labels and assignees arrays", async () => {
     createIssue.mockResolvedValue({ number: 1, url: "u", title: "t" });
     const tool = getTool("github.create_issue");

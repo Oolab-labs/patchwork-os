@@ -115,12 +115,21 @@ describe("parseForbidRules — a deny list must never fail silently", () => {
     expect(parsed.invalid).toEqual([1]);
   });
 
-  it("treats a non-array as no rules at all", () => {
+  it("treats an ABSENT list as no rules at all", () => {
     expect(parseForbidRules(undefined)).toEqual({ rules: [], invalid: [] });
-    expect(parseForbidRules({ match: "x", reason: "y" })).toEqual({
-      rules: [],
-      invalid: [],
-    });
+    expect(parseForbidRules(null)).toEqual({ rules: [], invalid: [] });
+  });
+
+  it("reports a PRESENT non-list as invalid — a wrong shape is not an empty list", () => {
+    // Audit 2026-10-15 (M2): a YAML mapping or scalar under `forbids:` gave
+    // zero rules AND zero invalid, so validate / authority-delta /
+    // describeForbidRules all stayed quiet while the deny list was empty.
+    for (const bad of [{ match: "x", reason: "y" }, "vcs-remote", 12, true]) {
+      const parsed = parseForbidRules(bad);
+      expect(parsed.rules, JSON.stringify(bad)).toEqual([]);
+      expect(parsed.invalid, JSON.stringify(bad)).toEqual([0]);
+      expect(describeForbidRules(parsed)).toContain("NOT in force");
+    }
   });
 });
 

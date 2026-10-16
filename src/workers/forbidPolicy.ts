@@ -126,7 +126,13 @@ export function parseForbidRule(input: unknown): ForbidRule | null {
  * deny-list's failure direction is the opposite of the roster's.
  */
 export function parseForbidRules(input: unknown): ParsedForbidRules {
-  if (!Array.isArray(input)) return { rules: [], invalid: [] };
+  // Absent is "nothing forbidden" (the documented opt-in). A PRESENT value
+  // that is not a list is a deny list that failed to load, and must be
+  // reported like any other unparseable entry: audit 2026-10-15 (M2) found a
+  // YAML mapping or scalar here yielded zero rules AND zero invalid, so every
+  // reporter stayed quiet while nothing was in force.
+  if (input === undefined || input === null) return { rules: [], invalid: [] };
+  if (!Array.isArray(input)) return { rules: [], invalid: [0] };
   const rules: ForbidRule[] = [];
   const invalid: number[] = [];
   for (let i = 0; i < input.length; i++) {

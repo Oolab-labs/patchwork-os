@@ -1221,15 +1221,14 @@ export async function resolveLocalGovernance(
   recipeName?: string,
 ): Promise<Partial<RunnerDeps>> {
   if (provided?.governance !== undefined) return {};
-  const { loadConfig } = await import("../patchworkConfig.js");
-  const { resolveProfile } = await import("../governance/profile.js");
-  let cfg: { profile?: unknown; approvalGate?: unknown } = {};
-  try {
-    cfg = loadConfig() as typeof cfg;
-  } catch {
-    cfg = {};
-  }
-  const profile = resolveProfile(cfg);
+  const { readProfileConfig, resolveProfile } = await import(
+    "../governance/profile.js"
+  );
+  // Missing ⇒ compat. Present-but-unparseable ⇒ throws, and the local run is
+  // refused rather than run ungoverned (audit 2026-10-15, H1).
+  const read = readProfileConfig();
+  if (read.warning) process.stderr.write(`[patchwork] ${read.warning}\n`);
+  const profile = resolveProfile(read.config);
   // Publish it process-wide too: executeAgent (containment) and
   // loadRecipeServers (plugin allowlist) read `activeProfile()`, not the
   // runner deps. A local run that set only `deps.governance` would gate
