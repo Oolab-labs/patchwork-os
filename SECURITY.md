@@ -4,7 +4,7 @@ Patchwork OS ships an npm package, IDE extensions, a Docker image, an OAuth 2.0 
 
 ## Supported Versions
 
-The current release line is **1.2.x** (`patchwork-os@1.2.1`), published under the npm `latest` tag.
+The current release line is **1.2.x** (`patchwork-os@1.2.2`), published under the npm `latest` tag.
 
 | Channel | Status | Get fixes? |
 |---|---|---|
