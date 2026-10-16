@@ -3025,6 +3025,20 @@ export function planRecipeRollbackByRun(
     runTaskId,
     opts.root ?? runLedgersRoot(),
   );
+  return planRecipeRollback(recipeName, attemptId, dir);
+}
+
+/**
+ * What `recipe rollback` WOULD do for one attempt, changing nothing. Shared by
+ * the `--run` and `--attempt` forms so `--dry-run` means the same thing on
+ * both — until 2026-10-15 the `--attempt` form ignored the flag and rolled
+ * back for real (audit H5).
+ */
+export function planRecipeRollback(
+  recipeName: string,
+  attemptId: string,
+  dir: string,
+): { restore: string[]; remove: string[]; cannot: string[] } {
   const log = new FileRollbackLog({
     dir,
     scopeKey: deriveScopeKey(recipeName, attemptId),

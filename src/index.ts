@@ -3624,10 +3624,10 @@ if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
   const args = process.argv.slice(4);
   const usage =
     "Usage: patchwork recipe rollback <name> --run <taskId> [--dry-run] [--json]\n" +
-    "       patchwork recipe rollback <name> --attempt <id> --ledger-dir <path> [--json]\n\n" +
+    "       patchwork recipe rollback <name> --attempt <id> --ledger-dir <path> [--dry-run] [--json]\n\n" +
     "--run resolves an automated run (its taskId from `patchwork recipe runs` /\n" +
-    "the dashboard) to its own attempt store; --dry-run lists what would be\n" +
-    "restored or deleted without changing anything.\n\n" +
+    "the dashboard) to its own attempt store. --dry-run, on either form, lists\n" +
+    "what would be restored or deleted without changing anything.\n\n" +
     "Undoes a recipe attempt's file.write/file.append side effects by restoring\n" +
     "each touched file to its pre-run content (or deleting it, if the run\n" +
     "created it). <name> must match the recipe's declared `name:` — not the\n" +
@@ -3675,6 +3675,23 @@ if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
     if (arg !== undefined) positional.push(arg);
   }
   const recipeName = positional[0];
+  const printPlan = (
+    label: string,
+    plan: { restore: string[]; remove: string[]; cannot: string[] },
+  ) => {
+    if (wantJson) {
+      process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
+      return;
+    }
+    const lines = [
+      `Rollback plan for ${label} — nothing changed:`,
+      ...plan.restore.map((p) => `  restore  ${p}`),
+      ...plan.remove.map((p) => `  delete   ${p}`),
+      ...plan.cannot.map((p) => `  CANNOT   ${p} (pre-image uncertain)`),
+    ];
+    if (lines.length === 1) lines.push("  (no file writes recorded)");
+    process.stdout.write(`${lines.join("\n")}\n`);
+  };
 
   if (recipeName && positional.length === 1 && runTaskId !== undefined) {
     if (!runTaskId || runTaskId.startsWith("--") || attemptId || ledgerDir) {
@@ -3690,21 +3707,10 @@ if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
           formatRollbackReport,
         } = await import("./commands/recipe.js");
         if (dryRun) {
-          const plan = planRecipeRollbackByRun(recipeName, taskId);
-          if (wantJson) {
-            process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
-          } else {
-            const lines = [
-              `Rollback plan for run ${taskId} (${recipeName}) — nothing changed:`,
-              ...plan.restore.map((p) => `  restore  ${p}`),
-              ...plan.remove.map((p) => `  delete   ${p}`),
-              ...plan.cannot.map(
-                (p) => `  CANNOT   ${p} (pre-image uncertain)`,
-              ),
-            ];
-            if (lines.length === 1) lines.push("  (no file writes recorded)");
-            process.stdout.write(`${lines.join("\n")}\n`);
-          }
+          printPlan(
+            `run ${taskId} (${recipeName})`,
+            planRecipeRollbackByRun(recipeName, taskId),
+          );
           process.exit(0);
         }
         const result = runRecipeRollbackByRun(recipeName, taskId);
@@ -3737,9 +3743,15 @@ if (process.argv[2] === "recipe" && process.argv[3] === "rollback") {
     const dir = ledgerDir;
     (async () => {
       try {
-        const { runRecipeRollback, formatRollbackReport } = await import(
-          "./commands/recipe.js"
-        );
+        const { planRecipeRollback, runRecipeRollback, formatRollbackReport } =
+          await import("./commands/recipe.js");
+        if (dryRun) {
+          printPlan(
+            `attempt ${attempt} (${name})`,
+            planRecipeRollback(name, attempt, path.resolve(dir)),
+          );
+          process.exit(0);
+        }
         const result = runRecipeRollback(name, attempt, path.resolve(dir));
         if (wantJson) {
           process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -6199,8 +6211,17 @@ if (process.argv[2] === "policy") {
       // sits at i === startIdx and must not be read as the recipe or tool.
       (a, i) => !a.startsWith("--") && !(startIdx >= 0 && i === startIdx),
     );
+    if (!positional[0]) {
+      // Only flags were given (`--json`, `--start manual`). The bare-verb
+      // check above looks at args[1], which is the flag here, so without this
+      // an undefined recipe reached the explainer and crashed.
+      process.stderr.write(
+        "Usage: patchwork policy explain <recipe|file.yaml> [tool] [--start manual|cron|webhook] [--json]\n",
+      );
+      process.exit(2);
+    }
     try {
-      const report = await explainRecipePolicy(positional[0] as string, {
+      const report = await explainRecipePolicy(positional[0], {
         ...(positional[1] && { tool: positional[1] }),
         ...(startRaw !== undefined && {
           start: startRaw as "manual" | "cron" | "webhook",
