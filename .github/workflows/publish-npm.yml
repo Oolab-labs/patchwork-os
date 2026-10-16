@@ -5,6 +5,8 @@ on:
     tags:
       - 'v*-alpha*'
       - 'v*-beta*'
+      # Stable: an exact vX.Y.Z tag cut on a `chore(release):` merge commit.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   # Canary publishes fire after CI succeeds on a main push (a PR merge).
   # Consolidated here from the former publish-canary.yml: npm trusted
   # publishing allows only ONE trusted-publisher entry per package,
@@ -147,6 +149,73 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --prerelease \
+            --generate-notes \
+            --repo Oolab-labs/patchwork-os
+
+  publish-stable-tag:
+    # Stable release from a tag, the same shape as the beta path. The only
+    # other stable path (`publish`, below) bumps the version itself and pushes
+    # to main, so it cannot publish a version a `chore(release):` PR already
+    # set: with package.json at 1.2.0 it would ship 1.2.1. Found when v1.2.0
+    # was tagged and nothing published.
+    #
+    # `npm publish` with no --tag sets `latest`, which also replaces the manual
+    # `npm dist-tag add … latest` step the beta path needs.
+    if: >
+      startsWith(github.ref, 'refs/tags/v') &&
+      !contains(github.ref, '-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Tag must equal package.json version
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if [ "v$V" != "${{ github.ref_name }}" ]; then
+            echo "Tag ${{ github.ref_name }} does not match package.json version $V — refusing to publish"
+            exit 1
+          fi
+          case "$V" in *-*) echo "Prerelease version $V on a stable tag — refusing"; exit 1;; esac
+
+      - name: Upgrade npm for OIDC publishing
+        run: npm install -g npm@latest
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test -- --reporter=dot
+        timeout-minutes: 5
+
+      - name: Check if version already published
+        id: npm_check
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "patchwork-os@$V" version > /dev/null 2>&1; then
+            echo "Already published: patchwork-os@$V — skipping npm publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish stable to npm
+        if: steps.npm_check.outputs.skip != 'true'
+        run: npm publish --access public
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.OOLAB_PAT }}
+        run: |
+          if gh release view "${{ github.ref_name }}" --repo Oolab-labs/patchwork-os > /dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists — skipping"
+            exit 0
+          fi
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
             --generate-notes \
             --repo Oolab-labs/patchwork-os
 
