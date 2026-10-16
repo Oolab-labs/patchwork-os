@@ -46,6 +46,7 @@ function recipe(): YamlRecipe {
   return {
     name: "secret-everywhere",
     trigger: { type: "manual" },
+    allowWrites: ["http.post"],
     context: [{ type: "env", keys: ["API_KEY"] }],
     steps: [
       { tool: "sink.read", value: "{{API_KEY}}", into: "a" },

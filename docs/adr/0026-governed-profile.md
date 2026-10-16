@@ -53,6 +53,7 @@ function:
 | `unregisteredTools` | consult | halt, not skip |
 | `untrustedEnvelope` | agent prompt render | connector output wrapped in `<untrusted>` |
 | `recipeOptOutHonoured` | consult | a recipe cannot opt itself out |
+| `writeAcknowledgement` | `write_acknowledgement` stage, flat-runner dispatch check, `recipe doctor` (all via `writeAckEnforced`) | `enforce`: a write tool not named in the step's own recipe `allowWrites` (id or namespace) is REFUSED, at every chained depth; compat = `flag`, i.e. `FLAG_ENFORCE_ALLOWWRITES` decides as before. Added 2026-10-16 (audit M6): a reversible write does not queue for approval, so the declaration is the only place a recipe says it writes |
 
 The resolved profile is published once at bridge startup (`setActiveProfile`)
 and read everywhere else. `POST /settings` cannot lower `approvalGate` below

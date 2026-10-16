@@ -89,6 +89,7 @@ function recipe(): YamlRecipe {
   return {
     name: "inbox-triage",
     trigger: { type: "manual" },
+    allowWrites: ["http.post"],
     steps: [
       { tool: "gmail.list", into: "inbox" },
       {

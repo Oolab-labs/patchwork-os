@@ -257,6 +257,7 @@ describe("governed profile: an unconfirmed file write in a fan_out asks", () => 
       {
         name: "fanout-governed",
         trigger: { type: "manual" },
+        allowWrites: ["file.write"],
         steps: [
           {
             tool: "fan_out",

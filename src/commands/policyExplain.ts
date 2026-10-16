@@ -19,6 +19,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
+import { FLAG_ENFORCE_ALLOWWRITES, isEnabled } from "../featureFlags.js";
 import {
   computeEffectivePolicy,
   type EffectivePolicy,
@@ -312,6 +313,12 @@ export async function explainRecipePolicy(
       ...(worker && { worker }),
       ...(privacy && { privacy }),
       killSwitch: readKillSwitch(profile),
+      allowWrites: Array.isArray(raw.allowWrites)
+        ? (raw.allowWrites as unknown[]).filter(
+            (e): e is string => typeof e === "string",
+          )
+        : [],
+      writeAckFlagOn: isEnabled(FLAG_ENFORCE_ALLOWWRITES),
     };
     steps.push({
       stepId,

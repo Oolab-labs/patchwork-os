@@ -75,6 +75,8 @@ export interface ToolFacts {
   tier: RiskTier;
   /** From the recipe tool registry; `undefined` when the id is not registered. */
   isWrite?: boolean;
+  /** Registry namespace (`file` for `file.write`); an acknowledgement may name it. */
+  namespace?: string;
   /** True when the registry (or an explicit map) supplied the tier; false when inferred from the name. */
   tierDeclared: boolean;
   /** False when nothing is registered under this id. */
@@ -122,6 +124,14 @@ export interface EffectivePolicyInput {
   /** Per-recipe tool allowlist, when declared (`tools:` on the recipe). */
   recipeToolAllowlist?: string[];
   /**
+   * The `allowWrites` declared by the recipe that OWNS this step (absent ⇒
+   * nothing acknowledged). Never inherited from a parent recipe: it is a
+   * statement about the recipe's own steps, not an approval.
+   */
+  allowWrites?: string[];
+  /** `FLAG_ENFORCE_ALLOWWRITES` as the caller read it; only consulted under compat. */
+  writeAckFlagOn?: boolean;
+  /**
    * What the orchestrator actually injected into the runner. When absent the
    * calculation derives it from the profile (the `explain` path); the runner
    * passes the real values so the two cannot disagree about what is wired.
@@ -136,6 +146,7 @@ export interface PolicyStage {
     | "kill_switch"
     | "tool_registration"
     | "recipe_tool_allowlist"
+    | "write_acknowledgement"
     | "worker_authority"
     | "tool_tier"
     | "trigger"
@@ -346,6 +357,35 @@ export function computeEffectivePolicy(
     });
   }
 
+  // 3b. Write acknowledgement (audit M6). Before worker authority, so an
+  // undeclared write never reaches an approval a human might wave through.
+  if (tool.isWrite !== true || tool.isAgentStep) {
+    stages.push({
+      stage: "write_acknowledgement",
+      verdict: "N/A",
+      reason: "tool does not write",
+    });
+  } else if (isWriteAcknowledged(tool.id, tool.namespace, input.allowWrites)) {
+    stages.push({
+      stage: "write_acknowledgement",
+      verdict: "ALLOW",
+      reason: "write acknowledged in allowWrites",
+    });
+  } else if (writeAckEnforced(profile, input.writeAckFlagOn === true)) {
+    stages.push({
+      stage: "write_acknowledgement",
+      verdict: "REFUSE",
+      reason: `unacknowledged-write: ${tool.id} writes and is not in this recipe's allowWrites — add "${tool.id}"${tool.namespace ? ` (or "${tool.namespace}")` : ""}`,
+    });
+    return { final: "REFUSED", stages, consultsApproval: false };
+  } else {
+    stages.push({
+      stage: "write_acknowledgement",
+      verdict: "ALLOW",
+      reason: `${tool.id} writes and is not in allowWrites — not enforced under compat (FLAG_ENFORCE_ALLOWWRITES off)`,
+    });
+  }
+
   // 4. Worker authority (forbid is final; gate → approval unless standing).
   let workerWantsApproval = false;
   if (input.worker) {
@@ -491,4 +531,30 @@ export function formatEffectivePolicy(
         : "REFUSED";
   lines.push(`FINAL RESULT: ${label}`);
   return lines.join("\n");
+}
+
+/**
+ * Is a recipe's write acknowledgement ENFORCED under this profile? Governed:
+ * always. Compat: only when `FLAG_ENFORCE_ALLOWWRITES` is on. Shared by the
+ * policy stage, the flat runner's dispatch-time check and `recipe doctor`, so
+ * the three cannot disagree about whether an unacknowledged write runs.
+ */
+export function writeAckEnforced(
+  profile: GovernanceProfile,
+  flagOn: boolean,
+): boolean {
+  return profile.writeAcknowledgement === "enforce" || flagOn;
+}
+
+/** Acknowledged by exact tool id, or by its registry namespace. */
+export function isWriteAcknowledged(
+  toolId: string,
+  namespace: string | undefined,
+  allowWrites: readonly string[] | undefined,
+): boolean {
+  if (!allowWrites || allowWrites.length === 0) return false;
+  return (
+    allowWrites.includes(toolId) ||
+    (namespace !== undefined && allowWrites.includes(namespace))
+  );
 }

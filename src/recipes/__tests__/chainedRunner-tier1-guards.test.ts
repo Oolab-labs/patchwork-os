@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { resolveProfile } from "../../governance/profile.js";
 import type {
   ChainedRecipe,
   ExecutionDeps,
@@ -18,6 +19,7 @@ import type {
 } from "../chainedRunner.js";
 import { executeChainedStep, runChainedRecipe } from "../chainedRunner.js";
 import { createOutputRegistry } from "../outputRegistry.js";
+import "../tools/index.js";
 import type { RunBudget } from "../runBudget.js";
 
 const baseOptions: RunOptions = {
@@ -217,6 +219,73 @@ describe("executeChainedStep — approval gate (Tier-1 #4)", () => {
     );
     expect(requireApprovalFn).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
+  });
+});
+
+describe("executeChainedStep — write acknowledgement under governed (audit M6)", () => {
+  // The chained runner never checked `allowWrites` at all. Under governed an
+  // unacknowledged write is refused before dispatch. A nested step is judged
+  // against ITS OWN recipe's declaration: an acknowledgement is a statement
+  // about the recipe's own steps, not an approval, so it is not inherited.
+  const governed = resolveProfile({ profile: "governed" });
+
+  it("refuses an unacknowledged write and never dispatches it", async () => {
+    const executeTool = vi.fn().mockResolvedValue({ ok: true });
+    const recipe = { name: "r", steps: [] } as unknown as ChainedRecipe;
+    const result = await executeChainedStep(
+      ctxFor(
+        { id: "w", tool: "file.write", path: "x.md", content: "c" },
+        recipe,
+      ),
+      makeDeps({ executeTool, governance: governed }),
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("allowWrites");
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("dispatches an acknowledged write", async () => {
+    const executeTool = vi.fn().mockResolvedValue({ ok: true });
+    const recipe = {
+      name: "r",
+      steps: [],
+      allowWrites: ["file.write"],
+    } as unknown as ChainedRecipe;
+    const result = await executeChainedStep(
+      ctxFor(
+        { id: "w", tool: "file.write", path: "x.md", content: "c" },
+        recipe,
+      ),
+      makeDeps({ executeTool, governance: governed }),
+    );
+    expect(result.success).toBe(true);
+    expect(executeTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("a nested step does not inherit its parent's acknowledgement", async () => {
+    const executeTool = vi.fn().mockResolvedValue({ ok: true });
+    const child = {
+      name: "child",
+      trigger: { type: "chained" },
+      steps: [{ id: "w", tool: "file.write", path: "x.md", content: "c" }],
+    } as unknown as ChainedRecipe;
+    const parent = {
+      name: "parent",
+      trigger: { type: "chained" },
+      allowWrites: ["file.write"],
+      steps: [{ id: "call", recipe: "child" }],
+    } as unknown as ChainedRecipe;
+    const result = await runChainedRecipe(
+      parent,
+      baseOptions,
+      makeDeps({
+        executeTool,
+        governance: governed,
+        loadNestedRecipe: vi.fn().mockResolvedValue({ recipe: child }),
+      }),
+    );
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
   });
 });
 

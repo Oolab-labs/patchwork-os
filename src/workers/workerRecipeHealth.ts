@@ -59,9 +59,10 @@ export interface RecipeHealthFinding {
  * machine, and a permanently-red gate is how a real warning gets ignored. It is
  * still REPORTED, with what it means when the tool is not coming from anywhere.
  *
- * `unacknowledged-write` — enforced at runtime only under
- * `FLAG_ENFORCE_ALLOWWRITES`, which is off by default. An error under that flag
- * and advisory without it; this check cannot tell which machine it is on.
+ * `unacknowledged-write` — enforced at runtime under the governed profile, and
+ * under compat only with `FLAG_ENFORCE_ALLOWWRITES` on. Preflight now reports
+ * it as an error where enforced and a warning where not (audit M6), but this
+ * check still treats it as state-dependent rather than re-deriving that.
  */
 const STATE_DEPENDENT_CODES = new Set([
   "unresolved-tool",

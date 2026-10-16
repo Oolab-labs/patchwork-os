@@ -209,6 +209,7 @@ async function runFlat(
     {
       name: "journal-post",
       trigger: { type: "manual" },
+      allowWrites: ["http.post"],
       steps,
       ...recipeExtra,
     } as unknown as YamlRecipe,
@@ -248,6 +249,7 @@ async function runChained(
   const result = await runChainedRecipe(
     {
       name: "journal-post-chained",
+      allowWrites: ["http.post"],
       steps,
       ...recipeExtra,
     } as unknown as ChainedRecipe,
@@ -608,7 +610,11 @@ describe("chained runner — a nested recipe", () => {
       [{ id: "sub", recipe: "child", retry: 2, retryDelay: 1 }],
       {},
       undefined,
-      { name: "child", steps: [{ id: "post", ...postStep(FAILS_CLEAN) }] },
+      {
+        name: "child",
+        allowWrites: ["http.post"],
+        steps: [{ id: "post", ...postStep(FAILS_CLEAN) }],
+      },
     );
 
     expect(target.dispatches).toBe(1);
@@ -818,6 +824,7 @@ describe("chained runner — a nested child with a tolerated HTTP failure", () =
       undefined,
       {
         name: "child",
+        allowWrites: ["http.post"],
         steps: [
           { id: "notify", ...postStep(FAILS_CLEAN), optional: true },
           {

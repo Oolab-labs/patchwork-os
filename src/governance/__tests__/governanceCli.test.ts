@@ -144,6 +144,7 @@ describe("patchwork profile", () => {
 describe("patchwork policy explain", () => {
   const recipe = `name: invoice-review
 trigger: { type: cron, schedule: "0 9 * * *" }
+allowWrites: [file.write, http.post]
 steps:
   - tool: file.read
     path: ./in.txt
