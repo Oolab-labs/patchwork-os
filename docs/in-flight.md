@@ -56,9 +56,12 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 
 
+
 ## Recently closed (informal log, prune periodically)
 
 - 2026-10-15 `feat/sweep-cron-halt-gate` (#1712) — third `sweep` gate: a cron recipe `done` for ≥7 consecutive days whose latest ≥6 runs are all `error` flips healthy→unhealthy (exit 1) and writes one inbox note per flip naming the recipe; the snapshot stays counts-only.
+- 2026-10-15 `#1716` — Overview Approve/Deny posts to the bridge's real decision route via one shared path helper
+
 - 2026-10-15 `fix/evidence-verify-absent` (#1715) — `evidence verify`: file-gone-with-`.head` is a `missing-file` break (MISSING), zero verified ledgers is NOTHING VERIFIED exit 1, status line carries counts, legacy-only is UNCHAINED (fatal under `--expect-chained`), `--json` carries the four counts.
 - 2026-10-15 `fix/governance-quiet-off` (#1714) — present-but-unparseable config.json refuses bridge start and local runs (`readProfileConfig` / `ConfigUnreadableError`), non-exact profile value warns + doctor reason; non-list `forbids` reported as `invalid: [0]`; worker-gate build failure refuses under governed (`worker_gate_unavailable`), warns under compat.
 - 2026-10-15 `fix/label-self-confirmation` (#1713) — `github.create_issue` refuses disposition-bearing labels (`disposition_label_refused`); `classifyIssueDisposition` matches confirmed labels exactly, junk still by substring; both lists exported from one place; guard test checks write-tool params as well as names.
