@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.2.0] — 2026-10-15
+## [1.2.0] — 2026-10-16
 
 The first stable release of the 1.2 line. No new work: it is a release of
 what `canary` has carried since `1.2.0-beta.3` (2026-10-01), cut so that
@@ -15,6 +15,28 @@ anyone who needs to pin can pin a named version. The commit log between
 
 ### Security
 
+- **A worker could confirm its own work** (#1713). `github.create_issue`
+  forwarded `labels` untouched, and the outcome classifier matched its
+  confirming labels by substring, so a recipe step could file an issue that
+  was already `confirmed`, and a triage label such as `unconfirmed` counted
+  as confirmation. Either way a worker could climb the trust ramp on evidence
+  it produced itself. `create_issue` now refuses any label the classifier
+  reads as a signal (`disposition_label_refused`), and confirming labels must
+  match exactly.
+- **Governance no longer switches itself off on bad input** (#1714). A
+  `config.json` that exists but cannot be parsed now stops the bridge from
+  starting and refuses `recipe run --local`; it used to resolve silently to
+  the compat profile. A `profile` value that is not exactly `governed` or
+  `compat` warns, and `doctor` names it. A worker's `forbids` written as
+  anything other than a list is reported as unreadable instead of as an empty
+  deny list. When the worker gate cannot be built, the governed profile
+  refuses the run (`worker_gate_unavailable`) instead of running with the
+  worker's authority off.
+- **`evidence verify` can no longer pass having checked nothing** (#1715).
+  An empty or mistyped `--dir` reports `NOTHING VERIFIED` and exits 1. A
+  ledger deleted while its `.head` sidecar remains is reported `MISSING` and
+  fails. The status line carries the counts, and `--expect-chained` makes a
+  legacy-only ledger fatal.
 - **`safeFetch` broke every public HTTPS request** (#1661). The SSRF guard
   pinned the resolved address by rewriting the URL, which fails the TLS
   handshake for any name-based certificate; it now pins the connection and
@@ -52,6 +74,10 @@ anyone who needs to pin can pin a named version. The commit log between
 
 ### Added
 
+- **`sweep` gates on a scheduled recipe that started failing** (#1712). A
+  cron recipe that ran cleanly for at least seven days and has now failed six
+  times in a row flips a third gate, makes `sweep` exit 1, and writes one
+  inbox note naming it. The snapshot stays counts-only.
 - **Run inputs**: `type: text` inputs for prose (#1691) and `type: file`
   inputs backed by workspace uploads (#1693). A run with either input
   captures no step output, assertion actual or judge text; each withheld
@@ -80,6 +106,9 @@ anyone who needs to pin can pin a named version. The commit log between
 
 ### Fixed
 
+- The Overview page's Approve and Deny buttons posted to a route the bridge
+  does not serve, so every decision from that page failed. All four pages
+  that send a decision now build the path through one helper (#1716).
 - **Connector lifecycle truth** (#1699–#1703): a connection is reported only
   after an authenticated call succeeds, a passing Test marks the token
   verified, a JSON error returned with HTTP 200 from a token endpoint is
