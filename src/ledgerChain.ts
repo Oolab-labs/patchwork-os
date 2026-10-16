@@ -126,7 +126,9 @@ export type ChainBreakKind =
   | "truncated"
   | "unchained"
   | "malformed-row"
-  | "malformed-marker";
+  | "malformed-marker"
+  /** The ledger file is gone but its `.head` sidecar remains: it used to exist. */
+  | "missing-file";
 
 export interface ChainBreak {
   kind: ChainBreakKind;
@@ -161,7 +163,15 @@ export interface ChainVerification {
   breaks: ChainBreak[];
   writeFailedSealed: number;
   writeFailedPending: number;
-  head: "ok" | "missing" | "truncated" | "mismatch" | "stale" | "n/a";
+  head:
+    | "ok"
+    | "missing"
+    | "truncated"
+    | "mismatch"
+    | "stale"
+    | "n/a"
+    /** File absent, sidecar present — the file was deleted, not never written. */
+    | "orphaned";
 }
 
 /**
@@ -524,7 +534,19 @@ export function verifyLedgerChain(file: string): ChainVerification {
     writeFailedPending: countLines(chainSidecarPaths(file).writeFailed),
     head: "n/a",
   };
-  if (v.absent) return v;
+  if (v.absent) {
+    // The sidecar is the only thing that can say the file used to be longer,
+    // and "longer than nothing" is the deleted-ledger case. Until 2026-10-15
+    // it was never consulted when the file was gone, so a deleted ledger
+    // verified as ABSENT and the spine stayed INTACT (audit H6).
+    const head = readHead(file);
+    if (head) {
+      v.head = "orphaned";
+      v.ok = false;
+      v.breaks.push({ kind: "missing-file", line: 0, iseq: head.iseq });
+    }
+    return v;
+  }
 
   const bytes = readFileSync(file);
   const text = bytes.toString("utf-8");
