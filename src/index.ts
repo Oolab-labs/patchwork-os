@@ -5339,8 +5339,10 @@ if (process.argv[2] === "sweep") {
         "What MOVED since the last sweep. Composes doctor, workers validate,\n" +
         "evidence, privacy undeclared and pr-outcomes into one reading, appends it\n" +
         "to sweep_snapshots.jsonl, and diffs it against the previous one.\n\n" +
-        "Two of the readings are GATES and can fail this command: deployment\n" +
-        "freshness and worker-manifest validity. Everything else is drift and is\n" +
+        "Three of the readings are GATES and can fail this command: deployment\n" +
+        "freshness, worker-manifest validity, and a cron recipe that ran done for\n" +
+        "7+ days and whose latest 6+ runs are all error (a flip also writes one\n" +
+        "inbox note naming the recipe). Everything else is drift and is\n" +
         "reported without failing — the evidence ratios fall by construction as\n" +
         "ledgers accrue rows, and an undeclared agent step is ADR-0021's documented\n" +
         "default. Wiring those to an exit code would make sweep permanently red,\n" +
@@ -5360,7 +5362,12 @@ if (process.argv[2] === "sweep") {
   }
   (async () => {
     try {
-      const { collectSweep } = await import("./maintenance/sweepCollect.js");
+      const { collectCronHalts, collectSweep } = await import(
+        "./maintenance/sweepCollect.js"
+      );
+      const { noteCronHaltFlip } = await import(
+        "./maintenance/cronHaltGate.js"
+      );
       const { appendSnapshot, diffReadings, formatSweep, readLastSnapshot } =
         await import("./maintenance/sweep.js");
       const { patchworkHome } = await import("./patchworkHome.js");
@@ -5387,14 +5394,32 @@ if (process.argv[2] === "sweep") {
       // Read the previous snapshot BEFORE appending this one, or the diff
       // compares the reading against itself and every sweep reports nothing.
       const previous = readLastSnapshot(dir as string);
+      const now = Date.now();
+      const cronHalts = collectCronHalts(dir as string, now);
       const reading = collectSweep({
         dir: dir as string,
+        now,
+        ...(cronHalts !== undefined ? { cronHalts } : {}),
         ...(expectRunning !== undefined ? { expectRunning } : {}),
       });
       const delta = diffReadings(previous, reading);
 
       const wrote = !args.includes("--no-write");
       if (wrote) appendSnapshot(dir as string, reading);
+      // The recipe name lives in the inbox note, never in the snapshot. One
+      // note per FLIP: a gate that stays unhealthy produces no delta.
+      const note =
+        cronHalts !== undefined
+          ? noteCronHaltFlip({
+              delta,
+              assessment: cronHalts,
+              inbox: path.join(dir as string, "inbox"),
+              now,
+            })
+          : undefined;
+      if (note && !args.includes("--json")) {
+        process.stderr.write(`[sweep] inbox note written: ${note}\n`);
+      }
 
       process.stdout.write(
         args.includes("--json")
@@ -5415,7 +5440,7 @@ if (process.argv[2] === "evidence") {
   const args = process.argv.slice(3);
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
-      "Usage: patchwork evidence [verify] [--dir <path>] [--json]\n\n" +
+      "Usage: patchwork evidence [verify] [--dir <path>] [--json] [--expect-chained]\n\n" +
         "  verify        is every spine ledger internally intact? (ADR-0027) Checks the\n" +
         "                per-row hash chain, the legacy-prefix commitment, the head sidecar\n" +
         "                and unsealed write failures. Exits 1 on any break — the only form\n" +
@@ -5427,7 +5452,8 @@ if (process.argv[2] === "evidence") {
         "correlationId is a run's taskId and these ledgers hold real task titles and\n" +
         "third-party record ids. A measurement may leave the machine; the rows may not.\n\n" +
         "  --dir <path>  ledger directory (default: $PATCHWORK_HOME)\n" +
-        "  --json        emit the raw report\n",
+        "  --json        emit the raw report\n" +
+        "  --expect-chained  (verify) a ledger with legacy rows and no chain is NOT ok\n",
     );
     process.exit(0);
   }
@@ -5444,7 +5470,7 @@ if (process.argv[2] === "evidence") {
         args,
         subcommands: ["verify"],
         valueFlags: ["--dir"],
-        flags: ["--json"],
+        flags: ["--json", "--expect-chained"],
       });
       const dirIdx = args.indexOf("--dir");
       const dir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
@@ -5456,7 +5482,10 @@ if (process.argv[2] === "evidence") {
         const { verifyEvidenceChains, formatEvidenceVerify } = await import(
           "./evidenceVerify.js"
         );
-        const r = dir ? verifyEvidenceChains(dir) : verifyEvidenceChains();
+        const verifyOpts = { expectChained: args.includes("--expect-chained") };
+        const r = dir
+          ? verifyEvidenceChains(dir, verifyOpts)
+          : verifyEvidenceChains(undefined, verifyOpts);
         process.stdout.write(
           args.includes("--json")
             ? `${JSON.stringify(r, null, 2)}\n`

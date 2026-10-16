@@ -26,6 +26,8 @@
  * each names the primitive it feeds. Nothing here is a new flag.
  */
 
+import { existsSync } from "node:fs";
+import { defaultConfigPath, loadConfig } from "../patchworkConfig.js";
 export const PROFILE_MODES = ["governed", "compat"] as const;
 export type ProfileMode = (typeof PROFILE_MODES)[number];
 
@@ -102,6 +104,67 @@ export interface ProfileConfigInput {
  * guess). An explicit but unrecognised value is reported by `doctor`, not
  * silently promoted to governed.
  */
+/**
+ * A config.json that EXISTS but cannot be parsed. Thrown by `readProfileConfig`
+ * so the bridge and the local run path refuse to resolve a profile from it.
+ * Audit 2026-10-15 (H1): both sites previously caught every error with the
+ * comment "no config.json ⇒ compat", but only a MISSING file resolves to
+ * compat by design — a stray comma was silently switching governed off.
+ */
+export class ConfigUnreadableError extends Error {
+  readonly code = "config_unreadable";
+  constructor(configPath: string, cause: unknown) {
+    super(
+      `config.json at ${configPath} exists but is unparseable (${
+        cause instanceof Error ? cause.message : String(cause)
+      }). Refusing to resolve a governance profile from an unreadable file — ` +
+        "a corrupt config must not silently mean compat. Fix the file, or " +
+        "remove it to run with defaults.",
+    );
+    this.name = "ConfigUnreadableError";
+  }
+}
+
+/**
+ * A warning when `profile:` is present but is not one of the two exact
+ * spellings `resolveProfile` accepts. Absent is not a warning: it is the
+ * documented default.
+ */
+export function profileValueWarning(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "governed" || raw === "compat") return undefined;
+  return (
+    `config.json \`profile\` is ${JSON.stringify(raw)}, which is not one of ` +
+    '"governed" | "compat" (exact, lower-case); the runtime resolves it to ' +
+    "compat. Run `patchwork profile governed` to set it correctly."
+  );
+}
+
+/**
+ * Read the profile-relevant part of config.json for `resolveProfile`.
+ *
+ * Missing file ⇒ `{}` (compat by default, unchanged). Present-but-unparseable
+ * ⇒ throws `ConfigUnreadableError` — the ONE behaviour both the bridge start
+ * and the `recipe run --local` path must share, so neither can turn a corrupt
+ * file into an ungoverned run. A present value that is not an exact spelling
+ * is returned together with `warning` so the caller can log it.
+ */
+export function readProfileConfig(opts: { configPath?: string } = {}): {
+  config: ProfileConfigInput;
+  warning?: string;
+} {
+  const configPath = opts.configPath ?? defaultConfigPath();
+  if (!existsSync(configPath)) return { config: {} };
+  let cfg: ProfileConfigInput;
+  try {
+    cfg = loadConfig(configPath) as ProfileConfigInput;
+  } catch (err) {
+    throw new ConfigUnreadableError(configPath, err);
+  }
+  const warning = profileValueWarning(cfg.profile);
+  return warning ? { config: cfg, warning } : { config: cfg };
+}
+
 export function resolveProfile(
   cfg: ProfileConfigInput | undefined,
 ): GovernanceProfile {

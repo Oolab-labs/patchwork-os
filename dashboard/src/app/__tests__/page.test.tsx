@@ -52,6 +52,17 @@ function mockFetchRoutes(routes: Record<string, () => Response>) {
  *  onChange fires) then dispatches "input" — plain `.value =` + a synthetic
  *  Event bypasses React's value tracker and the component's state never
  *  updates, silently no-opping the "type + submit" flow in tests. */
+// The Overview page once posted decisions to `/api/bridge/approvals/<decision>/<id>`,
+// a route the bridge does not serve, and the tests mocked that same wrong path
+// so they stayed green while every click 404'd. Assert the wrong shape was
+// never requested, independent of what the mock happens to answer.
+function expectNoWrongDecisionPath() {
+  const urls = (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(
+    ([input]) => (typeof input === "string" ? input : String(input)),
+  );
+  expect(urls.filter((u) => /\/api\/bridge\/approvals\/(approve|reject)\//.test(u))).toEqual([]);
+}
+
 function typeIntoInput(input: HTMLInputElement, value: string) {
   const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -658,7 +669,10 @@ describe("<HomePage/> — Terminal deck", () => {
     const approveMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/bridge/approvals/approve/")) return approveMock(init);
+      // The bridge routes decisions at `/approve/<id>` / `/reject/<id>`; there
+      // is no `/approvals/` prefix (that is the single-call detail route).
+      if (url.endsWith("/api/bridge/approve/call-high") || url.endsWith("/api/bridge/approve/call-1"))
+        return approveMock(init);
       for (const [key, make] of Object.entries({
         ...HEALTHY_ROUTES,
         "/api/bridge/approvals": () =>
@@ -706,6 +720,7 @@ describe("<HomePage/> — Terminal deck", () => {
       expect(approveMock).toHaveBeenCalledTimes(1);
     });
     confirmSpy.mockRestore();
+    expectNoWrongDecisionPath();
   });
 
   it("1:tail shows a Stop control on the row for an in-progress run matched by recipeName", async () => {
@@ -1150,7 +1165,10 @@ describe("<HomePage/> — Terminal deck", () => {
     const approveMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/bridge/approvals/approve/")) return approveMock(init);
+      // The bridge routes decisions at `/approve/<id>` / `/reject/<id>`; there
+      // is no `/approvals/` prefix (that is the single-call detail route).
+      if (url.endsWith("/api/bridge/approve/call-high") || url.endsWith("/api/bridge/approve/call-1"))
+        return approveMock(init);
       for (const [key, make] of Object.entries({
         ...HEALTHY_ROUTES,
         "/api/bridge/approvals": () =>
@@ -1187,6 +1205,48 @@ describe("<HomePage/> — Terminal deck", () => {
     await waitFor(() => {
       expect(approveMock).toHaveBeenCalledTimes(1);
     });
+    expectNoWrongDecisionPath();
+  });
+
+  it("section 2's Deny posts to the bridge's reject route, never an /approvals/ prefix", async () => {
+    const rejectMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/api/bridge/reject/call-1")) return rejectMock(init);
+      for (const [key, make] of Object.entries({
+        ...HEALTHY_ROUTES,
+        "/api/bridge/approvals": () =>
+          jsonResponse([
+            {
+              callId: "call-1",
+              toolName: "gitPush",
+              tier: "medium",
+              requestedAt: Date.now(),
+              summary: "push to main",
+            },
+          ]),
+      })) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const section = container.querySelector(".td-today");
+    const denyBtn = within(section as HTMLElement).getByText("Deny");
+    await act(async () => {
+      denyBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(rejectMock).toHaveBeenCalledTimes(1);
+    });
+    expect(rejectMock.mock.calls[0][0]).toMatchObject({ method: "POST" });
+    expectNoWrongDecisionPath();
   });
 
   it("section 2's high-tier approve asks for confirmation, same safety gate as /approvals", async () => {

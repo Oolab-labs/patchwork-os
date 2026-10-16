@@ -1,5 +1,5 @@
 /**
- * Collect one `SweepReading` from the five read-only verbs.
+ * Collect one `SweepReading` from the five read-only verbs plus the run log.
  *
  * Kept apart from `sweep.ts` so the diff stays a pure function a test can drive.
  * This half touches the filesystem and every subsystem; that half decides what a
@@ -28,6 +28,13 @@ import {
   defaultWorkersDir,
   validateWorkers,
 } from "../workers/workersCli.js";
+import {
+  assessCronHalts,
+  CRON_HALT_GATE,
+  type CronHaltAssessment,
+  cronRunLogPresent,
+  readCronRuns,
+} from "./cronHaltGate.js";
 import { readObservations, summarise } from "./prOutcomeLedger.js";
 import { SWEEP_RV, type SweepReading } from "./sweep.js";
 
@@ -38,6 +45,28 @@ export interface CollectOptions {
   expectRunning?: number;
   /** ms epoch for the reading. Injected so a test is not at the mercy of a clock. */
   now?: number;
+  /**
+   * A cron-halt assessment already taken (the dispatcher needs the recipe
+   * names for the inbox note, which the reading must not carry). Absent ⇒
+   * taken here.
+   */
+  cronHalts?: CronHaltAssessment;
+}
+
+/**
+ * Take the cron-halt reading, or undefined when there is no run log to read —
+ * an absent log is a reading that could not be taken, not a healthy gate.
+ */
+export function collectCronHalts(
+  dir: string,
+  now: number,
+): CronHaltAssessment | undefined {
+  if (!cronRunLogPresent(dir)) return undefined;
+  try {
+    return assessCronHalts(readCronRuns(dir), { now });
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -88,6 +117,16 @@ export function collectSweep(opts: CollectOptions = {}): SweepReading {
     counts["workers.findings"] = v.findings.length;
   } catch {
     // No workers directory is a legitimate install. Omit rather than zero.
+  }
+
+  // --- gate 3: did a scheduled recipe that used to work stop working? ---
+  // Counts only. The names go to an inbox note written by the dispatcher on
+  // the FLIP, never into this row (see cronHaltGate.ts).
+  const halts = opts.cronHalts ?? collectCronHalts(dir, opts.now ?? Date.now());
+  if (halts !== undefined) {
+    gates[CRON_HALT_GATE] = halts.failing.length === 0;
+    counts["cronHalts.eligibleRecipes"] = halts.eligible;
+    counts["cronHalts.failing"] = halts.failing.length;
   }
 
   // --- drift: evidence spine ---

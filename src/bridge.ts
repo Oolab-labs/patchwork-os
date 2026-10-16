@@ -1979,15 +1979,14 @@ export class Bridge {
     // turns on worker authority + policy enforcement (in memory, never
     // persisted — the profile is the source of truth, not the flag file).
     {
-      const { resolveProfile, setActiveProfile } = await import(
-        "./governance/profile.js"
-      );
-      let pwCfg: { profile?: unknown; approvalGate?: unknown } = {};
-      try {
-        pwCfg = loadPatchworkConfig() as typeof pwCfg;
-      } catch {
-        /* no config.json ⇒ compat */
-      }
+      const { readProfileConfig, resolveProfile, setActiveProfile } =
+        await import("./governance/profile.js");
+      // A MISSING config.json is compat by design. A PRESENT one that cannot
+      // be parsed THROWS here and the bridge does not start: a corrupt file
+      // must never resolve to "ungoverned" (audit 2026-10-15, H1).
+      const read = readProfileConfig();
+      const pwCfg = read.config;
+      if (read.warning) this.logger.warn(`[patchwork] ${read.warning}`);
       const profile = resolveProfile({
         profile: pwCfg.profile,
         approvalGate: this.config.approvalGate ?? pwCfg.approvalGate,
