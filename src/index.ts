@@ -5440,7 +5440,7 @@ if (process.argv[2] === "evidence") {
   const args = process.argv.slice(3);
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
-      "Usage: patchwork evidence [verify] [--dir <path>] [--json]\n\n" +
+      "Usage: patchwork evidence [verify] [--dir <path>] [--json] [--expect-chained]\n\n" +
         "  verify        is every spine ledger internally intact? (ADR-0027) Checks the\n" +
         "                per-row hash chain, the legacy-prefix commitment, the head sidecar\n" +
         "                and unsealed write failures. Exits 1 on any break — the only form\n" +
@@ -5452,7 +5452,8 @@ if (process.argv[2] === "evidence") {
         "correlationId is a run's taskId and these ledgers hold real task titles and\n" +
         "third-party record ids. A measurement may leave the machine; the rows may not.\n\n" +
         "  --dir <path>  ledger directory (default: $PATCHWORK_HOME)\n" +
-        "  --json        emit the raw report\n",
+        "  --json        emit the raw report\n" +
+        "  --expect-chained  (verify) a ledger with legacy rows and no chain is NOT ok\n",
     );
     process.exit(0);
   }
@@ -5469,7 +5470,7 @@ if (process.argv[2] === "evidence") {
         args,
         subcommands: ["verify"],
         valueFlags: ["--dir"],
-        flags: ["--json"],
+        flags: ["--json", "--expect-chained"],
       });
       const dirIdx = args.indexOf("--dir");
       const dir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
@@ -5481,7 +5482,10 @@ if (process.argv[2] === "evidence") {
         const { verifyEvidenceChains, formatEvidenceVerify } = await import(
           "./evidenceVerify.js"
         );
-        const r = dir ? verifyEvidenceChains(dir) : verifyEvidenceChains();
+        const verifyOpts = { expectChained: args.includes("--expect-chained") };
+        const r = dir
+          ? verifyEvidenceChains(dir, verifyOpts)
+          : verifyEvidenceChains(undefined, verifyOpts);
         process.stdout.write(
           args.includes("--json")
             ? `${JSON.stringify(r, null, 2)}\n`

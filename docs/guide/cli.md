@@ -179,10 +179,10 @@ patchwork evidence [--dir <path>] [--json]
 How much of the evidence spine can be joined: per ledger, how many rows carry a run id out of how many exist, and how many runs appear in more than one ledger. Prints counts only, never a row or an id, so its output is safe to quote. An absent ledger is reported absent, never as zero rows. **Always exits 0.**
 
 ```bash
-patchwork evidence verify [--dir <path>] [--json]
+patchwork evidence verify [--dir <path>] [--json] [--expect-chained]
 ```
 
-Is every ledger internally intact? Walks the per-row hash chain, the chain-start commitment, the rotation marker, the head sidecar and unsealed write failures. **The only evidence verb that gates: exits 1 on any break, shortened file or unsealed write failure.** Prints line numbers and sequence numbers, never a value.
+Is every ledger internally intact? Walks the per-row hash chain, the chain-start commitment, the rotation marker, the head sidecar and unsealed write failures. **The only evidence verb that gates: exits 1 on any break, shortened or deleted file or unsealed write failure, and when it verified nothing.** The status line carries the counts (`INTACT (8 of 9 verified, 1 absent)`). A ledger whose file is gone but whose `.head` sidecar remains is reported `MISSING` and fails: it used to exist. A directory where no ledger is found reports `NOTHING VERIFIED` and exits 1, so a wrong `--dir` cannot read as a clean spine. A ledger holding legacy rows and no chain yet is `UNCHAINED`, non-fatal unless `--expect-chained`. Prints line numbers and sequence numbers, never a value.
 
 To verify a workspace that runs on another machine, download its ledgers verbatim and point `--dir` at the copy. `GET /evidence/ledgers` lists every verified ledger with the files that make it up (the ledger and its `.head` / `.write_failed` sidecars, where present); `GET /evidence/ledger?file=<name>` returns one of those files byte for byte. Both need the bridge token. Only names on that list are served. Keep each file at its listed path under the download directory (for example `butler/permission_exercises.jsonl`). A later download compared against an earlier one shows whether a record you already held was changed or removed.
 
