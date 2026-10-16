@@ -12,6 +12,7 @@ import {
   computeApprovedActionIdentity,
   executionEvidence,
 } from "../approvalIdentity.js";
+import { FLAG_ENFORCE_ALLOWWRITES, isEnabled } from "../featureFlags.js";
 import { computeEffectivePolicy } from "../governance/effectivePolicy.js";
 import { readKillSwitch } from "../governance/killSwitchPolicy.js";
 import {
@@ -379,6 +380,13 @@ export type ToolExecutor = (
   approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
   /** Rollbackability the authority decision was made on (INV-1). */
   rollbackAtDecision?: import("./fileRollback.js").Rollbackability,
+  /**
+   * The dispatching step's OWN recipe's `allowWrites` (audit M6). The flat
+   * runner's dispatch-time write check reads it; without it a chained or
+   * nested recipe's declared write passed the policy stage and was then
+   * refused at dispatch. Passed only when the recipe declares something.
+   */
+  allowWrites?: string[],
 ) => Promise<unknown>;
 
 /**
@@ -1084,6 +1092,11 @@ export async function executeChainedStep(
                 : undefined,
             ),
             killSwitch: readKillSwitch(governance),
+            // The step's OWN recipe's declaration (never the parent's): an
+            // acknowledgement is a statement about the recipe's own steps,
+            // not an approval, so it does not follow policyRoot (audit M6).
+            allowWrites: ownAllowWrites(recipe),
+            writeAckFlagOn: isEnabled(FLAG_ENFORCE_ALLOWWRITES),
             gate: {
               approvalFnInjected: deps.requireApprovalFn !== undefined,
               workerGateInjected: deps.gateAutomatedRuns === true,
@@ -1484,17 +1497,26 @@ export async function executeChainedStep(
           resolvedParams: resolved,
         };
       }
+      const declaredWrites = ownAllowWrites(recipe);
       let result: unknown = await raceStepTimeout(
-        stepRollback !== undefined
+        declaredWrites.length > 0
           ? deps.executeTool(
               step.tool,
               resolved,
               stepApprovalEvidence,
               stepRollback,
+              declaredWrites,
             )
-          : stepApprovalEvidence
-            ? deps.executeTool(step.tool, resolved, stepApprovalEvidence)
-            : deps.executeTool(step.tool, resolved),
+          : stepRollback !== undefined
+            ? deps.executeTool(
+                step.tool,
+                resolved,
+                stepApprovalEvidence,
+                stepRollback,
+              )
+            : stepApprovalEvidence
+              ? deps.executeTool(step.tool, resolved, stepApprovalEvidence)
+              : deps.executeTool(step.tool, resolved),
         step.timeout_ms,
         step.id,
         options.signal,
@@ -1805,6 +1827,14 @@ export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
 }
 
 /** Main entry point: run a chained recipe */
+/** The `allowWrites` a chained recipe declares for its OWN steps (strings only). */
+function ownAllowWrites(recipe: ChainedRecipe): string[] {
+  const declared = (recipe as unknown as { allowWrites?: unknown }).allowWrites;
+  return Array.isArray(declared)
+    ? declared.filter((e): e is string => typeof e === "string")
+    : [];
+}
+
 export async function runChainedRecipe(
   recipe: ChainedRecipe,
   options: RunOptions,

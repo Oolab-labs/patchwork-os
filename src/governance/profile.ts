@@ -92,6 +92,14 @@ export interface GovernanceProfile {
    * policy.
    */
   recipeOptOutHonoured: boolean;
+  /**
+   * Whether a recipe's `allowWrites` acknowledgement is ENFORCED. Governed:
+   * `enforce` — an unacknowledged write is refused (audit M6; a reversible
+   * write does not queue for approval, so the declaration is the only place a
+   * recipe says it writes). Compat: `flag` — `FLAG_ENFORCE_ALLOWWRITES`
+   * decides, byte-identical to before.
+   */
+  writeAcknowledgement: "enforce" | "flag";
 }
 
 export interface ProfileConfigInput {
@@ -192,6 +200,7 @@ export function resolveProfile(
       unregisteredTools: "skip",
       untrustedEnvelope: false,
       recipeOptOutHonoured: true,
+      writeAcknowledgement: "flag",
     };
   }
   return {
@@ -208,6 +217,7 @@ export function resolveProfile(
     unregisteredTools: "refuse",
     untrustedEnvelope: true,
     recipeOptOutHonoured: false,
+    writeAcknowledgement: "enforce",
   };
 }
 

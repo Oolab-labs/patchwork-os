@@ -376,15 +376,20 @@ export const FLAG_BLOCK_RECIPE_ALLOW_PRIVATE = "block-recipe-allow-private";
 export const FLAG_WORKER_AUTONOMY = "worker.autonomy";
 
 /**
- * Enforce a recipe's `allowWrites` acknowledgment at RUNTIME (in
- * `executeStep`, src/recipes/yamlRunner.ts), not just at `recipe preflight`
- * time. Default OFF: an audit found 46 of 66 installed recipes on a real
- * dogfood machine (24 of them cron/git_hook/on_test_run self-firing) have at
- * least one unacknowledged write step — turning this on unconditionally
- * would hard-fail those recipes on their next trigger with zero warning.
- * Opt in once you've reviewed/updated your installed recipes' `allowWrites`
- * blocks (`recipe preflight <name>` reports exactly which steps are
- * unacknowledged, recipe-by-recipe, without needing this flag on).
+ * Enforce a recipe's `allowWrites` acknowledgment under the COMPAT profile.
+ * The governed profile enforces it regardless (`writeAcknowledgement:
+ * "enforce"`, audit M6, 2026-10-16) — this flag is only the compat opt-in.
+ * Every enforcement point reads it through `writeAckEnforced`
+ * (src/governance/effectivePolicy.ts): the `write_acknowledgement` policy
+ * stage in both runners, the flat runner's dispatch-time check, and
+ * `recipe doctor`'s severity.
+ *
+ * Default OFF under compat because compat must stay byte-identical. The old
+ * justification ("46 of 66 installed recipes would break") was re-measured
+ * before governed began enforcing: the ratio held (46 of 75), but 45 of those
+ * 46 were disabled and none had run in 30 days, so the population that would
+ * actually break was one enabled recipe. Re-measure on your own install with
+ * `recipe doctor` before opting in.
  */
 export const FLAG_ENFORCE_ALLOWWRITES = "recipe.enforce-allowwrites";
 

@@ -59,6 +59,7 @@ async function runLocal(io: { isTTY: boolean; answer?: string }) {
   const recipe = {
     name: RECIPE,
     trigger: { type: "manual" },
+    allowWrites: ["file.write"],
     steps: [{ tool: "file.write", path: "out.txt", content: "x", into: "w" }],
   } as unknown as YamlRecipe;
   const result = await runYamlRecipe(recipe, {

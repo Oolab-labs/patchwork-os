@@ -253,10 +253,22 @@ export async function runAcceptance(
       requireApprovalFn: approve,
     });
     type Recipe = Parameters<typeof runYamlRecipe>[0];
+    // Each scenario declares the writes it performs. Under governed an
+    // undeclared write is refused at `write_acknowledgement` (audit M6) —
+    // before the stage each check exists to exercise (the policy file, the
+    // kill switch, uncertain delivery, replay), so an undeclared scenario
+    // would pass or fail for the wrong reason.
     const recipe = (name: string, steps: unknown[]): Recipe =>
       ({
         name: `${RECIPE_PREFIX}-${name}`,
         trigger: { type: "manual" },
+        allowWrites: [
+          ...new Set(
+            steps
+              .map((s) => (s as { tool?: unknown }).tool)
+              .filter((t): t is string => typeof t === "string"),
+          ),
+        ],
         steps,
       }) as unknown as Recipe;
 

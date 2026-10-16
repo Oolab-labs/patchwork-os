@@ -31,6 +31,7 @@ function recipe(trigger: "manual" | "cron"): YamlRecipe {
       trigger === "cron"
         ? { type: "cron", schedule: "0 * * * *" }
         : { type: "manual" },
+    allowWrites: ["slack.delete_message"],
     steps: [
       { tool: "slack.read_channel", into: "messages" },
       {

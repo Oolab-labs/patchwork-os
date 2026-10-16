@@ -27,6 +27,7 @@ function recipe(trigger: "manual" | "cron"): YamlRecipe {
       trigger === "cron"
         ? { type: "cron", schedule: "0 2 * * *" }
         : { type: "manual" },
+    allowWrites: ["http.post"],
     steps: [
       { tool: "notes.read", into: "notes" },
       {

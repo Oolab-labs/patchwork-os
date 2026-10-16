@@ -160,6 +160,7 @@ async function runFlat(steps: Array<Record<string, unknown>>) {
     {
       name: "journal-post",
       trigger: { type: "manual" },
+      allowWrites: ["http.post"],
       steps,
     } as unknown as YamlRecipe,
     baseDeps(sandbox, {
@@ -193,7 +194,11 @@ async function runChained(
       }
     : built;
   const result = await runChainedRecipe(
-    { name: "journal-post-chained", steps } as unknown as ChainedRecipe,
+    {
+      name: "journal-post-chained",
+      allowWrites: ["http.post"],
+      steps,
+    } as unknown as ChainedRecipe,
     {
       env: {},
       maxConcurrency: 1,
@@ -315,6 +320,7 @@ for (const [label, route] of scenarios) {
     it("the parent's retry does not re-run the child's write", async () => {
       const child: ChainedRecipe = {
         name: "child-journal",
+        allowWrites: ["http.post"],
         steps: [
           {
             id: "post",
@@ -386,6 +392,7 @@ describe("positive controls — the line is drawn at the sent boundary", () => {
     const result = await runChainedRecipe(
       {
         name: "journal-post-chained",
+        allowWrites: ["http.post"],
         steps: [{ id: "post", ...postStep(refusedUrl) }],
       } as unknown as ChainedRecipe,
       {

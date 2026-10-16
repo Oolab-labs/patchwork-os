@@ -131,7 +131,12 @@ function recipeWith(
   trigger = "manual",
   name = "bind-recipe",
 ): YamlRecipe {
-  return { name, trigger: { type: trigger }, steps: [step] } as YamlRecipe;
+  return {
+    name,
+    trigger: { type: trigger },
+    allowWrites: [PROBE],
+    steps: [step],
+  } as YamlRecipe;
 }
 
 beforeEach(() => {

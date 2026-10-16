@@ -24,9 +24,11 @@ import {
 import "../../recipes/tools/index.js";
 import {
   computeEffectivePolicy,
+  isWriteAcknowledged,
   policyTriggerFor,
   shouldConsultApproval,
   tierVerdict,
+  writeAckEnforced,
 } from "../effectivePolicy.js";
 import {
   _resetActiveProfileForTesting,
@@ -150,6 +152,7 @@ describe("computeEffectivePolicy — pure", () => {
       recipe: { name: "r", requireApproval: false },
       trigger: "cron",
       tool: toolFactsFor("file.write"),
+      allowWrites: ["file.write"],
       killSwitch: KS_OFF,
     });
     expect(r.consultsApproval).toBe(true);
@@ -192,6 +195,82 @@ describe("computeEffectivePolicy — pure", () => {
       ).verdict,
     ).toBe("ALLOW");
   });
+  describe("write acknowledgement (audit M6)", () => {
+    // A recipe's `allowWrites` is its declaration of which write tools it
+    // uses. Under governed an unacknowledged write is REFUSED — a reversible
+    // write (file.write) does not queue for approval, so the declaration is
+    // the only place the recipe says it writes at all. Compat follows the
+    // FLAG_ENFORCE_ALLOWWRITES flag, exactly as before.
+    const base = (profile = GOVERNED_PROFILE) => ({
+      profile,
+      recipe: { name: "r" },
+      trigger: "manual" as const,
+      killSwitch: KS_OFF,
+    });
+    const stage = (r: ReturnType<typeof computeEffectivePolicy>) =>
+      r.stages.find((x) => x.stage === "write_acknowledgement");
+
+    it("governed: an unacknowledged write is refused at write_acknowledgement", () => {
+      const r = computeEffectivePolicy({
+        ...base(),
+        tool: toolFactsFor("file.write"),
+      });
+      expect(r.final).toBe("REFUSED");
+      expect(stage(r)?.verdict).toBe("REFUSE");
+      expect(stage(r)?.reason).toContain("allowWrites");
+    });
+
+    it("governed: acknowledged by tool id or by namespace is not refused", () => {
+      for (const allowWrites of [["file.write"], ["file"]]) {
+        const r = computeEffectivePolicy({
+          ...base(),
+          tool: toolFactsFor("file.write"),
+          allowWrites,
+        });
+        expect(stage(r)?.verdict, allowWrites[0]).toBe("ALLOW");
+        expect(r.final).not.toBe("REFUSED");
+      }
+    });
+
+    it("a tool that does not write is N/A whatever is declared", () => {
+      const r = computeEffectivePolicy({
+        ...base(),
+        tool: toolFactsFor("git.log_since"),
+      });
+      expect(stage(r)?.verdict).toBe("N/A");
+    });
+
+    it("compat with the flag off: reported, never refused", () => {
+      const r = computeEffectivePolicy({
+        ...base(COMPAT_PROFILE),
+        tool: toolFactsFor("file.write"),
+      });
+      expect(stage(r)?.verdict).toBe("ALLOW");
+      expect(stage(r)?.reason).toContain("not enforced");
+      expect(r.final).not.toBe("REFUSED");
+    });
+
+    it("compat with the flag on: refused, as the old inline check did", () => {
+      const r = computeEffectivePolicy({
+        ...base(COMPAT_PROFILE),
+        tool: toolFactsFor("file.write"),
+        writeAckFlagOn: true,
+      });
+      expect(r.final).toBe("REFUSED");
+    });
+
+    it("helpers agree with the stage", () => {
+      expect(writeAckEnforced(GOVERNED_PROFILE, false)).toBe(true);
+      expect(writeAckEnforced(COMPAT_PROFILE, false)).toBe(false);
+      expect(writeAckEnforced(COMPAT_PROFILE, true)).toBe(true);
+      expect(isWriteAcknowledged("file.write", "file", ["file"])).toBe(true);
+      expect(isWriteAcknowledged("file.write", "file", ["file.append"])).toBe(
+        false,
+      );
+      expect(isWriteAcknowledged("file.write", "file", undefined)).toBe(false);
+    });
+  });
+
   it("governed: a write tool with an inferred tier needs approval", () => {
     const plugin = {
       ...toolFactsFor("acme.destroy"),
@@ -220,15 +299,21 @@ describe("computeEffectivePolicy — pure", () => {
       recipe: { name: "r" },
       trigger: "manual",
       tool: fileWrite,
+      allowWrites: ["file.write"],
       worker: { id: "w", action: "forbid", ruleId: "forbid:file" },
       killSwitch: KS_OFF,
     });
     expect(forbid.final).toBe("REFUSED");
+    // Refused by the worker rule, not by an unacknowledged write.
+    expect(forbid.stages.find((s) => s.verdict === "REFUSE")?.stage).toBe(
+      "worker_authority",
+    );
     const standing = computeEffectivePolicy({
       profile: GOVERNED_PROFILE,
       recipe: { name: "r" },
       trigger: "manual",
       tool: fileWrite,
+      allowWrites: ["file.write"],
       worker: { id: "w", action: "gate", standingPermissionId: "sp-1" },
       killSwitch: KS_OFF,
     });
@@ -319,73 +404,77 @@ describe("preview equals enforcement (flat runner)", () => {
       for (const start of [undefined, "manual", "cron", "webhook"] as const) {
         for (const requireApproval of [undefined, false] as const) {
           for (const t of TOOLS) {
-            const name = `${profile.mode}/gate=${profile.approvalGate} × ${trigger} × start=${String(start)} × requireApproval=${String(requireApproval)} × ${t.label}`;
-            it(name, async () => {
-              const calls: Array<{ toolId: string; effective?: string }> = [];
-              const requireApprovalFn = vi.fn(
-                async (i: { toolId: string; effective?: string }) => {
-                  calls.push({ toolId: i.toolId, effective: i.effective });
-                  return true;
-                },
-              );
-              const recipe = {
-                name: "pe",
-                trigger: { type: trigger },
-                ...(requireApproval !== undefined && { requireApproval }),
-                steps: [t.step],
-              } as unknown as YamlRecipe;
-              const injected = profile.approvalGate !== "off";
-              const result = await runYamlRecipe(
-                recipe,
-                deps({
-                  governance: profile,
-                  ...(injected && { requireApprovalFn }),
-                  ...(start !== undefined && { startSource: start }),
-                }),
-              );
-              const expected = computeEffectivePolicy({
-                profile,
-                recipe: {
-                  name: "pe",
-                  ...(requireApproval !== undefined && { requireApproval }),
-                },
-                // Stated literally rather than through the resolver, so a
-                // resolver that drifts from the runner fails here.
-                trigger: start ?? trigger,
-                // The runner here has no rollback log (no --ledger-dir), which
-                // is exactly what `policy explain` assumes — both must derive
-                // the same instance ceiling, or explain prints ALLOW for a
-                // file.write the runner gates.
-                tool: toolFactsFor(
-                  t.toolId,
-                  undefined,
-                  (() => {
-                    const c = reversibilityCeilingFor(
-                      explainRollbackability(t.toolId),
-                    );
-                    return c ? { reversibilityCeiling: c } : undefined;
-                  })(),
-                ),
-                killSwitch: KS_OFF,
-                gate: {
-                  approvalFnInjected: injected,
-                  workerGateInjected: false,
-                },
-              });
-              // 1. consulted iff the calculation says so
-              expect(calls.length > 0).toBe(
-                expected.consultsApproval && expected.final !== "REFUSED",
-              );
-              // 2. the verdict handed to the gate is the calculation's
-              if (calls.length > 0)
-                expect(calls[0]?.effective).toBe(expected.final);
-              // 3. a refusal halts the run with the policy category
-              if (expected.final === "REFUSED") {
-                expect(result.stepResults[0]?.haltCategory).toMatch(
-                  /policy_denied|unresolved_tool/,
+            for (const acked of [false, true] as const) {
+              const name = `${profile.mode}/gate=${profile.approvalGate} × ${trigger} × start=${String(start)} × requireApproval=${String(requireApproval)} × ${t.label} × acked=${acked}`;
+              it(name, async () => {
+                const calls: Array<{ toolId: string; effective?: string }> = [];
+                const requireApprovalFn = vi.fn(
+                  async (i: { toolId: string; effective?: string }) => {
+                    calls.push({ toolId: i.toolId, effective: i.effective });
+                    return true;
+                  },
                 );
-              }
-            });
+                const recipe = {
+                  name: "pe",
+                  trigger: { type: trigger },
+                  ...(requireApproval !== undefined && { requireApproval }),
+                  ...(acked && { allowWrites: [t.toolId] }),
+                  steps: [t.step],
+                } as unknown as YamlRecipe;
+                const injected = profile.approvalGate !== "off";
+                const result = await runYamlRecipe(
+                  recipe,
+                  deps({
+                    governance: profile,
+                    ...(injected && { requireApprovalFn }),
+                    ...(start !== undefined && { startSource: start }),
+                  }),
+                );
+                const expected = computeEffectivePolicy({
+                  profile,
+                  recipe: {
+                    name: "pe",
+                    ...(requireApproval !== undefined && { requireApproval }),
+                  },
+                  // Stated literally rather than through the resolver, so a
+                  // resolver that drifts from the runner fails here.
+                  trigger: start ?? trigger,
+                  // The runner here has no rollback log (no --ledger-dir), which
+                  // is exactly what `policy explain` assumes — both must derive
+                  // the same instance ceiling, or explain prints ALLOW for a
+                  // file.write the runner gates.
+                  tool: toolFactsFor(
+                    t.toolId,
+                    undefined,
+                    (() => {
+                      const c = reversibilityCeilingFor(
+                        explainRollbackability(t.toolId),
+                      );
+                      return c ? { reversibilityCeiling: c } : undefined;
+                    })(),
+                  ),
+                  killSwitch: KS_OFF,
+                  ...(acked && { allowWrites: [t.toolId] }),
+                  gate: {
+                    approvalFnInjected: injected,
+                    workerGateInjected: false,
+                  },
+                });
+                // 1. consulted iff the calculation says so
+                expect(calls.length > 0).toBe(
+                  expected.consultsApproval && expected.final !== "REFUSED",
+                );
+                // 2. the verdict handed to the gate is the calculation's
+                if (calls.length > 0)
+                  expect(calls[0]?.effective).toBe(expected.final);
+                // 3. a refusal halts the run with the policy category
+                if (expected.final === "REFUSED") {
+                  expect(result.stepResults[0]?.haltCategory).toMatch(
+                    /policy_denied|unresolved_tool/,
+                  );
+                }
+              });
+            }
           }
         }
       }
