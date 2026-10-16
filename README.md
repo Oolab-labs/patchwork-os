@@ -29,7 +29,7 @@ Three ideas, one runtime:
 
 ## Status: stable 1.2
 
-Version `1.2.2`, published to npm as `latest`. The decision layer, recipes, connectors and IDE bridge all work and are dogfooded daily. Interfaces can still change between minor versions and some surfaces are rougher than others. Pin an exact version if you are building on it.
+Version `1.2.3`, published to npm as `latest`. The decision layer, recipes, connectors and IDE bridge all work and are dogfooded daily. Interfaces can still change between minor versions and some surfaces are rougher than others. Pin an exact version if you are building on it.
 
 **Whether the safety features are on depends on how you installed.** This matters more than any other line in this README:
 

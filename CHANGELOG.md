@@ -6,6 +6,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.3] — 2026-10-16
+
+### Security
+
+- **The governed profile refuses a write the recipe did not declare**
+  (#1724). A recipe's `allowWrites` lists the write tools it uses. It was
+  enforced only behind `FLAG_ENFORCE_ALLOWWRITES` (default off), never on the
+  chained runner, and was invisible to `policy explain`. Under governed, a
+  write tool not named (by id or namespace) in the `allowWrites` of the recipe
+  that owns the step is now refused, at every chained depth, by a new
+  `write_acknowledgement` policy stage. Compat is unchanged. `recipe doctor`
+  reports an unacknowledged write as an error where it is enforced and a
+  warning where it is not.
+
+  **Expect** an enabled recipe on a governed install whose write steps are
+  missing from its `allowWrites` to halt with `unacknowledged-write: … add
+  "<tool>"`. Run `recipe doctor` before upgrading.
+
+### Fixed
+
+- The gating verbs (`doctor`, `doctor health`, `doctor acceptance`, `sweep`,
+  `workers list`, `workers validate`, `workers authority-delta`) refuse a flag
+  they do not recognise: exit 2, name it, run nothing (#1725). A typo such as
+  `doctor --expect-runing 2` used to exit on the normal result.
+
 ## [1.2.2] — 2026-10-16
 
 ### Security
