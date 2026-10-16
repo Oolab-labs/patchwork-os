@@ -28,14 +28,20 @@ description: |
 # template that omits it breaks at its write step the moment an operator turns
 # that hardening flag on, which is a reasonable thing for them to do.
 allowWrites:
+  - linear.createIssue
   - slack.post_message
 
 trigger:
   type: webhook
   path: /incident-intake
+  vars:
+    - name: LINEAR_TEAM
+      description: "Linear team name or id that incidents are filed under (set this before enabling the webhook)"
+      required: true
 
 steps:
-  - tool: linear.create_issue
+  - tool: linear.createIssue
+    team: "{{LINEAR_TEAM}}"
     title: "[{{payload.severity}}] {{payload.title}}"
     description: |
       Source: {{payload.source}}
