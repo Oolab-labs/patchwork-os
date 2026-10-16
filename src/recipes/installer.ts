@@ -9,8 +9,10 @@ import {
   removeTopLevelProvenance,
   writeTopLevelProvenance,
 } from "./installProvenance.js";
-import { parseRecipe } from "./parser.js";
+import { RECIPE_NAME_RE, stripRecipeScope } from "./names.js";
+import { parseRecipe, RecipeParseError } from "./parser.js";
 import { RecipeLimitError } from "./runLimits.js";
+import { validateYamlRecipe } from "./yamlRunner.js";
 
 /**
  * Recipe installer — loads a recipe file, validates, compiles, and copies it
@@ -72,7 +74,12 @@ export function installRecipeFromFile(
     ext === ".json"
       ? (JSON.parse(text) as unknown)
       : (parseYaml(text) as unknown);
-  const recipe = parseRecipe(raw);
+  // Which validator applies depends on how the recipe will RUN, decided from
+  // the source's trigger before anything else reads it.
+  const rawTriggerType =
+    raw && typeof raw === "object"
+      ? (raw as { trigger?: { type?: unknown } }).trigger?.type
+      : undefined;
   // Manual-trigger recipes run via `patchwork recipe run <name>` and bypass
   // the automation interpreter, so the compile step (which targets the
   // interpreter DSL) doesn't apply. Skip compile and synthesize an empty
@@ -88,27 +95,60 @@ export function installRecipeFromFile(
   // onFileSave / onTestRun / onTestPassAfterFailure — so they install with a
   // real AutomationProgram + suggestedPermissions instead of a bypass stub.
   const bypassCompile =
-    recipe.trigger.type === "manual" ||
-    recipe.trigger.type === "cron" ||
-    recipe.trigger.type === "webhook" ||
-    recipe.trigger.type === "chained";
-  const compiled: CompiledRecipe = bypassCompile
-    ? {
-        program: {
-          tag: "Sequence",
-          steps: [],
-        } as unknown as CompiledRecipe["program"],
-        suggestedPermissions: { allow: [], ask: [], deny: [] },
-      }
-    : compileRecipeFull(recipe);
+    rawTriggerType === "manual" ||
+    rawTriggerType === "cron" ||
+    rawTriggerType === "webhook" ||
+    rawTriggerType === "chained";
+
+  // Validate with the validator of the runner that will execute the recipe.
+  // Flat (manual / cron / webhook) and chained recipes run through the YAML
+  // runner, which does not require step ids — so `parseRecipe` refused 15
+  // shipped templates that lint and run fine (audit 2026-10-15, M14). Event-
+  // triggered recipes still need `parseRecipe`, because the compiler consumes
+  // its output.
+  let recipeName: string;
+  let compiled: CompiledRecipe;
+  if (bypassCompile) {
+    try {
+      validateYamlRecipe(raw);
+    } catch (err) {
+      // Callers map RecipeParseError to a 400 `invalid_recipe` (the HTTP
+      // install route) — a plain Error would surface as a 500.
+      if (err instanceof RecipeParseError) throw err;
+      throw new RecipeParseError(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    recipeName = stripRecipeScope(
+      String((raw as { name?: unknown }).name ?? ""),
+    );
+    // Same rule and message as the parse boundary: `name` becomes a path.
+    if (!RECIPE_NAME_RE.test(recipeName)) {
+      throw new RecipeParseError(
+        `name must match ${RECIPE_NAME_RE} (kebab-case, 1-64 chars, alphanumeric or hyphen, starts with [a-z0-9])`,
+        ["name"],
+      );
+    }
+    compiled = {
+      program: {
+        tag: "Sequence",
+        steps: [],
+      } as unknown as CompiledRecipe["program"],
+      suggestedPermissions: { allow: [], ask: [], deny: [] },
+    };
+  } else {
+    const recipe = parseRecipe(raw);
+    recipeName = recipe.name;
+    compiled = compileRecipeFull(recipe);
+  }
 
   // PATCHWORK_MAX_RECIPES: refuse a NEW recipe before anything is written.
   // Replacing one already installed is always allowed.
-  const limitRefusal = recipeLimitRefusal(opts.recipesDir, recipe.name);
+  const limitRefusal = recipeLimitRefusal(opts.recipesDir, recipeName);
   if (limitRefusal) throw new RecipeLimitError(limitRefusal.limit);
 
   mkdir(opts.recipesDir);
-  const destPath = path.join(opts.recipesDir, `${recipe.name}.json`);
+  const destPath = path.join(opts.recipesDir, `${recipeName}.json`);
   // Belt-and-braces: parseRecipe already constrains `name` to the
   // RECIPE_NAME_RE charset, but assert the resolved path stays inside
   // recipesDir before writing. Defends against any future parser bypass
@@ -131,7 +171,17 @@ export function installRecipeFromFile(
   } catch {
     // file doesn't exist — creating
   }
-  const content = JSON.stringify(recipe, null, 2);
+  // Write the SOURCE recipe, with only its name normalised. This used to be
+  // JSON.stringify(parseRecipe(raw)), and the parser keeps a narrow subset per
+  // step — so the installed copy silently lost `data_policy`, `allowWrites`,
+  // `expect`, required vars, `when`, `timeout` and `awaits` (audit
+  // 2026-10-15, H4). The runtime loads this file through the YAML loader,
+  // which reads every one of those fields.
+  const content = JSON.stringify(
+    { ...(raw as Record<string, unknown>), name: recipeName },
+    null,
+    2,
+  );
   // Drop any record for the file being replaced BEFORE replacing it: whatever
   // happens next, the old origin must not survive onto new content. (The
   // sha256 binding would ignore it anyway; removing it keeps the dir honest.)

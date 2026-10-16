@@ -111,6 +111,22 @@ describe("RecipeScheduler", () => {
     scheduler.stop();
   });
 
+  it("schedules an installed JSON cron recipe that uses `at`, not only `schedule`", () => {
+    // The installer writes the source recipe unchanged (audit 2026-10-15,
+    // H4), and YAML recipes author the cron expression as `trigger.at`. The
+    // JSON branch used to read only `schedule`, so such a recipe would have
+    // been silently skipped with no log line.
+    writeRecipe("authored-with-at", { type: "cron", at: "@every 1m" });
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+    });
+    const scheduled = scheduler.start();
+    expect(scheduled.map((s) => s.name)).toEqual(["authored-with-at"]);
+    expect(scheduled[0]!.intervalMs).toBe(60_000);
+    scheduler.stop();
+  });
+
   it("fires enqueue on each interval tick (fake timers)", () => {
     writeRecipe("every-second", { type: "cron", schedule: "@every 1s" });
     const enqueued: Array<{ prompt: string; triggerSource: string }> = [];

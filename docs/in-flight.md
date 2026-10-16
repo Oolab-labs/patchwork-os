@@ -59,6 +59,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-10-16 `fix/installer-preserves-recipe` — `recipe install` / `POST /recipes/install` write the source recipe (name normalised) instead of `parseRecipe` output, so `data_policy`, `allowWrites`, `expect`, required vars, `when`, `timeout` and `awaits` survive install; flat/chained recipes validate with the runtime validator (id-less templates install), event recipes still parse + compile; runtime-validator errors surface as `RecipeParseError` (400); JSON cron recipes read `at` as well as `schedule`.
 - 2026-10-15 `feat/sweep-cron-halt-gate` (#1712) — third `sweep` gate: a cron recipe `done` for ≥7 consecutive days whose latest ≥6 runs are all `error` flips healthy→unhealthy (exit 1) and writes one inbox note per flip naming the recipe; the snapshot stays counts-only.
 - 2026-10-15 `#1716` — Overview Approve/Deny posts to the bridge's real decision route via one shared path helper
 
