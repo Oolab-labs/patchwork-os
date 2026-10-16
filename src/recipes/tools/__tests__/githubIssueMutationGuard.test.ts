@@ -32,8 +32,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { classifyIssueDisposition } from "../../../workers/outcomeStore.js";
-import { listTools } from "../../toolRegistry.js";
+import {
+  CONFIRMED_LABELS,
+  classifyIssueDisposition,
+  JUNK_LABELS,
+} from "../../../workers/outcomeStore.js";
+import { getTool, listTools } from "../../toolRegistry.js";
 
 // Importing the module self-registers the tools into the shared registry.
 import "../github.js";
@@ -100,6 +104,44 @@ describe("guard — no recipe-facing GitHub tool can mutate issue state", () => 
     // Defence in depth: this still fires if someone widens the allowlist above
     // without reading why it is narrow.
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("guard — no recipe-facing GitHub tool takes a disposition-bearing PARAM", () => {
+  // The name checks above cannot see a parameter. `create_issue` is allowed
+  // to exist, but it must not accept `state` / `state_reason`, and the labels
+  // it accepts must not include a label the classifier reads as a signal —
+  // that is the hole audit 2026-10-15 (H3) found.
+  const DISPOSITION_PARAMS = ["state", "state_reason", "stateReason"];
+
+  it("no github WRITE tool schema declares state or state_reason", () => {
+    // Read tools take `state` as a FILTER (list_issues?state=open); that is
+    // not a mutation, so the check is scoped to tools that write.
+    const offenders = listTools("github")
+      .filter((t) => t.isWrite === true)
+      .flatMap((t) =>
+        Object.keys(
+          (t.paramsSchema as { properties?: Record<string, unknown> })
+            .properties ?? {},
+        )
+          .filter((k) => DISPOSITION_PARAMS.includes(k))
+          .map((k) => `${t.id}.${k}`),
+      )
+      .sort();
+    expect(offenders).toEqual([]);
+  });
+
+  it("create_issue refuses every label the classifier treats as a signal", async () => {
+    const tool = getTool("github.create_issue");
+    for (const label of [...CONFIRMED_LABELS, ...JUNK_LABELS]) {
+      const out = await tool?.execute({
+        params: { repo: "o/r", title: "t", labels: [label] },
+        step: {},
+        ctx: {} as never,
+        deps: {} as never,
+      });
+      expect(JSON.parse(out ?? "{}").ok, label).toBe(false);
+    }
   });
 });
 
