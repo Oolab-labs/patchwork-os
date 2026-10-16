@@ -478,7 +478,9 @@ and inferred-tier writes queue, unregistered tools halt, a recipe's
 `<untrusted>` envelope in agent prompts.
 
 - **One calculation.** `computeEffectivePolicy` (`src/governance/effectivePolicy.ts`)
-  is called by BOTH runners at the per-step consult and by `patchwork policy
+  is called by BOTH runners at the per-step consult — at EVERY chained depth since
+  2026-10-16 (nested steps used to skip it; a nested step is judged as part of its
+  parent's run via `RunOptions.policyRoot`, never by the child's own opt-out) — and by `patchwork policy
   explain <recipe> [tool]`. `effectivePolicy.test.ts` runs the real flat runner
   over a (profile × trigger × tool × opt-out) matrix and asserts the runner's
   consult/verdict equals the calculation's. Do not add a rule to one without
