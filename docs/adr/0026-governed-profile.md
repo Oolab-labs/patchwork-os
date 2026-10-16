@@ -181,6 +181,15 @@ The same order is what `policy explain` prints.
 
 ## Known remaining bypasses (recorded, not hidden)
 
+- CLOSED 2026-10-16 — nested chained steps. Steps inside a recipe called by a
+  chained `recipe:` step never reached `computeEffectivePolicy`: the per-step
+  consult was guarded on `depth === 0`, pinned by a test as deliberate, and
+  not listed here. So a worker-owned chained recipe could reach a forbidden or
+  irreversible tool one call deep with no tier gate, worker gate or forbid
+  rule. Every depth is now evaluated as part of its parent's run — the same
+  trigger, the same injected approval fn, and the parent's identity and
+  opt-out (`RunOptions.policyRoot`); a child's own `requireApproval: false`
+  cannot opt the parent's run out.
 - The worker gate is not built on the replay path, deliberately, and worker-owned recipes ARE replayable under governed (the former `replay_refused_worker_owned_under_governed` refusal is gone). Replay is evidence-only (`replayBoundary.ts`): every step returns its captured output, replays its recorded failure, or refuses the whole replay, so there is no action for the gate to decide and running it would write Decision Records for actions that never happened. The remaining risk — a replay row folding as trust evidence — is closed by the `replay: true` run marker, which the trust fold excludes (`isReplayRun`).
 - A mocked replay never consults the approval gate (flat runner skips it under `replayOnly`; the chained runner short-circuits before it). Approval authorises an action and replay performs none, so a governed replay enqueues nothing and appends nothing to `approval_log.jsonl`; policy refusals (kill switch) still apply.
 - The untrusted envelope. Re-verified 2026-09-29 — four of the five surfaces

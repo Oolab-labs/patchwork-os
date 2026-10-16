@@ -16,7 +16,7 @@ import type {
   ExecutionDeps,
   RunOptions,
 } from "../chainedRunner.js";
-import { executeChainedStep } from "../chainedRunner.js";
+import { executeChainedStep, runChainedRecipe } from "../chainedRunner.js";
 import { createOutputRegistry } from "../outputRegistry.js";
 import type { RunBudget } from "../runBudget.js";
 
@@ -122,20 +122,85 @@ describe("executeChainedStep — approval gate (Tier-1 #4)", () => {
     );
   });
 
-  it("does not gate NESTED chained recipes (depth > 0) — only the top-level run", async () => {
-    // A chained recipe always has trigger.type:"chained" (cron/webhook route to
-    // the flat runner), so depth is the safe-by-default signal: a nested chained
-    // recipe runs under a parent whose own gating already governed admission.
+  it("GATES nested chained steps (depth > 0) like the top-level run", async () => {
+    // Audit 2026-10-15 (H2): nested steps never reached computeEffectivePolicy,
+    // so a worker-owned chained recipe could reach a forbidden or
+    // irreversible step one `recipe:` call deep with no tier gate, no worker
+    // gate and no forbid rule. They are now evaluated with the parent's
+    // trigger and the parent's worker gate (the shared deps).
     const requireApprovalFn = vi.fn().mockResolvedValue(false);
     const deps = makeDeps({ requireApprovalFn });
     const result = await executeChainedStep(
       ctxFor({ id: "s", agent: { prompt: "x" } }, recipeNoTrigger, {
         depth: 1,
+        options: { ...baseOptions, policyRoot: { name: "parent" } },
+      }),
+      deps,
+    );
+    expect(requireApprovalFn).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+  });
+
+  it("a nested child's own requireApproval:false cannot opt its parent's run out", async () => {
+    const requireApprovalFn = vi.fn().mockResolvedValue(false);
+    const deps = makeDeps({ requireApprovalFn });
+    const child = {
+      name: "child",
+      steps: [],
+      requireApproval: false,
+    } as unknown as ChainedRecipe;
+    const result = await executeChainedStep(
+      ctxFor({ id: "s", agent: { prompt: "x" } }, child, {
+        depth: 1,
+        options: { ...baseOptions, policyRoot: { name: "parent" } },
+      }),
+      deps,
+    );
+    expect(requireApprovalFn).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+  });
+
+  it("the PARENT's opt-out still covers its nested steps, so the two levels agree", async () => {
+    const requireApprovalFn = vi.fn().mockResolvedValue(false);
+    const deps = makeDeps({ requireApprovalFn });
+    const result = await executeChainedStep(
+      ctxFor({ id: "s", agent: { prompt: "x" } }, recipeNoTrigger, {
+        depth: 1,
+        options: {
+          ...baseOptions,
+          policyRoot: { name: "parent", requireApproval: false },
+        },
       }),
       deps,
     );
     expect(requireApprovalFn).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
+  });
+
+  it("end to end: a step inside a nested recipe is gated and a rejection halts it", async () => {
+    const requireApprovalFn = vi.fn().mockResolvedValue(false);
+    const executeTool = vi.fn().mockResolvedValue({ ok: true });
+    const child = {
+      name: "child",
+      trigger: { type: "chained" },
+      steps: [{ id: "write", tool: "file.write", path: "x.md", content: "c" }],
+    } as unknown as ChainedRecipe;
+    const deps = makeDeps({
+      requireApprovalFn,
+      executeTool,
+      loadNestedRecipe: vi.fn().mockResolvedValue({ recipe: child }),
+    });
+    const parent = {
+      name: "parent",
+      trigger: { type: "chained" },
+      steps: [{ id: "call", recipe: "child" }],
+    } as unknown as ChainedRecipe;
+    const result = await runChainedRecipe(parent, baseOptions, deps);
+    expect(requireApprovalFn).toHaveBeenCalledWith(
+      expect.objectContaining({ toolId: "file.write" }),
+    );
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
   });
 
   it("respects per-recipe requireApproval:false opt-out", async () => {

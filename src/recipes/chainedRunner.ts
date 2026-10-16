@@ -215,6 +215,15 @@ export interface ChainedRecipe {
 }
 
 export interface RunOptions {
+  /**
+   * The TOP-LEVEL recipe a run belongs to, as the policy calculation judges
+   * it. Set once by the depth-0 run and inherited by nested runs (they spread
+   * `options`), so a step inside a nested recipe is evaluated as part of its
+   * parent's run: the parent's name and the parent's `requireApproval`
+   * opt-out, never the child's — a nested child must not be able to switch
+   * approval off for the run that called it. Audit 2026-10-15 (H2).
+   */
+  policyRoot?: { name: string; requireApproval?: boolean };
   env: Record<string, string | undefined>;
   maxConcurrency: number;
   maxDepth: number;
@@ -438,13 +447,13 @@ export interface ExecutionDeps {
    * Tier-1 #4 (audit 2026-06-22) — approval gate, mirroring the flat runner's
    * `RunnerDeps.requireApprovalFn`. Injected by the bridge ONLY when
    * `approvalGate != "off"`. When present, `executeChainedStep` calls it before
-   * dispatching each agent/tool step of the TOP-LEVEL run (depth 0) and HALTS
-   * the step (and, via the dependency graph, its dependents) if it resolves
-   * `false`. Gating is depth-scoped rather than trigger-scoped because a
-   * chained recipe's `trigger.type` is always `"chained"` (never "manual"/
-   * "cron") — cron/webhook route to the flat runner, so a top-level chained run
-   * is the interactive case. Nested chained recipes (depth > 0) are not
-   * re-gated. The fn itself applies the gate threshold (high/all) against the
+   * dispatching each agent/tool step, at EVERY depth, and HALTS the step
+   * (and, via the dependency graph, its dependents) if it resolves `false`.
+   * A chained recipe's `trigger.type` is always `"chained"` (cron/webhook
+   * route to the flat runner), so a chained run is the interactive case. A
+   * step inside a nested recipe is judged as part of its parent's run
+   * (`RunOptions.policyRoot`) — until 2026-10-15 nested steps were not gated
+   * at all (audit H2). The fn itself applies the gate threshold (high/all) against the
    * step's tier and returns `true` for steps that don't need sign-off, so the
    * runner only acts on an explicit rejection. Per-recipe opt-out via
    * `requireApproval: false` — of the TIER policy only, never of worker
@@ -998,23 +1007,27 @@ export async function executeChainedStep(
 
     // Tier-1 #4 (audit 2026-06-22): approval gate, mirroring the flat runner.
     // Engages only when the bridge injected `requireApprovalFn` (approvalGate
-    // != "off"), respects the per-recipe `requireApproval: false` opt-out, and
-    // gates only the TOP-LEVEL run (depth === 0). Safe-by-default rationale: a
+    // != "off") and respects the run's `requireApproval: false` opt-out. A
     // chained recipe always has `trigger.type: "chained"` (that's how
-    // dispatchRecipe routes it), so cron/webhook can never fire one directly —
-    // they route to the flat runner. A top-level chained run is therefore the
-    // user-dispatched (interactive) case the flat runner gates as "manual"; a
-    // NESTED chained recipe (depth > 0) runs under a parent whose own gating
-    // already governed admission, so re-gating every nested step would block
-    // automated parents mid-flight. The injected fn applies the tier threshold
-    // itself and returns `true` for steps that don't need sign-off; a `false`
-    // result is an explicit human rejection → halt the step (and, via the
-    // dependency graph, its dependents). Only agent/tool steps are gated;
-    // nested-recipe steps are gated through their own inner steps.
+    // dispatchRecipe routes it), so a chained run is the user-dispatched
+    // (interactive) case the flat runner gates as "manual". The injected fn
+    // applies the tier threshold itself and returns `true` for steps that
+    // don't need sign-off; a `false` result is an explicit human rejection →
+    // halt the step (and, via the dependency graph, its dependents). Only
+    // agent/tool steps are gated; a `recipe:` step is gated through its inner
+    // steps.
+    //
+    // EVERY depth is evaluated (audit 2026-10-15, H2). This used to gate only
+    // depth 0, on the theory that a nested recipe "runs under a parent whose
+    // own gating already governed admission" — but the parent's gate judged
+    // the parent's steps, never the child's, so a worker-owned chained recipe
+    // could reach a forbidden or irreversible tool one `recipe:` call deep with
+    // no tier gate, no worker gate and no forbid rule. A nested step is now
+    // judged as part of its parent's run: the same trigger, the same injected
+    // approval fn (and so the same worker gate), and the parent's identity and
+    // opt-out via `options.policyRoot` — never the child's own opt-out.
     // Phase 0: the predicate is `computeEffectivePolicy` — the same function
-    // `patchwork policy explain` prints. A top-level chained run is the
-    // interactive case (see the comment above), so it is evaluated as a
-    // "manual" trigger; under compat that reproduces the old predicate.
+    // `patchwork policy explain` prints.
     const governance = deps.governance ?? COMPAT_PROFILE;
     // INV-1: rollbackability BEFORE authority; re-checked at dispatch.
     const stepRollback =
@@ -1027,18 +1040,21 @@ export async function executeChainedStep(
     const stepReversibilityCeiling = fanOutChild
       ? fanOutChildReversibilityCeiling(fanOutChild)
       : reversibilityCeilingFor(stepRollback);
+    // Nested runs inherit the top-level recipe here; a direct call with no
+    // root (a test, or a caller outside runChainedRecipe) is its own root.
+    const policyRoot = options.policyRoot ?? {
+      name: recipe.name,
+      ...((recipe as { requireApproval?: boolean }).requireApproval !==
+        undefined && {
+        requireApproval: (recipe as { requireApproval?: boolean })
+          .requireApproval,
+      }),
+    };
     const effective =
-      depth === 0 && (step.agent || step.tool)
+      step.agent || step.tool
         ? computeEffectivePolicy({
             profile: governance,
-            recipe: {
-              name: recipe.name,
-              ...((recipe as { requireApproval?: boolean }).requireApproval !==
-                undefined && {
-                requireApproval: (recipe as { requireApproval?: boolean })
-                  .requireApproval,
-              }),
-            },
+            recipe: policyRoot,
             trigger: "manual",
             tool: toolFactsFor(
               step.agent ? "agent" : (fanOutChild ?? step.tool ?? "unknown"),
@@ -1810,6 +1826,16 @@ export async function runChainedRecipe(
     runWithholdsOutputs(recipe, options.env)
   ) {
     options = { ...options, withholdOutputs: true };
+  }
+  if (options.policyRoot === undefined) {
+    const optOut = (recipe as { requireApproval?: boolean }).requireApproval;
+    options = {
+      ...options,
+      policyRoot: {
+        name: recipe.name,
+        ...(optOut !== undefined && { requireApproval: optOut }),
+      },
+    };
   }
   if (depth !== 0) {
     return runChainedRecipeHeld(recipe, options, deps, existingRegistry, depth);
