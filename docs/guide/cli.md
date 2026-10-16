@@ -6,6 +6,8 @@ The `claude-ide-bridge` binary accepts the same commands. Most commands that nee
 
 Exit codes follow one convention: a command whose job is to **gate** exits 1 when it finds a problem; a command whose job is to **report** exits 0 whatever it finds, because a true reading is not an error. Each entry below says which.
 
+The gating verbs — `doctor`, `doctor health`, `doctor acceptance`, `sweep`, `evidence`, `workers list`, `workers validate` and `workers authority-delta` — also **refuse an argument they do not recognise**: they exit **2**, name it, list what they accept and run nothing. Exit 2 is kept distinct from 1 so a typo can never be mistaken for a real failure, or a mistyped flag for a clean pass.
+
 ## Get started
 
 ### `init`

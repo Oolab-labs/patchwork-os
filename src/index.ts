@@ -4973,6 +4973,15 @@ if (process.argv[2] === "doctor" && process.argv[3] === "health") {
     process.exit(0);
   }
   (async () => {
+    // Fail closed on a flag this gating verb does not understand (audit
+    // M35): its exit code is scripted against, and an ignored typo exits on
+    // the normal result. Exit 2, before any work.
+    (await import("./cliArgs.js")).rejectUnknownArgs({
+      command: "doctor health",
+      args: args,
+      flags: ["--json"],
+      valueFlags: ["--workspace", "--port"],
+    });
     try {
       const workspaceIdx = args.indexOf("--workspace");
       const workspace =
@@ -5033,6 +5042,14 @@ if (process.argv[2] === "doctor" && process.argv[3] === "acceptance") {
     process.exit(0);
   }
   (async () => {
+    // Fail closed on a flag this gating verb does not understand (audit
+    // M35): its exit code is scripted against, and an ignored typo exits on
+    // the normal result. Exit 2, before any work.
+    (await import("./cliArgs.js")).rejectUnknownArgs({
+      command: "doctor acceptance",
+      args: args,
+      flags: ["--json"],
+    });
     try {
       const { formatAcceptance, runAcceptance } = await import(
         "./commands/doctorAcceptance.js"
@@ -5373,6 +5390,16 @@ if (process.argv[2] === "sweep") {
     process.exit(0);
   }
   (async () => {
+    // Fail closed on a flag this gating verb does not understand (audit
+    // M35): its exit code is scripted against, and an ignored typo exits on
+    // the normal result. Exit 2, before any work.
+    (await import("./cliArgs.js")).rejectUnknownArgs({
+      command: "sweep",
+      args,
+      flags: ["--no-write", "--json"],
+      valueFlags: ["--dir"],
+      optionalValueFlags: ["--expect-running"],
+    });
     try {
       const { collectCronHalts, collectSweep } = await import(
         "./maintenance/sweepCollect.js"
@@ -5578,6 +5605,15 @@ if (process.argv[2] === "workers") {
   }
   if (sub === "authority-delta") {
     (async () => {
+      // Fail closed on a flag this gating verb does not understand (audit
+      // M35): its exit code is scripted against, and an ignored typo exits on
+      // the normal result. Exit 2, before any work.
+      (await import("./cliArgs.js")).rejectUnknownArgs({
+        command: "workers authority-delta",
+        args: args.slice(1),
+        flags: ["--json"],
+        valueFlags: ["--base", "--head", "--dir"],
+      });
       const { execFileSync } = await import("node:child_process");
       const { parse: parseYaml } = await import("yaml");
       const { parseWorker } = await import("./workers/worker.js");
@@ -5635,6 +5671,20 @@ if (process.argv[2] === "workers") {
     })();
   } else
     (async () => {
+      if (sub === "list" || sub === "validate") {
+        // Fail closed on a flag this gating verb does not understand (audit
+        // M35): its exit code is scripted against, and an ignored typo exits on
+        // the normal result. Exit 2, before any work.
+        (await import("./cliArgs.js")).rejectUnknownArgs({
+          command: `workers ${sub}`,
+          args: args.slice(1),
+          flags: ["--json"],
+          valueFlags:
+            sub === "validate"
+              ? ["--workers-dir", "--recipes-dir", "--templates-dir"]
+              : ["--workers-dir"],
+        });
+      }
       try {
         const dirIdx = args.indexOf("--workers-dir");
         const workersDir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
@@ -6068,6 +6118,15 @@ if (
     process.exit(0);
   }
   (async () => {
+    // Fail closed on a flag this gating verb does not understand (audit
+    // M35): its exit code is scripted against, and an ignored typo exits on
+    // the normal result. Exit 2, before any work.
+    (await import("./cliArgs.js")).rejectUnknownArgs({
+      command: "doctor",
+      args: args,
+      flags: ["--json", "--require-governed"],
+      optionalValueFlags: ["--expect-running"],
+    });
     const {
       assessDeploymentFreshness,
       discoverLocks,

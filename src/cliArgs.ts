@@ -65,6 +65,13 @@ export interface RejectUnknownArgsOpts {
   flags: string[];
   /** Flags that consume the following token as their value. */
   valueFlags?: string[];
+  /**
+   * Flags whose value is OPTIONAL (`--expect-running [N]`): the following
+   * token is consumed only when it is not itself a flag, so `--expect-running
+   * --json` keeps `--json` a flag and `--expect-running --bogus` still names
+   * `--bogus`.
+   */
+  optionalValueFlags?: string[];
   /** Subcommands accepted in first position. */
   subcommands?: string[];
   /**
@@ -88,11 +95,18 @@ export function rejectUnknownArgs(
     args,
     flags,
     valueFlags = [],
+    optionalValueFlags = [],
     subcommands = [],
     exit = true,
   } = opts;
 
-  const known = new Set([...flags, ...valueFlags, "--help", "-h"]);
+  const known = new Set([
+    ...flags,
+    ...valueFlags,
+    ...optionalValueFlags,
+    "--help",
+    "-h",
+  ]);
   const unknown: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -112,6 +126,11 @@ export function rejectUnknownArgs(
       i++; // its value is whatever follows, and is not ours to judge
       continue;
     }
+    if (optionalValueFlags.includes(tok)) {
+      const next = args[i + 1];
+      if (next !== undefined && !next.startsWith("-")) i++;
+      continue;
+    }
     if (known.has(tok)) continue;
     unknown.push(tok);
   }
@@ -119,7 +138,12 @@ export function rejectUnknownArgs(
   if (unknown.length === 0) return null;
 
   const named = unknown.map(describe).join(", ");
-  const accepted = [...subcommands, ...valueFlags, ...flags];
+  const accepted = [
+    ...subcommands,
+    ...valueFlags,
+    ...optionalValueFlags.map((f) => `${f} [value]`),
+    ...flags,
+  ];
   const message =
     `patchwork ${command}: unrecognised ${unknown.length === 1 ? "argument" : "arguments"}: ${named}\n` +
     // Naming what IS accepted turns the refusal into the answer. Without it the
