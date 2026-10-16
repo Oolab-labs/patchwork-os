@@ -206,6 +206,11 @@ jobs:
         if: steps.npm_check.outputs.skip != 'true'
         run: npm publish --access public
 
+      # Notes come from the version's CHANGELOG section, not --generate-notes:
+      # a stable release spans a whole beta line, and v1.2.0's generated notes
+      # exceeded GitHub's 125,000-character body limit, so the step failed
+      # after npm had already published. The changelog section is also the
+      # human-written account of the release.
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.OOLAB_PAT }}
@@ -214,9 +219,15 @@ jobs:
             echo "Release ${{ github.ref_name }} already exists — skipping"
             exit 0
           fi
+          V="${GITHUB_REF_NAME#v}"
+          awk -v v="$V" '$0 ~ "^## \\[" v "\\]" {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "See CHANGELOG.md for $V." > release-notes.md
+          fi
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes \
+            --notes-file release-notes.md \
+            --verify-tag \
             --repo Oolab-labs/patchwork-os
 
   publish:
