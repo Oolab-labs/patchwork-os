@@ -58,7 +58,9 @@ import {
 } from "../featureFlags.js";
 import {
   computeEffectivePolicy,
+  isWriteAcknowledged,
   policyTriggerFor,
+  writeAckEnforced,
 } from "../governance/effectivePolicy.js";
 import { readKillSwitch } from "../governance/killSwitchPolicy.js";
 import {
@@ -2896,6 +2898,8 @@ async function runYamlRecipeHeld(
             : undefined,
         ),
         killSwitch: readKillSwitch(governance),
+        allowWrites: stepDeps.allowWrites ?? [],
+        writeAckFlagOn: isEnabled(FLAG_ENFORCE_ALLOWWRITES),
         gate: {
           approvalFnInjected: deps.requireApprovalFn !== undefined,
           workerGateInjected: deps.gateAutomatedRuns === true,
@@ -4112,16 +4116,27 @@ export async function executeStep(
     // installing a recipe to ~/.patchwork/), so a recipe that declares no
     // allowWrites — or a compromised/edited-after-preflight recipe file —
     // could otherwise write anywhere its tool permits with zero runtime
-    // check at all. Gated behind FLAG_ENFORCE_ALLOWWRITES (default OFF) —
-    // an audit found 46/66 installed recipes on a real dogfood machine
-    // (24 self-firing) have at least one unacknowledged write; turning
-    // this on unconditionally would break them with no warning. See the
-    // flag's doc comment in featureFlags.ts.
-    if (tool?.isWrite === true && isEnabled(FLAG_ENFORCE_ALLOWWRITES)) {
-      const allowlist = new Set(deps.allowWrites ?? []);
-      const acknowledged =
-        allowlist.has(toolId) ||
-        (tool.namespace && allowlist.has(tool.namespace));
+    // check at all. Enforced under the governed profile and, under compat,
+    // when FLAG_ENFORCE_ALLOWWRITES is on — the same predicate the policy
+    // stage (`write_acknowledgement`) and `recipe doctor` use, so this
+    // dispatch-time check is defence in depth, never a second rule. It also
+    // covers dispatches the per-step consult does not see (compound steps,
+    // fan_out children).
+    const stepProfile =
+      (
+        deps as {
+          governance?: import("../governance/profile.js").GovernanceProfile;
+        }
+      ).governance ?? activeProfile();
+    if (
+      tool?.isWrite === true &&
+      writeAckEnforced(stepProfile, isEnabled(FLAG_ENFORCE_ALLOWWRITES))
+    ) {
+      const acknowledged = isWriteAcknowledged(
+        toolId,
+        tool.namespace,
+        deps.allowWrites,
+      );
       if (!acknowledged) {
         const err = new Error(
           `unacknowledged-write: step performs a write via "${toolId}" but ` +
@@ -5676,6 +5691,7 @@ export function buildChainedDeps(
     params: Record<string, unknown>,
     approvalEvidence?: import("../approvalIdentity.js").ApprovalExecutionEvidence,
     rollbackAtDecision?: import("./fileRollback.js").Rollbackability,
+    allowWrites?: string[],
   ): Promise<unknown> => {
     // R2 C-1 third-substitution-site coverage: the chained runner has its
     // own template-resolution path (`chainedRunner.ts:194-205`). By the
@@ -5704,10 +5720,19 @@ export function buildChainedDeps(
     // executeStep uses a RunContext for {{}} rendering — by the time executeTool
     // is called the chained runner has already resolved templates, so we pass
     // an empty context (no double-rendering).
+    // The dispatching step's own recipe's declared writes join the run's, so
+    // the dispatch-time write check sees what the policy stage saw (M6).
+    const dispatchDeps =
+      allowWrites && allowWrites.length > 0
+        ? {
+            ...stepDeps,
+            allowWrites: [...(stepDeps.allowWrites ?? []), ...allowWrites],
+          }
+        : stepDeps;
     const result = await executeStep(
       step,
       {},
-      stepDeps,
+      dispatchDeps,
       approvalEvidence,
       undefined,
       rollbackAtDecision,

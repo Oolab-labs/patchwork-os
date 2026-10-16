@@ -2156,6 +2156,15 @@ export interface PreflightOptions extends RunRecipeOptions {
    */
   requireWriteAck?: boolean;
   /**
+   * Whether the runtime will ENFORCE the acknowledgement (audit M6): an
+   * unacknowledged write is then an error ("will be refused"), otherwise a
+   * warning ("not enforced"). Default `true`: preflight is a pre-install
+   * gate and fails closed. `recipe doctor` passes the value derived from the
+   * configured profile and `FLAG_ENFORCE_ALLOWWRITES` via `writeAckEnforced`,
+   * the predicate the policy stage and the runner use.
+   */
+  writeAckEnforced?: boolean;
+  /**
    * Explicit allowlist of tool ids or namespaces the caller acknowledges as writes.
    * Example: `["slack.post_message", "github"]`.
    */
@@ -2173,6 +2182,30 @@ export interface PreflightOptions extends RunRecipeOptions {
  * Static policy check over a recipe: lint + dry-plan + unresolved/write/fixture checks.
  * No connector calls, no agent calls — safe to run in CI.
  */
+/**
+ * Whether this machine's runtime would enforce write acknowledgement, read
+ * the same way the bridge reads it. An unreadable config is reported as
+ * ENFORCED: the bridge refuses to start on one, so "will be refused" is the
+ * honest reading, and an error is the conservative one.
+ */
+async function defaultWriteAckEnforced(): Promise<boolean> {
+  const { readProfileConfig, resolveProfile } = await import(
+    "../governance/profile.js"
+  );
+  const { writeAckEnforced } = await import("../governance/effectivePolicy.js");
+  const { FLAG_ENFORCE_ALLOWWRITES, isEnabled } = await import(
+    "../featureFlags.js"
+  );
+  try {
+    return writeAckEnforced(
+      resolveProfile(readProfileConfig().config),
+      isEnabled(FLAG_ENFORCE_ALLOWWRITES),
+    );
+  } catch {
+    return true;
+  }
+}
+
 export async function runPreflight(
   recipeRef: string,
   options: PreflightOptions = {},
@@ -2192,6 +2225,10 @@ export async function runPreflight(
   const plan = await runRecipeDryPlan(recipeRef, options);
 
   const requireWriteAck = options.requireWriteAck ?? true;
+  // Preflight is a pre-install GATE (and the save hook runs it): an
+  // unacknowledged write fails it closed unless the caller says the runtime
+  // will not enforce. Only `recipe doctor` passes the derived value.
+  const ackEnforced = options.writeAckEnforced ?? true;
   // Merge the recipe's declared allowWrites (YAML) with any caller-supplied
   // entries (e.g. --allow-write CLI flag). Either source is sufficient.
   const recipeForWrites = loadYamlRecipe(recipePath);
@@ -2225,9 +2262,11 @@ export async function runPreflight(
       !(step.namespace && allowlist.has(step.namespace))
     ) {
       issues.push({
-        level: "error",
+        level: ackEnforced ? "error" : "warning",
         code: "unacknowledged-write",
-        message: `Step "${step.id}" performs a write via "${step.tool}" but is not acknowledged via allowWrites`,
+        message: ackEnforced
+          ? `Step "${step.id}" performs a write via "${step.tool}" but is not acknowledged via allowWrites — it will be refused (enforced under the governed profile, or with FLAG_ENFORCE_ALLOWWRITES on)`
+          : `Step "${step.id}" performs a write via "${step.tool}" but is not acknowledged via allowWrites — not enforced here (compat profile, FLAG_ENFORCE_ALLOWWRITES off); it will run, and would be refused under the governed profile`,
         stepId: step.id,
         tool: step.tool,
         ...(step.namespace ? { namespace: step.namespace } : {}),
@@ -2445,7 +2484,13 @@ export async function runRecipeDoctor(
   const lint = runLint(recipePath);
   let staticResult: DoctorStaticResult;
   try {
-    const pf = await runPreflight(recipePath, preflightOptions);
+    // Doctor reports what the RUNTIME will do (audit M6): an unacknowledged
+    // write is an error where it is enforced and a warning where it is not.
+    const pf = await runPreflight(recipePath, {
+      ...preflightOptions,
+      writeAckEnforced:
+        preflightOptions.writeAckEnforced ?? (await defaultWriteAckEnforced()),
+    });
     staticResult = { ok: pf.ok, recipe: pf.recipe, issues: pf.issues };
   } catch (err) {
     const issues: PreflightIssue[] = lint.issues.map((i) => ({

@@ -57,6 +57,7 @@ function recipe(type: string): YamlRecipe {
   return {
     name: "start-source",
     trigger: { type, ...(type === "cron" && { at: "0 9 * * *" }) },
+    allowWrites: ["file.write"],
     steps: [{ tool: "file.write", path: `${TMP}/out`, content: "1" }],
   } as unknown as YamlRecipe;
 }

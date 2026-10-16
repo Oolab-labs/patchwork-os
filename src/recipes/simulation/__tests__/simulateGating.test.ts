@@ -60,6 +60,7 @@ function writeRecipe(name: string, body: string): string {
 const flat = (trigger: string) => `name: sim-gate-probe
 trigger:
   type: ${trigger}${trigger === "cron" ? '\n  at: "0 9 * * *"' : ""}
+allowWrites: [github.create_issue]
 steps:
   - tool: file.read
     path: notes.txt
@@ -73,6 +74,7 @@ steps:
 const chained = `name: sim-gate-chained
 trigger:
   type: chained
+allowWrites: [github.create_issue]
 steps:
   - id: read
     tool: file.read

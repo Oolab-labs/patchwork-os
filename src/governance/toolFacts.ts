@@ -50,6 +50,7 @@ export function toolFactsFor(
     // flagged there (see toolRegistry.ts) — they carry `pluginTier: true`.
     tierDeclared: !(reg as { fromPlugin?: boolean }).fromPlugin,
     isWrite: reg.isWrite,
+    ...(reg.namespace && { namespace: reg.namespace }),
     registered: true,
     // Instance ceiling (lower-only): a file write whose rollback is not
     // confirmed is not reversible here either, or the governed profile would

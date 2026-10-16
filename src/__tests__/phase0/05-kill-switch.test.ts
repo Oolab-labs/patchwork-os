@@ -52,6 +52,7 @@ function recipe(): YamlRecipe {
   return {
     name: "flip-then-write",
     trigger: { type: "manual" },
+    allowWrites: ["test.write"],
     steps: [
       { tool: "test.write", into: "first" },
       { tool: "test.flip", into: "flipped" },

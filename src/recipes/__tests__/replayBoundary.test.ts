@@ -77,6 +77,7 @@ function flatRecipe(withInto = true): YamlRecipe {
   return {
     name: "boundary-flat",
     trigger: { type: "manual" },
+    allowWrites: ["http.post", "file.write"],
     steps: [
       {
         tool: "http.post",
@@ -760,6 +761,7 @@ describe("governed replay never consults the approval gate", () => {
     const recipe = {
       name: "boundary-chained-gate",
       trigger: { type: "chained" },
+      allowWrites: ["http.post"],
       steps: [
         { id: "post", tool: "http.post", url, allowPrivate: true, body: "{}" },
       ],

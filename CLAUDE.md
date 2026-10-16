@@ -473,7 +473,9 @@ restored tasks are contained once in `ClaudeOrchestrator._enqueueWithId`, where
 nothing a caller passes can widen it, so they are read-only),
 recipe `servers:` allowlisted via
 `config.plugins.allow`, kill switch fails CLOSED when unreadable, non-reversible
-and inferred-tier writes queue, unregistered tools halt, a recipe's
+and inferred-tier writes queue, a write not declared in the recipe's own
+`allowWrites` is REFUSED (since 2026-10-16; compat still follows
+`FLAG_ENFORCE_ALLOWWRITES`), unregistered tools halt, a recipe's
 `requireApproval: false` is ignored, connector output is wrapped in an
 `<untrusted>` envelope in agent prompts.
 

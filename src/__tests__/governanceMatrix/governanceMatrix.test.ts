@@ -435,6 +435,12 @@ function writeRecipe(
     name,
     description: "synthetic governance-matrix recipe",
     trigger: { type: shape === "chained" ? "chained" : "manual" },
+    // Declare the writes the recipe performs, so each scenario reaches the
+    // safeguard it exists to test rather than the write acknowledgement.
+    ...(kind === "high" && { allowWrites: [HIGH_TOOL] }),
+    ...((kind === "file-allowed" || kind === "file-forbidden") && {
+      allowWrites: ["file.write"],
+    }),
     steps: stepsFor(kind, shape, driver),
   };
   const file = path.join(env.home, "recipes", `${name}.yaml`);
