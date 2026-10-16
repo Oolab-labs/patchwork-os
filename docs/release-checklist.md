@@ -57,7 +57,7 @@ count into this file — that is exactly the number that goes stale.
 - [ ] Release PR (`chore(release): bump to X.Y.Z`) merged
 - [ ] On `main`: `git pull`, then confirm `git rev-parse HEAD` is the merge commit **and** `package.json` says the new version — only then tag
 - [ ] `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z` on the merge commit — `publish-npm.yml` publishes `beta` (or `alpha`) from the tag with provenance
-- [ ] `npm dist-tag add patchwork-os@X.Y.Z latest` by hand — OIDC publish does not cover dist-tags; needs 2FA
+- [ ] Beta/alpha only: `npm dist-tag add patchwork-os@X.Y.Z latest` by hand — OIDC publish does not cover dist-tags; needs 2FA. A stable `vX.Y.Z` tag publishes to `latest` itself (`publish-stable-tag`), after refusing any tag that does not equal `package.json`'s version
 - [ ] Extension: `vsce publish` and `ovsx publish` (if changed)
 - [ ] Security advisory, if any: set `patched_versions`, publish only once the version is on npm
 
