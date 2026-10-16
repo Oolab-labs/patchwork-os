@@ -4,6 +4,7 @@
  * Self-registering tool module for the recipe tool registry.
  */
 
+import { isDispositionBearingLabel } from "../../workers/outcomeStore.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
 
 // ============================================================================
@@ -325,23 +326,45 @@ registerTool({
       url: { type: "string" },
       title: { type: "string" },
       error: { type: "string" },
+      code: { type: "string" },
     },
   },
   riskDefault: "high",
   isWrite: true,
   isConnector: true,
   execute: async ({ params }) => {
-    const { createIssue } = await import("../../connectors/github.js");
     const repo = params.repo ? String(params.repo) : "";
     const title = params.title ? String(params.title) : "";
+    // A label is the one creation-time parameter that can carry a disposition
+    // into `classifyIssueDisposition`. Filing an issue already `confirmed`
+    // would let a worker climb the trust ramp on evidence it wrote itself
+    // (audit 2026-10-15, H3), so the signal labels are refused here — before
+    // the connector is touched, and as a step error rather than a silent
+    // strip, because a dropped label would read as success to the recipe.
+    const labels = Array.isArray(params.labels)
+      ? params.labels.map(String)
+      : undefined;
+    const refused = labels?.filter(isDispositionBearingLabel) ?? [];
+    if (refused.length > 0) {
+      return JSON.stringify({
+        ok: false,
+        code: "disposition_label_refused",
+        error:
+          `github.create_issue refuses label(s) ${refused
+            .map((l) => JSON.stringify(l))
+            .join(", ")}: a label the outcome classifier reads as a ` +
+          "signal cannot be set by the step that files the issue. A human " +
+          "sets it on GitHub, or records it with `patchwork outcomes " +
+          "confirm|reject`.",
+      });
+    }
+    const { createIssue } = await import("../../connectors/github.js");
     try {
       const issue = await createIssue({
         repo,
         title,
         ...(params.body !== undefined && { body: String(params.body) }),
-        ...(Array.isArray(params.labels) && {
-          labels: params.labels.map(String),
-        }),
+        ...(labels && { labels }),
         ...(Array.isArray(params.assignees) && {
           assignees: params.assignees.map(String),
         }),
