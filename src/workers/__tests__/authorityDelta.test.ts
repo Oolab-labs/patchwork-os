@@ -43,6 +43,19 @@ describe("no change", () => {
   });
 });
 
+describe("a forbids value of the wrong shape is a widening, not a no-op", () => {
+  it("a scalar or mapping under forbids reports prohibition-unreadable", () => {
+    for (const bad of ["vcs-remote", { match: "vcs-remote", reason: "x" }]) {
+      const d = authorityDelta(w(), w({ forbids: bad as never }));
+      expect(
+        d.map((x) => x.kind),
+        JSON.stringify(bad),
+      ).toContain("prohibition-unreadable");
+      expect(widensAuthority(d)).toBe(true);
+    }
+  });
+});
+
 describe("the obvious widenings", () => {
   it("owns gained", () => {
     const d = authorityDelta(w(), w({ owns: ["vcs-local", "vcs-remote"] }));

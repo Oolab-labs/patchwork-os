@@ -122,6 +122,18 @@ describe("validateWorkers", () => {
     expect(f?.message).toContain("fails OPEN");
   });
 
+  it("errors on a forbids value that is not a list at all (M2)", () => {
+    worker("scalar.worker.yaml", `${healthy}forbids: vcs-remote\n`);
+    worker(
+      "mapping.worker.yaml",
+      `${healthy.replace("healthy-worker", "mapping-worker")}forbids:\n  match: vcs-remote\n  reason: never\n`,
+    );
+    const r = validate();
+    const f = r.findings.filter((x) => x.code === "unparseable-forbid-rule");
+    expect(f.map((x) => x.level)).toEqual(["error", "error"]);
+    expect(r.healthy).toBe(false);
+  });
+
   it("a well-formed forbids list is not a finding", () => {
     worker(
       "ok.worker.yaml",
