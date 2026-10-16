@@ -27,9 +27,9 @@ Three ideas, one runtime:
 
 ![The activity stream showing two events — an approval_decision marked approved, and the createFile tool call that followed it, succeeding in 4ms](docs/images/decision-receipt.png)
 
-## Status: beta
+## Status: stable 1.2
 
-Version `1.2.0-beta.x`. The decision layer, recipes, connectors and IDE bridge all work and are dogfooded daily, but interfaces still move between betas and some surfaces are rougher than others. Pin an exact version if you are building on it.
+Version `1.2.1`, published to npm as `latest`. The decision layer, recipes, connectors and IDE bridge all work and are dogfooded daily. Interfaces can still change between minor versions and some surfaces are rougher than others. Pin an exact version if you are building on it.
 
 **Whether the safety features are on depends on how you installed.** This matters more than any other line in this README:
 

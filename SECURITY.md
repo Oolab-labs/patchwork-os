@@ -4,16 +4,17 @@ Patchwork OS ships an npm package, IDE extensions, a Docker image, an OAuth 2.0 
 
 ## Supported Versions
 
-The current prerelease channel is **beta** (`patchwork-os@1.2.0-beta.x`).
+The current release line is **1.2.x** (`patchwork-os@1.2.1`), published under the npm `latest` tag.
 
 | Channel | Status | Get fixes? |
 |---|---|---|
-| `beta` (current) | Active | Yes |
+| `latest` 1.2.x (current) | Active | Yes |
+| `beta` | Frozen at `1.2.0-beta.3`, superseded by 1.2.x | Upgrade to 1.2.x |
 | `canary` | Auto-published on every green merge to `main`. Untriaged and unsupported — for dogfooding only | Only as a side effect of tracking `main` |
 | `alpha` | Frozen at `0.2.0-alpha.37` | Critical only, case-by-case |
 | Older `claude-ide-bridge` v2.x | End-of-life after the rename to Patchwork OS | No |
 
-The npm `latest` dist-tag currently points at the same build as `beta`; a stable `latest` line has not been cut. The VS Code / Open VSX extension `claude-ide-bridge-extension@1.4.x` is the supported extension line.
+Stable versions are cut from a release PR and published from their `vX.Y.Z` tag to `latest`. The VS Code / Open VSX extension `claude-ide-bridge-extension@1.4.x` is the supported extension line.
 
 <!-- Version strings in this file are checked against package.json by
      scripts/audit-version-drift.mjs (CI job "Docs version drift"). -->
@@ -72,7 +73,7 @@ Out of scope (please do not test against without permission):
 
 For users running Patchwork OS:
 
-- Pin to a specific `1.2.0-beta.X` rather than the floating `@beta` or `@latest` tag if reproducibility matters more than fast updates.
+- Pin to a specific `1.2.X` rather than the floating `@latest` tag if reproducibility matters more than fast updates.
 - The bridge auth token in `~/.claude/ide/<port>.lock` is mode `0o600`; preserve those permissions.
 - The write kill switch (`PATCHWORK_WRITES_DISABLED`) is captured at startup and frozen — do not rely on runtime mutation to disable writes.
 - For remote deployments, always front the bridge with a TLS-terminating reverse proxy. See [docs/remote-access.md](docs/remote-access.md).

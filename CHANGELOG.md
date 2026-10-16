@@ -6,6 +6,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.1] — 2026-10-16
+
+Recipe fixes from the same functionality audit as 1.2.0, plus the release
+pipeline's first stable path.
+
+### Fixed
+
+- **An installed recipe keeps its privacy class, write acknowledgements and
+  contracts** (#1720). `recipe install` and `POST /recipes/install` wrote a
+  parsed subset of the recipe, so the installed copy lost `data_policy`
+  (falling back to `internal`), `allowWrites`, run- and step-level `expect`,
+  required vars, `when`, `timeout` and `awaits`. The installer now writes the
+  source recipe with only its name normalised. Flat and chained recipes are
+  validated with the runtime validator, so the 15 shipped templates that omit
+  step ids now install. JSON cron recipes are scheduled from `trigger.at` as
+  well as `schedule`.
+- **`recipe rollback --attempt … --dry-run` no longer rolls back** (#1719).
+  The flag was honoured only by the `--run` form; both forms now print the
+  same plan and change nothing.
+- `policy explain` given only flags (`--json`, `--start manual`) printed a
+  crash instead of usage (#1719).
+- The shipped `webhook/incident-intake` template called `linear.create_issue`,
+  which is not a registered tool, so its Linear step was skipped and the run
+  finished `done`. It now calls `linear.createIssue` with a `LINEAR_TEAM` var.
+  A new test fails if any shipped template names an unregistered tool (#1719).
+
+### Changed
+
+- **A stable `vX.Y.Z` tag publishes to npm `latest`** (#1717), refusing any
+  tag that does not equal `package.json`'s version. Its GitHub release notes
+  come from this changelog (#1718).
+
 ## [1.2.0] — 2026-10-16
 
 The first stable release of the 1.2 line. No new work: it is a release of
