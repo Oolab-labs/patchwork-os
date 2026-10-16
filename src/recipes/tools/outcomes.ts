@@ -33,7 +33,7 @@ registerTool({
   id: "outcomes.classify_issues",
   namespace: "outcomes",
   description:
-    "Deterministically classify a batch of GitHub issues (from github.list_issues / github.search_issues output) as confirmed/junk/unknown and persist to the outcome-log for trust-replay. No LLM judgment — pure function of state/stateReason/labels.",
+    "Deterministically classify a batch of GitHub issues (from github.list_issues / github.search_issues output) as confirmed/junk/unknown and persist to the outcome-log for trust-replay. No LLM judgment — pure function of state/stateReason/labels. The function is pure; its INPUT is caller-supplied, so pipe it straight from a github.list_issues / search_issues step, never from text a model produced.",
   paramsSchema: {
     type: "object",
     properties: {

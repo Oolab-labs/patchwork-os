@@ -357,17 +357,58 @@ export class OutcomeStore {
 }
 
 /**
+ * Labels the classifier reads as a signal. Exported so the one tool that can
+ * attach labels at filing time (`github.create_issue`) refuses exactly this
+ * set — two copies of this list is how the tool and the classifier would
+ * drift, and the drift would be silent and permissive.
+ */
+export const JUNK_LABELS: readonly string[] = [
+  "invalid",
+  "duplicate",
+  "wontfix",
+  "won't fix",
+  "not a bug",
+  "by design",
+  "spam",
+];
+export const CONFIRMED_LABELS: readonly string[] = [
+  "patchwork:valid",
+  "confirmed",
+  "verified",
+];
+
+function normaliseLabel(label: string): string {
+  return label.trim().toLowerCase();
+}
+
+/**
+ * True when a label would, on its own, move the classifier off `unknown`.
+ * Used by `github.create_issue` to refuse a disposition set at creation time.
+ * Junk is matched the same way the classifier matches it (substring), so the
+ * tool refuses everything the classifier would act on, never less.
+ */
+export function isDispositionBearingLabel(label: string): boolean {
+  const l = normaliseLabel(label);
+  return CONFIRMED_LABELS.includes(l) || JUNK_LABELS.some((j) => l.includes(j));
+}
+
+/**
  * Map a GitHub issue's state/labels to an OutcomeDisposition.
  * Pure function — used both by the ingester recipe agent prompt and by tests.
  *
  * Junk signals (any one → junk):
  *   - state_reason: "not_planned"
- *   - labels containing: "invalid", "duplicate", "wontfix", "won't fix",
- *     "not a bug", "by design", "spam"
+ *   - labels CONTAINING one of JUNK_LABELS (substring, case-insensitive)
  *
  * Confirmed signals (issue closed with a positive signal):
  *   - state: "closed" + state_reason: "completed" (GitHub's default close)
- *   - labels containing: "patchwork:valid", "confirmed", "verified"
+ *   - a label EQUAL to one of CONFIRMED_LABELS (exact after trim+lowercase)
+ *
+ * The asymmetry is deliberate (audit 2026-10-15, H3). Substring matching on
+ * the confirmed side classified `unconfirmed`, `unverified` and
+ * `needs-verified-repro` as confirmed, so ordinary triage labels earned
+ * trust. A false JUNK only withholds trust, which is recoverable by a human
+ * confirming; a false CONFIRMED manufactures it, which is not.
  *
  * Unknown: still open, or closed with no clear signal.
  */
@@ -378,25 +419,13 @@ export function classifyIssueDisposition(issue: {
 }): OutcomeDisposition {
   const labelNames = (issue.labels ?? [])
     .map((l) => (typeof l === "string" ? l : (l.name ?? "")))
-    .map((s) => s.toLowerCase());
-
-  const JUNK_LABELS = [
-    "invalid",
-    "duplicate",
-    "wontfix",
-    "won't fix",
-    "not a bug",
-    "by design",
-    "spam",
-  ];
-  const CONFIRMED_LABELS = ["patchwork:valid", "confirmed", "verified"];
+    .map(normaliseLabel);
 
   if (JUNK_LABELS.some((j) => labelNames.some((l) => l.includes(j))))
     return "junk";
   if (issue.state_reason === "not_planned") return "junk";
 
-  if (CONFIRMED_LABELS.some((c) => labelNames.some((l) => l.includes(c))))
-    return "confirmed";
+  if (labelNames.some((l) => CONFIRMED_LABELS.includes(l))) return "confirmed";
   if (issue.state === "closed" && issue.state_reason === "completed")
     return "confirmed";
 
