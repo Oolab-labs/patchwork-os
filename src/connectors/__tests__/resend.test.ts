@@ -449,3 +449,21 @@ describe("verifyResendWebhook", () => {
     ).toBe(true);
   });
 });
+
+describe("writes are not retried when they may already have landed (audit M23)", () => {
+  it("sendEmail: a 503 sends exactly one request, not three", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    const { getResendConnector } = await import("../resend.js");
+    const { calls } = installFetchMock(() => new Response("", { status: 503 }));
+    const c = getResendConnector();
+    await expect(
+      c.sendEmail({
+        from: "sender@example.com",
+        to: "recipient@example.com",
+        subject: "Hello",
+        html: "<p>Hi</p>",
+      }),
+    ).rejects.toThrow();
+    expect(calls).toHaveLength(1);
+  });
+});

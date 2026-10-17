@@ -346,3 +346,18 @@ describe("env override", () => {
     expect(t?.defaultFrom).toBe("+14155550100");
   });
 });
+
+describe("sendSms is not retried when it may already have been sent (audit M23)", () => {
+  it("a 503 sends exactly one request, not three", async () => {
+    const { getTwilioConnector } = await import("../twilio.js");
+    await saveValidTokens({ defaultFrom: "+14155550100" });
+    const fetchMock = vi.fn(async () => new Response("", { status: 503 }));
+    (globalThis as unknown as { fetch: typeof fetch }).fetch =
+      fetchMock as unknown as typeof fetch;
+    const c = getTwilioConnector();
+    await expect(
+      c.sendSms({ to: "+14155551234", body: "hi" }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

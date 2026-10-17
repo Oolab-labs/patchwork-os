@@ -231,20 +231,23 @@ export class SendGridConnector extends BaseConnector {
       content,
     };
 
-    const result = await this.apiCall(async () => {
-      const res = await fetch(`${BASE_URL}/v3/mail/send`, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      // SendGrid returns 202 + X-Message-Id header on success, empty body.
-      const messageId = res.headers.get("x-message-id") ?? "";
-      return { messageId };
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(`${BASE_URL}/v3/mail/send`, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        // SendGrid returns 202 + X-Message-Id header on success, empty body.
+        const messageId = res.headers.get("x-message-id") ?? "";
+        return { messageId };
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
   }

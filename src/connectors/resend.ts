@@ -303,15 +303,18 @@ export class ResendConnector extends BaseConnector {
     if (params.text) body.text = params.text;
     if (params.replyTo) body.reply_to = params.replyTo;
 
-    const result = await this.apiCall(async () => {
-      const res = await fetch(`${BASE_URL}/emails`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      return res.json() as Promise<ResendSendResult>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(`${BASE_URL}/emails`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        return res.json() as Promise<ResendSendResult>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as ResendSendResult;
   }
@@ -374,15 +377,18 @@ export class ResendConnector extends BaseConnector {
     this.tokens = this.tokens ?? loadTokens();
     if (!this.tokens) throw new Error("Resend not connected");
 
-    const result = await this.apiCall(async () => {
-      const res = await fetch(`${BASE_URL}/audiences`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) throw res;
-      return res.json() as Promise<ResendAudience>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(`${BASE_URL}/audiences`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) throw res;
+        return res.json() as Promise<ResendAudience>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as ResendAudience;
   }
@@ -420,18 +426,21 @@ export class ResendConnector extends BaseConnector {
     if (params.lastName) body.last_name = params.lastName;
     if (params.unsubscribed != null) body.unsubscribed = params.unsubscribed;
 
-    const result = await this.apiCall(async () => {
-      const res = await fetch(
-        `${BASE_URL}/audiences/${encodeURIComponent(params.audienceId)}/contacts`,
-        {
-          method: "POST",
-          headers: this.buildHeaders(),
-          body: JSON.stringify(body),
-        },
-      );
-      if (!res.ok) throw res;
-      return res.json() as Promise<ResendContact>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(
+          `${BASE_URL}/audiences/${encodeURIComponent(params.audienceId)}/contacts`,
+          {
+            method: "POST",
+            headers: this.buildHeaders(),
+            body: JSON.stringify(body),
+          },
+        );
+        if (!res.ok) throw res;
+        return res.json() as Promise<ResendContact>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as ResendContact;
   }
