@@ -15,13 +15,17 @@
  * `vscode-extension/src/handlers/terminal.ts`.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExtensionClient } from "../../extensionClient.js";
 import { Logger } from "../../logger.js";
 import {
   createGetTerminalOutputTool,
   createWaitForTerminalOutputTool,
 } from "../terminal.js";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function clientReplying(reply: unknown): ExtensionClient {
   const client = new ExtensionClient(new Logger(false));
