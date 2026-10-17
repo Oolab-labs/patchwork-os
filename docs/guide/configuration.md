@@ -99,9 +99,25 @@ Most installs need none of these; CLI flags cover the common cases. They exist s
 | `PATCHWORK_MAX_CONCURRENT_RUNS` | Positive integer N: at most N workflow runs in progress at once in this bridge, across all recipes and every entry path (manual, dashboard, cron, webhook, automation hook). A run started beyond it is refused before any step runs with `run_limit_reached` (HTTP 429 on the run routes); a scheduled tick that hits it is skipped and logged like an `already_in_flight` refusal. Nested child recipes are part of their parent's run and do not count. Absent, `0` or not a positive integer: unlimited. |
 | `PATCHWORK_MAX_RECIPES` | Positive integer N: adding a recipe that would take the installed top-level count past N is refused with `recipe_limit_reached` (HTTP 409) on every install and create path — `POST /recipes/install`, `POST /recipes`, `PUT /recipes/:name` for a new name, duplicate, and `patchwork recipe install`. An install package counts once; archived recipes (under `.archive/`) do not count, disabled ones do. Updating an existing recipe, and promoting a variant, are always allowed. Absent, `0` or not a positive integer: unlimited. |
 | `PATCHWORK_FLAG_KILL_SWITCH_WRITES` | Freeze the kill-switch state at startup; nothing at runtime can change it. |
-| `PATCHWORK_FLAG_WORKER_AUTONOMY` | Enable the worker autonomy gate under `compat` (governed turns it on itself). Needs `--driver subprocess`. |
-| `PATCHWORK_FLAG_BUTLER_PROMOTE` | Let `patchwork butler promote` write to the trust ledger. Default off; promotion is one-way. |
-| `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Strict UI-schema linting in the recipe editor. |
+| `PATCHWORK_FLAG_BUTLER_PROMOTE` | Let `patchwork butler promote` write to the trust ledger. Default off; promotion is one-way. Read from the environment only — not a registered flag, so `config/flags.json` and the dashboard cannot set it. |
+| `PATCHWORK_FLAG_RUNSTORE_MIRROR` | Truthy: mirror every run-log write into the SQLite run store (ADR-0022 shadow mirror). Default off, byte-identical to no mirror. If the mirror cannot open, the bridge logs and runs unmirrored. Environment only, like `BUTLER_PROMOTE`. |
+| `PATCHWORK_WORKSPACE` | Workspace root for agent steps when a recipe has no `workspace:` field. Used before the walk up from the current directory for `.git`; a path that does not exist halts the step (`recipe_no_workspace`) rather than falling back to `$HOME`. |
+| `PATCHWORK_PRICE_TABLE` | Path to a JSON price table for `budget.usdMax`. Wins over `~/.patchwork/prices.json` and the built-in table. A malformed file is ignored (the step is then unpriced, and the USD cap is not enforced for it). |
+| `PATCHWORK_TELEMETRY_DEBUG` | Truthy: opt-in telemetry prints the payload it would send instead of sending it. |
+
+#### Feature flags
+
+Each registered flag is off by default and can be turned on three ways, highest precedence first: the environment variable, `config/flags.json` under `~/.patchwork`, or the dashboard's flag page. The variable name is `PATCHWORK_FLAG_` plus the flag id upper-cased with `.` and `-` turned into `_` — note `policy.enforce` becomes `PATCHWORK_FLAG_POLICY_ENFORCE`. The governed profile turns on what it needs itself; these switches matter mainly under `compat`.
+
+| Flag id / variable | Effect when on | Under `governed` |
+|---|---|---|
+| `worker.autonomy` / `PATCHWORK_FLAG_WORKER_AUTONOMY` | Worker manifests govern the recipes they own (the trust-ramp gate). Needs `--driver subprocess`. | Always on |
+| `policy.enforce` / `PATCHWORK_FLAG_POLICY_ENFORCE` | Enforce `patchwork.policy.yml` before the approval gate: a forbidden call fails with `policy_denied` instead of queueing. | Always on |
+| `recipe.enforce-allowwrites` / `PATCHWORK_FLAG_RECIPE_ENFORCE_ALLOWWRITES` | A write step whose tool is not in its recipe's `allowWrites` is refused at run time, not only flagged by `recipe preflight`. | Always enforced, whatever the flag says |
+| `block-recipe-allow-private` / `PATCHWORK_FLAG_BLOCK_RECIPE_ALLOW_PRIVATE` | A step's `allowPrivate: true` on `http.post` is ignored, so a recipe cannot reach loopback or LAN hosts. | Always refused; `patchwork doctor` shows it as "Private network" |
+| `recipe.circuit-breaker` / `PATCHWORK_FLAG_RECIPE_CIRCUIT_BREAKER` | After repeated consecutive failures of one tool in one recipe, short-circuit further calls until a cooldown passes. Applies to flat recipes and `fan_out`; chained recipes are not covered. | Not changed |
+| `recipe.repair-ai` / `PATCHWORK_FLAG_RECIPE_REPAIR_AI` | Enable `POST /recipes/repair` (the dashboard's AI repair button). Off by default because it sends the current recipe to a model and costs tokens. | Not changed |
+| `ui.schema-lint` / `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Add JSON-Schema checks to recipe validation — `recipe lint`, `recipe new`, and the dashboard's save, lint and recipe list — so a recipe can newly fail lint. Not limited to the editor. | Not changed |
 | `PATCHWORK_ANALYTICS_ENDPOINT` / `PATCHWORK_ANALYTICS_KEY` | Override the opt-in telemetry collector and its shared secret. Env wins over the config file written by `patchwork analytics configure`. |
 | `LOCAL_MODEL` / `LOCAL_ENDPOINT` / `LOCAL_API_KEY` / `LOCAL_ENDPOINT_ALLOW_REMOTE` | Local-model driver settings. |
 | `OTEL_SERVICE_NAME` | OpenTelemetry service name (default `claude-ide-bridge`). |
