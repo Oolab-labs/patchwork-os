@@ -6437,10 +6437,34 @@ if (process.argv[2] === "privacy") {
           ...(cfg.privacy?.notes && { notes: cfg.privacy.notes }),
         },
       );
+      const { describeOrchestratorPath } = await import(
+        "./privacy/describeDestinations.js"
+      );
+      const orchestrator = describeOrchestratorPath(
+        (cfg.privacy as { orchestrator?: { classification?: unknown } })
+          ?.orchestrator?.classification,
+      );
       if (args.includes("--json")) {
+        // The array shape is unchanged for existing readers; what it cannot
+        // carry goes to stderr so it is never silent (audit M9).
         process.stdout.write(`${JSON.stringify(described, null, 2)}\n`);
+        for (const i of registry.invalid) {
+          process.stderr.write(
+            `[privacy] destination "${i.id}" could not be parsed and is not used: ${i.reason}\n`,
+          );
+        }
+        if (orchestrator.state === "malformed") {
+          process.stderr.write(
+            `[privacy] privacy.orchestrator.classification is ${orchestrator.raw}: not a known classification, so orchestrator tasks are NOT enforced\n`,
+          );
+        }
       } else {
-        process.stdout.write(`${formatDestinationsReport(described)}\n`);
+        process.stdout.write(
+          `${formatDestinationsReport(described, {
+            invalid: registry.invalid,
+            orchestrator,
+          })}\n`,
+        );
       }
       // Always 0: an inert boundary and a wide-open one are both legitimate
       // operator states, and exiting non-zero on either would make a correct
