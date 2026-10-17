@@ -95,12 +95,17 @@ describe("validateOutboundUrl — DNS re-check and pinning", () => {
     expect(v).toMatchObject({ ok: true, pinnedAddress: "93.184.216.34" });
   });
 
-  it("proceeds unpinned when the resolver fails (transport reports the error)", async () => {
+  it("refuses when the resolver fails, carrying the real DNS error (audit M21)", async () => {
+    // It used to proceed UNPINNED, letting the transport resolve the name a
+    // second time: a name that failed this lookup and answered with a private
+    // address on the transport's slipped past the range check.
     const v = await validateOutboundUrl("https://example.test/", {
       resolveDns: failingDns,
     });
-    expect(v.ok).toBe(true);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toBe("dns_unresolved");
     expect(v.pinnedAddress).toBeUndefined();
+    expect(v.detail).toMatch(/^example\.test: /);
   });
 
   it("allowPrivate skips the range check but still pins", async () => {

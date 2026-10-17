@@ -127,6 +127,7 @@ export type OutboundRefusal =
   | "unsupported_protocol"
   | "private_host"
   | "private_host_after_dns"
+  | "dns_unresolved"
   | "too_many_redirects"
   | "invalid_redirect";
 
@@ -139,9 +140,11 @@ export interface OutboundUrlOptions {
   allowPrivate?: boolean;
   /**
    * Resolve a hostname to ONE address. Defaults to `dns.lookup`. A rejection
-   * is treated as "could not resolve" and the request proceeds UNPINNED so the
-   * transport reports the real DNS error — the behaviour `sendHttpRequest` has
-   * always had and its tests assert.
+   * REFUSES the request (`dns_unresolved`), carrying the resolver's own error
+   * so the caller still sees the real DNS failure. It used to proceed
+   * UNPINNED, which let the transport resolve the name a second time — a
+   * name that failed the guard's lookup and answered with a private address
+   * on the transport's slipped past the range check (audit M21).
    */
   resolveDns?: (hostname: string) => Promise<string>;
 }
@@ -202,9 +205,15 @@ export async function validateOutboundUrl(
   let pinnedAddress: string | undefined;
   try {
     pinnedAddress = await (opts.resolveDns ?? defaultResolveDns)(url.hostname);
-  } catch {
-    // Unresolvable — let the transport surface the real error.
-    return { ok: true, url };
+  } catch (err) {
+    // Unresolvable: refuse rather than let the transport resolve again
+    // unpinned. The resolver's message is the real DNS error.
+    return {
+      ok: false,
+      reason: "dns_unresolved",
+      detail: `${url.hostname}: ${err instanceof Error ? err.message : String(err)}`,
+      url,
+    };
   }
   if (!allowPrivate && isPrivateHost(pinnedAddress)) {
     return {
@@ -286,6 +295,8 @@ function refusalMessage(v: OutboundUrlValidation, hop: "request" | "redirect") {
       return `${where}target is a private/loopback address ("${v.detail}") — blocked`;
     case "private_host_after_dns":
       return `${where}hostname resolves to a private/loopback address (${v.detail}) — blocked`;
+    case "dns_unresolved":
+      return `${where}hostname could not be resolved (${v.detail})`;
     default:
       return `${where}request refused`;
   }

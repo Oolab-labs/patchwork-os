@@ -510,7 +510,9 @@ acceptance` does, for its loopback target), connector output is wrapped in an
   AES-GCM ciphertext, never cleartext.
 - **Outbound HTTP** has ONE guard (`validateOutboundUrl` / `safeFetch` in
   `src/ssrfGuard.ts`): lexical private-range refusal incl. unusual IPv4
-  notations and IPv4-mapped IPv6, DNS resolve-once + pin, manual redirects
+  notations, IPv4-mapped/-compatible and NAT64 IPv6 and all of fe80::/10 and
+  fec0::/10, DNS resolve-once + pin (an unresolvable name is REFUSED with the
+  resolver's error, never sent unpinned — since 2026-10-17), manual redirects
   re-validated per hop with credentials dropped cross-origin. `http.post` and
   `sendHttpRequest` both use it.
 - **Known remaining bypasses are listed in the ADR.** Replay rebuilds the tier

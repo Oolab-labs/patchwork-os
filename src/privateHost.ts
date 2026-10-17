@@ -80,6 +80,82 @@ function looseIpv4ToDotted(host: string): string | null {
 }
 
 /**
+ * Expand an IPv6 literal to its eight 16-bit groups, or null if it is not
+ * one. Accepts `::` compression and a trailing dotted IPv4 (`::127.0.0.1`,
+ * `64:ff9b::10.0.0.1`), which is how a DNS answer or a hand-written literal
+ * arrives; `new URL()` rewrites the same address into hex groups
+ * (`::7f00:1`), and both forms must reach the same decision.
+ */
+function ipv6Groups(host: string): number[] | null {
+  if (!host.includes(":")) return null;
+  let h = host;
+  const tail: number[] = [];
+  const v4 = h.match(/:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const o = v4.slice(1).map(Number);
+    if (o.some((n) => n > 255)) return null;
+    tail.push(
+      ((o[0] as number) << 8) | (o[1] as number),
+      ((o[2] as number) << 8) | (o[3] as number),
+    );
+    h = h.slice(0, -(v4[0].length - 1)); // keep the separating ":"
+    if (h.endsWith("::")) {
+      // "::a.b.c.d" — the compression is the whole head
+    } else if (h.endsWith(":")) {
+      h = h.slice(0, -1);
+    }
+  }
+  const halves = h.split("::");
+  if (halves.length > 2) return null;
+  const part = (x: string) => (x === "" ? [] : x.split(":"));
+  const head = part(halves[0] as string);
+  const rest = halves.length === 2 ? part(halves[1] as string) : [];
+  const parse = (g: string) =>
+    /^[0-9a-f]{1,4}$/i.test(g) ? Number.parseInt(g, 16) : Number.NaN;
+  const headN = head.map(parse);
+  const restN = rest.map(parse);
+  if ([...headN, ...restN].some((n) => Number.isNaN(n))) return null;
+  const explicit = headN.length + restN.length + tail.length;
+  if (halves.length === 1) {
+    if (explicit !== 8) return null;
+    return [...headN, ...tail];
+  }
+  if (explicit > 7) return null;
+  const zeros = new Array<number>(8 - explicit).fill(0);
+  return [...headN, ...zeros, ...restN, ...tail];
+}
+
+/** The IPv4 address carried in the low 32 bits of an IPv6 group array. */
+function embeddedIpv4(g: number[]): string {
+  const hi = g[6] as number;
+  const lo = g[7] as number;
+  return `${hi >>> 8}.${hi & 0xff}.${lo >>> 8}.${lo & 0xff}`;
+}
+
+/**
+ * Numeric IPv6 range decision. Returns true/false when the address falls in a
+ * range this decides, or null to leave it to the string checks.
+ */
+function ipv6RangeIsPrivate(g: number[]): boolean | null {
+  const g0 = g[0] as number;
+  if (g.every((n) => n === 0)) return true; // :: unspecified
+  if (g.slice(0, 6).every((n) => n === 0)) {
+    // ::a.b.c.d IPv4-compatible (deprecated ::/96; ::1 is 0.0.0.1, private)
+    return isPrivateHost(embeddedIpv4(g));
+  }
+  if (g0 === 0x64 && g[1] === 0xff9b) {
+    if (g.slice(2, 6).every((n) => n === 0)) {
+      // 64:ff9b::/96 NAT64 well-known prefix — reaches the embedded IPv4
+      return isPrivateHost(embeddedIpv4(g));
+    }
+    if (g[2] === 1) return true; // 64:ff9b:1::/48 NAT64 local use (RFC 8215)
+  }
+  if ((g0 & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+  if ((g0 & 0xffc0) === 0xfec0) return true; // fec0::/10 site-local
+  return null;
+}
+
+/**
  * Block requests to private/loopback addresses. Lexical-only check.
  *
  * Mirrors the predicate previously inlined in `tools/httpClient.ts`. Updates
@@ -128,6 +204,11 @@ export function isPrivateHost(hostname: string): boolean {
   // contains ":".
   if (!host.includes(":")) return false;
   if (host === "::1") return true; // loopback
+  const groups = ipv6Groups(host);
+  if (groups) {
+    const decided = ipv6RangeIsPrivate(groups);
+    if (decided !== null) return decided;
+  }
   if (host.startsWith("fe80:")) return true; // link-local
   if (host.startsWith("fc") || host.startsWith("fd")) return true; // ULA (RFC 4193)
   if (host.startsWith("2002:")) return true; // 6to4 (RFC 3056) — embeds IPv4 in bits 16-47;
@@ -165,6 +246,15 @@ export function isLoopbackHost(hostname: string): boolean {
   if (host === "::1") return true;
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4 && Number(ipv4[1]) === 127) return true;
+  const groups = ipv6Groups(host);
+  if (
+    groups &&
+    groups.slice(0, 6).every((n) => n === 0) &&
+    !groups.every((n) => n === 0)
+  ) {
+    // ::a.b.c.d IPv4-compatible: loopback iff the embedded IPv4 is
+    return isLoopbackHost(embeddedIpv4(groups));
+  }
   // IPv6-mapped/translated loopback: ::ffff:127.0.0.1 / ::ffff:0:127.0.0.1
   // Also handle hex-compressed form from new URL() (e.g. "7f00:1" = 127.0.0.1).
   if (host.startsWith("::ffff:0:")) {
