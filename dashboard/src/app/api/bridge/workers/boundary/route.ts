@@ -8,6 +8,7 @@
  * "recipe query param required".
  */
 
+import { securityHeadersFor } from "@/lib/proxyHeaders";
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         : upstreamCt;
     return new Response(text, {
       status: res.status,
-      headers: { "content-type": ct },
+      headers: securityHeadersFor(res.headers, ct),
     });
   } catch (err) {
     console.error("[workers/boundary] bridge fetch failed:", err);

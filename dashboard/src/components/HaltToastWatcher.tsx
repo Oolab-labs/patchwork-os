@@ -1,4 +1,5 @@
 "use client";
+import { appHref } from "@/lib/api";
 import { useEffect, useMemo, useRef } from "react";
 import { useActiveRuns } from "@/hooks/LiveRunsContext";
 import { useToast } from "@/components/Toast";
@@ -100,7 +101,7 @@ export function HaltToastWatcher() {
           ? {
               label: "Open run",
               onClick: () => {
-                window.location.href = href;
+                window.location.href = appHref(href);
               },
             }
           : undefined,

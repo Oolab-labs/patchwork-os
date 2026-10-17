@@ -36,6 +36,8 @@ interface ReceiptView {
   reason: string;
   recipeName?: string;
   workspaceId?: string;
+  /** Who supplied the label: an operator for this dispatch, the runtime's fallback, or a channel default. */
+  labelSource?: "declared" | "assumed" | "default";
 }
 
 interface ReceiptsSummary {
@@ -63,9 +65,30 @@ const DECISION_BLURB: Record<string, string> = {
   DENY: "refused outright",
 };
 
+const asCounts = (v: unknown): Record<string, number> =>
+  isRecord(v) ? (v as Record<string, number>) : {};
+
+/**
+ * Normalise a receipts summary. Applied to whatever the hook returns, so a
+ * partial body (an older or newer bridge, a truncated response) renders with
+ * empty sections instead of crashing the page on `Object.entries(undefined)`
+ * (audit M31).
+ */
 function toSummary(raw: unknown): ReceiptsSummary | null {
   if (!isRecord(raw) || typeof raw.recorded !== "number") return null;
-  return raw as unknown as ReceiptsSummary;
+  return {
+    ...(raw as unknown as ReceiptsSummary),
+    refusals: typeof raw.refusals === "number" ? raw.refusals : 0,
+    byDecision: asCounts(raw.byDecision),
+    byDestination: asCounts(raw.byDestination),
+    byClassification: asCounts(raw.byClassification),
+    refusalsByRecipe: asCounts(raw.refusalsByRecipe),
+    refusalsUnattributed:
+      typeof raw.refusalsUnattributed === "number" ? raw.refusalsUnattributed : 0,
+    unreadableLines: typeof raw.unreadableLines === "number" ? raw.unreadableLines : 0,
+    truncated: raw.truncated === true,
+    recent: Array.isArray(raw.recent) ? (raw.recent as ReceiptView[]) : [],
+  };
 }
 
 function Rows({ counts }: { counts: Record<string, number> }) {
@@ -84,10 +107,17 @@ function Rows({ counts }: { counts: Record<string, number> }) {
 }
 
 export default function PrivacyPage() {
-  const { data, error, loading, refetch } = useBridgeFetch<ReceiptsSummary | null>(
-    "/api/bridge/privacy/receipts",
-    { intervalMs: 15_000, transform: toSummary },
-  );
+  const {
+    data: fetched,
+    error,
+    loading,
+    refetch,
+    unsupported,
+  } = useBridgeFetch<ReceiptsSummary | null>("/api/bridge/privacy/receipts", {
+    intervalMs: 15_000,
+    transform: toSummary,
+  });
+  const data = useMemo(() => (fetched ? toSummary(fetched) : null), [fetched]);
 
   const fixList = useMemo(() => {
     if (!data) return [];
@@ -117,7 +147,16 @@ export default function PrivacyPage() {
         />
       )}
 
-      {!error && loading && !data && <p className="pill muted">Reading the ledger…</p>}
+      {!error && unsupported && (
+        <EmptyState
+          title="This bridge does not serve the receipt ledger"
+          description="It is an older version without the receipts endpoint. This says nothing about what the boundary decided — upgrade the bridge to see it."
+        />
+      )}
+
+      {!error && !unsupported && loading && !data && (
+        <p className="pill muted">Reading the ledger…</p>
+      )}
 
       {!error && data && data.recorded === 0 && (
         <EmptyState
@@ -168,7 +207,11 @@ export default function PrivacyPage() {
             <div>
               <h2>By destination</h2>
               <Rows counts={data.byDestination} />
-              <h2>By declared classification</h2>
+              <h2>By classification</h2>
+              <p className="editorial-sub">
+                Includes labels the runtime assumed and channel defaults, not only
+                ones an operator declared — see each receipt below.
+              </p>
               <Rows counts={data.byClassification} />
             </div>
           </section>
@@ -201,6 +244,12 @@ export default function PrivacyPage() {
                   {r.destinationId}
                   {r.destinationType ? ` (${r.destinationType})` : ""}
                   {r.recipeName ? ` · ${r.recipeName}` : ""}
+                  {r.labelSource ? (
+                    <span className="pill muted" title="Who supplied the classification">
+                      {" "}
+                      label {r.labelSource}
+                    </span>
+                  ) : null}
                   <span className="pill muted"> {relTime(r.at)}</span>
                   {r.reason && <div className="editorial-sub">{r.reason}</div>}
                 </li>
@@ -217,10 +266,12 @@ export default function PrivacyPage() {
                 declared and a destination resolved.
               </li>
               <li>
-                Does <strong>not</strong> cover orchestrator dispatches
-                (<code>runClaudeTask</code>, automation hooks, recipe generation
-                and repair). Those reach a model without a boundary decision,
-                because there is no declared-policy channel on that path.
+                Covers orchestrator dispatches (<code>runClaudeTask</code>,
+                automation hooks, recipe generation and repair) <strong>only when
+                </strong> <code>privacy.orchestrator.classification</code> is set:
+                that path-level default is the opt-in, and receipts it produces say
+                <code>label default</code>. Without it those dispatches reach a model
+                observed but not governed.
               </li>
               <li>
                 Coverage here is <em>enumerated</em> from known dispatch paths. It

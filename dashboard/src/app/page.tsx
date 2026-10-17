@@ -4,7 +4,7 @@ import { runHref } from "@/lib/runHref";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { apiPath } from "@/lib/api";
+import { apiPath, appHref } from "@/lib/api";
 import { approvalDecisionPath } from "@/lib/approvalDecisionPath";
 import { recipeDisplayName } from "@/lib/recipeDisplay";
 import { FirstRunChecklist } from "@/components/FirstRunChecklist";
@@ -1438,7 +1438,7 @@ export default function HomePage() {
       }
       if (e.key === "Enter") {
         const href = PANE_HREFS[activePane];
-        if (href) window.location.href = href;
+        if (href) window.location.href = appHref(href);
       }
     },
     [activePane],
