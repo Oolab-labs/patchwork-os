@@ -116,3 +116,30 @@ describe("WorkerGateDecisionLog", () => {
     expect(b.record(rec()).seq).toBe(3);
   });
 });
+
+// Audit M7 (2026-10-15). Two bridges append to one gate log (ADR-0007). After
+// its own append a log jumped its read offset to the end of the file, so rows
+// a sibling had appended since its last read were skipped and never entered
+// its in-memory view.
+describe("WorkerGateDecisionLog — sibling rows survive our own append (audit M7)", () => {
+  it("a sibling's decision appended before ours is still visible after ours", () => {
+    const a = new WorkerGateDecisionLog({ dir });
+    const b = new WorkerGateDecisionLog({ dir });
+    b.record(rec({ workerId: "sibling" }));
+    a.record(rec({ workerId: "self" }));
+    const workers = a.query().map((r) => r.workerId);
+    expect(workers).toContain("sibling");
+    expect(workers).toContain("self");
+  });
+
+  it("our own row is not counted twice when the file is read back", () => {
+    const a = new WorkerGateDecisionLog({ dir });
+    const b = new WorkerGateDecisionLog({ dir });
+    a.record(rec({ workerId: "self" }));
+    b.record(rec({ workerId: "sibling" }));
+    a.record(rec({ workerId: "self" }));
+    const rows = a.query();
+    expect(rows.filter((r) => r.workerId === "self")).toHaveLength(2);
+    expect(rows.filter((r) => r.workerId === "sibling")).toHaveLength(1);
+  });
+});
