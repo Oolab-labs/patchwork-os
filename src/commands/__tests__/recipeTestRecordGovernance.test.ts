@@ -317,3 +317,46 @@ describe("recipe record is governed like recipe run --local", () => {
     expect(r.issues.map((i) => i.message).join("\n")).toMatch(/kill_switch/);
   });
 });
+
+// Audit M15 (2026-10-15): `recipe record` always ran the FLAT runner, so a
+// chained recipe was recorded in file order with `awaits` ignored — the
+// fixtures captured a run that never happens.
+describe("recipe record runs a chained recipe with the chained runner", () => {
+  it("honours awaits: a step listed first but awaiting another runs second", async () => {
+    const calls: string[] = [];
+    registerTool({
+      id: "synthorder.ping",
+      namespace: "synthorder",
+      description: "fake ordered read",
+      paramsSchema: { type: "object" },
+      outputSchema: { type: "string" },
+      riskDefault: "low",
+      isWrite: false,
+      execute: async ({ params }: { params: Record<string, unknown> }) => {
+        calls.push(String(params.label));
+        return JSON.stringify({ ok: true });
+      },
+    } as unknown as RegisteredTool);
+    const p = writeRecipe(
+      "chained-record-order",
+      [
+        "name: chained-record-order",
+        "description: synthetic",
+        "trigger:",
+        "  type: chained",
+        "steps:",
+        "  - id: b",
+        "    tool: synthorder.ping",
+        "    label: b",
+        "    awaits: [a]",
+        "  - id: a",
+        "    tool: synthorder.ping",
+        "    label: a",
+        "",
+      ].join("\n"),
+    );
+    const r = await runRecord(p, { fixturesDir: home });
+    expect(r.issues.filter((i) => i.level === "error")).toEqual([]);
+    expect(calls).toEqual(["a", "b"]);
+  });
+});
