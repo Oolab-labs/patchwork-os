@@ -86,7 +86,34 @@ export function secretStorePaths(): string[] {
 }
 
 /**
- * `Read(...)` and `Edit(...)` deny rules for every secret store. Read rules
+ * Files that DEFINE governance (audit M4). Not secrets — an agent may read
+ * them — but an agent step allowed to write files (compat, or a governed
+ * write widening) could otherwise switch governance off by editing them:
+ * the kill switch (`config/flags.json`), the profile (`config.json`), the
+ * roster, worker manifests and trust checkpoints, installed recipes (their
+ * own `allowWrites` / `requireApproval`), and the evidence ledgers.
+ */
+export function governanceStatePaths(): string[] {
+  const out = new Set<string>();
+  for (const r of [patchworkHome(), legacyPatchworkHome()]) {
+    for (const home of new Set([r, realOrSelf(r)])) {
+      out.add(join(home, "config.json"));
+      out.add(join(home, "config", "**"));
+      out.add(join(home, "members.json"));
+      out.add(join(home, "workers", "**"));
+      out.add(join(home, "worker_trust", "**"));
+      out.add(join(home, "recipes", "**"));
+      out.add(join(home, "*.jsonl"));
+      out.add(join(home, "*.jsonl.*"));
+      out.add(join(home, "run-ledgers", "**"));
+    }
+  }
+  return [...out];
+}
+
+/**
+ * `Read(...)` and `Edit(...)` deny rules for every secret store, plus
+ * `Edit(...)` only for governance state. Read rules
  * also govern Glob, Grep and LS; Edit rules govern every write built-in.
  * Read per call, never cached: PATCHWORK_HOME is changed at runtime by the
  * CLI and by tests.
@@ -96,6 +123,9 @@ export function secretPathDenyRules(): string[] {
   for (const p of secretStorePaths()) {
     const rp = toAbsoluteRulePath(p);
     rules.push(`Read(${rp})`, `Edit(${rp})`);
+  }
+  for (const p of governanceStatePaths()) {
+    rules.push(`Edit(${toAbsoluteRulePath(p)})`);
   }
   return rules;
 }
