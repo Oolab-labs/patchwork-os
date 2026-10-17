@@ -15,4 +15,18 @@ export interface ConnectorStatus {
    * (never called, or bridge restarted since) — never fabricated.
    */
   lastSuccessAt?: string;
+  /** When the stored credential was connected, as the connector recorded it. */
+  connectedAt?: string;
+  /** Account or workspace label stored at connect time. */
+  account?: string;
+  /** When a Test (or the connect flow) last proved the credential. */
+  verifiedAt?: string;
+  /** Outcome of the most recent connection Test. */
+  lastCheck?: { at: string; ok: boolean; reason?: "failed" | "error" };
+  /**
+   * Whether the credential has been PROVEN to work. `status: "connected"`
+   * only means one is stored. Absent from an older bridge — render nothing
+   * rather than guess (audit H9).
+   */
+  verification?: "verified" | "failed" | "unverified";
 }

@@ -33,7 +33,7 @@ import {
   type WorkerReport,
 } from "@/lib/workerTrust";
 import { describeNextRun, humanizeSchedule } from "@/lib/humanSchedule";
-import { classifyPendingAction, reversibilityRank } from "@/lib/actionClass";
+import { actionClassOf, type BridgeActionClass, reversibilityRank } from "@/lib/actionClass";
 import { type GateAction, gateActionLabel } from "@/lib/gateAction";
 import { BlastBadge } from "@/components/patchwork";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
@@ -68,6 +68,8 @@ interface BridgeHealth {
 }
 
 interface Pending {
+  /** The bridge's action class for this call (audit M27). */
+  actionClass?: BridgeActionClass;
   callId: string;
   toolName: string;
   tier: "low" | "medium" | "high";
@@ -427,8 +429,8 @@ function TodayMorningSection({
 
   const sortedApprovals = [...approvals].sort(
     (a, b) =>
-      reversibilityRank(classifyPendingAction(a.toolName)?.reversibility) -
-      reversibilityRank(classifyPendingAction(b.toolName)?.reversibility),
+      reversibilityRank(actionClassOf(a)?.reversibility) -
+      reversibilityRank(actionClassOf(b)?.reversibility),
   );
 
   if (allDone) {
@@ -524,7 +526,7 @@ function TodayMorningSection({
           <div className="td-today-card td-today-rows">
             {sortedApprovals.map((p) => (
               <div className="td-today-row" key={p.callId}>
-                <BlastBadge cls={classifyPendingAction(p.toolName)} />
+                <BlastBadge cls={actionClassOf(p)} />
                 <span className="td-today-row-body">
                   <strong className="mono">{p.toolName}</strong>
                   {p.summary ? ` — ${p.summary}` : ""}
@@ -1111,11 +1113,11 @@ export default function HomePage() {
   // Worst-blast-tier pending approval first (mockup's A-A "Considered" —
   // "sorted by blast radius, the one that can't be undone is on top").
   // Maps directly onto the worker-autonomy gate's existing
-  // domain:reversibility:blastTier vocabulary via classifyPendingAction.
+  // domain:reversibility:blastTier vocabulary via actionClassOf (the bridge's class, audit M27).
   const topApproval = [...pendingApprovals].sort(
     (a, b) =>
-      reversibilityRank(classifyPendingAction(a.toolName)?.reversibility) -
-      reversibilityRank(classifyPendingAction(b.toolName)?.reversibility),
+      reversibilityRank(actionClassOf(a)?.reversibility) -
+      reversibilityRank(actionClassOf(b)?.reversibility),
   )[0];
   // Identity of whatever halt is currently the top attention item — a
   // "Mute 24h" click only ever fires from inside that halt's own action
@@ -2053,7 +2055,7 @@ export default function HomePage() {
               {topApproval && (
                 <div className="td-attention-item">
                   <div className="td-attention-head">
-                    <BlastBadge cls={classifyPendingAction(topApproval.toolName)} />
+                    <BlastBadge cls={actionClassOf(topApproval)} />
                     <strong className="mono">{topApproval.toolName}</strong>
                     <span className="td-muted">
                       filed {formatAgo(nowMs - topApproval.requestedAt)}

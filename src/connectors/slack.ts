@@ -65,6 +65,8 @@ export interface ConnectorHandlerResult {
   body: string;
   contentType?: string;
   redirect?: string;
+  /** The connect flow proved the new credential before saving it (audit H9). */
+  verifiedAtConnect?: boolean;
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -130,7 +132,12 @@ function deleteTokens(): void {
 }
 
 export function isConnected(): boolean {
-  return loadTokens() !== null;
+  // An empty stored token (written before connect required one) is not a
+  // connection.
+  const t = loadTokens();
+  return (
+    t !== null && typeof t.access_token === "string" && t.access_token !== ""
+  );
 }
 
 // ── State (CSRF) ──────────────────────────────────────────────────────────────
@@ -441,9 +448,18 @@ export async function handleSlackCallback(
     if (!json.ok)
       throw new Error(`Token exchange error: ${json.error ?? "unknown"}`);
 
-    const botToken = (json.access_token as string) ?? "";
+    const botToken =
+      typeof json.access_token === "string" ? json.access_token : "";
     const team = (json.team as Record<string, unknown>) ?? {};
     const botUser = (json.bot_user_id as string) ?? "";
+    // Never store a credential nobody has shown to work (audit H9): an
+    // exchange with no token used to be saved as `access_token: ""` and
+    // reported connected, and a token was saved without a single
+    // authenticated call. auth.test is the call the Test button makes.
+    if (!botToken) {
+      throw new Error("token exchange returned no access token");
+    }
+    await slackGet("auth.test", {}, botToken);
 
     saveTokens({
       access_token: botToken,
@@ -452,9 +468,16 @@ export async function handleSlackCallback(
       bot_user_id: botUser,
       connected_at: new Date().toISOString(),
     });
+    try {
+      const { recordConnectionCheck } = await import("./connectionChecks.js");
+      recordConnectionCheck("slack", true);
+    } catch {
+      // best effort: the credential is proven either way
+    }
 
     return {
       status: 200,
+      verifiedAtConnect: true,
       contentType: "text/html",
       // Audit 2026-06-03 MEDIUM #6: use window.location.origin instead of
       // the wildcard '*' so only the exact same origin receives the message.

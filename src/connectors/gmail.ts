@@ -18,6 +18,8 @@ import path from "node:path";
 import {
   attemptRevoke,
   type ConnectionCheckRecord,
+  type ConnectionVerification,
+  connectionVerification,
   disconnectBody,
   isRecordedTime,
   type LastCheck,
@@ -84,6 +86,12 @@ export interface ConnectorStatus {
   /** Outcome of the most recent connection Test. */
   lastCheck?: LastCheck;
   verified?: boolean;
+  /**
+   * Whether the credential has been PROVEN to work (`connectionVerification`):
+   * `connected` alone means only that one is stored. Present for connected
+   * connectors (audit H9).
+   */
+  verification?: ConnectionVerification;
 }
 
 function clientId(): string {
@@ -574,10 +582,17 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     checks = {};
   }
   for (const c of connectors) {
+    if (c.status === "disconnected") continue;
     const rec = checks[c.id];
-    if (!rec || c.status === "disconnected") continue;
-    if (rec.verifiedAt) c.verifiedAt = rec.verifiedAt;
-    if (rec.lastCheck) c.lastCheck = rec.lastCheck;
+    if (rec?.verifiedAt) c.verifiedAt = rec.verifiedAt;
+    if (rec?.lastCheck) c.lastCheck = rec.lastCheck;
+    c.verification = connectionVerification(c);
+    // Several connectors report their CONNECT time as `lastSync`; nothing
+    // synced then, and the dashboard rendered it as "Last sync" (audit H9).
+    // `connectedAt` already carries that fact under its own name.
+    if (c.lastSync !== undefined && c.lastSync === c.connectedAt) {
+      delete c.lastSync;
+    }
   }
   return {
     status: 200,

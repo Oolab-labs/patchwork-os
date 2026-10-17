@@ -16,6 +16,13 @@ export function blastBadge(cls: ClientActionClass | null): {
   tone: "err" | "warn" | "ok" | "muted";
 } {
   if (!cls) return { label: "unclassified", icon: "?", tone: "muted" };
+  if (cls.unclassified) {
+    return {
+      label: "unclassified · treated as irreversible",
+      icon: "⛔",
+      tone: "err",
+    };
+  }
   if (cls.reversibility === "irreversible") {
     return { label: "irreversible", icon: "⛔", tone: "err" };
   }
@@ -27,8 +34,10 @@ export function blastBadge(cls: ClientActionClass | null): {
 
 export function BlastBadge({ cls }: { cls: ClientActionClass | null }) {
   const b = blastBadge(cls);
-  const title = cls
-    ? `${DOMAIN_PLAIN_NAME[cls.domain] ?? cls.domain} · ${b.label}`
+  const title = cls?.unclassified
+    ? "No action class is registered for this tool. The bridge treats it as irreversible, so sorting and the evidence gate do too — this is a genuine unknown, handled conservatively."
+    : cls
+      ? `${DOMAIN_PLAIN_NAME[cls.domain] ?? cls.domain} · ${b.label}`
     : "Could not resolve an action class for this tool — sort/gate treat it like a reversible action, but this is a genuine unknown, not a claim of safety.";
   return (
     <span className={`pill ${b.tone} apc-blast-badge`} title={title}>
