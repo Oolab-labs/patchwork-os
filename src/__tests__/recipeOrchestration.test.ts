@@ -498,6 +498,60 @@ describe("RecipeOrchestration", () => {
     });
   });
 
+  // Audit M17 (2026-10-15). Only runRecipeFn (dashboard/HTTP, and the cron
+  // scheduler that calls it) refused a run with a missing required var.
+  // Webhooks and automation hooks call fireYamlRecipe directly and rendered
+  // the missing var as an empty string.
+  for (const [label, seed, fires] of [
+    [
+      "refuses a missing required var (webhook / automation-hook path)",
+      undefined,
+      false,
+    ],
+    ["fires when the required var is supplied", { issueId: "acct-0001" }, true],
+  ] as const) {
+    it(`fireYamlRecipe() — ${label}`, async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "ro-fire-required-"));
+      const ymlPath = join(tmpDir, "bar.yaml");
+      writeFileSync(
+        ymlPath,
+        "trigger:\n  type: webhook\n  inputs:\n    - name: issueId\n      required: true\nsteps: []\n",
+      );
+      try {
+        const fireStub = vi.fn().mockResolvedValue({ ok: true, taskId: "y3" });
+        const ro = new RecipeOrchestration({
+          server: makeServer(),
+          getOrchestrator: () => ({ runAndWait: vi.fn() }) as never,
+          recipeOrchestrator: makeRecipeOrchestrator({ fire: fireStub }),
+          recipeRunLog: null,
+          workdir: "/tmp/ws",
+          logger: { warn: vi.fn() },
+        });
+        const result = await ro.fireYamlRecipe({
+          filePath: ymlPath,
+          name: "bar",
+          taskIdPrefix: "yaml-webhook-bar",
+          triggerSourceSuffix: "webhook:bar",
+          logLabel: 'webhook "bar"',
+          ...(seed && { seedContext: { ...seed } }),
+        });
+        if (fires) {
+          expect(result).not.toMatchObject({
+            error: expect.stringMatching(/missing_required_vars/),
+          });
+        } else {
+          expect(result).toEqual({
+            ok: false,
+            error: "missing_required_vars:issueId",
+          });
+          expect(fireStub).not.toHaveBeenCalled();
+        }
+      } finally {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+  }
+
   it("fireYamlRecipe() — returns {ok:false,error} when recipeOrchestrator.fire() rejects", async () => {
     const fireStub = vi.fn().mockRejectedValue(new Error("boom"));
     const recipeOrch = makeRecipeOrchestrator({ fire: fireStub });

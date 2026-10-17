@@ -1227,6 +1227,36 @@ steps: []
   });
 
   describe("runRecipe", () => {
+    // Audit M17: the CLI applied defaults but never checked `required`, so a
+    // missing var rendered as an empty string and the run went ahead.
+    it("refuses a missing required var before any step runs", async () => {
+      const recipePath = join(tmpDir, "required-var.yaml");
+      const outPath = join(tmpDir, "required-var.txt");
+      writeFileSync(
+        recipePath,
+        `name: required-var
+description: Required var
+trigger:
+  type: manual
+  inputs:
+    - name: issueId
+      required: true
+allowWrites: [file.write]
+steps:
+  - tool: file.write
+    path: ${JSON.stringify(outPath)}
+    content: "issue {{issueId}}"
+`,
+      );
+      await expect(runRecipe(recipePath, {})).rejects.toThrow(
+        /missing_required_vars:issueId/,
+      );
+      expect(existsSync(outPath)).toBe(false);
+      // Supplied, it runs.
+      await runRecipe(recipePath, { vars: { issueId: "acct-0001" } });
+      expect(readFileSync(outPath, "utf-8")).toBe("issue acct-0001");
+    });
+
     it("runs a single step selected by id with seeded vars", async () => {
       const recipePath = join(tmpDir, "single-step-by-id.yaml");
       const outPath = join(tmpDir, "single-step.txt");

@@ -3,7 +3,7 @@
  * dispatch. Extracted from bridge.ts to reduce god-object surface area.
  */
 
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -14,10 +14,7 @@ import { readKillSwitch } from "./governance/killSwitchPolicy.js";
 import { loadConfig } from "./patchworkConfig.js";
 import { patchworkPath } from "./patchworkHome.js";
 import { getConfigDisabledNames } from "./recipes/disabledMarkers.js";
-import {
-  elicitMissingVars,
-  type MissingVarDeclaration,
-} from "./recipes/elicitMissingVars.js";
+import { elicitMissingVars } from "./recipes/elicitMissingVars.js";
 import { summariseHalts } from "./recipes/haltCategory.js";
 import { summariseJudgments } from "./recipes/judgeSummary.js";
 import type { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
@@ -32,7 +29,11 @@ import type {
 } from "./recipes/scheduler.js";
 import { RecipeScheduler } from "./recipes/scheduler.js";
 import { hasTool } from "./recipes/toolRegistry.js";
-import { applyTriggerInputDefaults } from "./recipes/triggerVars.js";
+import {
+  applyTriggerInputDefaults,
+  missingRequiredVarDeclarations,
+  requiredVarsRefusal,
+} from "./recipes/triggerVars.js";
 import { OUTPUT_WITHHELD_REASON } from "./recipes/withheldOutputs.js";
 import {
   archiveRecipe,
@@ -1937,6 +1938,14 @@ export class RecipeOrchestration {
     if (!orch) {
       return { ok: false, error: "orchestrator_unavailable" };
     }
+    // Webhooks and automation hooks reach here without passing runRecipeFn,
+    // the only path that checked `required` (audit M17). Check against the
+    // context WITH declared defaults, the same rule runRecipeFn applies.
+    const refusal = requiredVarsRefusal(
+      opts.filePath,
+      applyTriggerInputDefaults(opts.filePath, opts.seedContext),
+    );
+    if (refusal) return { ok: false, error: refusal };
     const { buildChainedDeps, dispatchRecipe } = await import(
       "./recipes/yamlRunner.js"
     );
@@ -2607,64 +2616,6 @@ export function collectUnknownToolIds(yaml: string): string[] {
 // RecipeOrchestrator.fire can apply declared defaults on EVERY fire path without a
 // circular import. Imported at the top for internal use here; re-exported below for
 // back-compat with existing import sites (e.g. commands/recipe.ts).
-export { applyTriggerInputDefaults };
-
-/**
- * Required vars the caller did not supply, with each var's declared
- * `description` where the recipe gave one.
- *
- * Returning declarations rather than bare names is what lets the elicitation
- * prompt (#1217) show the author's own wording for a var instead of just its
- * key. The halt message below maps these back down to bare names, which is
- * the only shape the dashboard has ever parsed.
- */
-export function missingRequiredVarDeclarations(
-  ymlPath: string,
-  vars?: Record<string, string>,
-): MissingVarDeclaration[] {
-  let parsed: unknown;
-  try {
-    parsed = parseYaml(readFileSync(ymlPath, "utf-8"));
-  } catch {
-    return [];
-  }
-  const trigger = (parsed as { trigger?: unknown } | null)?.trigger as
-    | Record<string, unknown>
-    | null
-    | undefined;
-  const missing: MissingVarDeclaration[] = [];
-  const seen = new Set<string>();
-  for (const key of ["inputs", "vars"] as const) {
-    const arr = trigger?.[key];
-    if (!Array.isArray(arr)) continue;
-    for (const item of arr) {
-      if (!item || typeof item !== "object") continue;
-      const name = (item as { name?: unknown }).name;
-      const required = (item as { required?: unknown }).required;
-      // Guard against required:"false" (string) being truthy — treat any
-      // non-true-boolean and the string "false"/"0" as not required.
-      const isRequired =
-        required === true ||
-        (typeof required === "string" &&
-          required !== "false" &&
-          required !== "0" &&
-          required !== "");
-      if (typeof name !== "string" || !isRequired) continue;
-      const val = vars?.[name];
-      if (val !== undefined && val !== null && String(val).trim() !== "")
-        continue;
-      // A var declared under BOTH inputs and vars must not be prompted twice —
-      // the elicitation schema would carry a duplicate required key.
-      if (seen.has(name)) continue;
-      seen.add(name);
-      const description = (item as { description?: unknown }).description;
-      missing.push({
-        name,
-        ...(typeof description === "string" && description.trim() !== ""
-          ? { description }
-          : {}),
-      });
-    }
-  }
-  return missing;
-}
+// Moved to the leaf module so every run path (CLI included) can check it
+// without importing this file (audit M17). Re-exported for existing importers.
+export { applyTriggerInputDefaults, missingRequiredVarDeclarations };

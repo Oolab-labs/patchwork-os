@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
+import type { MissingVarDeclaration } from "./elicitMissingVars.js";
 
 /**
  * Read a YAML recipe's `trigger.inputs[]` / `trigger.vars[]` declarations and
@@ -128,4 +129,81 @@ export function declaredTriggerInputs(parsed: unknown): DeclaredTriggerInput[] {
     }
   }
   return [...byName.values()];
+}
+
+/**
+ * Required vars the caller did not supply, with each var's declared
+ * `description` where the recipe gave one.
+ *
+ * Returning declarations rather than bare names is what lets the elicitation
+ * prompt (#1217) show the author's own wording for a var instead of just its
+ * key. The halt message below maps these back down to bare names, which is
+ * the only shape the dashboard has ever parsed.
+ */
+export function missingRequiredVarDeclarations(
+  ymlPath: string,
+  vars?: Record<string, string>,
+): MissingVarDeclaration[] {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(readFileSync(ymlPath, "utf-8"));
+  } catch {
+    return [];
+  }
+  const trigger = (parsed as { trigger?: unknown } | null)?.trigger as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const missing: MissingVarDeclaration[] = [];
+  const seen = new Set<string>();
+  for (const key of ["inputs", "vars"] as const) {
+    const arr = trigger?.[key];
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      if (!item || typeof item !== "object") continue;
+      const name = (item as { name?: unknown }).name;
+      const required = (item as { required?: unknown }).required;
+      // Guard against required:"false" (string) being truthy — treat any
+      // non-true-boolean and the string "false"/"0" as not required.
+      const isRequired =
+        required === true ||
+        (typeof required === "string" &&
+          required !== "false" &&
+          required !== "0" &&
+          required !== "");
+      if (typeof name !== "string" || !isRequired) continue;
+      const val = vars?.[name];
+      if (val !== undefined && val !== null && String(val).trim() !== "")
+        continue;
+      // A var declared under BOTH inputs and vars must not be prompted twice —
+      // the elicitation schema would carry a duplicate required key.
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const description = (item as { description?: unknown }).description;
+      missing.push({
+        name,
+        ...(typeof description === "string" && description.trim() !== ""
+          ? { description }
+          : {}),
+      });
+    }
+  }
+  return missing;
+}
+
+/**
+ * The refusal every run path returns when a required var is missing after
+ * defaults are applied: `missing_required_vars:a,b`. Undefined when nothing
+ * is missing. Shared so the dashboard, webhooks, automation hooks, the
+ * scheduler and the CLI cannot disagree (audit M17: only the HTTP path used
+ * to check, and the others rendered a missing var as an empty string).
+ */
+export function requiredVarsRefusal(
+  ymlPath: string,
+  varsWithDefaults: Record<string, string> | undefined,
+): string | undefined {
+  const missing = missingRequiredVarDeclarations(ymlPath, varsWithDefaults);
+  return missing.length === 0
+    ? undefined
+    : `missing_required_vars:${missing.map((d) => d.name).join(",")}`;
 }

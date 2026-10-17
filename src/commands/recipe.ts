@@ -71,6 +71,7 @@ import {
   seedToolOutputPreviewContext,
   toolRegistryGeneration,
 } from "../recipes/toolRegistry.js";
+import { requiredVarsRefusal } from "../recipes/triggerVars.js";
 import {
   type LintIssue,
   type LintResult,
@@ -1401,6 +1402,10 @@ export async function runRecipe(
   // (e.g. `label: "test-failure"`) get empty strings from {{label}} when run
   // via CLI because the defaults are never seeded into the context.
   const vars = applyTriggerInputDefaults(recipePath, options.vars) ?? {};
+  // Same rule every bridge path applies (audit M17): a required var that is
+  // still missing after defaults stops the run instead of rendering as "".
+  const refusal = requiredVarsRefusal(recipePath, vars);
+  if (refusal) throw new Error(refusal);
   const result = await dispatchRecipe(
     recipeToRun,
     {
