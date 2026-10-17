@@ -28,6 +28,7 @@
  */
 
 import { registerSecretValue } from "../governance/secretValues.js";
+import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 
 export interface ConnectorStatus {
   id: string;
@@ -236,6 +237,7 @@ export abstract class BaseConnector {
     try {
       response = await fetch(config.tokenEndpoint, {
         method: "POST",
+        signal: tokenRefreshSignal(),
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: params.toString(),
       });

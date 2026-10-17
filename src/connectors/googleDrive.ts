@@ -196,6 +196,7 @@ async function refreshAccessToken(tokens: DriveTokens): Promise<DriveTokens> {
     );
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
+    signal: tokenRefreshSignal(),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       refresh_token: tokens.refresh_token,
@@ -363,6 +364,7 @@ export async function fetchDocName(
 
 import { patchworkPath } from "../patchworkHome.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
+import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 
 const pendingStates = createOAuthStateStore({ namespace: "googleDrive" });
 
