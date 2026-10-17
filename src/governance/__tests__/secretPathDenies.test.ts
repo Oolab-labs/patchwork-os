@@ -239,3 +239,50 @@ describe.skipIf(!POSIX)("recipe run --local (defaultClaudeCodeFn)", () => {
     );
   });
 });
+
+// Audit M4 (2026-10-15). The files that DEFINE governance are not secrets,
+// but an agent step that may write files (compat, or a governed write
+// widening) could otherwise turn governance off by editing them: the kill
+// switch in config/flags.json, the profile in config.json, the roster, worker
+// manifests and trust checkpoints, installed recipes, and the ledgers.
+// Reading them stays allowed; editing them is denied.
+describe("governance state: edits denied, reads allowed (audit M4)", () => {
+  const edit = (...segs: string[]) =>
+    `Edit(${toAbsoluteRulePath(path.join(...segs))})`;
+  const governanceEdits = () => [
+    edit(home, "config.json"),
+    edit(home, "config", "**"),
+    edit(home, "members.json"),
+    edit(home, "workers", "**"),
+    edit(home, "worker_trust", "**"),
+    edit(home, "recipes", "**"),
+    edit(home, "*.jsonl"),
+  ];
+
+  it("denies edits to every governance file under the active home", () => {
+    expect(secretPathDenyRules()).toEqual(
+      expect.arrayContaining(governanceEdits()),
+    );
+  });
+
+  it("does not deny reading them", () => {
+    const rules = secretPathDenyRules();
+    expect(rules).not.toContain(rule(home, "config.json"));
+    expect(rules).not.toContain(rule(home, "recipes", "**"));
+  });
+
+  it("reaches the settings of an uncontained compat step", async () => {
+    const containment = resolveAgentContainment(COMPAT_PROFILE, undefined);
+    const d = new SubprocessDriver("claude", "ant", () => {});
+    await d.run({
+      prompt: "summarise",
+      workspace: home,
+      timeoutMs: 5000,
+      signal: new AbortController().signal,
+      containment,
+    });
+    expect(settingsDeny(spawnMock.mock.calls[0]![1] as string[])).toEqual(
+      expect.arrayContaining(governanceEdits()),
+    );
+  });
+});
