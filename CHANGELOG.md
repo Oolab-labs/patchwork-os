@@ -6,6 +6,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.4] — 2026-10-17
+
+### Security
+
+- **Approvals render the bridge's own action class** (#1728). The dashboard
+  re-derived each pending call's class from a partial copy, so an unknown
+  tool was sorted, badged and gated as reversible and skipped the evidence
+  gate on irreversible actions. `GET /approvals` and the approvals stream now
+  carry the bridge's class; an unknown tool shows as "unclassified · treated
+  as irreversible" and is gated that way.
+- The approval detail page no longer reads a token from `?approvalToken=`
+  (it never worked and left the token in browser history), and scrubs a
+  stale one from the address bar (#1728).
+- Every dashboard route that relays a bridge body with the upstream content
+  type now applies the same security headers as the generic proxy; binary
+  and streaming responses carry `nosniff` (#1729).
+
+### Fixed
+
+- **"Connected" says whether the credential was shown to work** (#1727).
+  `GET /connections` adds `verification` (verified, failed or unverified,
+  latest Test wins); the connections page shows it in words and no longer
+  calls the connect time "Last sync". Slack saves a token only after an
+  authenticated call succeeds.
+- The approval card's Claude Code rule badge distinguishes a rule covering
+  every call from one covering only some; the worker-record text no longer
+  states a fact it never read (#1728).
+- Dashboard navigations and notification icons work behind a base path; a
+  failed decision-record request is shown as a failure, not as "nothing
+  recorded"; the Data boundary page handles an older bridge and a partial
+  response, and its coverage text matches the runtime (#1729).
+
 ## [1.2.3] — 2026-10-16
 
 ### Security
