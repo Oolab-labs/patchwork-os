@@ -2420,9 +2420,9 @@ trigger:
   type: chained
 steps:
   - id: fetch
-    tool: git.status
+    tool: git.log_since
   - id: summarize
-    tool: git.status
+    tool: git.log_since
     awaits: [fetch]
 `,
       );
@@ -2459,9 +2459,9 @@ trigger:
   type: chained
 steps:
   - id: a
-    tool: git.status
+    tool: git.log_since
   - id: b
-    tool: git.status
+    tool: git.log_since
     awaits: [a]
 expect:
   stepsRun: 2
@@ -2483,7 +2483,7 @@ trigger:
   type: chained
 steps:
   - id: a
-    tool: git.status
+    tool: git.log_since
 expect:
   stepsRun: 5
 `,

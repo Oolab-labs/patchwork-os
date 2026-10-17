@@ -3191,8 +3191,34 @@ export async function runTest(
         recipe.trigger as unknown as Record<string, unknown> | undefined
       )?.type;
 
+      // ONE offline boundary for both runners (audit M16): fixture-backed
+      // connectors, `testOnly` (an unmocked tool or unstubbed agent driver is
+      // refused with test_refused_unmocked_step, never run live), stubbed
+      // filesystem and agent drivers. The chained branch used to answer every
+      // tool with `[mock:<tool>]`, ignore fixtures and pass the real
+      // process.env — so a step with no fixture passed, and a contract on a
+      // tool's output could not be tested.
+      const testDeps = {
+        testMode: true,
+        testOnly: true,
+        mockConnectors: createMockToolConnectors(
+          recipe.steps,
+          resolvedFixturesDir,
+        ),
+        readFile: (filePath: string) => readFileSync(filePath, "utf-8"),
+        writeFile: () => {},
+        appendFile: () => {},
+        mkdir: () => {},
+        gitLogSince: () => "[mock git log]",
+        gitStaleBranches: () => "[mock stale branches]",
+        getDiagnostics: () => "[mock diagnostics]",
+        claudeFn: async () => "[mock agent output]",
+        claudeCodeFn: async () => "[mock agent output]",
+        providerDriverFn: async () => "[mock agent output]",
+        localFn: async () => "[mock agent output]",
+      };
+
       if (triggerType === "chained") {
-        // Chained recipes: run through chainedRunner with mocked tool + agent executors
         const { runChainedRecipe } = await import(
           "../recipes/chainedRunner.js"
         );
@@ -3202,21 +3228,33 @@ export async function runTest(
         const run = await runChainedRecipe(
           chainedRecipe,
           {
-            env: process.env as Record<string, string>,
+            // Not process.env: a test must not depend on, or render, the
+            // machine's real environment.
+            env: {},
             maxConcurrency: (recipeRecord.maxConcurrency as number) ?? 4,
             maxDepth: (recipeRecord.maxDepth as number) ?? 3,
             dryRun: false,
             sourcePath: recipePath,
           },
-          {
-            executeTool: async (tool) => `[mock:${tool}]`,
-            executeAgent: async () => "[mock agent output]",
-            loadNestedRecipe: async () => null,
-          },
+          buildChainedDeps(
+            testDeps as Parameters<typeof buildChainedDeps>[0],
+            async () => "[mock agent output]",
+            recipe.name,
+          ),
         );
         stepsRun = run.summary.total;
         if (run.errorMessage) {
           issues.push({ level: "error", message: run.errorMessage });
+        }
+        // The run's own message is only "N step(s) failed"; each step's error
+        // is what tells an author WHY — including a test_refused_unmocked_step
+        // refusal naming the tool that needs a fixture.
+        for (const [stepId, r] of run.stepResults) {
+          if (r.success || !r.error) continue;
+          issues.push({
+            level: "error",
+            message: `step ${stepId}: ${r.error.message}`,
+          });
         }
 
         // Read the contract the RUNNER evaluated — do not re-evaluate it here.
@@ -3236,28 +3274,10 @@ export async function runTest(
           }
         }
       } else {
-        const mockConnectors = createMockToolConnectors(
-          recipe.steps,
-          resolvedFixturesDir,
+        const run = await runYamlRecipe(
+          recipe,
+          testDeps as Parameters<typeof runYamlRecipe>[1],
         );
-        const run = await runYamlRecipe(recipe, {
-          testMode: true,
-          // Offline boundary: a tool with no fixture, or an agent driver not
-          // stubbed below, is refused rather than run live.
-          testOnly: true,
-          mockConnectors,
-          readFile: (filePath) => readFileSync(filePath, "utf-8"),
-          writeFile: () => {},
-          appendFile: () => {},
-          mkdir: () => {},
-          gitLogSince: () => "[mock git log]",
-          gitStaleBranches: () => "[mock stale branches]",
-          getDiagnostics: () => "[mock diagnostics]",
-          claudeFn: async () => "[mock agent output]",
-          claudeCodeFn: async () => "[mock agent output]",
-          providerDriverFn: async () => "[mock agent output]",
-          localFn: async () => "[mock agent output]",
-        });
         stepsRun = run.stepsRun;
         outputs = run.outputs;
 
