@@ -32,6 +32,75 @@ describe("routeApprovalRequest", () => {
     expect((res.body as unknown[]).length).toBe(1);
   });
 
+  it("GET /approvals carries the bridge's action class for each pending call (audit M27)", async () => {
+    // The dashboard used to re-derive the class from a ~40-entry copy of the
+    // bridge's classifier. An unknown tool came back null and was sorted,
+    // badged and gated as REVERSIBLE. The bridge now sends its own class —
+    // the one the worker gate uses — and an unknown tool is `other`,
+    // irreversible, as the gate treats it.
+    const queue = new ApprovalQueue();
+    queue.request({
+      toolName: "file.write",
+      params: { path: "x" },
+      tier: "medium",
+    });
+    queue.request({
+      toolName: "unknown.vendor_send",
+      params: {},
+      tier: "high",
+    });
+    const res = await routeApprovalRequest(
+      { method: "GET", path: "/approvals" },
+      { queue, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    const body = res.body as Array<{
+      toolName: string;
+      actionClass?: {
+        domain: string;
+        reversibility: string;
+        blastTier: string;
+      };
+    }>;
+    const known = body.find((b) => b.toolName === "file.write");
+    const unknown = body.find((b) => b.toolName === "unknown.vendor_send");
+    expect(known?.actionClass?.domain).toBe("fs-write");
+    expect(unknown?.actionClass?.domain).toBe("other");
+    expect(unknown?.actionClass?.reversibility).toBe("irreversible");
+    expect(typeof unknown?.actionClass?.blastTier).toBe("string");
+  });
+
+  it("the live stream sends the same action class as GET /approvals", async () => {
+    const queue = new ApprovalQueue();
+    queue.request({
+      toolName: "unknown.vendor_send",
+      params: {},
+      tier: "high",
+    });
+    const { handleApprovalsStream } = await import("../approvalHttp.js");
+    const written: string[] = [];
+    const res = {
+      writeHead: () => undefined,
+      write: (chunk: string) => {
+        written.push(chunk);
+        return true;
+      },
+      on: () => undefined,
+      writableEnded: false,
+    };
+    handleApprovalsStream(
+      res as unknown as Parameters<typeof handleApprovalsStream>[0],
+      { queue },
+    );
+    const snapshot = written.find((w) => w.startsWith("event: snapshot"));
+    expect(snapshot).toBeDefined();
+    const data = JSON.parse(
+      (snapshot as string).split("data: ")[1] as string,
+    ) as Array<{
+      actionClass?: { domain: string };
+    }>;
+    expect(data[0]?.actionClass?.domain).toBe("other");
+  });
+
   it("POST /approvals with CC deny rule → short-circuits to deny", async () => {
     const queue = new ApprovalQueue();
     const res = await routeApprovalRequest(

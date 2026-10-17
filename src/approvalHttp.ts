@@ -18,6 +18,7 @@ import { captureForRunlog } from "./recipes/stepObservation.js";
 import { computeRiskSignals } from "./riskSignals.js";
 import type { RiskTier } from "./riskTier.js";
 import { classifyTool } from "./riskTier.js";
+import { classifyActionClass } from "./workers/actionClass.js";
 
 // Tools CC allows in plan mode (read-only — no filesystem or network writes).
 const PLAN_MODE_READ_TOOLS = new Set([
@@ -181,6 +182,34 @@ export interface SseWriter {
  * `update` event whenever the queue changes (enqueue, approve, reject, expire).
  * Heartbeat comment every 15s keeps the connection alive through proxies.
  */
+/**
+ * Each pending call with the bridge's own action class attached (audit M27):
+ * the same `classifyActionClass` the worker gate uses. The dashboard used to
+ * re-derive it from a partial copy, and an unknown tool came back
+ * unclassified and was sorted, badged and gated as reversible. An unknown
+ * tool here is `other`, irreversible — how the gate treats it. Computed at
+ * serialisation, never stored on the queue entry.
+ */
+function withActionClass(
+  list: ReturnType<ApprovalHttpDeps["queue"]["list"]>,
+): Array<
+  (typeof list)[number] & {
+    actionClass: { domain: string; reversibility: string; blastTier: string };
+  }
+> {
+  return list.map((p) => {
+    const c = classifyActionClass(p.toolName, p.params);
+    return {
+      ...p,
+      actionClass: {
+        domain: c.domain,
+        reversibility: c.reversibility,
+        blastTier: c.blastTier,
+      },
+    };
+  });
+}
+
 export function handleApprovalsStream(
   res: SseWriter,
   deps: Pick<ApprovalHttpDeps, "queue">,
@@ -199,7 +228,9 @@ export function handleApprovalsStream(
     const filtered = sessionFilter
       ? list.filter((a) => a.sessionId === sessionFilter)
       : list;
-    res.write(`event: snapshot\ndata: ${JSON.stringify(filtered)}\n\n`);
+    res.write(
+      `event: snapshot\ndata: ${JSON.stringify(withActionClass(filtered))}\n\n`,
+    );
   }
 
   sendSnapshot();
@@ -213,7 +244,9 @@ export function handleApprovalsStream(
     const filtered = sessionFilter
       ? list.filter((a) => a.sessionId === sessionFilter)
       : list;
-    res.write(`event: update\ndata: ${JSON.stringify(filtered)}\n\n`);
+    res.write(
+      `event: update\ndata: ${JSON.stringify(withActionClass(filtered))}\n\n`,
+    );
   });
 
   const heartbeat = setInterval(() => {
@@ -243,7 +276,7 @@ export async function routeApprovalRequest(
     const filtered = sessionId
       ? list.filter((a) => a.sessionId === sessionId)
       : list;
-    return { status: 200, body: filtered };
+    return { status: 200, body: withActionClass(filtered) };
   }
 
   if (method === "GET" && path === "/cc-permissions") {
