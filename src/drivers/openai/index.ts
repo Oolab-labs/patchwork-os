@@ -57,9 +57,15 @@ export class OpenAIApiDriver implements ProviderDriver {
       // biome-ignore lint/suspicious/noExplicitAny: dynamic import
       OpenAICtor = (mod as any).default ?? mod.OpenAI ?? mod;
     } catch {
-      throw new Error(
-        "OpenAIApiDriver requires openai — install it with: npm install openai",
-      );
+      // The SDK is an optional peer, absent on a default install. run() must
+      // resolve, never reject (ProviderDriver contract): report it as the
+      // result's error, like every request failure below (audit M25).
+      return {
+        text: "",
+        durationMs: 0,
+        errorMessage:
+          "OpenAIApiDriver requires openai — install it with: npm install openai",
+      };
     }
 
     const opts = input.providerOptions ?? {};

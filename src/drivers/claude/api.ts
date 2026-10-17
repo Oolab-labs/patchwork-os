@@ -31,9 +31,15 @@ export class ApiDriver implements ProviderDriver {
       // biome-ignore lint/suspicious/noExplicitAny: dynamic import
       AnthropicCtor = (mod as any).default ?? mod;
     } catch {
-      throw new Error(
-        "ApiDriver requires @anthropic-ai/sdk — install it with: npm install @anthropic-ai/sdk",
-      );
+      // The SDK is an optional peer, absent on a default install. run() must
+      // resolve, never reject (ProviderDriver contract): report it as the
+      // result's error, like every request failure below (audit M25).
+      return {
+        text: "",
+        durationMs: 0,
+        errorMessage:
+          "ApiDriver requires @anthropic-ai/sdk — install it with: npm install @anthropic-ai/sdk",
+      };
     }
 
     const client = new AnthropicCtor();
