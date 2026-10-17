@@ -139,6 +139,13 @@ export interface OutboundUrlOptions {
    */
   allowPrivate?: boolean;
   /**
+   * Permit loopback (127.0.0.0/8, ::1, localhost) while still refusing every
+   * other private range — the automation webhook policy, where a sidecar on
+   * the bridge's own host is a supported target. Applies to the URL, the
+   * resolved address and every redirect hop alike.
+   */
+  allowLoopback?: boolean;
+  /**
    * Resolve a hostname to ONE address. Defaults to `dns.lookup`. A rejection
    * REFUSES the request (`dns_unresolved`), carrying the resolver's own error
    * so the caller still sees the real DNS failure. It used to proceed
@@ -198,7 +205,9 @@ export async function validateOutboundUrl(
   url.password = "";
 
   const allowPrivate = opts.allowPrivate === true;
-  if (!allowPrivate && isPrivateHost(url.hostname)) {
+  const refused =
+    opts.allowLoopback === true ? isPrivateNonLoopbackHost : isPrivateHost;
+  if (!allowPrivate && refused(url.hostname)) {
     return { ok: false, reason: "private_host", detail: url.hostname, url };
   }
 
@@ -215,7 +224,7 @@ export async function validateOutboundUrl(
       url,
     };
   }
-  if (!allowPrivate && isPrivateHost(pinnedAddress)) {
+  if (!allowPrivate && refused(pinnedAddress)) {
     return {
       ok: false,
       reason: "private_host_after_dns",
