@@ -6,7 +6,26 @@
  * invalid key BEFORE spawning `secret-tool`, deterministically on any OS.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Run as Windows on every OS. On win32 the module probes for pwsh with
+// spawnSync at IMPORT time, through the mock below. Clearing the mock only
+// after each test left that one call on the first test, so it failed on every
+// Windows run and passed on retry, hidden by CI's retry: 2.
+const realPlatform = vi.hoisted(() => {
+  const p = process.platform;
+  Object.defineProperty(process, "platform", {
+    value: "win32",
+    configurable: true,
+  });
+  return p;
+});
+afterAll(() => {
+  Object.defineProperty(process, "platform", {
+    value: realPlatform,
+    configurable: true,
+  });
+});
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -30,7 +49,9 @@ import {
   setLinuxSecretSync,
 } from "../tokenStorage.js";
 
-afterEach(() => vi.mocked(spawnSync).mockClear());
+// Before, not after: the import-time pwsh probe must not count against the
+// first test.
+beforeEach(() => vi.mocked(spawnSync).mockClear());
 
 const BAD_KEYS = [
   "patchwork-os.foo; rm -rf .",
