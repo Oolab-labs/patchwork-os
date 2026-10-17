@@ -103,7 +103,72 @@ export interface DescribeOptions {
   now?: Date;
   /** A note older than this many days is reported as stale. */
   staleAfterDays?: number;
+  /**
+   * Registry entries that failed to parse (`ParsedRegistry.invalid`). The
+   * runtime does not use them, and when nothing valid survives it refuses
+   * EVERY dispatch — so the report must say so rather than call it inert.
+   */
+  invalid?: ReadonlyArray<{ id: string; reason: string }>;
+  /** The orchestrator path's state, from `describeOrchestratorPath`. */
+  orchestrator?: OrchestratorPathState;
 }
+
+/**
+ * The orchestrator dispatch path, as `claudeOrchestrator.ts` resolves it:
+ * absent ⇒ not enforced; a known classification ⇒ enforced at that channel
+ * default; anything else ⇒ NOT enforced (it fails open, deliberately — ADR-0021)
+ * and must be visible here, because a bridge that silently does not enforce
+ * gives no other sign.
+ */
+export type OrchestratorPathState =
+  | { state: "absent" }
+  | { state: "enforced"; classification: Classification }
+  | { state: "malformed"; raw: string };
+
+export function describeOrchestratorPath(raw: unknown): OrchestratorPathState {
+  if (raw === undefined || raw === null) return { state: "absent" };
+  if (
+    typeof raw === "string" &&
+    (CLASSIFICATIONS as readonly string[]).includes(raw)
+  ) {
+    return { state: "enforced", classification: raw as Classification };
+  }
+  return { state: "malformed", raw: JSON.stringify(raw) };
+}
+
+function orchestratorLines(o: OrchestratorPathState | undefined): string[] {
+  if (!o) return [];
+  const L = ["", "  Orchestrator tasks (Claude subprocess dispatches):"];
+  if (o.state === "absent") {
+    L.push(
+      "    not enforced — no `privacy.orchestrator.classification` is set.",
+    );
+  } else if (o.state === "enforced") {
+    L.push(
+      `    enforced, at the channel default \`${o.classification}\` (recorded as a default, not a declaration).`,
+    );
+  } else {
+    L.push(
+      `    NOT ENFORCED — \`privacy.orchestrator.classification\` is ${o.raw}, which is not a known classification.`,
+    );
+    L.push(
+      `    This fails open on purpose (a typo must not stop every task); fix the value to enforce: ${CLASSIFICATIONS.join(" | ")}.`,
+    );
+  }
+  return L;
+}
+
+function invalidLines(invalid: InvalidEntries | undefined): string[] {
+  if (!invalid || invalid.length === 0) return [];
+  const L = [
+    "",
+    `  ${invalid.length} registered destination(s) could not be parsed and are not used:`,
+  ];
+  for (const i of invalid) L.push(`    ${i.id} — ${i.reason}`);
+  return L;
+}
+
+type InvalidEntries = DescribeOptions["invalid"];
 
 const DEFAULT_STALE_DAYS = 180;
 
@@ -235,6 +300,21 @@ export function formatDestinationsReport(
 ): string {
   const L: string[] = [];
   L.push("[privacy] where your prompts may go");
+  if (described.length === 0 && (opts.invalid?.length ?? 0) > 0) {
+    // NOT inert: the runtime substitutes a destination cleared for nothing
+    // (resolveDestination), so every recipe agent dispatch is refused. Calling
+    // this inert told the operator the opposite of what happens (audit M9).
+    L.push("");
+    L.push(
+      "  Destinations are registered but NONE could be parsed, so the boundary",
+    );
+    L.push(
+      "  is opted in and REFUSES EVERY agent dispatch until the entries are fixed.",
+    );
+    L.push(...invalidLines(opts.invalid));
+    L.push(...orchestratorLines(opts.orchestrator));
+    return L.join("\n");
+  }
   if (described.length === 0) {
     // The inert case is a true and expected state, not an error. Saying "0
     // destinations" invites someone to fix a number; saying the boundary is
@@ -243,6 +323,7 @@ export function formatDestinationsReport(
     L.push("  Nothing is registered, so the information boundary is INERT —");
     L.push("  no dispatch is evaluated and no decision is made. Registering a");
     L.push("  destination is the opt-in; once opted in it fails closed.");
+    L.push(...orchestratorLines(opts.orchestrator));
     return L.join("\n");
   }
   L.push("");
@@ -306,6 +387,8 @@ export function formatDestinationsReport(
     );
     L.push("  currently has nowhere off-machine to go.");
   }
+  L.push(...invalidLines(opts.invalid));
+  L.push(...orchestratorLines(opts.orchestrator));
   return L.join("\n");
 }
 
