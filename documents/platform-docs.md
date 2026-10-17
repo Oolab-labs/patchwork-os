@@ -31,6 +31,8 @@
   - [Code Generation](#code-generation)
   - [AI Workflow Composite](#ai-workflow-composite)
   - [Orchestrator / Claude Subprocesses](#orchestrator--claude-subprocesses)
+  - [Connector Tools](#connector-tools)
+  - [Butler Memory](#butler-memory)
 - [When to Use X vs Y](#when-to-use-x-vs-y)
 - [MCP Prompts](#mcp-prompts)
 - [Automation Hooks](#automation-hooks)
@@ -222,6 +224,12 @@ All debugger tools are slim and require the VS Code extension.
 | `getBridgeStatus` | S | Bridge status: extension connection state, circuit breaker, active sessions, uptime, tool availability flags, automation hook wiring. Call to diagnose missing tools or disconnected extension. |
 | `getToolCapabilities` | S | List available CLI probes (rg, ctags, typescript-language-server, gh, etc.) and which tools they enable. Call once at session start. |
 | `bridgeDoctor` | S | Automated diagnostics: checks lock file, extension connection, probe availability, and common misconfiguration. Returns actionable fix suggestions. |
+| `getProjectContext` | S | Cached session-start brief: active file, errors, recent commits, modules. Saves re-exploring the workspace on a cold start. |
+| `getSessionUsage` | S | Token-usage estimate for this session: schema size, call counts, largest tool results. |
+| `getAnalyticsReport` | S | Session analytics: top tools by call count, hook events, recent automation tasks. |
+| `getPerformanceReport` | S | Per-tool latency percentiles, throughput, extension health, session counts and an overall health score. |
+| `getActivityLog` | F | Query the recent tool-call log: names, timing, status, percentiles, co-occurrence. |
+| `getConnectorStatus` | F | Auth status of each connector: connected and verified, token expiry, and whether re-authorization is needed. |
 
 ---
 
@@ -281,6 +289,13 @@ All GitHub tools are full-only and require the `gh` CLI. Tools are only register
 | `githubPostPRReview` | F | Post review comments on a PR | gh required |
 | `getAIComments` | F | Scan open files for `// AI:` comments with severity levels (fix, todo, question, warn, task) | extensionRequired |
 | `createGithubIssueFromAIComment` | F | Create a GitHub issue from a cached `// AI:` comment. Derives title from comment text | gh required, extensionRequired |
+| `githubPR` | F | Composite PR tool, dispatched on `operation`: `create`, `view`, `list`, `getDiff`, `postReview`, `approve`, `merge` | gh required |
+| `githubIssue` | F | Composite issue tool, dispatched on `operation`: `list`, `get`, `create`, `comment` | gh required |
+| `githubActions` | F | Composite Actions tool, dispatched on `operation`: `listRuns`, `getRunLogs` | gh required |
+| `githubApprovePR` | F | **Deprecated** — use `githubPR` with `operation: "approve"`. Approve a PR, optionally with a review body | gh required |
+| `githubMergePR` | F | **Deprecated** — use `githubPR` with `operation: "merge"`. Merge a PR (squash, rebase or merge commit) | gh required |
+| `fetchGithubIssue` | F | Fetch an issue by URL or `owner/repo#number`: title, body, state, labels, assignees, author | GitHub **connector**, not `gh` |
+| `fetchGithubPR` | F | Fetch a PR by URL or `owner/repo#number`: title, body, state, branches, labels, review decision, diff stats | GitHub **connector**, not `gh` |
 
 ---
 
@@ -395,6 +410,7 @@ All plan tools are full-only.
 | `listVSCodeCommands` | F | List available VS Code commands with optional filter | extensionRequired |
 | `listVSCodeTasks` | F | List tasks from `.vscode/tasks.json` plus detected Makefile targets. Optional `type` filter | extensionRequired |
 | `runVSCodeTask` | F | Execute a named VS Code task and wait for completion. Returns `{ exitCode, success }` | extensionRequired |
+| `closeAllDiffTabs` | F | Close every diff tab and clean up the temporary diff directories | extensionRequired |
 
 ---
 
@@ -440,7 +456,41 @@ These tools require `--driver subprocess` (or `api`) at startup. They are not re
 | `listClaudeTasks` | F | List tasks with optional `status` filter. Session-scoped; automation-spawned tasks included for all sessions. Output capped at 100 chars per task |
 | `resumeClaudeTask` | F | Re-enqueue a completed or failed task. Preserves original prompt, contextFiles, timeoutMs, and model. Session-scoped |
 
+| `launchQuickTask` | F | Launch a context-aware task from a named preset (`presetId` from the tool's enum). Same dispatch path as the sidebar and CLI; 5 s cooldown per preset |
+
 Task lifecycle: `pending → running → done | error | cancelled`.
+
+`spawnWorkspace` (F, registered without a driver) starts another bridge for a workspace directory and returns its `pid`, `port` and `authToken` once the lock file appears; it can optionally wait for the extension handshake. The returned token is a full bridge credential — treat the result as a secret.
+
+---
+
+### Connector Tools
+
+Registered in full mode. Each requires its connector to be connected (dashboard **Connections**, or the token env var in [Connectors](#connectors)); a call without one returns an error naming the connector.
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `createLinearIssue` | F | Create a Linear issue. Returns the issue identifier and URL |
+| `updateLinearIssue` | F | Update a Linear issue. Pass only the fields to change |
+| `addLinearComment` | F | Add a comment to a Linear issue |
+| `slackPostMessage` | F | Post to a Slack channel by name or ID; `threadTs` replies in a thread |
+| `slackListChannels` | F | List public channels the bot can see: id, name, member count |
+| `fetchSlackProfile` | F | Connected workspace name, team ID and bot user ID. Use to confirm Slack is connected |
+| `fetchCalendarEvents` | F | Upcoming Google Calendar events for the next N days |
+
+---
+
+### Butler Memory
+
+Durable facts about the user, stored in `~/.patchwork/butler/facts.jsonl` (subject + predicate + value, with provenance). Full mode.
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `butlerRemember` | F | Record one fact. Always written at **agent** trust (0.5) — the caller cannot choose its channel — which is below the originate threshold (0.6): the row is kept and auditable, but it is not an established belief and never reaches the memory card. Returns `willOriginate: false` to say so |
+| `butlerRecall` | F | Current beliefs, one per subject + predicate, resolved for contradictions and retractions. Defaults to established facts only (`minTrust` 0.6); pass `minTrust: 0` to include unverified claims. `limit` 1–200, default 50 |
+| `butlerForget` | F | Retract a fact by `seq`. Writes a tombstone; the original row stays in the log. An agent may retract only facts at or below its own trust — a fact the user stated is refused |
+
+Promotion to user trust happens only through a human act (the dashboard), never through these tools.
 
 ---
 
