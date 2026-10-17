@@ -74,7 +74,16 @@ jobs:
           "
       - name: Build
         run: npm run build
+      # Each cell runs the suite ONCE. Test and Coverage used to both run on
+      # every cell, so the full suite ran twice per cell — about 5.5 min of the
+      # Windows cells' ~14 (2026-10-17, 8 green main runs). Coverage
+      # numbers are identical across Node 22 and 24 on the same OS (Windows
+      # 76.81/70.17/78.04, ubuntu 77.76/70.89/78.93 lines/branches/functions,
+      # same run), so the Node 24 cells measure coverage for their OS and the
+      # Node 22 cells run plain. Every cell still runs every test, and the
+      # threshold is still enforced on both OSes.
       - name: Test
+        if: matrix.node-version != 24
         run: npm test -- --reporter=dot --reporter=github-actions --reporter=./scripts/vitest-progress-reporter.mjs
         env:
           VITEST_PROGRESS_FILE: vitest-progress/test.jsonl
@@ -93,6 +102,7 @@ jobs:
         # recurred at each new ceiling.
         timeout-minutes: 10
       - name: Coverage (enforce 71% lines / 62% branches / 70% functions)
+        if: matrix.node-version == 24
         run: npm run test:coverage -- --reporter=dot --reporter=github-actions --reporter=./scripts/vitest-progress-reporter.mjs
         env:
           VITEST_PROGRESS_FILE: vitest-progress/coverage.jsonl
