@@ -39,6 +39,18 @@ export function DecisionReceipt({ workerId }: Props) {
             `/api/bridge/gate/decisions?workerId=${encodeURIComponent(workerId)}&limit=1&explain=1`,
           ),
         );
+        // A failed request is not an answer (audit M31): without this a
+        // 401/500/502 body had no `explanation` and rendered as "no gate
+        // decision has been recorded".
+        if (!res.ok) {
+          if (!cancelled) {
+            setState({
+              kind: "error",
+              message: `the bridge answered HTTP ${res.status}`,
+            });
+          }
+          return;
+        }
         const data = (await res.json().catch(() => ({}))) as {
           decisions?: unknown[];
           explanation?: string;

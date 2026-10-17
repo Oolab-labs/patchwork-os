@@ -1,3 +1,4 @@
+import { securityHeadersFor } from "@/lib/proxyHeaders";
 import { createHash } from "node:crypto";
 
 import { checkRateLimit } from "@/lib/authRateLimit";
@@ -130,7 +131,7 @@ export async function POST(req: Request): Promise<Response> {
         : upstreamCt;
     return new Response(text, {
       status: res.status,
-      headers: { "content-type": ct },
+      headers: securityHeadersFor(res.headers, ct),
     });
   } catch (err) {
     // #600: don't leak err.message detail; see [name]/route.ts.

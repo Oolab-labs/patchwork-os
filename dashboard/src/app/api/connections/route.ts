@@ -1,3 +1,4 @@
+import { securityHeadersFor } from "@/lib/proxyHeaders";
 import { bridgeFetch } from "@/lib/bridge";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,10 @@ export async function GET(): Promise<Response> {
     const text = await res.text();
     return new Response(text, {
       status: res.status,
-      headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
+      headers: securityHeadersFor(
+        res.headers,
+        res.headers.get("content-type") ?? "application/json",
+      ),
     });
   } catch (err) {
     // #600: don't leak err.message detail.

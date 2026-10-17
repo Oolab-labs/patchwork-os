@@ -169,8 +169,8 @@ self.addEventListener("push", (event) => {
       self.registration.showNotification(title, {
         body,
         tag,
-        icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
+        icon: "icons/icon-192.png",
+        badge: "icons/icon-192.png",
         requireInteraction: false,
         data: { kind: "halt", runSeq, stepId, haltCategory },
       }),
@@ -198,8 +198,8 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(title, {
       body,
       tag,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: "icons/icon-192.png",
+      badge: "icons/icon-192.png",
       requireInteraction: true,
       // expiresAt is consulted on click — see notificationclick handler.
       data: { callId, approveUrl, rejectUrl, approvalToken, expiresAt },

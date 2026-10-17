@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { securityHeadersFor } from "@/lib/proxyHeaders";
 import { bridgeFetch, findBridge, resolveBridgeUrl } from "@/lib/bridge";
 import { requireSameOrigin } from "@/lib/csrf";
 import {
@@ -128,6 +129,7 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
         "X-Accel-Buffering": "no",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   }
@@ -192,7 +194,11 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     upstreamCt.includes("application/gzip")
   ) {
     const cd = res.headers.get("content-disposition");
-    const responseHeaders: Record<string, string> = { "content-type": upstreamCt };
+    // nosniff so a download can never be sniffed into renderable HTML (M30).
+    const responseHeaders: Record<string, string> = {
+      "content-type": upstreamCt,
+      "x-content-type-options": "nosniff",
+    };
     if (cd) responseHeaders["content-disposition"] = cd;
     return new Response(res.body, { status: res.status, headers: responseHeaders });
   }
@@ -205,38 +211,6 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     status: res.status,
     headers: securityHeadersFor(res.headers, ct),
   });
-}
-
-/**
- * Security sweep L4: rebuilding a response with only `content-type` stripped
- * the bridge's own CSP / X-Frame-Options, so bridge HTML was re-served from
- * the dashboard origin with no script policy. Forward those headers, and give
- * HTML that arrives without a CSP a sandboxed, script-free policy. The
- * dashboard never renders proxied HTML as a page, so this costs nothing.
- */
-const FORWARDED_SECURITY_HEADERS = [
-  "content-security-policy",
-  "x-frame-options",
-  "x-content-type-options",
-  "referrer-policy",
-] as const;
-const HTML_FALLBACK_CSP =
-  "sandbox; default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'";
-
-function securityHeadersFor(
-  upstream: Headers,
-  ct: string,
-): Record<string, string> {
-  const out: Record<string, string> = { "content-type": ct };
-  for (const name of FORWARDED_SECURITY_HEADERS) {
-    const v = upstream.get(name);
-    if (v) out[name] = v;
-  }
-  if (ct.toLowerCase().includes("text/html")) {
-    out["content-security-policy"] ??= HTML_FALLBACK_CSP;
-    out["x-content-type-options"] = "nosniff";
-  }
-  return out;
 }
 
 // Next 15: dynamic route params arrive as a Promise.
