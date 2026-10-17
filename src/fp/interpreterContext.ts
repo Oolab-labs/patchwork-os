@@ -6,7 +6,7 @@ import * as dns from "node:dns/promises";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import { activeProfile } from "../governance/profile.js";
 import { UNTRUSTED_DELIMITED_SYSTEM_INSTRUCTION } from "../governance/untrustedContent.js";
-import { isLoopbackHost, isPrivateNonLoopbackHost } from "../ssrfGuard.js";
+import { OutboundHttpError, safeFetch } from "../ssrfGuard.js";
 import type { AutomationState } from "./automationState.js";
 
 // ── Backend interface ─────────────────────────────────────────────────────────
@@ -265,82 +265,37 @@ export class VsCodeBackend implements Backend {
       );
       return { ok: false, error };
     }
-    if (
-      !this.allowPrivateWebhooks &&
-      isPrivateNonLoopbackHost(parsed.hostname)
-    ) {
-      const error = `private/non-loopback host "${parsed.hostname}" blocked (use --automation-allow-private-webhooks to enable)`;
-      this.logger?.info(
-        `[automation-webhook] ${opts.hookKey} blocked: ${error}`,
-      );
-      return { ok: false, error };
-    }
-
-    // LOW #25 — DNS pre-resolution SSRF guard.
-    // Lexical hostname checks pass for public-looking names that resolve to
-    // private IPs (e.g. DNS rebinding / split-horizon). Re-check after lookup.
-    // Loopback is intentionally allowed (sidecar pattern), so we only block
-    // private non-loopback resolved addresses. Skip for loopback hostnames
-    // (already checked above) and when allowPrivateWebhooks is true.
-    //
-    // M15 — IP pinning to close the TOCTOU window.
-    // After the check passes, we replace the hostname in the fetch URL with
-    // the resolved IP so the subsequent fetch() cannot be redirected to a
-    // different address via a second DNS resolution (DNS rebinding). The Host
-    // header is set to the original hostname so the server still receives the
-    // correct SNI/vhost value.
-    let fetchUrl = opts.url;
-    if (!this.allowPrivateWebhooks && !isLoopbackHost(parsed.hostname)) {
-      try {
-        const { address, family } = await dns.lookup(parsed.hostname);
-        if (isPrivateNonLoopbackHost(address)) {
-          const error = `private IP after DNS resolution: ${parsed.hostname} → ${address} (use --automation-allow-private-webhooks to enable)`;
-          this.logger?.info(
-            `[automation-webhook] ${opts.hookKey} blocked: ${error}`,
-          );
-          return { ok: false, error };
-        }
-        // Pin the resolved IP by mutating the URL object's hostname
-        // directly — NOT opts.url.replace(parsed.hostname, pinnedHost).
-        // parsed.hostname is always lowercased by the WHATWG URL parser,
-        // so a string .replace() against the original (possibly
-        // mixed-case) opts.url silently finds no match and returns
-        // opts.url unchanged for any URL with uppercase letters in its
-        // host — quietly defeating the whole point of pinning (the
-        // subsequent fetch() then re-resolves the hostname itself,
-        // reopening the DNS-rebinding TOCTOU window this code exists to
-        // close, with no error/log to indicate the pin failed).
-        const pinnedHost = family === 6 ? `[${address}]` : address;
-        const pinnedUrl = new URL(opts.url);
-        pinnedUrl.hostname = pinnedHost;
-        fetchUrl = pinnedUrl.href;
-      } catch {
-        // DNS failure is treated as non-blocking — let the subsequent fetch
-        // surface the real network error. This mirrors the policy in
-        // validateSafeUrl (ssrfGuard.ts) for non-install fetch paths.
-      }
-    }
-
+    // Audit M19: the outbound request goes through safeFetch, the one guard
+    // — lexical and post-DNS range checks, the connection pinned to the
+    // resolved address (the URL keeps its real hostname, so TLS and Host are
+    // right), an unresolvable name refused, and every redirect hop
+    // re-validated. It used to pin by rewriting the URL to the IP with a Host
+    // header, which fails TLS for any HTTPS webhook (#1661's shape), and
+    // followed redirects unchecked. Loopback stays allowed (sidecars);
+    // --automation-allow-private-webhooks lifts the private-range check.
     const headers: Record<string, string> = { ...opts.headers };
     const hasContentType = Object.keys(headers).some(
       (k) => k.toLowerCase() === "content-type",
     );
     if (!hasContentType) headers["Content-Type"] = "application/json";
-    // If we pinned an IP, set the Host header so the server receives the
-    // original hostname (required for virtual-host routing and TLS SNI).
-    if (fetchUrl !== opts.url) {
-      headers.Host = parsed.hostname;
-    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
     try {
-      const res = await fetch(fetchUrl, {
-        method: opts.method,
-        headers,
-        body: JSON.stringify(opts.body),
-        signal: controller.signal,
-      });
+      const { response: res } = await safeFetch(
+        parsed,
+        {
+          method: opts.method,
+          headers,
+          body: JSON.stringify(opts.body),
+          signal: controller.signal,
+        },
+        {
+          allowPrivate: this.allowPrivateWebhooks,
+          allowLoopback: true,
+          resolveDns: async (host) => (await dns.lookup(host)).address,
+        },
+      );
       clearTimeout(timer);
       if (!res.ok) {
         const error = `non-2xx response: ${res.status}`;
@@ -355,6 +310,17 @@ export class VsCodeBackend implements Backend {
       return { ok: true, status: res.status };
     } catch (e) {
       clearTimeout(timer);
+      if (e instanceof OutboundHttpError) {
+        const isPrivate =
+          e.code === "private_host" || e.code === "private_host_after_dns";
+        const error = isPrivate
+          ? `${e.message} (use --automation-allow-private-webhooks to enable)`
+          : e.message;
+        this.logger?.info(
+          `[automation-webhook] ${opts.hookKey} blocked: ${error}`,
+        );
+        return { ok: false, error };
+      }
       const error =
         e instanceof Error
           ? e.name === "AbortError"

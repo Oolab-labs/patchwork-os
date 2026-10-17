@@ -135,88 +135,87 @@ describe("VsCodeBackend.postWebhook — SSRF DNS pre-resolution (LOW #25)", () =
     expect(result.ok).toBe(true);
   });
 
-  it("pins resolved IP in fetch URL to prevent TOCTOU DNS rebinding (M15)", async () => {
-    vi.mocked(dns.lookup).mockResolvedValue({
-      address: "93.184.216.34",
-      family: 4,
+  // Audit M19 (2026-10-15). Pinning used to rewrite the URL's hostname to the
+  // resolved IP and send the real name in a Host header — the shape #1661
+  // found broken for HTTPS: TLS then validates the certificate against an IP
+  // with no SNI, so every webhook to a public HTTPS endpoint failed. The pin
+  // now lives in the connection (safeFetch's dispatcher); the URL keeps its
+  // real hostname for TLS and Host.
+  for (const url of [
+    "https://example.com/hook",
+    "https://MyHooks.Example.com/hook",
+  ]) {
+    it(`keeps the real hostname in the request and pins in the connection (${url})`, async () => {
+      vi.mocked(dns.lookup).mockResolvedValue({
+        address: "93.184.216.34",
+        family: 4,
+      });
+      fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+
+      const backend = makeBackend(false);
+      const result = await backend.postWebhook({
+        url,
+        method: "POST",
+        headers: {},
+        body: { x: 1 },
+        hookKey: "test",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [calledUrl, calledOpts] = fetchMock.mock.calls[0] as [
+        string | URL,
+        RequestInit & { dispatcher?: unknown },
+      ];
+      expect(new URL(String(calledUrl)).hostname).toBe(new URL(url).hostname);
+      expect(String(calledUrl)).not.toContain("93.184.216.34");
+      const headers = new Headers(calledOpts.headers);
+      expect(headers.get("host")).toBeNull();
+      expect(calledOpts.dispatcher).toBeDefined();
     });
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+  }
 
-    const backend = makeBackend(false);
-    await backend.postWebhook({
-      url: "http://example.com/hook",
-      method: "POST",
-      headers: {},
-      body: { x: 1 },
-      hookKey: "test",
-    });
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [calledUrl, calledOpts] = fetchMock.mock.calls[0] as [
-      string,
-      RequestInit & { headers: Record<string, string> },
-    ];
-    // URL must use the resolved IP, not the original hostname.
-    expect(calledUrl).toContain("93.184.216.34");
-    expect(calledUrl).not.toContain("example.com");
-    // Host header must carry the original hostname.
-    const headers = calledOpts.headers as Record<string, string>;
-    expect(headers["Host"] ?? headers["host"]).toBe("example.com");
-  });
-
-  // Regression: URL always lowercases parsed.hostname, so pinning that did
-  // opts.url.replace(parsed.hostname, pinnedHost) silently no-op'd for any
-  // URL with uppercase letters in its host — fetch() then re-resolved the
-  // original hostname itself, reopening the exact DNS-rebinding TOCTOU
-  // window M15 exists to close, with no error/log to signal the failure.
-  it("still pins the resolved IP when the URL's hostname has uppercase letters", async () => {
-    vi.mocked(dns.lookup).mockResolvedValue({
-      address: "93.184.216.34",
-      family: 4,
-    });
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
-
-    const backend = makeBackend(false);
-    await backend.postWebhook({
-      url: "http://MyHooks.Example.COM/hook",
-      method: "POST",
-      headers: {},
-      body: { x: 1 },
-      hookKey: "test",
-    });
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [calledUrl, calledOpts] = fetchMock.mock.calls[0] as [
-      string,
-      RequestInit & { headers: Record<string, string> },
-    ];
-    expect(calledUrl).toContain("93.184.216.34");
-    expect(calledUrl.toLowerCase()).not.toContain("myhooks.example.com");
-    const headers = calledOpts.headers as Record<string, string>;
-    expect((headers["Host"] ?? headers["host"])?.toLowerCase()).toBe(
-      "myhooks.example.com",
+  it("re-checks a redirect: a hop to a private address is refused, not followed", async () => {
+    vi.mocked(dns.lookup).mockImplementation((async (host: string) =>
+      host === "example.com"
+        ? { address: "93.184.216.34", family: 4 }
+        : { address: "10.0.0.5", family: 4 }) as never);
+    fetchMock.mockResolvedValue(
+      new Response(null, {
+        status: 307,
+        headers: { location: "http://internal.example.com/admin" },
+      }),
     );
-  });
-
-  it("pins an IPv6 resolved address in bracket form", async () => {
-    vi.mocked(dns.lookup).mockResolvedValue({
-      address: "2606:2800:220:1:248:1893:25c8:1946",
-      family: 6,
-    });
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
 
     const backend = makeBackend(false);
-    await backend.postWebhook({
-      url: "http://example.com/hook",
+    const result = await backend.postWebhook({
+      url: "https://example.com/hook",
       method: "POST",
       headers: {},
-      body: {},
+      body: { x: 1 },
       hookKey: "test",
     });
 
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/private/i);
     expect(fetchMock).toHaveBeenCalledOnce();
-    const [calledUrl] = fetchMock.mock.calls[0] as [string, unknown];
-    expect(calledUrl).toContain("[2606:2800:220:1:248:1893:25c8:1946]");
+  });
+
+  it("refuses when DNS fails rather than sending unpinned", async () => {
+    vi.mocked(dns.lookup).mockRejectedValue(new Error("ENOTFOUND"));
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+
+    const backend = makeBackend(false);
+    const result = await backend.postWebhook({
+      url: "https://example.com/hook",
+      method: "POST",
+      headers: {},
+      body: { x: 1 },
+      hookKey: "test",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("allows private IPs when allowPrivateWebhooks=true", async () => {
