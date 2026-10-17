@@ -6620,6 +6620,11 @@ a.btn { text-decoration: none; }
 .cgc-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
 .cgc-status-dot[data-degraded] { background: #f59e0b; }
 .cgc-degraded-label { font-weight: 500; flex-shrink: 0; }
+/* Stored ≠ working (audit H9). The state is in the WORDS, not only the colour. */
+.cgc-verify { font-size: var(--fs-xs); font-weight: 500; padding: 1px 7px; border-radius: 999px; flex-shrink: 0; border: 1px solid var(--border-default); color: var(--ink-2); background: var(--card-bg); }
+.cgc-verify[data-state="verified"] { color: var(--ok); border-color: var(--ok); }
+.cgc-verify[data-state="failed"] { color: var(--err); border-color: var(--err); background: var(--err-soft); }
+.cgc-verify[data-state="unverified"] { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
 .cgc-footer-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
 .cgc-toggle { width: 28px; height: 16px; border-radius: 999px; border: none; background: var(--ok); position: relative; cursor: pointer; padding: 0; flex-shrink: 0; }
 .cgc-toggle:disabled { cursor: wait; }
