@@ -137,7 +137,17 @@ export default function ApprovalDetailPage() {
   const router = useRouter();
   const search = useSearchParams();
   const callId = params.callId;
-  const approvalToken = search.get("approvalToken") ?? undefined;
+  // A credential never comes from the URL (audit M32). This page used to
+  // read ?approvalToken= and send it as a Bearer header, which the bridge
+  // proxy drops — so it never worked, and the token sat in history and logs.
+  // A stale link may still carry one: scrub it from the address bar.
+  const staleUrlToken = search.get("approvalToken") !== null;
+  useEffect(() => {
+    if (!staleUrlToken || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("approvalToken");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [staleUrlToken]);
   const [decideErr, setDecideErr] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<"approve" | "reject" | null>(null);
 
@@ -162,13 +172,8 @@ export default function ApprovalDetailPage() {
     setDecideErr(null);
     setDeciding(choice);
     try {
-      const headers: Record<string, string> = {};
-      if (approvalToken) {
-        headers.Authorization = `Bearer ${approvalToken}`;
-      }
       const res = await fetch(apiPath(approvalDecisionPath(choice, callId)), {
         method: "POST",
-        headers,
       });
       if (!res.ok) {
         let detail = "";

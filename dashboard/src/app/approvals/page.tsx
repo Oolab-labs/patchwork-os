@@ -1,4 +1,5 @@
 "use client";
+import { matchCcRule } from "@/lib/ccRuleMatch";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -16,7 +17,8 @@ import { syntaxHighlightJson } from "@/lib/syntaxHighlight";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 import {
   CONSEQUENCE_IF_WRONG,
-  classifyPendingAction,
+  actionClassOf,
+  type BridgeActionClass,
   reversibilityRank,
 } from "@/lib/actionClass";
 
@@ -52,6 +54,9 @@ interface PersonalSignal {
 }
 
 interface Pending {
+  recipeName?: string;
+  /** The bridge's action class for this call (audit M27). */
+  actionClass?: BridgeActionClass;
   callId: string;
   toolName: string;
   tier: "low" | "medium" | "high";
@@ -210,9 +215,9 @@ const ApprovalCard = memo(function ApprovalCard({
   const expires = p.expiresAt === undefined ? p.requestedAt + DEFAULT_TTL_MS : p.expiresAt;
   const primary = primaryParam(p.toolName, p.params);
   const hasParams = p.params && Object.keys(p.params).length > 0;
-  const match = matchRule(p.toolName, rules);
+  const match = matchCcRule(p.toolName, rules);
 
-  const actionClass = classifyPendingAction(p.toolName);
+  const actionClass = actionClassOf(p);
   const isHighStakes = actionClass?.reversibility === "irreversible" ||
     actionClass?.reversibility === "compensable";
   const isIrreversible = actionClass?.reversibility === "irreversible";
@@ -355,8 +360,16 @@ const ApprovalCard = memo(function ApprovalCard({
         )}
         <RiskMeter level={p.tier} />
         {match && (
-          <span className={`pill ${ruleClass(match)} apc-shrink0`}>
-            CC: {match}
+          <span
+            className={`pill ${ruleClass(match.kind)} apc-shrink0`}
+            title={
+              match.scoped
+                ? `A Claude Code ${match.kind} rule covers SOME ${p.toolName} calls (a scoped rule). Whether it covers this one depends on its arguments.`
+                : `A Claude Code ${match.kind} rule covers every ${p.toolName} call.`
+            }
+          >
+            CC: {match.kind}
+            {match.scoped ? " (some calls)" : ""}
           </span>
         )}
         {p.sessionId && (
@@ -542,9 +555,9 @@ const ApprovalCard = memo(function ApprovalCard({
           <aside className="apc-worker-rail" aria-label="Worker record — this action class">
             <div className="apc-considered-label">Worker record — this action class</div>
             <p className="apc-no-trust">
-              No trust record — this approval isn&apos;t attributed to a
-              worker identity, so there&apos;s no per-worker trust history to
-              show here.
+              Approval requests don&apos;t carry a worker identity yet, so no
+              per-worker trust history can be shown for this one
+              {p.recipeName ? <> (it came from the recipe <code>{p.recipeName}</code>)</> : null}.
             </p>
             {actionClass && (
               <p className="apc-class-key muted" title="domain::reversibility">
@@ -933,8 +946,8 @@ function ApprovalsContent() {
     .slice()
     .sort((a, b) => {
       const rankDiff =
-        reversibilityRank(classifyPendingAction(a.toolName)?.reversibility) -
-        reversibilityRank(classifyPendingAction(b.toolName)?.reversibility);
+        reversibilityRank(actionClassOf(a)?.reversibility) -
+        reversibilityRank(actionClassOf(b)?.reversibility);
       if (rankDiff !== 0) return rankDiff;
       return (a.requestedAt ?? 0) - (b.requestedAt ?? 0);
     });
@@ -975,7 +988,7 @@ function ApprovalsContent() {
     if (decision === "approve") {
       lockedIds = selectedInView
         .filter((p) => {
-          const cls = classifyPendingAction(p.toolName);
+          const cls = actionClassOf(p);
           return (
             cls?.reversibility === "irreversible" &&
             !evidenceOpenedIds.has(p.callId)
@@ -1097,7 +1110,7 @@ function ApprovalsContent() {
         // either; only the mouse "Approve" button would be silently
         // ungated otherwise.
         if (choice === "approve") {
-          const cls = classifyPendingAction(target.toolName);
+          const cls = actionClassOf(target);
           if (cls?.reversibility === "irreversible" && !evidenceOpenedIds.has(target.callId)) {
             setAnnouncement(
               "Approve is locked — open the draft or the run first.",
@@ -1569,18 +1582,6 @@ function primaryLabel(toolName: string): string {
   return labels[toolName] ?? "value";
 }
 
-function matchRule(
-  toolName: string,
-  rules: CcRules | null,
-): "deny" | "ask" | "allow" | null {
-  if (!rules) return null;
-  const match = (list: string[]) =>
-    list.some((r) => r === toolName || r.startsWith(`${toolName}(`));
-  if (match(rules.deny)) return "deny";
-  if (match(rules.ask)) return "ask";
-  if (match(rules.allow)) return "allow";
-  return null;
-}
 
 function ruleClass(kind: "deny" | "ask" | "allow"): string {
   return kind === "deny" ? "err" : kind === "ask" ? "warn" : "ok";

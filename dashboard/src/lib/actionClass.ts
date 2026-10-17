@@ -134,6 +134,51 @@ export interface ClientActionClass {
   key: string;
   domain: string;
   reversibility: Reversibility;
+  /**
+   * The bridge has no class for this tool. It still treats it as
+   * irreversible (how the worker gate treats it), so sorting and the
+   * evidence gate do too — but the badge says "unclassified" rather than
+   * claim to know the tool (audit M27).
+   */
+  unclassified?: boolean;
+}
+
+/** The class the bridge attaches to each pending call (`GET /approvals`). */
+export interface BridgeActionClass {
+  domain: string;
+  reversibility: string;
+  blastTier?: string;
+}
+
+function asReversibility(r: string): Reversibility | null {
+  return r === "reversible" || r === "compensable" || r === "irreversible"
+    ? r
+    : null;
+}
+
+/**
+ * The action class to render for a pending call (audit M27). Prefers the
+ * BRIDGE's class — the one the worker gate uses — over this file's partial
+ * copy, which used to return null for any tool it did not list, so an
+ * unknown tool was sorted, badged and gated as reversible. The bridge classes
+ * an unknown tool as `other`, irreversible; that is kept and marked
+ * `unclassified`. The local copy is a fallback for an older bridge only.
+ */
+export function actionClassOf(p: {
+  toolName: string;
+  actionClass?: BridgeActionClass;
+}): ClientActionClass | null {
+  const b = p.actionClass;
+  const rev = b ? asReversibility(b.reversibility) : null;
+  if (b && rev) {
+    return {
+      key: `${b.domain}::${rev}`,
+      domain: b.domain,
+      reversibility: rev,
+      ...(b.domain === "other" && { unclassified: true }),
+    };
+  }
+  return classifyPendingAction(p.toolName);
 }
 
 /**
