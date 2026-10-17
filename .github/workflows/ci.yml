@@ -11,6 +11,11 @@ permissions:
 
 jobs:
   ci:
+    # Job names are what branch protection requires, so the four
+    # `ci (<os>, <node>)` names must keep reporting. Ubuntu cells keep theirs
+    # here; Windows cells are sharded and report as `ci shard (...)`, and the
+    # `ci-windows-gate` job below reports the two Windows names.
+    name: ${{ matrix.shard && format('ci shard ({0}, {1}, {2}/2)', matrix.os, matrix.node-version, matrix.shard) || format('ci ({0}, {1})', matrix.os, matrix.node-version) }}
     runs-on: ${{ matrix.os }}
     # windows-latest was advisory through PRs #497–#501 while the
     # pre-existing POSIX-only test gaps were closed (126 → 0 failures).
@@ -142,6 +147,22 @@ jobs:
           path: coverage/coverage-summary.json
           if-no-files-found: warn
           retention-days: 14
+
+  # Reports the required check names `ci (windows-latest, 22)` and
+  # `ci (windows-latest, 24)`, which the sharded Windows cells no longer carry.
+  # Passes only when EVERY ci cell passed (needs.ci.result covers the whole
+  # matrix), so it can never be greener than the cells behind it.
+  ci-windows-gate:
+    name: ci (windows-latest, ${{ matrix.node-version }})
+    needs: ci
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - name: All ci cells passed
+        run: test "${{ needs.ci.result }}" = "success"
 
   schema-audit:
     name: Tool schema breaking-change gate
