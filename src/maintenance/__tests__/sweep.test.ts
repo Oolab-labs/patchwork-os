@@ -230,5 +230,59 @@ describe("the snapshot holds counts only", () => {
     expect("evidence.outcome-log.jsonl.rows" in r.counts).toBe(false);
     // And an absent run log: no cron-halt gate, rather than a green one.
     expect("cronHalts" in r.gates).toBe(false);
+    // And an absent pull-request outcome ledger (audit M10): it was recorded
+    // as 0 rows, which the diff then reports as a drop when it appears.
+    expect("prOutcomes.rows" in r.counts).toBe(false);
+    expect("prOutcomes.distinctPrs" in r.counts).toBe(false);
+  });
+});
+
+// Audit M10 (2026-10-15). Only a true -> false flip exits 1 (a first run and a
+// newly-added gate are deliberately not failures). But a gate that is red at
+// baseline, a new gate that starts red, and a gate that stops being measured
+// were not marked in the delta at all.
+describe("diffReadings — gates that are not flips are still reported (audit M10)", () => {
+  it("a gate red on the first run is listed as failing at baseline, without exiting 1", () => {
+    const d = diffReadings(
+      undefined,
+      reading({ gates: { deployment: true, workers: false } }),
+    );
+    expect(d.baseline).toBe(true);
+    expect(d.regressed).toBe(false);
+    expect(d.failingNotFlipped).toEqual(["workers"]);
+  });
+
+  it("a newly-measured gate that starts red is listed, without exiting 1", () => {
+    const d = diffReadings(
+      reading({ gates: { deployment: true } }),
+      reading({ gates: { deployment: true, cronHalts: false } }),
+    );
+    expect(d.regressed).toBe(false);
+    expect(d.failingNotFlipped).toEqual(["cronHalts"]);
+  });
+
+  it("a gate that stops being measured is reported", () => {
+    const d = diffReadings(
+      reading({ gates: { deployment: true, workers: true } }),
+      reading({ gates: { deployment: true } }),
+    );
+    expect(d.gatesDisappeared).toEqual(["workers"]);
+    expect(d.regressed).toBe(false);
+  });
+
+  it("the text says both", () => {
+    const base = formatSweep(
+      reading({ gates: { workers: false } }),
+      diffReadings(undefined, reading({ gates: { workers: false } })),
+      { wrote: false },
+    );
+    expect(base).toMatch(/failing.*workers|workers.*failing/is);
+    const gone = formatSweep(
+      reading({ gates: {} }),
+      diffReadings(reading(), reading({ gates: {} })),
+      { wrote: false },
+    );
+    expect(gone).toMatch(/no longer measured/i);
+    expect(gone).toContain("workers");
   });
 });

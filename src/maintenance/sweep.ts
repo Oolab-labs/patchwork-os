@@ -92,6 +92,15 @@ export interface SweepDelta {
   counts: CountDelta[];
   /** Counters present in the prior reading and absent from this one. */
   disappeared: string[];
+  /**
+   * Gates failing now that are NOT a flip: red on the first run, or newly
+   * measured and red. Never an exit-1 cause — a first run is a baseline and a
+   * new gate must not fail its own first sweep — but never silent either
+   * (audit M10).
+   */
+  failingNotFlipped: string[];
+  /** Gates the prior reading carried that this one could not take. */
+  gatesDisappeared: string[];
   /** True when any gate flipped true -> false. Drives the exit code. */
   regressed: boolean;
 }
@@ -109,6 +118,10 @@ export function diffReadings(
       gates: [],
       counts: [],
       disappeared: [],
+      failingNotFlipped: Object.entries(current.gates)
+        .filter(([, ok]) => !ok)
+        .map(([k]) => k),
+      gatesDisappeared: [],
       regressed: false,
     };
   }
@@ -134,12 +147,20 @@ export function diffReadings(
   const disappeared = Object.keys(previous.counts).filter(
     (k) => !(k in current.counts),
   );
+  const failingNotFlipped = Object.entries(current.gates)
+    .filter(([k, ok]) => !ok && typeof previous.gates[k] !== "boolean")
+    .map(([k]) => k);
+  const gatesDisappeared = Object.keys(previous.gates).filter(
+    (k) => !(k in current.gates),
+  );
   return {
     baseline: false,
     previousAt: previous.takenAt,
     gates,
     counts,
     disappeared,
+    failingNotFlipped,
+    gatesDisappeared,
     regressed: gates.some((g) => g.regression),
   };
 }
@@ -189,6 +210,15 @@ export function formatSweep(
   }
   L.push("");
 
+  if (delta.failingNotFlipped.length > 0) {
+    // Not a flip, so not exit 1 — but a gate that is red must say so.
+    L.push(
+      `  ${delta.failingNotFlipped.length} gate(s) failing now with no healthy reading before (not a flip, so the exit code is unchanged):`,
+    );
+    for (const k of delta.failingNotFlipped) L.push(`    ${k}`);
+    L.push("");
+  }
+
   if (delta.baseline) {
     // Never "no changes". Nothing was observed to change; there was nothing to
     // compare against, and those are different facts.
@@ -237,6 +267,15 @@ export function formatSweep(
         `    ${before.padStart(7)} -> ${String(c.after).padEnd(7)} ${sign}${c.change}  ${c.key}`,
       );
     }
+  }
+
+  if (delta.gatesDisappeared.length > 0) {
+    L.push("");
+    L.push(
+      `  ${delta.gatesDisappeared.length} gate(s) the previous sweep had are no longer measured:`,
+    );
+    for (const k of delta.gatesDisappeared) L.push(`    ${k}`);
+    L.push("  A gate that cannot be read is not a gate that passed.");
   }
 
   if (delta.disappeared.length > 0) {

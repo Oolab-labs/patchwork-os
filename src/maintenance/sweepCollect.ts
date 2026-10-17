@@ -14,6 +14,7 @@
  * a downstream formatter is one refactor away from being lost.
  */
 
+import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   assessDeploymentFreshness,
@@ -154,10 +155,15 @@ export function collectSweep(opts: CollectOptions = {}): SweepReading {
   }
 
   // --- drift: pull-request outcome ledger ---
-  const pr = summarise(readObservations(path.join(dir, "pr_outcomes.jsonl")));
-  counts["prOutcomes.rows"] = pr.rows;
-  counts["prOutcomes.distinctPrs"] = pr.distinctPrs;
-  counts["prOutcomes.withHistory"] = pr.prsWithHistory;
+  // Absent is omitted, not zero (audit M10): `evidence` reports an absent
+  // ledger as ABSENT, and a 0 here would read as a drop once it appears.
+  const prFile = path.join(dir, "pr_outcomes.jsonl");
+  if (existsSync(prFile)) {
+    const pr = summarise(readObservations(prFile));
+    counts["prOutcomes.rows"] = pr.rows;
+    counts["prOutcomes.distinctPrs"] = pr.distinctPrs;
+    counts["prOutcomes.withHistory"] = pr.prsWithHistory;
+  }
 
   return {
     rv: SWEEP_RV,
