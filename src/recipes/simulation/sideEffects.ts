@@ -48,18 +48,6 @@ export function classifyStepSideEffect(step: SideEffectInput): SideEffectKind {
   return isWrite ? "local-write" : "local-read";
 }
 
-/** Human-readable, one-line description of a side-effect class. */
-export const SIDE_EFFECT_LABELS: Record<SideEffectKind, string> = {
-  "local-read": "reads local/workspace state",
-  "local-write": "writes local/workspace state",
-  "connector-read": "reads an external connector",
-  "connector-write": "writes to an external connector",
-  "external-http": "makes an outbound HTTP/webhook call",
-  "agent-llm": "runs an AI/agent step (not executed in simulation)",
-  "nested-recipe": "delegates to a nested recipe",
-  unknown: "unresolved tool — side effect unknown",
-};
-
 /** Empty side-effect tally with every kind present (so consumers can index safely). */
 export function emptySideEffectCounts(): Record<SideEffectKind, number> {
   return {
