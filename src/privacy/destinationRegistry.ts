@@ -133,10 +133,21 @@ export function parseRegistry(cfg: PrivacyConfig | undefined): ParsedRegistry {
       continue;
     }
     const dest: Destination = { id, type, classifications };
-    if (Array.isArray(raw.forbiddenCategories)) {
-      dest.forbiddenCategories = raw.forbiddenCategories.filter(
-        (c): c is string => typeof c === "string",
-      );
+    if (raw.forbiddenCategories !== undefined) {
+      // An unreadable forbid list is an invalid destination, not an empty
+      // one: ignoring it ALLOWED exactly what the operator meant to forbid
+      // (audit M13). Reported, and the destination is not used.
+      if (
+        !Array.isArray(raw.forbiddenCategories) ||
+        !raw.forbiddenCategories.every((c) => typeof c === "string")
+      ) {
+        invalid.push({
+          id,
+          reason: "forbiddenCategories must be an array of strings",
+        });
+        continue;
+      }
+      dest.forbiddenCategories = raw.forbiddenCategories as string[];
     }
     if (raw.approvable === true) dest.approvable = true;
     destinations.push(dest);

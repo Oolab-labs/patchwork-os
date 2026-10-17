@@ -166,9 +166,12 @@ export function decideBoundary(
     };
   }
 
-  const forbidden = destination.forbiddenCategories ?? [];
+  // Case- and space-insensitive: `Health` must not slip past a `health`
+  // forbid (audit M13). The reported hit keeps the step's own spelling.
+  const norm = (c: string) => c.trim().toLowerCase();
+  const forbidden = new Set((destination.forbiddenCategories ?? []).map(norm));
   const carried = policy.categories ?? [];
-  const hits = carried.filter((c) => forbidden.includes(c));
+  const hits = carried.filter((c) => forbidden.has(norm(c)));
   if (hits.length > 0) {
     return {
       decision: "ALLOW_REDACTED",
@@ -210,9 +213,18 @@ export function parseDataPolicy(raw: unknown): DataPolicy | null {
   } else {
     return null;
   }
-  const categories = Array.isArray(obj.categories)
-    ? obj.categories.filter((x): x is string => typeof x === "string")
-    : undefined;
+  // Present but unreadable is NOT "no categories": dropping it would let a
+  // step past a destination that forbids what it carries (audit M13). The
+  // caller turns null into DENY.
+  let categories: string[] | undefined;
+  if (obj.categories !== undefined) {
+    if (
+      !Array.isArray(obj.categories) ||
+      !obj.categories.every((x) => typeof x === "string")
+    )
+      return null;
+    categories = obj.categories as string[];
+  }
   return categories ? { classification, categories } : { classification };
 }
 

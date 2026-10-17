@@ -124,11 +124,19 @@ describe("parseDataPolicy — declared, and fail closed on a typo", () => {
     expect(parseDataPolicy("nonsense")).toBeNull();
   });
 
-  it("keeps declared categories and drops non-strings", () => {
+  it("refuses a category list with a non-string rather than dropping it (audit M13)", () => {
+    // Dropping the bad entry used to keep the rest; dropping a whole
+    // malformed list let a step past a destination that forbade it.
     expect(
       parseDataPolicy({
         classification: "confidential",
         categories: ["alpha", 3, "beta"],
+      }),
+    ).toBeNull();
+    expect(
+      parseDataPolicy({
+        classification: "confidential",
+        categories: ["alpha", "beta"],
       }),
     ).toEqual({
       classification: "confidential",

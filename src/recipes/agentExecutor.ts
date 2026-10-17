@@ -556,7 +556,7 @@ function evaluateAgainst(
     return {
       decision: "DENY",
       reason:
-        "data_policy declares an unrecognised classification — refusing rather than defaulting a typo to `internal`",
+        "data_policy is malformed (an unrecognised classification, or categories that are not a list of strings) — refusing rather than defaulting it",
     };
   }
   return decideBoundary(policy, ctx.destination, {
