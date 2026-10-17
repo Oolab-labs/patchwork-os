@@ -67,6 +67,7 @@ function makeLogger() {
 function makeTransport(): McpTransport {
   return {
     deregisterToolsByPrefix: vi.fn().mockReturnValue(1),
+    deregisterTool: vi.fn().mockReturnValue(true),
     replaceTool: vi.fn(),
   } as unknown as McpTransport;
 }
@@ -154,7 +155,7 @@ describe("PluginWatcher", () => {
     watcher.stop();
   });
 
-  it("reloadPlugin() success — deregisters old prefix, registers new tools, calls sendListChanged", async () => {
+  it("reloadPlugin() success — deregisters the old tools by name, registers new tools, calls sendListChanged", async () => {
     const config = makeConfig();
     const logger = makeLogger();
     const sendListChanged = vi.fn();
@@ -178,9 +179,12 @@ describe("PluginWatcher", () => {
 
     await watcher.reloadPlugin(spec);
 
-    expect(vi.mocked(transport.deregisterToolsByPrefix)).toHaveBeenCalledWith(
-      "testPlugin",
+    // By name, never by prefix: a prefix sweep also removes built-ins and
+    // other plugins' tools that share it (see pluginWatcher-reloadScope).
+    expect(vi.mocked(transport.deregisterTool)).toHaveBeenCalledWith(
+      "testPluginHello",
     );
+    expect(vi.mocked(transport.deregisterToolsByPrefix)).not.toHaveBeenCalled();
     expect(vi.mocked(transport.replaceTool)).toHaveBeenCalledWith(
       freshPlugin.tools[0]!.schema,
       freshPlugin.tools[0]!.handler,

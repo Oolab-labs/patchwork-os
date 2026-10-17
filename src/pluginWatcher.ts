@@ -136,11 +136,22 @@ export class PluginWatcher {
       return;
     }
 
-    // Apply to all active transports
+    // Apply to all active transports.
+    //
+    // Remove by the plugin's OWN tool names, never by prefix. The loader only
+    // checks names for collisions, so a prefix may be the start of other
+    // tools' names: a plugin with prefix `get` used to take `getDiagnostics`
+    // and every other `get*` tool — built-in or another plugin's — out of
+    // every live session on its first reload (audit M37). Names also cover a
+    // prefix renamed between reloads, which the prefix sweep missed.
+    const oldNames = old.tools.map((t) => t.schema.name);
+    const freshNames = new Set(fresh.tools.map((t) => t.schema.name));
     let anyTransportFailed = false;
     for (const transport of this.transports) {
       try {
-        transport.deregisterToolsByPrefix(old.manifest.toolNamePrefix);
+        for (const n of oldNames) {
+          if (!freshNames.has(n)) transport.deregisterTool(n);
+        }
         for (const t of fresh.tools) {
           transport.replaceTool(t.schema, t.handler, t.timeoutMs);
         }
@@ -149,12 +160,10 @@ export class PluginWatcher {
         this.logger.warn(
           `[plugin-watch] Failed to patch transport for "${fresh.manifest.name}": ${err instanceof Error ? err.message : String(err)}; attempting rollback`,
         );
-        // Rollback: remove any partially-registered tools and restore old ones.
-        // Uses old prefix — if the plugin renamed its prefix between reloads the
-        // orphaned fresh-prefix tools will remain until the next successful reload.
-        // Prefix renames are uncommon and self-heal on the next save.
+        // Rollback: remove whatever of the fresh set got registered, then put
+        // the old tools back. Same rule — this plugin's names only.
         try {
-          transport.deregisterToolsByPrefix(old.manifest.toolNamePrefix);
+          for (const n of freshNames) transport.deregisterTool(n);
           for (const t of old.tools) {
             transport.replaceTool(t.schema, t.handler, t.timeoutMs);
           }

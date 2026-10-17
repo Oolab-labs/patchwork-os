@@ -27,6 +27,12 @@ import { parseJsonSanitized } from "./sanitizeParsedJson.js";
 import { TOOL_CATEGORIES } from "./tools/index.js";
 
 /**
+ * Longest tool description a plugin may put into tools/list — the same cap
+ * `scripts/audit-lsp-tools.mjs` holds built-in tools to.
+ */
+export const PLUGIN_DESCRIPTION_MAX = 200;
+
+/**
  * Names of all built-in tools. Plugins are forbidden from registering a
  * tool with one of these names — without this guard, a plugin declaring
  * `toolNamePrefix: "git_"` could register `git_status` and silently shadow
@@ -572,14 +578,35 @@ export async function loadOnePluginFull(
     pluginToolNames.push(name);
   }
 
-  // 9. Build final tool list
+  // 9. Build final tool list. Descriptions get the built-in cap: tools/list
+  // goes out on every request, and the audit that holds built-ins to it reads
+  // this repository's source, which a plugin never passes through. Truncated,
+  // not rejected — refusing a working plugin over its prose would break every
+  // plugin already published (audit M37).
   const tools: LoadedPluginTool[] = (
     registration.tools as PluginToolRegistration[]
-  ).map((t) => ({
-    schema: t.schema as ToolSchema,
-    handler: t.handler as ToolHandler,
-    timeoutMs: t.timeoutMs,
-  }));
+  ).map((t) => {
+    const schema = t.schema as ToolSchema;
+    const d = schema.description;
+    if (typeof d === "string" && d.length > PLUGIN_DESCRIPTION_MAX) {
+      logger.warn(
+        `Plugin "${manifest.name}" — tool "${schema.name}" description is ${d.length} characters; truncated to ${PLUGIN_DESCRIPTION_MAX} (the same cap built-in tools have)`,
+      );
+      return {
+        schema: {
+          ...schema,
+          description: `${d.slice(0, PLUGIN_DESCRIPTION_MAX - 1)}…`,
+        },
+        handler: t.handler as ToolHandler,
+        timeoutMs: t.timeoutMs,
+      };
+    }
+    return {
+      schema,
+      handler: t.handler as ToolHandler,
+      timeoutMs: t.timeoutMs,
+    };
+  });
 
   logger.info(
     `Plugin "${manifest.name}" — ${tools.length} tool${tools.length === 1 ? "" : "s"} registered: ${tools.map((t) => t.schema.name).join(", ")}`,

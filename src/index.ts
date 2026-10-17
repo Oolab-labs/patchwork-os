@@ -1035,7 +1035,9 @@ if (process.argv[2] === "gen-plugin-stub") {
     description: "A Claude IDE Bridge plugin",
     entrypoint: "./index.mjs",
     toolNamePrefix: toolPrefix,
-    minBridgeVersion: "2.1.24",
+    // The bridge that generated the stub. A hardcoded "2.1.24" from an
+    // older version line made every scaffolded plugin warn on load.
+    minBridgeVersion: PACKAGE_VERSION.split("-")[0],
   };
   writeFileSync(
     path.join(outDir, "claude-ide-bridge-plugin.json"),
@@ -1070,11 +1072,22 @@ export function register(ctx) {
               name: { type: "string", description: "Name to greet" },
             },
           },
+          // Declare the shape you return; the bridge validates
+          // structuredContent against it. Built-in tools are required to.
+          outputSchema: {
+            type: "object",
+            properties: { greeting: { type: "string" } },
+            required: ["greeting"],
+          },
           annotations: { readOnlyHint: true },
         },
-        handler: async (args, _signal) => ({
-          content: [{ type: "text", text: "Hello from " + ${JSON.stringify(pluginName)} + ", " + args.name + "!" }],
-        }),
+        handler: async (args, _signal) => {
+          const greeting = "Hello from " + ${JSON.stringify(pluginName)} + ", " + args.name + "!";
+          return {
+            content: [{ type: "text", text: greeting }],
+            structuredContent: { greeting },
+          };
+        },
       },
     ],
   };
@@ -1111,16 +1124,22 @@ export function register(ctx: PluginContext) {
               name: { type: "string" as const, description: "Name to greet" },
             },
           },
+          // Declare the shape you return; the bridge validates
+          // structuredContent against it. Built-in tools are required to.
+          outputSchema: {
+            type: "object" as const,
+            properties: { greeting: { type: "string" as const } },
+            required: ["greeting"],
+          },
           annotations: { readOnlyHint: true },
         },
-        handler: async (args: HelloArgs) => ({
-          content: [
-            {
-              type: "text" as const,
-              text: \`Hello from ${pluginName}, \${args.name}!\`,
-            },
-          ],
-        }),
+        handler: async (args: HelloArgs) => {
+          const greeting = \`Hello from ${pluginName}, \${args.name}!\`;
+          return {
+            content: [{ type: "text" as const, text: greeting }],
+            structuredContent: { greeting },
+          };
+        },
       },
     ],
   };
