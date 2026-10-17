@@ -1,43 +1,40 @@
-# ⚠️  NOT RUNNABLE TODAY — aspirational example.
+# Fan-out research: a planner splits a question into threads, `fan_out` runs
+# one agent call per thread, and a final agent synthesises the results.
 #
-# This recipe uses `parallel: {each}` (map-reduce) to run an AGENT step once
-# per item. No runner implements that: the chained runner rejects it, and the
-# flat runner used to record the step as `skipped` and carry on, so the recipe
-# "succeeded" while its central step never executed. It is kept as a design
-# target for agent fan-out (`fan_out` supports tool sub-steps only, serially).
+# Why `fan_out` with `do.agent` and not `parallel: {each}`: no runner
+# implements the map-reduce form. `fan_out` runs one agent call per item and
+# the runner admits each call against the run budget, so a long thread list
+# stops at the cap instead of discovering it afterwards.
 #
-# It is excluded from the `validates all example recipes` lint gate by name —
-# see EXAMPLES_KNOWN_UNRUNNABLE in src/commands/__tests__/recipe.test.ts.
-# Delete this banner and the exclusion together once agent fan-out lands.
-
-# vision-tier — demonstrates the runClaudeTask parent→child spawn pattern.
-# Works today if --driver subprocess is active.
-# Each topic gets its own Claude subprocess; parent merges results.
-# requires: file-mcp (read/write), driver (subprocess or api)
-version: 1.0.0
+# Honest limits:
+#   - Iterations run serially, not in parallel.
+#   - Each thread's agent sees only its own prompt. The synthesis step is the
+#     only place the threads meet.
+#   - A failed thread is recorded in the aggregate with ok:false
+#     (on_iter_error: continue); the synthesis step is told to say so rather
+#     than paper over it.
+apiVersion: patchwork.sh/v1
+version: 2.0.0
 name: multi-agent-research
 description: >
-  Research a question by spawning one Claude subagent per sub-topic in parallel,
-  then having a parent agent synthesize the results into a single document.
-  Demonstrates the runClaudeTask parent→child topology with onTaskSuccess wiring.
+  Research a question by planning 3-5 independent threads, running one agent
+  call per thread with fan_out, then synthesising the results into a single
+  document.
 trigger:
   type: manual
   inputs:
     - name: question
-      type: string
+      type: text
       required: true
       description: The research question to investigate
     - name: subtopics
-      type: array
-      items: string
-      description: Specific angles to cover. Leave empty to let the planner decide.
+      type: text
+      description: Optional angles to cover, comma-separated. Leave empty to let the planner decide.
     - name: output_path
       type: string
-      default: ~/research/{{YYYY-MM-DD}}-{{question.slug}}.md
-context:
-  - type: env
-    keys:
-      - USER_NAME
+      default: ~/.patchwork/inbox/research-{{date}}.md
+allowWrites:
+  - file.write
 steps:
   - id: plan
     risk: low
@@ -46,50 +43,49 @@ steps:
         Question: {{question}}
         Caller-provided subtopics: {{subtopics}}
 
-        If subtopics is empty, decompose the question into 3–5 parallel research threads.
-        Each thread should be independently answerable — no thread should depend on another.
+        If no subtopics were provided, decompose the question into 3-5 research
+        threads. Each thread must be independently answerable: no thread may
+        depend on another's answer.
 
-        Return JSON only:
-        {
-          "threads": [
-            { "id": "t1", "subtopic": "...", "prompt": "Research prompt for a Claude subagent..." },
-            ...
-          ]
-        }
-      into: plan
-      format: json
+        Return ONLY a JSON array of research prompts, one string per thread,
+        for example:
+        ["Research prompt for thread 1...", "Research prompt for thread 2..."]
+      into: threads
 
-  - id: spawn_agents
+  - id: research
+    tool: fan_out
     risk: low
-    parallel:
-      each: "{{plan.threads}}"
-      as: thread
-      steps:
-        - id: "agent_{{thread.id}}"
-          tool: claude.runTask
-          prompt: "{{thread.prompt}}"
-          into: "result_{{thread.id}}"
+    items: "{{threads}}"
+    as: thread
+    max_iterations: 8
+    on_iter_error: continue
+    into: findings
+    do:
+      agent:
+        prompt: |
+          {{thread}}
+
+          Answer this one thread only. Be concrete, cite what you rely on, and
+          say plainly where you are unsure. 400 words max.
 
   - id: synthesize
     risk: low
-    awaits:
-      - spawn_agents
     agent:
       prompt: |
-        You are synthesizing parallel research into a single coherent document.
+        You are synthesising separate research threads into one document.
 
         Question: {{question}}
 
-        Sub-agent results:
-        {{spawn_agents.results}}
+        Thread results (a JSON array; each entry has "ok" and "output", and a
+        failed thread has ok:false):
+        {{findings}}
 
         Write a structured research document:
         - Start with a 3-sentence executive summary
-        - One section per subtopic (keep each tight — drop redundancy across threads)
-        - End with a "Tensions & open questions" section for anything the agents disagreed on
+        - One section per thread (drop redundancy across threads)
+        - If any thread failed, say which and that its angle is not covered
+        - End with "Tensions & open questions" for anything the threads disagree on
         - 1000 words max unless the complexity genuinely demands more
-
-        No preamble. No "As an AI..." hedging.
       into: synthesis
 
   - id: write
@@ -97,12 +93,6 @@ steps:
     risk: low
     path: "{{output_path}}"
     content: "{{synthesis}}"
-
-  - id: notify
-    tool: notify.push
-    risk: low
-    title: "Research complete: {{question}}"
-    body: "Saved to {{output_path}}"
 
 on_error:
   notify: true

@@ -1077,12 +1077,8 @@ steps:
      */
     const EXAMPLES_KNOWN_UNRUNNABLE = new Map([
       [
-        "multi-agent-research.yaml",
-        "parallel:{each} over agent steps — agent fan-out not implemented",
-      ],
-      [
         "relationship-stale-scan.yaml",
-        "parallel:{each} over agent steps, plus filter pipes / file_read() the renderer lacks",
+        "filter pipes / file_read() the renderer lacks, a step-level each:, and unregistered tools (file.list, dashboard.render, gmail.send)",
       ],
     ]);
 
