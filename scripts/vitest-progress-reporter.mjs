@@ -18,11 +18,18 @@
  * where 10k cases would add sync I/O to the hot path on the very platform whose
  * I/O is already the suspect.
  *
+ * It also records every test that needed a RETRY (`ev: "retried"`). CI runs
+ * with `retry: 2`, so a test that fails once and then passes leaves a green run
+ * and no trace in the dot reporter's output: flakes were invisible, and the
+ * list of "known flakes" could only come from memory. A retried case is written
+ * only when it happens (a handful per run, not 10k), and on GitHub Actions it
+ * is also printed as a `::warning` annotation so it shows on the run page.
+ *
  * Never allowed to break a run. A diagnostic that can fail the suite it is
  * diagnosing is worse than no diagnostic, so every write is swallowed.
  */
 import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 
 const OUT = resolve(
   process.env.VITEST_PROGRESS_FILE ?? "vitest-progress.jsonl",
@@ -64,6 +71,51 @@ export default class VitestProgressReporter {
       state = undefined;
     }
     this.#write({ ev: "module-end", file: m?.moduleId, state });
+  }
+
+  onTestCaseResult(testCase) {
+    let d;
+    try {
+      d = testCase?.diagnostic?.();
+    } catch {
+      return;
+    }
+    if (!d || !(d.retryCount > 0)) return;
+    let state;
+    try {
+      state = testCase.result?.().state;
+    } catch {
+      state = undefined;
+    }
+    const abs = testCase.module?.moduleId;
+    const file = abs ? relative(process.cwd(), abs).replace(/\\/g, "/") : abs;
+    const name = testCase.fullName;
+    this.#write({
+      ev: "retried",
+      file,
+      name,
+      retries: d.retryCount,
+      flaky: d.flaky === true,
+      state,
+    });
+    if (process.env.GITHUB_ACTIONS === "true") {
+      // Annotation text must stay on one line; `%`, CR and LF are escaped per
+      // the workflow-command format.
+      const esc = (v) =>
+        String(v)
+          .replace(/%/g, "%25")
+          .replace(/\r/g, "%0D")
+          .replace(/\n/g, "%0A");
+      try {
+        process.stdout.write(
+          // Leading newline: the dot reporter leaves its cursor mid-line, and a
+          // workflow command is only recognised at the start of a line.
+          `\n::warning title=Test needed a retry::${esc(name)} (${esc(file)}) took ${d.retryCount} retr${d.retryCount === 1 ? "y" : "ies"}, final state ${esc(state)}\n`,
+        );
+      } catch {
+        // best-effort
+      }
+    }
   }
 
   onTestRunEnd(_modules, _errors, reason) {
