@@ -38,6 +38,10 @@
  */
 
 import type { StandingPermission } from "../butler/standingPermission.js";
+import {
+  explainRollbackability,
+  reversibilityCeilingFor,
+} from "../recipes/fileWriteRollbackability.js";
 import { classifyActionClass, knownActionTools } from "./actionClass.js";
 import type { ForbidRule } from "./forbidPolicy.js";
 import { ownsAction, type WorkerManifest } from "./worker.js";
@@ -104,9 +108,17 @@ export function previewActions(
   };
 
   for (const c of candidates) {
+    // The instance ceiling the runner applies, derived with no run in hand —
+    // the same calculation `policy explain` uses. A rollback-backed write
+    // (file.write / file.append) is reversible only when a run can confirm
+    // rollback; unconfirmed, the gate treats it as irreversible. Skipping
+    // this showed those writes as "may do now" while the gate queued them
+    // (audit M5).
+    const ceiling = reversibilityCeilingFor(explainRollbackability(c.toolName));
     const decision = decideWorkerAction(worker, c.toolName, c.params, store, {
       ...(opts.contextRisk ? { contextRisk: opts.contextRisk } : {}),
       ...(opts.forbidRules ? { forbidRules: opts.forbidRules } : {}),
+      ...(ceiling ? { reversibilityCeiling: ceiling } : {}),
     });
 
     const entry: PreviewedAction = {

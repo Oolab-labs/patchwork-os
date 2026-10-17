@@ -6,7 +6,10 @@
  * no screen — it tells an operator they are protected when they are not.
  */
 import { describe, expect, it } from "vitest";
-
+import {
+  explainRollbackability,
+  reversibilityCeilingFor,
+} from "../../recipes/fileWriteRollbackability.js";
 import { classifyActionClass, knownActionTools } from "../actionClass.js";
 import type { GraduationConfig } from "../graduation.js";
 import {
@@ -31,16 +34,19 @@ const CANDIDATES: CandidateAction[] = [
   { toolName: "getGitStatus", label: "Read the repository status" },
   { toolName: "editText", label: "Edit a tracked file" },
   { toolName: "gitPush", label: "Push to the remote" },
+  { toolName: "file.write", label: "Write a file from a recipe" },
 ];
 
 describe("previewActions", () => {
   it("buckets candidates into the three columns", () => {
     const b = previewActions(worker(), CANDIDATES, new WorkerLevelStore());
-    expect(boundarySize(b)).toBe(3);
+    expect(boundarySize(b)).toBe(4);
     // Reversible reads and writes flow; an unearned push is gated.
     expect(b.mayDoNow.map((a) => a.toolName)).toContain("getGitStatus");
     expect(b.mayDoNow.map((a) => a.toolName)).toContain("editText");
     expect(b.needsApproval.map((a) => a.toolName)).toContain("gitPush");
+    // A recipe file write: rollback unconfirmed with no run in hand.
+    expect(b.needsApproval.map((a) => a.toolName)).toContain("file.write");
     expect(b.notPermitted).toHaveLength(0);
   });
 
@@ -48,7 +54,10 @@ describe("previewActions", () => {
     const b = previewActions(worker(), CANDIDATES, new WorkerLevelStore(), {
       forbidRules: [{ match: "fs-write", reason: "read-only workspace" }],
     });
-    expect(b.notPermitted.map((a) => a.toolName)).toEqual(["editText"]);
+    expect(b.notPermitted.map((a) => a.toolName)).toEqual([
+      "editText",
+      "file.write",
+    ]);
     expect(b.notPermitted[0]?.reason).toContain("read-only workspace");
     expect(b.mayDoNow.map((a) => a.toolName)).not.toContain("editText");
   });
@@ -121,6 +130,24 @@ describe("previewActions", () => {
 
   // ── the property the whole module exists for ──────────────────────────────
 
+  it("a rollback-backed write is not promised as 'may do now' (audit M5)", () => {
+    // file.write / file.append are reversible only when this run can confirm
+    // rollback. With no run in hand that is unknown, and the gate applies an
+    // irreversible ceiling — exactly as `policy explain` does. The preview
+    // used to skip the ceiling and show them as flowing.
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    const b = previewActions(
+      w,
+      [{ toolName: "file.write" }, { toolName: "file.append" }],
+      new WorkerLevelStore(),
+    );
+    expect(b.mayDoNow.map((a) => a.toolName)).toEqual([]);
+    expect(b.needsApproval.map((a) => a.toolName)).toEqual([
+      "file.write",
+      "file.append",
+    ]);
+  });
+
   it("AGREES WITH THE GATE for every candidate, in every configuration", () => {
     // A boundary screen that disagrees with enforcement is worse than none:
     // it tells an operator they are protected when they are not. This asserts
@@ -137,7 +164,14 @@ describe("previewActions", () => {
     for (const opts of configs) {
       const b = previewActions(w, CANDIDATES, store, opts);
       for (const c of CANDIDATES) {
-        const live = decideWorkerAction(w, c.toolName, c.params, store, opts);
+        // The gate as a run applies it: with the instance ceiling.
+        const ceiling = reversibilityCeilingFor(
+          explainRollbackability(c.toolName),
+        );
+        const live = decideWorkerAction(w, c.toolName, c.params, store, {
+          ...opts,
+          ...(ceiling && { reversibilityCeiling: ceiling }),
+        });
         const expectedColumn =
           gateOutcomeFor(live.action) === "flow"
             ? b.mayDoNow
