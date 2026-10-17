@@ -208,7 +208,10 @@ export function createSendHttpRequestTool(options?: {
           },
         );
 
-        cleanup();
+        // No cleanup() here: the timeout must also cover reading the body.
+        // It used to run as soon as headers arrived, so a slow-drip body had
+        // no deadline (audit M22). An overrun aborts the read and lands in
+        // the catch below as "timed out"; `finally` clears it either way.
 
         // Collect response headers
         const respHeaders: Record<string, string> = {};
@@ -276,7 +279,6 @@ export function createSendHttpRequestTool(options?: {
           ...(truncated ? { truncated: true, fullBytes } : {}),
         });
       } catch (err: unknown) {
-        cleanup();
         // A refusal by the outbound guard (private target, private after
         // DNS, bad redirect, too many hops) is a tool error, not a transport
         // failure — surface its message verbatim.
@@ -289,6 +291,8 @@ export function createSendHttpRequestTool(options?: {
         }
         const msg = err instanceof Error ? err.message : String(err);
         return error(`Request failed: ${msg}`);
+      } finally {
+        cleanup();
       }
     },
   };
