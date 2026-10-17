@@ -373,6 +373,49 @@ if (staleAllowlist.length === 0) {
   );
 }
 
+// ── check: every registered tool is documented ───────────────────────────────
+// documents/platform-docs.md is the tool reference CLAUDE.md points at. 26
+// registered tools had no entry in it (audit M36), including the Butler memory
+// tools, because nothing compared the two. Reads src/tools/ AND its
+// subdirectories: the composite GitHub tools live in src/tools/github/.
+const docsSrc = read("documents/platform-docs.md");
+function namesUnder(dir) {
+  const names = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name !== "__tests__")
+        names.push(...namesUnder(path.join(dir, entry.name)));
+    } else if (
+      entry.name.endsWith(".ts") &&
+      !entry.name.endsWith(".d.ts") &&
+      !entry.name.endsWith(".test.ts")
+    ) {
+      const src = readFileSync(path.join(dir, entry.name), "utf8");
+      for (const e of extractToolNamesFromFile(src)) names.push(e.name);
+    }
+  }
+  return names;
+}
+const allDocCandidates = [...new Set(namesUnder(toolsDir))];
+const undocumented = allDocCandidates.filter(
+  // `name` or `name(args)` — the Context Platform table uses the second.
+  (n) => !docsSrc.includes(`\`${n}\``) && !docsSrc.includes(`\`${n}(`),
+);
+if (allDocCandidates.length < 150) {
+  fail("Documentation check found too few tools to be meaningful", [
+    `${allDocCandidates.length} tools found under src/tools`,
+  ]);
+} else if (undocumented.length === 0) {
+  ok(
+    `All ${allDocCandidates.length} tools are documented in documents/platform-docs.md`,
+  );
+} else {
+  fail(
+    "Tools with no entry in documents/platform-docs.md (add a row to the Tool Reference)",
+    undocumented,
+  );
+}
+
 console.log(
   `\n${issues === 0 ? "All checks passed." : `${issues} issue(s) found — fix before merging.`}`,
 );

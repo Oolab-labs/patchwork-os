@@ -171,6 +171,14 @@ export class ButlerFactStore {
     if (!target)
       throw new ButlerNotFoundError(`no fact with seq ${seqToRetract}`);
     const tier = PROVENANCE_TIER[by];
+    // A retraction may not outrank its author. `resolveFacts` honours every
+    // tombstone whatever its trust, so without this an agent (0.5) — which may
+    // not establish a belief — could delete one the user stated (1.0): the
+    // same injection path `remember` closes, run in reverse (audit M36).
+    if (tier < target.trust)
+      throw new ButlerValidationError(
+        `a ${by} retraction (trust ${tier}) cannot retract fact ${seqToRetract} (trust ${target.trust}); only the user can`,
+      );
     const recordedAt = this.now();
     const tomb: ButlerFact = {
       seq: ++this.seq,
