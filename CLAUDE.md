@@ -520,7 +520,7 @@ acceptance` does, for its loopback target), connector output is wrapped in an
   a replay row is marked `replay: true` and never folds as trust evidence; the envelope now reaches `fan_out` items (only when
   `items` is exactly `{{key}}`), nested child outputs (unioned per step) and
   agent output derived from enveloped inputs, while automation-hook prompts use
-  their own nonce-delimited container by design; the `gemini`/`codex` CLI drivers get no governed system sentence; prompt caps are per path (see the ADR).
+  their own nonce-delimited container by design; the `gemini`/`codex` CLI drivers get the governed sentence only as a prompt preamble (no system channel exists); prompt caps are per path (see the ADR).
   `recipe test` is offline (an unmocked tool or unstubbed agent driver is
   refused with `test_refused_unmocked_step`, never run live) and `recipe
   record` is governed like `recipe run --local` (`resolveLocalGovernance`).

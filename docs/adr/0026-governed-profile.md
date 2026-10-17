@@ -220,9 +220,14 @@ The same order is what `policy explain` prints.
 - The governed system-prompt sentence (`UNTRUSTED_SYSTEM_INSTRUCTION`) now
   reaches every API driver (closed 2026-09-29): `anthropic` as the `system`
   field, `local` / `openai` / `grok` / `gemini-api` as a system message
-  (`makeProviderDriverFn` previously dropped it). Still open: the `gemini` and
-  `codex` CLI subprocess drivers have no system-prompt channel and ignore
-  `ProviderTaskInput.systemPrompt`, so they receive the envelope without it.
+  (`makeProviderDriverFn` previously dropped it). The `gemini` and `codex`
+  CLI subprocess drivers have no flag that adds a system prompt, and until
+  2026-10-17 ignored `ProviderTaskInput.systemPrompt`. They now receive it as
+  a delimited `<system-instructions>` preamble ahead of the task
+  (`src/drivers/systemPreamble.ts`, pinned by
+  `src/drivers/__tests__/subprocessSystemPrompt.test.ts` against real child
+  processes). Weaker than a true system channel — the model sees it in the
+  user turn — but it arrives before any enveloped content.
 - ~~The local run path (`recipe run --local`, `recipe record`) ignored the
   containment it was handed, and a workspace's own Claude settings (hooks,
   allow rules) applied to contained runs.~~ Closed 2026-10-10, pinned by

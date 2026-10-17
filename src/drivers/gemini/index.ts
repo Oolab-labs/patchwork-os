@@ -20,6 +20,7 @@ import { splitLines } from "../claude/streamParser.js";
 import { containmentFromInput } from "../claude/subprocess.js";
 import { exitCodeOf } from "../exitCode.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
+import { withSystemPreamble } from "../systemPreamble.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -374,7 +375,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
     try {
       const args = [
         "-p",
-        input.prompt,
+        withSystemPreamble(input.prompt, input.systemPrompt),
         "--output-format",
         "stream-json",
         "--approval-mode",
