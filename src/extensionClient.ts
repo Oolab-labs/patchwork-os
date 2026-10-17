@@ -1388,14 +1388,19 @@ export class ExtensionClient {
     index?: number,
     lines?: number,
   ): Promise<unknown> {
-    return this.validatedRequest(
-      "extension/getTerminalOutput",
-      { name, index, lines },
-      (r) => {
-        const o = r as Record<string, unknown>;
-        return typeof o.available === "boolean" ? r : null;
-      },
-    );
+    // NOT validatedRequest: the handler reports a non-fatal failure as
+    // `{available: false, error}`, and validatedRequest turns any `{error}`
+    // into null — which the tool can only render as "Terminal not found".
+    // Keep the reply whenever it carries the discriminant (audit M33).
+    const raw = await this.requestOrNull("extension/getTerminalOutput", {
+      name,
+      index,
+      lines,
+    });
+    if (raw === null || typeof raw !== "object") return null;
+    return typeof (raw as Record<string, unknown>).available === "boolean"
+      ? raw
+      : null;
   }
 
   // handler returns { success: boolean, terminalName? } — validatedRequest
@@ -1620,15 +1625,17 @@ export class ExtensionClient {
     timeoutMs?: number,
   ): Promise<unknown> {
     const requestTimeout = (timeoutMs ?? 30_000) + 5_000;
-    return this.validatedRequest(
+    // Inline unwrap for the same reason as getTerminalOutput: a refusal
+    // arrives as `{matched: false, error}` and must reach the caller.
+    const raw = await this.requestOrNull(
       "extension/waitForTerminalOutput",
       { pattern, name, index, timeoutMs },
-      (r) => {
-        const o = r as Record<string, unknown>;
-        return typeof o.matched === "boolean" ? r : null;
-      },
       requestTimeout,
     );
+    if (raw === null || typeof raw !== "object") return null;
+    return typeof (raw as Record<string, unknown>).matched === "boolean"
+      ? raw
+      : null;
   }
 
   // handler returns { success: boolean, exitCode?, output, terminalName, timedOut?, error? } — validatedRequest

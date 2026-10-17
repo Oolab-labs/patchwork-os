@@ -173,6 +173,17 @@ function checkIndexWithPrefix(
   return null;
 }
 
+/**
+ * The extension's own reason, when its terminal handler answered with a
+ * failure value (`{available: false, error}` / `{matched: false, error}`).
+ * A timeout carries no `error` and stays a normal result.
+ */
+function extensionRefusal(result: unknown): string | undefined {
+  if (result === null || typeof result !== "object") return undefined;
+  const e = (result as Record<string, unknown>).error;
+  return typeof e === "string" && e.length > 0 ? e : undefined;
+}
+
 export function createGetTerminalOutputTool(
   extensionClient: ExtensionClient,
   terminalPrefix = "",
@@ -233,6 +244,8 @@ export function createGetTerminalOutputTool(
         if (result === null) {
           return error("Terminal not found");
         }
+        const reason = extensionRefusal(result);
+        if (reason !== undefined) return error(reason);
         return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
@@ -457,6 +470,8 @@ export function createWaitForTerminalOutputTool(
             "Extension did not respond — ensure the VS Code extension is running",
           );
         }
+        const reason = extensionRefusal(result);
+        if (reason !== undefined) return error(reason);
         return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
