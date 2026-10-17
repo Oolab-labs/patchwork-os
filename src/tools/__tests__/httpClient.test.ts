@@ -499,22 +499,24 @@ describe("sendHttpRequest — redirect Host header after DNS failure", () => {
         return new Response("final", { status: 200 });
       });
 
-    // First hop: DNS succeeds. Redirect hop: DNS fails (proceeds unpinned).
+    // First hop: DNS succeeds. Redirect hop: DNS fails. Since audit M21 an
+    // unresolvable hop is REFUSED rather than sent unpinned, so the
+    // invariant holds in its strongest form: no request reaches the redirect
+    // target at all, stale Host or otherwise.
     vi.spyOn(dns, "lookup")
       .mockResolvedValueOnce({ address: "93.184.216.34", family: 4 } as never)
       .mockRejectedValueOnce(new Error("DNS lookup failed"));
 
-    await tool.handler({
+    const result = await tool.handler({
       method: "GET",
       url: "https://example.com/",
     });
 
-    // The second request targets the redirect's real name…
-    expect(new URL(capturedUrl ?? "http://invalid").hostname).toBe(
-      "other.example.com",
-    );
-    // …and carries no Host header that could be a stale first-hop value.
+    expect(capturedUrl).toBeUndefined();
     expect(capturedHost).toBeUndefined();
+    expect(JSON.stringify(result)).toMatch(
+      /could not be resolved \(other\.example\.com: DNS lookup failed\)/,
+    );
   });
 });
 
