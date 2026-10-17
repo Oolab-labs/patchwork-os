@@ -256,6 +256,9 @@ registerTool({
       res = result.response;
       redirects = result.redirects;
     } catch (err) {
+      // No response: nothing left to time. On success the timer keeps running
+      // through the body read below and is cleared there.
+      clearTimeout(timer);
       if (err instanceof OutboundHttpError) {
         const isPrivate =
           err.code === "private_host" || err.code === "private_host_after_dns";
@@ -283,14 +286,18 @@ registerTool({
         );
       }
       throw new Error(`http.post: request failed: ${detail}`);
-    } finally {
-      clearTimeout(timer);
     }
 
     // Headers arrived, so the target certainly received the request: a body
     // that dies mid-read (`terminated`) is the same uncertain outcome as a
     // response that never arrived, and used to escape as a bare transport
     // error from this very line.
+    //
+    // The timer is still running here, on purpose: the timeout covers the
+    // body, not just the headers. It used to be cleared once headers arrived,
+    // so a server that answered at once and dripped the body held the call
+    // open indefinitely (audit M22). A body that overruns aborts the read,
+    // which lands in the catch below as the same uncertain outcome.
     let text: string;
     try {
       text = await res.text();
@@ -300,6 +307,8 @@ registerTool({
         `http.post: request was sent to ${destination} and answered ${res.status}, but the response body could not be read — the write may have been applied; not retried: ${detail}`,
         { cause: err },
       );
+    } finally {
+      clearTimeout(timer);
     }
     return JSON.stringify({
       status: res.status,
