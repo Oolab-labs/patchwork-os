@@ -680,3 +680,28 @@ describe("DiscordConnector.sendMessage refresh on 401", () => {
     expect(stored?.access_token).toBe("new-access");
   });
 });
+
+describe("sendMessage is not retried when it may have been posted (audit M23 follow-up)", () => {
+  async function connWithFetch(fetchImpl: ReturnType<typeof vi.fn>) {
+    global.fetch = fetchImpl as unknown as typeof fetch;
+    vi.resetModules();
+    const { DiscordConnector } = await import("../discord.js");
+    const conn = new DiscordConnector();
+    vi.spyOn(
+      conn as unknown as {
+        authenticate: () => Promise<{ token: string; scopes: string[] }>;
+      },
+      "authenticate",
+    ).mockResolvedValue({ token: "k", scopes: [] });
+    return conn;
+  }
+
+  it("a 503 sends exactly one request", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 503 }));
+    const conn = await connWithFetch(fetchSpy);
+    await expect(
+      conn.sendMessage("c1", { content: "hello" }),
+    ).rejects.toThrow();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});

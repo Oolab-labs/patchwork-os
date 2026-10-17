@@ -473,26 +473,29 @@ export class TodoistConnector extends BaseConnector {
     priority?: number,
     labels?: string[],
   ): Promise<TodoistTask> {
-    const result = await this.apiCall(async (token) => {
-      const body: Record<string, unknown> = { content };
-      if (projectId) body.project_id = projectId;
-      if (description) body.description = description;
-      if (dueString) body.due_string = dueString;
-      if (priority != null) body.priority = priority;
-      if (labels) body.labels = labels;
+    const result = await this.apiCall(
+      async (token) => {
+        const body: Record<string, unknown> = { content };
+        if (projectId) body.project_id = projectId;
+        if (description) body.description = description;
+        if (dueString) body.due_string = dueString;
+        if (priority != null) body.priority = priority;
+        if (labels) body.labels = labels;
 
-      const res = await fetch(`${TODOIST_BASE}/tasks`, {
-        method: "POST",
-        headers: this.buildHeaders(token),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        throw Object.assign(new Error(`HTTP ${res.status}`), {
-          status: res.status,
+        const res = await fetch(`${TODOIST_BASE}/tasks`, {
+          method: "POST",
+          headers: this.buildHeaders(token),
+          body: JSON.stringify(body),
         });
-      }
-      return res.json() as Promise<TodoistTask>;
-    });
+        if (!res.ok) {
+          throw Object.assign(new Error(`HTTP ${res.status}`), {
+            status: res.status,
+          });
+        }
+        return res.json() as Promise<TodoistTask>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
   }
@@ -601,24 +604,27 @@ export class TodoistConnector extends BaseConnector {
     color?: string,
     isFavorite?: boolean,
   ): Promise<TodoistProject> {
-    const result = await this.apiCall(async (token) => {
-      const body: Record<string, unknown> = { name };
-      if (parentId) body.parent_id = parentId;
-      if (color) body.color = color;
-      if (isFavorite != null) body.is_favorite = isFavorite;
+    const result = await this.apiCall(
+      async (token) => {
+        const body: Record<string, unknown> = { name };
+        if (parentId) body.parent_id = parentId;
+        if (color) body.color = color;
+        if (isFavorite != null) body.is_favorite = isFavorite;
 
-      const res = await fetch(`${TODOIST_BASE}/projects`, {
-        method: "POST",
-        headers: this.buildHeaders(token),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        throw Object.assign(new Error(`HTTP ${res.status}`), {
-          status: res.status,
+        const res = await fetch(`${TODOIST_BASE}/projects`, {
+          method: "POST",
+          headers: this.buildHeaders(token),
+          body: JSON.stringify(body),
         });
-      }
-      return res.json() as Promise<TodoistProject>;
-    });
+        if (!res.ok) {
+          throw Object.assign(new Error(`HTTP ${res.status}`), {
+            status: res.status,
+          });
+        }
+        return res.json() as Promise<TodoistProject>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
   }

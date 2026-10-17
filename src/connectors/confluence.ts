@@ -248,32 +248,35 @@ export class ConfluenceConnector extends BaseConnector {
     body: string;
     parentId?: string;
   }): Promise<ConfluencePage> {
-    const result = await this.apiCall(async (token) => {
-      const payload: Record<string, unknown> = {
-        spaceId: params.spaceId,
-        status: "current",
-        title: params.title,
-        body: {
-          representation: "storage",
-          value: params.body,
-        },
-      };
-      if (params.parentId) {
-        payload.parentId = params.parentId;
-      }
+    const result = await this.apiCall(
+      async (token) => {
+        const payload: Record<string, unknown> = {
+          spaceId: params.spaceId,
+          status: "current",
+          title: params.title,
+          body: {
+            representation: "storage",
+            value: params.body,
+          },
+        };
+        if (params.parentId) {
+          payload.parentId = params.parentId;
+        }
 
-      const url = `${this.tokens?.instanceUrl}${CONFLUENCE_API_V2}/pages`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(token),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw res;
-      return res.json();
-    });
+        const url = `${this.tokens?.instanceUrl}${CONFLUENCE_API_V2}/pages`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(token),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw res;
+        return res.json();
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as ConfluencePage;

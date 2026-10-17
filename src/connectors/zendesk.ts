@@ -264,26 +264,29 @@ export class ZendeskConnector extends BaseConnector {
     body: string,
     isPublic = true,
   ): Promise<ZendeskTicket> {
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(
-        `${this.baseUrl()}/api/v2/tickets/${ticketId}.json`,
-        {
-          method: "PUT",
-          headers: {
-            ...this.buildHeaders(token),
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ticket: {
-              comment: { body, public: isPublic },
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(
+          `${this.baseUrl()}/api/v2/tickets/${ticketId}.json`,
+          {
+            method: "PUT",
+            headers: {
+              ...this.buildHeaders(token),
+              "Content-Type": "application/json",
             },
-          }),
-        },
-      );
-      if (!res.ok) throw res;
-      const data = (await res.json()) as { ticket: ZendeskTicket };
-      return data.ticket;
-    });
+            body: JSON.stringify({
+              ticket: {
+                comment: { body, public: isPublic },
+              },
+            }),
+          },
+        );
+        if (!res.ok) throw res;
+        const data = (await res.json()) as { ticket: ZendeskTicket };
+        return data.ticket;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as ZendeskTicket;

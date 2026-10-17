@@ -304,22 +304,25 @@ export class CalDiyConnector extends BaseConnector {
   }
 
   private async post<T>(apiPath: string, body: unknown): Promise<T> {
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(`${this.baseUrl()}${apiPath}`, {
-        method: "POST",
-        headers: this.buildHeaders(token),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        throw Object.assign(new Error(err.message ?? `HTTP ${res.status}`), {
-          status: res.status,
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(`${this.baseUrl()}${apiPath}`, {
+          method: "POST",
+          headers: this.buildHeaders(token),
+          body: JSON.stringify(body),
         });
-      }
-      return res.json() as Promise<{ status: string; data: T }>;
-    });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          throw Object.assign(new Error(err.message ?? `HTTP ${res.status}`), {
+            status: res.status,
+          });
+        }
+        return res.json() as Promise<{ status: string; data: T }>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return (result.data as { status: string; data: T }).data;
   }

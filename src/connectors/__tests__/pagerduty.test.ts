@@ -481,3 +481,36 @@ describe("PagerDutyConnector writes", () => {
     expect(body.incident.body.details).toBe("intermittent 502s on edge");
   });
 });
+
+describe("createIncident is not retried when it may have been opened (audit M23 follow-up)", () => {
+  async function connWithFetch(fetchImpl: ReturnType<typeof vi.fn>) {
+    global.fetch = fetchImpl as unknown as typeof fetch;
+    vi.resetModules();
+    const { PagerDutyConnector } = await import("../pagerduty.js");
+    const conn = new PagerDutyConnector();
+    (conn as unknown as { tokens: object }).tokens = {
+      token: "k",
+      connected_at: new Date().toISOString(),
+    };
+    vi.spyOn(
+      conn as unknown as {
+        authenticate: () => Promise<{ token: string; scopes: string[] }>;
+      },
+      "authenticate",
+    ).mockResolvedValue({ token: "k", scopes: [] });
+    return conn;
+  }
+
+  it("a 503 sends exactly one request", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 503 }));
+    const conn = await connWithFetch(fetchSpy);
+    await expect(
+      conn.createIncident({
+        title: "DB down",
+        serviceId: "SVC1",
+        fromEmail: "ops@example.com",
+      }),
+    ).rejects.toThrow();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});

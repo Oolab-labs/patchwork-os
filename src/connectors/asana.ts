@@ -496,27 +496,30 @@ export class AsanaConnector extends BaseConnector {
     if (!params.workspaceGid) {
       throw new Error("createTask requires workspaceGid");
     }
-    const result = await this.apiCall(async (token) => {
-      const data: Record<string, unknown> = {
-        workspace: params.workspaceGid,
-        name: params.name,
-      };
-      if (params.projectGid) data.projects = [params.projectGid];
-      if (params.notes !== undefined) data.notes = params.notes;
-      if (params.assigneeGid) data.assignee = params.assigneeGid;
-      if (params.dueOn) data.due_on = params.dueOn;
-      if (params.parentTaskGid) data.parent = params.parentTaskGid;
+    const result = await this.apiCall(
+      async (token) => {
+        const data: Record<string, unknown> = {
+          workspace: params.workspaceGid,
+          name: params.name,
+        };
+        if (params.projectGid) data.projects = [params.projectGid];
+        if (params.notes !== undefined) data.notes = params.notes;
+        if (params.assigneeGid) data.assignee = params.assigneeGid;
+        if (params.dueOn) data.due_on = params.dueOn;
+        if (params.parentTaskGid) data.parent = params.parentTaskGid;
 
-      const res = await fetch(`${ASANA_API_BASE}/tasks`, {
-        method: "POST",
-        headers: this.buildHeaders(token),
-        body: JSON.stringify({ data }),
-      });
-      this.captureRateLimit(res);
-      if (!res.ok) throw await this.attachErrorDetail(res);
-      const json = (await res.json()) as { data: AsanaTask };
-      return json.data;
-    });
+        const res = await fetch(`${ASANA_API_BASE}/tasks`, {
+          method: "POST",
+          headers: this.buildHeaders(token),
+          body: JSON.stringify({ data }),
+        });
+        this.captureRateLimit(res);
+        if (!res.ok) throw await this.attachErrorDetail(res);
+        const json = (await res.json()) as { data: AsanaTask };
+        return json.data;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as AsanaTask;
@@ -576,22 +579,25 @@ export class AsanaConnector extends BaseConnector {
     if (!taskGid) throw new Error("addTaskComment requires taskGid");
     if (!options.text)
       throw new Error("addTaskComment requires non-empty text");
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(
-        `${ASANA_API_BASE}/tasks/${encodeURIComponent(taskGid)}/stories`,
-        {
-          method: "POST",
-          headers: this.buildHeaders(token),
-          body: JSON.stringify({
-            data: { text: options.text, type: "comment" },
-          }),
-        },
-      );
-      this.captureRateLimit(res);
-      if (!res.ok) throw await this.attachErrorDetail(res);
-      const json = (await res.json()) as { data: AsanaStory };
-      return json.data;
-    });
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(
+          `${ASANA_API_BASE}/tasks/${encodeURIComponent(taskGid)}/stories`,
+          {
+            method: "POST",
+            headers: this.buildHeaders(token),
+            body: JSON.stringify({
+              data: { text: options.text, type: "comment" },
+            }),
+          },
+        );
+        this.captureRateLimit(res);
+        if (!res.ok) throw await this.attachErrorDetail(res);
+        const json = (await res.json()) as { data: AsanaStory };
+        return json.data;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as AsanaStory;

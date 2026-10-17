@@ -302,21 +302,24 @@ export class CircleCIConnector extends BaseConnector {
     if (params.branch) body.branch = params.branch;
     if (params.tag) body.tag = params.tag;
     if (params.parameters) body.parameters = params.parameters;
-    const result = await this.apiCall(async () => {
-      const res = await fetch(
-        `${BASE_URL}/project/${encodeSlug(projectSlug)}/pipeline`,
-        {
-          method: "POST",
-          headers: {
-            ...this.buildHeaders(),
-            "Content-Type": "application/json",
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(
+          `${BASE_URL}/project/${encodeSlug(projectSlug)}/pipeline`,
+          {
+            method: "POST",
+            headers: {
+              ...this.buildHeaders(),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
           },
-          body: JSON.stringify(body),
-        },
-      );
-      if (!res.ok) throw res;
-      return res.json() as Promise<CircleCITriggerResult>;
-    });
+        );
+        if (!res.ok) throw res;
+        return res.json() as Promise<CircleCITriggerResult>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as CircleCITriggerResult;
   }
@@ -463,15 +466,21 @@ export class CircleCIConnector extends BaseConnector {
       signing_secret: params.signingSecret,
       verify_tls: params.verifyTls ?? true,
     };
-    const result = await this.apiCall(async () => {
-      const res = await fetch(`${BASE_URL}/webhook`, {
-        method: "POST",
-        headers: { ...this.buildHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      return res.json() as Promise<CircleCIWebhook>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(`${BASE_URL}/webhook`, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        return res.json() as Promise<CircleCIWebhook>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as CircleCIWebhook;
   }

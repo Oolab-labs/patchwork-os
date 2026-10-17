@@ -423,19 +423,22 @@ export class DiscordConnector extends BaseConnector {
       tts: body.tts ?? false,
     };
 
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(
-        `${DISCORD_API_BASE}/channels/${encodeURIComponent(channelId)}/messages`,
-        {
-          method: "POST",
-          headers: this.buildHeaders(token),
-          body: JSON.stringify(payload),
-        },
-      );
-      this.captureRateLimit(res);
-      if (!res.ok) throw res;
-      return res.json() as Promise<DiscordMessage>;
-    });
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(
+          `${DISCORD_API_BASE}/channels/${encodeURIComponent(channelId)}/messages`,
+          {
+            method: "POST",
+            headers: this.buildHeaders(token),
+            body: JSON.stringify(payload),
+          },
+        );
+        this.captureRateLimit(res);
+        if (!res.ok) throw res;
+        return res.json() as Promise<DiscordMessage>;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as DiscordMessage;

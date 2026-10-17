@@ -273,26 +273,32 @@ export class PipedriveConnector extends BaseConnector {
     status?: "open" | "won" | "lost";
     expectedCloseDate?: string;
   }): Promise<PipedriveDeal> {
-    const result = await this.apiCall(async (token) => {
-      const url = this.buildUrl("/deals", token);
-      const body: Record<string, unknown> = { title: params.title };
-      if (params.value !== undefined) body.value = params.value;
-      if (params.currency) body.currency = params.currency;
-      if (params.stageId !== undefined) body.stage_id = params.stageId;
-      if (params.personId !== undefined) body.person_id = params.personId;
-      if (params.orgId !== undefined) body.org_id = params.orgId;
-      if (params.status) body.status = params.status;
-      if (params.expectedCloseDate)
-        body.expected_close_date = params.expectedCloseDate;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { ...this.buildHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      const data = (await res.json()) as PipedriveResponse<PipedriveDeal>;
-      return data.data;
-    });
+    const result = await this.apiCall(
+      async (token) => {
+        const url = this.buildUrl("/deals", token);
+        const body: Record<string, unknown> = { title: params.title };
+        if (params.value !== undefined) body.value = params.value;
+        if (params.currency) body.currency = params.currency;
+        if (params.stageId !== undefined) body.stage_id = params.stageId;
+        if (params.personId !== undefined) body.person_id = params.personId;
+        if (params.orgId !== undefined) body.org_id = params.orgId;
+        if (params.status) body.status = params.status;
+        if (params.expectedCloseDate)
+          body.expected_close_date = params.expectedCloseDate;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        const data = (await res.json()) as PipedriveResponse<PipedriveDeal>;
+        return data.data;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PipedriveDeal;
   }
@@ -379,21 +385,27 @@ export class PipedriveConnector extends BaseConnector {
     phone?: string;
     orgId?: number;
   }): Promise<PipedrivePerson> {
-    const result = await this.apiCall(async (token) => {
-      const url = this.buildUrl("/persons", token);
-      const body: Record<string, unknown> = { name: params.name };
-      if (params.email) body.email = [{ value: params.email, primary: true }];
-      if (params.phone) body.phone = [{ value: params.phone, primary: true }];
-      if (params.orgId !== undefined) body.org_id = params.orgId;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { ...this.buildHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      const data = (await res.json()) as PipedriveResponse<PipedrivePerson>;
-      return data.data;
-    });
+    const result = await this.apiCall(
+      async (token) => {
+        const url = this.buildUrl("/persons", token);
+        const body: Record<string, unknown> = { name: params.name };
+        if (params.email) body.email = [{ value: params.email, primary: true }];
+        if (params.phone) body.phone = [{ value: params.phone, primary: true }];
+        if (params.orgId !== undefined) body.org_id = params.orgId;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        const data = (await res.json()) as PipedriveResponse<PipedrivePerson>;
+        return data.data;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PipedrivePerson;
   }
@@ -426,26 +438,32 @@ export class PipedriveConnector extends BaseConnector {
     personId?: number;
     note?: string;
   }): Promise<PipedriveActivity> {
-    const result = await this.apiCall(async (token) => {
-      const url = this.buildUrl("/activities", token);
-      const body: Record<string, unknown> = {
-        subject: params.subject,
-        type: params.type,
-      };
-      if (params.dueDate) body.due_date = params.dueDate;
-      if (params.dueTime) body.due_time = params.dueTime;
-      if (params.dealId !== undefined) body.deal_id = params.dealId;
-      if (params.personId !== undefined) body.person_id = params.personId;
-      if (params.note) body.note = params.note;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { ...this.buildHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      const data = (await res.json()) as PipedriveResponse<PipedriveActivity>;
-      return data.data;
-    });
+    const result = await this.apiCall(
+      async (token) => {
+        const url = this.buildUrl("/activities", token);
+        const body: Record<string, unknown> = {
+          subject: params.subject,
+          type: params.type,
+        };
+        if (params.dueDate) body.due_date = params.dueDate;
+        if (params.dueTime) body.due_time = params.dueTime;
+        if (params.dealId !== undefined) body.deal_id = params.dealId;
+        if (params.personId !== undefined) body.person_id = params.personId;
+        if (params.note) body.note = params.note;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        const data = (await res.json()) as PipedriveResponse<PipedriveActivity>;
+        return data.data;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PipedriveActivity;
   }

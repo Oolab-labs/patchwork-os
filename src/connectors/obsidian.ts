@@ -347,21 +347,24 @@ export class ObsidianConnector extends BaseConnector {
   }
 
   async executeCommand(commandId: string): Promise<void> {
-    const result = await this.apiCall(async (token) => {
-      const res = await undiciFetch(
-        `${this.baseUrl()}/commands/${encodeURIComponent(commandId)}/execute`,
-        {
-          method: "POST",
-          dispatcher: tlsAgent,
-          headers: buildHeaders(token),
-        },
-      );
-      if (!res.ok)
-        throw Object.assign(new Error(`HTTP ${res.status}`), {
-          status: res.status,
-        });
-      return null;
-    });
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await undiciFetch(
+          `${this.baseUrl()}/commands/${encodeURIComponent(commandId)}/execute`,
+          {
+            method: "POST",
+            dispatcher: tlsAgent,
+            headers: buildHeaders(token),
+          },
+        );
+        if (!res.ok)
+          throw Object.assign(new Error(`HTTP ${res.status}`), {
+            status: res.status,
+          });
+        return null;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
   }
 }

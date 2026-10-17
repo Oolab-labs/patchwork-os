@@ -515,3 +515,36 @@ describe("getStatus", () => {
     expect(s.status).toBe("connected");
   });
 });
+
+// ── Money movement is not resent after a 5xx (audit M23 follow-up) ─────────
+
+describe("charges and transfers are not retried when they may have gone through", () => {
+  const fail503 = () =>
+    vi.fn(async () => new Response('{"status":false}', { status: 503 }));
+
+  it("chargeAuthorization: a 503 sends exactly one request", async () => {
+    process.env.PAYSTACK_SECRET_KEY = "sk_test_abc";
+    const { getPaystackConnector } = await import("../paystack.js");
+    const fetchMock = fail503();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await expect(
+      getPaystackConnector().chargeAuthorization(
+        "AUTH_x",
+        "user@example.com",
+        5000,
+      ),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("initiateTransfer: a 503 sends exactly one request", async () => {
+    process.env.PAYSTACK_SECRET_KEY = "sk_test_abc";
+    const { getPaystackConnector } = await import("../paystack.js");
+    const fetchMock = fail503();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await expect(
+      getPaystackConnector().initiateTransfer("balance", 5000, "RCP_x"),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

@@ -303,71 +303,74 @@ export class JiraConnector extends BaseConnector {
   }
 
   async createIssue(params: CreateIssueParams): Promise<JiraIssue> {
-    const result = await this.apiCall(async (token) => {
-      const api = this.getApiPath();
-      const url = `${this.tokens?.instanceUrl}${api}/issue`;
+    const result = await this.apiCall(
+      async (token) => {
+        const api = this.getApiPath();
+        const url = `${this.tokens?.instanceUrl}${api}/issue`;
 
-      const body: { fields: Record<string, unknown> } = {
-        fields: {
-          project: { key: params.projectKey },
-          summary: params.summary,
-          issuetype: { name: params.issueType ?? "Bug" },
-        },
-      };
-
-      if (params.description) {
-        // Atlassian Document Format (ADF) for cloud, plain text for server
-        if (this.tokens?.isCloud) {
-          body.fields.description = {
-            type: "doc",
-            version: 1,
-            content: [
-              {
-                type: "paragraph",
-                content: [{ type: "text", text: params.description }],
-              },
-            ],
-          };
-        } else {
-          (body.fields as Record<string, unknown>).description =
-            params.description;
-        }
-      }
-
-      if (params.priority) {
-        (body.fields as Record<string, unknown>).priority = {
-          name: params.priority,
+        const body: { fields: Record<string, unknown> } = {
+          fields: {
+            project: { key: params.projectKey },
+            summary: params.summary,
+            issuetype: { name: params.issueType ?? "Bug" },
+          },
         };
-      }
 
-      if (params.labels) {
-        (body.fields as Record<string, unknown>).labels = params.labels;
-      }
+        if (params.description) {
+          // Atlassian Document Format (ADF) for cloud, plain text for server
+          if (this.tokens?.isCloud) {
+            body.fields.description = {
+              type: "doc",
+              version: 1,
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: params.description }],
+                },
+              ],
+            };
+          } else {
+            (body.fields as Record<string, unknown>).description =
+              params.description;
+          }
+        }
 
-      if (params.assignee) {
-        if (this.tokens?.isCloud) {
-          (body.fields as Record<string, unknown>).assignee = {
-            accountId: params.assignee,
-          };
-        } else {
-          (body.fields as Record<string, unknown>).assignee = {
-            name: params.assignee,
+        if (params.priority) {
+          (body.fields as Record<string, unknown>).priority = {
+            name: params.priority,
           };
         }
-      }
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(token),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
+        if (params.labels) {
+          (body.fields as Record<string, unknown>).labels = params.labels;
+        }
 
-      if (!res.ok) throw res;
-      return res.json();
-    });
+        if (params.assignee) {
+          if (this.tokens?.isCloud) {
+            (body.fields as Record<string, unknown>).assignee = {
+              accountId: params.assignee,
+            };
+          } else {
+            (body.fields as Record<string, unknown>).assignee = {
+              name: params.assignee,
+            };
+          }
+        }
+
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(token),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) throw res;
+        return res.json();
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) {
       throw new Error(result.error.message);
@@ -379,22 +382,25 @@ export class JiraConnector extends BaseConnector {
     issueIdOrKey: string,
     transitionId: string,
   ): Promise<void> {
-    const result = await this.apiCall(async (token) => {
-      const api = this.getApiPath();
-      const url = `${this.tokens?.instanceUrl}${api}/issue/${issueIdOrKey}/transitions`;
+    const result = await this.apiCall(
+      async (token) => {
+        const api = this.getApiPath();
+        const url = `${this.tokens?.instanceUrl}${api}/issue/${issueIdOrKey}/transitions`;
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(token),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ transition: { id: transitionId } }),
-      });
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(token),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ transition: { id: transitionId } }),
+        });
 
-      if (!res.ok) throw res;
-      return { ok: true };
-    });
+        if (!res.ok) throw res;
+        return { ok: true };
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) {
       throw new Error(result.error.message);
@@ -402,35 +408,38 @@ export class JiraConnector extends BaseConnector {
   }
 
   async addComment(issueIdOrKey: string, body: string): Promise<void> {
-    const result = await this.apiCall(async (token) => {
-      const api = this.getApiPath();
-      const url = `${this.tokens?.instanceUrl}${api}/issue/${issueIdOrKey}/comment`;
+    const result = await this.apiCall(
+      async (token) => {
+        const api = this.getApiPath();
+        const url = `${this.tokens?.instanceUrl}${api}/issue/${issueIdOrKey}/comment`;
 
-      let commentBody: unknown;
-      if (this.tokens?.isCloud) {
-        commentBody = {
-          type: "doc",
-          version: 1,
-          content: [
-            { type: "paragraph", content: [{ type: "text", text: body }] },
-          ],
-        };
-      } else {
-        commentBody = body;
-      }
+        let commentBody: unknown;
+        if (this.tokens?.isCloud) {
+          commentBody = {
+            type: "doc",
+            version: 1,
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: body }] },
+            ],
+          };
+        } else {
+          commentBody = body;
+        }
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(token),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ body: commentBody }),
-      });
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(token),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ body: commentBody }),
+        });
 
-      if (!res.ok) throw res;
-      return { ok: true };
-    });
+        if (!res.ok) throw res;
+        return { ok: true };
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) {
       throw new Error(result.error.message);

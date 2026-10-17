@@ -272,24 +272,27 @@ export class GrafanaConnector extends BaseConnector {
       timeEnd?: number;
     } = {},
   ): Promise<{ id: number }> {
-    const result = await this.apiCall(async () => {
-      const body: Record<string, unknown> = {
-        dashboardUID: dashboardUid,
-        panelId,
-        text,
-      };
-      if (options.tags) body.tags = options.tags;
-      if (options.time !== undefined) body.time = options.time;
-      if (options.timeEnd !== undefined) body.timeEnd = options.timeEnd;
+    const result = await this.apiCall(
+      async () => {
+        const body: Record<string, unknown> = {
+          dashboardUID: dashboardUid,
+          panelId,
+          text,
+        };
+        if (options.tags) body.tags = options.tags;
+        if (options.time !== undefined) body.time = options.time;
+        if (options.timeEnd !== undefined) body.timeEnd = options.timeEnd;
 
-      const res = await fetch(`${this.baseUrl()}/api/annotations`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      return res.json() as Promise<{ id: number; message: string }>;
-    });
+        const res = await fetch(`${this.baseUrl()}/api/annotations`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        return res.json() as Promise<{ id: number; message: string }>;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as { id: number };

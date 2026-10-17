@@ -258,21 +258,24 @@ export class VercelConnector extends BaseConnector {
     projectId: string,
     gitSource?: { type: string; ref?: string; sha?: string },
   ): Promise<VercelDeployment> {
-    const result = await this.apiCall(async () => {
-      const qs = this.buildQs({});
-      const body: Record<string, unknown> = { name: projectId };
-      if (gitSource) body.gitSource = gitSource;
-      const res = await fetch(`${BASE_URL}/v13/deployments${qs}`, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      return res.json() as Promise<VercelDeployment>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const qs = this.buildQs({});
+        const body: Record<string, unknown> = { name: projectId };
+        if (gitSource) body.gitSource = gitSource;
+        const res = await fetch(`${BASE_URL}/v13/deployments${qs}`, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        return res.json() as Promise<VercelDeployment>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as VercelDeployment;
   }

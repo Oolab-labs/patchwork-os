@@ -299,20 +299,23 @@ export class CloudflareConnector extends BaseConnector {
     proxied?: boolean,
   ): Promise<CloudflareDnsRecord> {
     this.ensureTokens();
-    const result = await this.apiCall(async () => {
-      const body: Record<string, unknown> = { type, name, content };
-      if (ttl !== undefined) body.ttl = ttl;
-      if (proxied !== undefined) body.proxied = proxied;
-      const res = await fetch(`${BASE_URL}/zones/${zoneId}/dns_records`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      const json = (await res.json()) as CfEnvelope<CloudflareDnsRecord>;
-      if (!json.success) throw cfError(json);
-      return json.result;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const body: Record<string, unknown> = { type, name, content };
+        if (ttl !== undefined) body.ttl = ttl;
+        if (proxied !== undefined) body.proxied = proxied;
+        const res = await fetch(`${BASE_URL}/zones/${zoneId}/dns_records`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        const json = (await res.json()) as CfEnvelope<CloudflareDnsRecord>;
+        if (!json.success) throw cfError(json);
+        return json.result;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as CloudflareDnsRecord;
   }
@@ -440,24 +443,27 @@ export class CloudflareConnector extends BaseConnector {
     projectName: string,
   ): Promise<{ id: string; url: string; created_on: string }> {
     this.ensureTokens();
-    const result = await this.apiCall(async () => {
-      const res = await fetch(
-        `${BASE_URL}/accounts/${accountId}/pages/projects/${projectName}/deployments`,
-        {
-          method: "POST",
-          headers: this.buildHeaders(),
-          body: JSON.stringify({}),
-        },
-      );
-      if (!res.ok) throw res;
-      const json = (await res.json()) as CfEnvelope<{
-        id: string;
-        url: string;
-        created_on: string;
-      }>;
-      if (!json.success) throw cfError(json);
-      return json.result;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(
+          `${BASE_URL}/accounts/${accountId}/pages/projects/${projectName}/deployments`,
+          {
+            method: "POST",
+            headers: this.buildHeaders(),
+            body: JSON.stringify({}),
+          },
+        );
+        if (!res.ok) throw res;
+        const json = (await res.json()) as CfEnvelope<{
+          id: string;
+          url: string;
+          created_on: string;
+        }>;
+        if (!json.success) throw cfError(json);
+        return json.result;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as { id: string; url: string; created_on: string };
   }
