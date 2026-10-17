@@ -185,7 +185,11 @@ describe("recipe test is evidence-only", () => {
     expect(r.valid).toBe(true);
   });
 
-  it("chained path stays fully mocked: no tool runs for real", async () => {
+  // Audit M16 (2026-10-15): the chained branch answered every tool with
+  // `[mock:<tool>]`, ignored fixtures, and so passed a step that had no
+  // fixture at all — a green `recipe test` that proved nothing. It now runs
+  // under the flat branch's boundary, so an unmocked step is refused there too.
+  it("chained path: an unmocked tool is refused, never run and never faked", async () => {
     const exec = fakeTool("synthwrite.chained", true);
     const p = writeRecipe(
       "chained-mocked",
@@ -202,9 +206,10 @@ describe("recipe test is evidence-only", () => {
     );
     const r = await runTest(p, { fixturesDir: home });
     expect(exec).not.toHaveBeenCalled();
-    expect(r.issues.map((i) => i.message).join("\n")).not.toMatch(
-      /test_refused_unmocked_step/,
-    );
+    expect(r.valid).toBe(false);
+    const msg = r.issues.map((i) => i.message).join("\n");
+    expect(msg).toMatch(/test_refused_unmocked_step/);
+    expect(msg).toMatch(/synthwrite\.chained/);
   });
 });
 
