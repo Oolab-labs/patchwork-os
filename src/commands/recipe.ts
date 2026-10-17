@@ -2976,19 +2976,57 @@ export async function runRecord(
         options.io ?? {},
         recipe.name,
       );
-      const run = await runYamlRecipe(recipe, {
+      const recordDeps = {
         ...options.deps,
         ...localGovernance,
         recordFixturesDir: resolvedFixturesDir,
-      });
-      stepsRun = run.stepsRun;
-      outputs = run.outputs;
+      } as RunnerDeps;
+      const triggerType = (
+        recipe.trigger as unknown as Record<string, unknown> | undefined
+      )?.type;
+      if (triggerType === "chained") {
+        // A chained recipe is recorded by the CHAINED runner (audit M15):
+        // the flat runner ignored `awaits` / parallelism / nested recipes and
+        // so recorded a run that never happens. Recording itself rides on
+        // StepDeps.recordFixturesDir, which buildChainedDeps carries through
+        // to executeStep.
+        const { runChainedRecipe } = await import(
+          "../recipes/chainedRunner.js"
+        );
+        const recipeRecord = recipe as unknown as Record<string, unknown>;
+        const run = await runChainedRecipe(
+          recipe as unknown as import("../recipes/chainedRunner.js").ChainedRecipe,
+          {
+            env: process.env as Record<string, string>,
+            maxConcurrency: (recipeRecord.maxConcurrency as number) ?? 4,
+            maxDepth: (recipeRecord.maxDepth as number) ?? 3,
+            dryRun: false,
+            sourcePath: recipePath,
+          },
+          buildChainedDeps(recordDeps, undefined, recipe.name),
+        );
+        stepsRun = run.summary.total;
+        if (run.errorMessage) {
+          issues.push({ level: "error", message: run.errorMessage });
+        }
+        for (const [stepId, r] of run.stepResults) {
+          if (r.success || !r.error) continue;
+          issues.push({
+            level: "error",
+            message: `step ${stepId}: ${r.error.message}`,
+          });
+        }
+      } else {
+        const run = await runYamlRecipe(recipe, recordDeps);
+        stepsRun = run.stepsRun;
+        outputs = run.outputs;
 
-      if (run.errorMessage) {
-        issues.push({
-          level: "error",
-          message: run.errorMessage,
-        });
+        if (run.errorMessage) {
+          issues.push({
+            level: "error",
+            message: run.errorMessage,
+          });
+        }
       }
     } catch (err) {
       issues.push({
