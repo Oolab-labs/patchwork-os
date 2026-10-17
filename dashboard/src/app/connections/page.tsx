@@ -9,6 +9,7 @@ import { EmptyState, HintCard, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import type { ConnectorStatus } from "./types";
+import { recentlyUsedOrder, verificationSummary } from "./verificationSummary";
 
 // ------------------------------------------------------------------ helpers
 
@@ -1331,16 +1332,27 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
                 className="cgc-status-dot"
                 {...(isDegraded ? { "data-degraded": "" } : {})}
                 title={
-                  statusEntry.lastSync
-                    ? `Last sync: ${relativeTime(statusEntry.lastSync)}`
-                    : isDegraded
-                      ? "Degraded — re-auth required"
+                  isDegraded
+                    ? "Degraded — re-auth required"
+                    : statusEntry.connectedAt
+                      ? `Connected ${relativeTime(statusEntry.connectedAt)}`
                       : "Connected"
                 }
                 aria-hidden="true"
                 style={isConnected && !isDegraded ? { animation: "cgc-pulse 2s ease-in-out infinite" } : undefined}
               />
               {isDegraded && <span className="cgc-degraded-label">Degraded</span>}
+              {/* Stored is not the same as working (audit H9): say which,
+                  from what the bridge reported. Nothing from an older bridge. */}
+              {!isDegraded &&
+                (() => {
+                  const v = verificationSummary(statusEntry);
+                  return v ? (
+                    <span className="cgc-verify" data-state={v.state} title={v.title}>
+                      {v.label}
+                    </span>
+                  ) : null;
+                })()}
             </div>
             <div className="cgc-footer-actions">
               {isConnected && (
@@ -1425,13 +1437,15 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
 
 // ------------------------------------------------------------------ recently used strip card
 
-function RecentCard({ def, lastSync }: { def: ConnectorDef; lastSync: string }) {
+function RecentCard({ def, lastUsed }: { def: ConnectorDef; lastUsed: string }) {
   return (
     <div className="glass-card glass-card--hover conn-recent-card">
       <LogoTile def={def} size={40} />
       <div>
         <div className="conn-recent-name">{def.name}</div>
-        <div className="conn-recent-sync">✓ {relativeTime(lastSync)}</div>
+        <div className="conn-recent-sync" title={`Last successful call: ${new Date(lastUsed).toLocaleString()}`}>
+          ✓ used {relativeTime(lastUsed)}
+        </div>
       </div>
     </div>
   );
@@ -1807,11 +1821,11 @@ export default function ConnectionsPage() {
 
   const hasAnyConnected = connectors.some((c) => c.status === "connected" || c.status === "needs_reauth");
 
-  const recentlyUsed = CATALOG
-    .map((def) => ({ def, entry: getConnector(def.id) }))
-    .filter(({ entry }) => entry.status === "connected" && entry.lastSync)
-    .sort((a, b) => Date.parse(b.entry.lastSync!) - Date.parse(a.entry.lastSync!))
-    .slice(0, 4);
+  // Ranked by a real successful call, never by connect time (audit H9).
+  const recentlyUsed = recentlyUsedOrder(CATALOG.map((def) => getConnector(def.id)))
+    .map((id) => CATALOG.find((def) => def.id === id))
+    .filter((def): def is ConnectorDef => def !== undefined)
+    .map((def) => ({ def, entry: getConnector(def.id) }));
 
   function defStatus(def: ConnectorDef): "connected" | "available" | "coming_soon" {
     const entry = getConnector(def.id);
@@ -1915,7 +1929,7 @@ export default function ConnectionsPage() {
               <div className="conn-recent-label">Recently used</div>
               <div className="conn-recent-scroll">
                 {recentlyUsed.map(({ def, entry }) => (
-                  <RecentCard key={def.id} def={def} lastSync={entry.lastSync!} />
+                  <RecentCard key={def.id} def={def} lastUsed={entry.lastSuccessAt as string} />
                 ))}
               </div>
             </div>

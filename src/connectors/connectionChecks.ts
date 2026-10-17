@@ -106,6 +106,25 @@ function sanitizeRecord(raw: unknown): ConnectionCheckRecord | null {
   return out.verifiedAt || out.lastCheck ? out : null;
 }
 
+/**
+ * Whether a stored credential has been PROVEN to work (audit 2026-10-15, H9).
+ * `status: "connected"` means a credential is stored; this says whether it was
+ * shown to work. The most recent Test wins — a passing Test followed by a
+ * failing one is `failed` — then an authenticated call made at connect time
+ * (`verified` / `verifiedAt`), and otherwise `unverified`.
+ */
+export type ConnectionVerification = "verified" | "failed" | "unverified";
+
+export function connectionVerification(facts: {
+  verified?: boolean;
+  verifiedAt?: string;
+  lastCheck?: LastCheck;
+}): ConnectionVerification {
+  if (facts.lastCheck) return facts.lastCheck.ok ? "verified" : "failed";
+  if (facts.verified === true || facts.verifiedAt) return "verified";
+  return "unverified";
+}
+
 /** Every recorded check, keyed by connector id. Missing/corrupt file ⇒ {}. */
 export function readConnectionChecks(): Record<string, ConnectionCheckRecord> {
   const p = checksPath();
@@ -235,7 +254,14 @@ export function afterCredentialChange<T extends { status: number }>(
   result: T,
 ): T {
   const id = connectorIdFromPath(pathname);
-  if (id && result.status < 400) {
+  // A connect flow that PROVED the new credential (an authenticated call
+  // before saving) records its own passing check; clearing it here would
+  // erase the one fact that distinguishes it from a merely stored credential.
+  if (
+    id &&
+    result.status < 400 &&
+    (result as { verifiedAtConnect?: boolean }).verifiedAtConnect !== true
+  ) {
     try {
       clearConnectionCheck(id);
     } catch {
