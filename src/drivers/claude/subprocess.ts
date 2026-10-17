@@ -6,6 +6,7 @@ import type { AgentContainment } from "../../governance/profile.js";
 import { secretPathDenyRules } from "../../governance/secretPathDenies.js";
 import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
+import { exitCodeOf } from "../exitCode.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
@@ -564,7 +565,7 @@ export class SubprocessDriver implements ProviderDriver {
     let exitCode: number;
     try {
       exitCode = await new Promise<number>((resolve, reject) => {
-        child.on("close", (code) => resolve(code ?? 0));
+        child.on("close", (code, signal) => resolve(exitCodeOf(code, signal)));
         child.on("error", reject);
       });
     } catch (err) {
