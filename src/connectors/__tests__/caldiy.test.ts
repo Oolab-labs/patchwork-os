@@ -4,6 +4,16 @@ import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+/** HTTP header names are case-insensitive; the outbound guard lowercases them. */
+function lowerHeaders(h: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries((h ?? {}) as Record<string, string>).map(([k, v]) => [
+      k.toLowerCase(),
+      v,
+    ]),
+  );
+}
+
 // ------------------------------------------------------------------ helpers
 
 function makeBooking(uid: string): object {
@@ -148,8 +158,8 @@ describe("CalDiyConnector.getBookings", () => {
 
     const init = (global.fetch as ReturnType<typeof vi.fn>).mock
       .calls[0]![1] as RequestInit;
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe("Bearer cal_live_test");
+    const headers = lowerHeaders(init.headers);
+    expect(headers.authorization).toBe("Bearer cal_live_test");
     expect(headers["cal-api-version"]).toBe("2024-09-04");
   });
 

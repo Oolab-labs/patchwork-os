@@ -279,6 +279,9 @@ const CREDENTIAL_HEADERS = [
   "authorization",
   "cookie",
   "x-api-key",
+  // Supabase's service-role key. Native fetch forwards it across origins
+  // (it drops only Authorization), measured 2026-10-17.
+  "apikey",
   "proxy-authorization",
 ] as const;
 

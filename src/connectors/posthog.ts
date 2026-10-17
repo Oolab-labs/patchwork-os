@@ -19,6 +19,7 @@ import {
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
+import { connectorFetch } from "./connectorFetch.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -103,7 +104,7 @@ export class PostHogConnector extends BaseConnector {
   async healthCheck(): Promise<{ ok: boolean; error?: ConnectorError }> {
     try {
       const result = await this.apiCall(async () => {
-        const res = await fetch(`${this.baseUrl()}/api/projects/`, {
+        const res = await connectorFetch(`${this.baseUrl()}/api/projects/`, {
           headers: this.buildHeaders(),
         });
         if (!res.ok) throw res;
@@ -204,7 +205,7 @@ export class PostHogConnector extends BaseConnector {
         };
         if (properties !== undefined) body.properties = properties;
         if (timestamp !== undefined) body.timestamp = timestamp;
-        const res = await fetch(`${this.baseUrl()}/capture/`, {
+        const res = await connectorFetch(`${this.baseUrl()}/capture/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -220,7 +221,7 @@ export class PostHogConnector extends BaseConnector {
 
   async getProjects(): Promise<PostHogProject[]> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${this.baseUrl()}/api/projects/`, {
+      const res = await connectorFetch(`${this.baseUrl()}/api/projects/`, {
         headers: this.buildHeaders(),
       });
       if (!res.ok) throw res;
@@ -235,9 +236,12 @@ export class PostHogConnector extends BaseConnector {
 
   async getProject(id: string | number): Promise<PostHogProject> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${this.baseUrl()}/api/projects/${id}/`, {
-        headers: this.buildHeaders(),
-      });
+      const res = await connectorFetch(
+        `${this.baseUrl()}/api/projects/${id}/`,
+        {
+          headers: this.buildHeaders(),
+        },
+      );
       if (!res.ok) throw res;
       return res.json() as Promise<PostHogProject>;
     });
@@ -253,7 +257,7 @@ export class PostHogConnector extends BaseConnector {
       const qs = new URLSearchParams();
       if (limit !== undefined) qs.set("limit", String(limit));
       const url = `${this.baseUrl()}/api/projects/${projectId}/insights/${qs.toString() ? `?${qs}` : ""}`;
-      const res = await fetch(url, { headers: this.buildHeaders() });
+      const res = await connectorFetch(url, { headers: this.buildHeaders() });
       if (!res.ok) throw res;
       const data = (await res.json()) as
         | PostHogInsight[]
@@ -269,7 +273,7 @@ export class PostHogConnector extends BaseConnector {
     id: string | number,
   ): Promise<PostHogInsight> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/projects/${projectId}/insights/${id}/`,
         { headers: this.buildHeaders() },
       );
@@ -286,7 +290,7 @@ export class PostHogConnector extends BaseConnector {
     query: Record<string, unknown>,
   ): Promise<unknown> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/projects/${projectId}/query/`,
         {
           method: "POST",
@@ -305,7 +309,7 @@ export class PostHogConnector extends BaseConnector {
     projectId: string | number,
   ): Promise<PostHogFeatureFlag[]> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/projects/${projectId}/feature_flags/`,
         { headers: this.buildHeaders() },
       );
@@ -324,7 +328,7 @@ export class PostHogConnector extends BaseConnector {
     id: string | number,
   ): Promise<PostHogFeatureFlag> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/projects/${projectId}/feature_flags/${id}/`,
         { headers: this.buildHeaders() },
       );
@@ -344,7 +348,7 @@ export class PostHogConnector extends BaseConnector {
       if (params.search) qs.set("search", params.search);
       if (params.limit !== undefined) qs.set("limit", String(params.limit));
       const url = `${this.baseUrl()}/api/projects/${projectId}/persons/${qs.toString() ? `?${qs}` : ""}`;
-      const res = await fetch(url, { headers: this.buildHeaders() });
+      const res = await connectorFetch(url, { headers: this.buildHeaders() });
       if (!res.ok) throw res;
       const data = (await res.json()) as
         | PostHogPerson[]
@@ -361,7 +365,7 @@ export class PostHogConnector extends BaseConnector {
   ): Promise<PostHogPerson[]> {
     const result = await this.apiCall(async () => {
       const qs = new URLSearchParams({ distinct_id: distinctId });
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/projects/${projectId}/persons/?${qs}`,
         { headers: this.buildHeaders() },
       );
@@ -393,7 +397,7 @@ export class PostHogConnector extends BaseConnector {
       if (params.before) qs.set("before", params.before);
       if (params.limit !== undefined) qs.set("limit", String(params.limit));
       const url = `${this.baseUrl()}/api/projects/${projectId}/events/${qs.toString() ? `?${qs}` : ""}`;
-      const res = await fetch(url, { headers: this.buildHeaders() });
+      const res = await connectorFetch(url, { headers: this.buildHeaders() });
       if (!res.ok) throw res;
       const data = (await res.json()) as
         | PostHogEvent[]
@@ -557,7 +561,7 @@ export async function handlePostHogConnect(
   }
 
   try {
-    const res = await fetch(`${host}/api/projects/`, {
+    const res = await connectorFetch(`${host}/api/projects/`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
