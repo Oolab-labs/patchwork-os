@@ -51,7 +51,7 @@ All fields unless marked optional are required.
   "description": "Fetch internal Jira tickets",
   "entrypoint": "./index.mjs",
   "toolNamePrefix": "myOrg",
-  "minBridgeVersion": "2.1.24"
+  "minBridgeVersion": "1.2.4"
 }
 ```
 
@@ -167,6 +167,8 @@ The `config` object is a safe subset of the bridge config. It intentionally neve
 interface PluginToolSchema {
   /** Must start with toolNamePrefix and match /^[a-zA-Z0-9_]+$/ */
   name: string;
+  /** At most 200 characters — the cap built-in tools have. Longer text is
+   *  truncated at load with a warning: tools/list goes out on every request. */
   description: string;
   inputSchema: {
     type: "object";
@@ -176,7 +178,9 @@ interface PluginToolSchema {
   };
   /** Set true if tool requires VS Code extension to be connected. */
   extensionRequired?: boolean;
-  /** Structured output schema — same pattern as built-in tools. */
+  /** Structured output schema — same pattern as built-in tools. Optional for
+   *  plugins (required for built-ins); when declared, `structuredContent` that
+   *  does not match it is stripped from the result. The stub declares one. */
   outputSchema?: Record<string, unknown>;
   annotations?: {
     readOnlyHint?: boolean;     // tool doesn't modify state
@@ -308,7 +312,8 @@ claude-ide-bridge --plugin ./my-plugin --plugin-watch --full
 When `--plugin-watch` is active, the bridge watches plugin directories for file changes. On change:
 
 - 300ms debounce prevents rapid re-loads during saves
-- Tools are re-registered atomically — sessions see the new tool list immediately
+- Only this plugin's own tools are replaced: the previous version's tools are removed by name, the new ones registered, in one synchronous step per session — no call can land between them. Tools that merely share the prefix (built-in or another plugin's) are never touched
+- If applying the new version fails on any session, that session is restored to the previous tools and the new version is not used for sessions that connect later
 - ESM module cache is busted via `?t=<timestamp>` on dynamic `import()`
 - An in-flight reload blocks subsequent reload until complete (`reloadInFlight` set)
 
@@ -323,6 +328,7 @@ A plugin that throws during import or in `register()` is skipped with a logged e
 - **All tool names must start with `toolNamePrefix`.** Enforced at load time; plugin rejected if any tool violates this.
 - **Tool names must match `/^[a-zA-Z0-9_]+$/`.** No hyphens, spaces, or special characters.
 - **Max 100 tools per plugin.** Plugins registering more are rejected.
+- **Descriptions are capped at 200 characters.** Longer ones are truncated at load and a warning names the tool.
 - **No two plugins may register the same tool name.** The second plugin to register a colliding name is rejected; the first loads fine.
 - **Same path deduplication.** Listing the same resolved path twice loads it once with a warning.
 - **`minBridgeVersion` is advisory.** A mismatch logs a warning but doesn't block loading.

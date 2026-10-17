@@ -63,6 +63,7 @@ function makeLogger() {
 function makeTransport(): McpTransport {
   return {
     deregisterToolsByPrefix: vi.fn().mockReturnValue(1),
+    deregisterTool: vi.fn().mockReturnValue(true),
     replaceTool: vi.fn(),
   } as unknown as McpTransport;
 }
