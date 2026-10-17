@@ -11,6 +11,11 @@ permissions:
 
 jobs:
   ci:
+    # Job names are what branch protection requires, so the four
+    # `ci (<os>, <node>)` names must keep reporting. Ubuntu cells keep theirs
+    # here; Windows cells are sharded and report as `ci shard (...)`, and the
+    # `ci-windows-gate` job below reports the two Windows names.
+    name: ${{ matrix.shard && format('ci shard ({0}, {1}, {2}/2)', matrix.os, matrix.node-version, matrix.shard) || format('ci ({0}, {1})', matrix.os, matrix.node-version) }}
     runs-on: ${{ matrix.os }}
     # windows-latest was advisory through PRs #497–#501 while the
     # pre-existing POSIX-only test gaps were closed (126 → 0 failures).
@@ -24,8 +29,20 @@ jobs:
         # in the trust-evidence path. Testing 22 alone would let a Node-side
         # change to that API reach users before it reached us, which is the one
         # risk that decision knowingly took on.
-        os: [ubuntu-latest, windows-latest]
-        node-version: [22, 24]
+        #
+        # Windows cells are split into two shards (`--shard=N/2`), because the
+        # Windows runner is the slowest and sets the wall-clock time for the
+        # workflow. Coverage is measured on ubuntu + 24 only: sharding a
+        # coverage run needs a merge job afterwards, which costs about what
+        # the shard saves, and Windows coverage tracks ubuntu within ~1 point
+        # (2026-10-17: 76.81 vs 77.76 lines) against a 71 threshold.
+        include:
+          - { os: ubuntu-latest, node-version: 22 }
+          - { os: ubuntu-latest, node-version: 24, coverage: true }
+          - { os: windows-latest, node-version: 22, shard: 1 }
+          - { os: windows-latest, node-version: 22, shard: 2 }
+          - { os: windows-latest, node-version: 24, shard: 1 }
+          - { os: windows-latest, node-version: 24, shard: 2 }
         # windows + 24 was EXCLUDED from #1369 until 2026-08-18, because it
         # failed reproducibly and unexplainedly: the process TREE died with no
         # failing assertion and no vitest summary. REINSTATED — the cause is
@@ -74,8 +91,15 @@ jobs:
           "
       - name: Build
         run: npm run build
+      # Each cell runs the suite ONCE (or its shard of it). Test and Coverage
+      # used to both run on every cell, so the full suite ran twice per cell —
+      # about 5.5 min of the Windows cells' ~14 (2026-10-17, 8 green main
+      # runs). Coverage numbers are identical across Node 22 and 24 on the
+      # same OS, so one cell measuring coverage loses nothing; see the matrix
+      # comment for why that cell is ubuntu.
       - name: Test
-        run: npm test -- --reporter=dot --reporter=github-actions --reporter=./scripts/vitest-progress-reporter.mjs
+        if: ${{ !matrix.coverage }}
+        run: npm test -- ${{ matrix.shard && format('--shard={0}/2', matrix.shard) || '' }} --reporter=dot --reporter=github-actions --reporter=./scripts/vitest-progress-reporter.mjs
         env:
           VITEST_PROGRESS_FILE: vitest-progress/test.jsonl
         # Bumped 5→10: the suite has grown past the old 5-minute ceiling (local
@@ -93,6 +117,7 @@ jobs:
         # recurred at each new ceiling.
         timeout-minutes: 10
       - name: Coverage (enforce 71% lines / 62% branches / 70% functions)
+        if: ${{ matrix.coverage }}
         run: npm run test:coverage -- --reporter=dot --reporter=github-actions --reporter=./scripts/vitest-progress-reporter.mjs
         env:
           VITEST_PROGRESS_FILE: vitest-progress/coverage.jsonl
@@ -105,7 +130,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vitest-progress-${{ matrix.os }}-node${{ matrix.node-version }}
+          name: vitest-progress-${{ matrix.os }}-node${{ matrix.node-version }}${{ matrix.shard && format('-shard{0}', matrix.shard) || '' }}
           path: vitest-progress/
           if-no-files-found: warn
           retention-days: 14
@@ -115,7 +140,7 @@ jobs:
       # discards. See #1386 — the percentages were unrecoverable from the step
       # log twice, because the retrievable log ends before the failure.
       - name: Upload coverage summary (#1386)
-        if: always()
+        if: always() && matrix.coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-summary-${{ matrix.os }}-node${{ matrix.node-version }}
@@ -123,10 +148,25 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # Reports the required check names `ci (windows-latest, 22)` and
+  # `ci (windows-latest, 24)`, which the sharded Windows cells no longer carry.
+  # Passes only when EVERY ci cell passed (needs.ci.result covers the whole
+  # matrix), so it can never be greener than the cells behind it.
+  ci-windows-gate:
+    name: ci (windows-latest, ${{ matrix.node-version }})
+    needs: ci
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - name: All ci cells passed
+        run: test "${{ needs.ci.result }}" = "success"
+
   schema-audit:
     name: Tool schema breaking-change gate
     runs-on: ubuntu-latest
-    needs: ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -396,7 +436,6 @@ jobs:
   smoke:
     name: Smoke tests (live bridge)
     runs-on: ${{ matrix.os }}
-    needs: ci
     # windows-latest is blocking. Was advisory through PRs #527–#536 while
     # the smoke harness was being ported (.cmd shims, CRLF batch files,
     # tree-kill, HTTP /shutdown for clean exit). Five consecutive green
@@ -444,7 +483,6 @@ jobs:
 
   benchmark:
     runs-on: ubuntu-latest
-    needs: ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -498,7 +536,6 @@ jobs:
   dashboard:
     name: Dashboard typecheck + tests
     runs-on: ubuntu-latest
-    needs: ci
     defaults:
       run:
         working-directory: dashboard
@@ -524,7 +561,6 @@ jobs:
 
   extension:
     runs-on: ${{ matrix.os }}
-    needs: ci
     # windows-latest is blocking. Was advisory through PRs #527–#536; with
     # the five extension test suites un-skipped (#535) and four green PR
     # runs in a row, advisory mode is no longer needed.
@@ -556,7 +592,6 @@ jobs:
   push-relay:
     name: Push relay typecheck + tests
     runs-on: ubuntu-latest
-    needs: ci
     defaults:
       run:
         working-directory: services/push-relay
@@ -577,7 +612,6 @@ jobs:
   docker-smoke:
     name: Docker smoke test
     runs-on: ubuntu-latest
-    needs: ci
     steps:
       - uses: actions/checkout@v4
       - name: Build image
