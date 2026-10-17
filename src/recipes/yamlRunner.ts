@@ -4199,8 +4199,9 @@ export async function executeStep(
     // `failureThreshold` times in a row, instead of letting a broken
     // dependency (dead API, expired token) get hammered on every cron/
     // webhook trigger forever. See circuitBreaker.ts's module doc. Runs
-    // only when `deps.recipeName` is known (unset for callers that build
-    // StepDeps without a scope, e.g. buildChainedDeps) and
+    // only when `deps.recipeName` is known — flat runs, and chained runs
+    // whose caller passes the name to buildChainedDeps (orchestration and the
+    // CLI do; replay does not, and dispatches nothing) — and
     // FLAG_CIRCUIT_BREAKER is on; mock/fixture-recording paths above are
     // deliberately exempt (tests and recording runs shouldn't trip on a
     // stubbed failure).
