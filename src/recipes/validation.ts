@@ -375,6 +375,18 @@ export function validateRecipeDefinition(
             path: "trigger.event",
             code: "git-hook-event-invalid",
           });
+        } else if (event === "pre-push") {
+          // Not a real git hook (audit M18): it fires when the bridge's own
+          // gitPush SUCCEEDS, so it runs after the push and cannot stop one.
+          // Kept for compatibility; a warning so an author expecting a gate
+          // learns otherwise at save time.
+          issues.push({
+            level: "warning",
+            message:
+              "git_hook `pre-push` runs AFTER a successful push made through the bridge's gitPush tool — it cannot block a push, and pushes made outside the bridge do not trigger it. Use it for post-push work only.",
+            path: "trigger.event",
+            code: "git-hook-pre-push-runs-after",
+          });
         }
       }
       if (trigger.type === "cron" && !trigger.at) {

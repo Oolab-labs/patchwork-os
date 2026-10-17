@@ -276,7 +276,7 @@ trigger:
     - "src/**/*.tsx"
 ```
 
-Minimatch globs. Fires on save, not on every keystroke. Cooldown defaults to 5s.
+Minimatch globs. Fires on a save **reported by the IDE extension** — a file changed on disk by another program, a script or `git checkout` does not trigger it. Fires on save, not on every keystroke.
 
 ### `git_hook` — git events
 
@@ -286,7 +286,24 @@ trigger:
   event: post-commit  # or pre-push, post-merge
 ```
 
-Fires when the corresponding git tool succeeds (`gitCommit`, `gitPush`, `gitPull`). Placeholder vars: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`.
+Fires when the corresponding **bridge** git tool succeeds (`gitCommit`, `gitPush`, `gitPull`). These are not installed git hooks: a commit, push or pull made in a terminal or another client does not trigger them.
+
+| `event` | Fires | Can it stop the operation? |
+|---|---|---|
+| `post-commit` | after a successful `gitCommit` | no |
+| `pre-push` | **after** a successful `gitPush` — despite the name | **no** — `recipe lint` warns about this |
+| `post-merge` | after a successful `gitPull` | no |
+
+Placeholder vars: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`.
+
+### Rate limits on event triggers
+
+Recipes fired by `file_watch` / `on_file_save`, `git_hook` or `on_test_run` have two fixed limits (not per-recipe settings today):
+
+- **5-second cooldown per recipe** — a second event for the same recipe within 5 s of the last run is dropped.
+- **30 tasks per hour, shared** — the budget belongs to the whole automation system (every event-trigger recipe *and* automation-policy hooks together), not to each recipe. Once 30 tasks have started in the last hour, further events are dropped until the window moves.
+
+Dropped events are not queued and are not retried.
 
 ### `manual` — CLI only
 

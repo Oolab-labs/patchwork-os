@@ -77,3 +77,32 @@ describe("git_hook.event is validated at lint time", () => {
     expect(r.issues.filter((i) => /git_hook/i.test(i.message))).toEqual([]);
   });
 });
+
+// Audit M18 (2026-10-15). git_hook triggers are not real git hooks: they fire
+// when the bridge's own git tool succeeds. `pre-push` therefore runs AFTER a
+// successful push and can never block one — the name promises the opposite.
+// Kept for compatibility; lint now says so, as a warning (not an error).
+describe("git_hook pre-push is flagged as running after the push (audit M18)", () => {
+  const warningsOf = (t: Record<string, unknown>) =>
+    lint(t).issues.filter((i) => i.level === "warning");
+
+  it("warns on pre-push, with a message that says it cannot block", () => {
+    const w = warningsOf({ event: "pre-push" }).find(
+      (i) => i.code === "git-hook-pre-push-runs-after",
+    );
+    expect(w?.message).toMatch(/after/i);
+    expect(w?.message).toMatch(/cannot block|can't block|does not block/i);
+    expect(errorsOf({ event: "pre-push" })).toEqual([]);
+  });
+
+  it("does not warn on post-commit or post-merge", () => {
+    for (const event of ["post-commit", "post-merge"]) {
+      expect(
+        warningsOf({ event }).some(
+          (i) => i.code === "git-hook-pre-push-runs-after",
+        ),
+        event,
+      ).toBe(false);
+    }
+  });
+});
