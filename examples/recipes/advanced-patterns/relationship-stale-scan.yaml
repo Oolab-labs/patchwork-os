@@ -1,18 +1,19 @@
 # ⚠️  NOT RUNNABLE TODAY — aspirational example.
 #
-# This recipe uses `parallel: {each}` (map-reduce) to run an AGENT step once
-# per item. No runner implements that: the chained runner rejects it, and the
-# flat runner used to record the step as `skipped` and carry on, so the recipe
-# "succeeded" while its central step never executed. It is kept as a design
-# target for agent fan-out (`fan_out` supports tool sub-steps only, serially).
+# Agent fan-out now exists (`fan_out` with a `do.agent` sub-step, #1257), so
+# the per-contact staleness check could be written today. What still blocks
+# this recipe as written:
+#   - filter pipes (`{{x | filter(...)}}`) and function calls
+#     (`{{file_read(...)}}`): the template renderer is flat-key + dot-path only;
+#   - a step-level `each:` on `gmail.send`, which no runner implements;
+#   - `file.list`, `dashboard.render` (with per-item approvals) and
+#     `gmail.send`, which are not registered recipe tools. An unregistered tool
+#     is SKIPPED, so the run would finish without sending anything.
 #
 # It is excluded from the `validates all example recipes` lint gate by name —
 # see EXAMPLES_KNOWN_UNRUNNABLE in src/commands/__tests__/recipe.test.ts.
-# Delete this banner and the exclusion together once agent fan-out lands.
-#
-# It also uses constructs the template renderer does not have: filter pipes
-# (`{{x | filter(...)}}`) and function calls (`{{file_read(...)}}`). The
-# renderer is flat-key + dot-path only.
+# Remove the banner and the exclusion together when it is rewritten against
+# real tools. `multi-agent-research.yaml` shows the fan_out pattern.
 
 # Companion recipe: nightly stale-contact scan
 version: 1.0.0
