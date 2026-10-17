@@ -96,11 +96,6 @@ function protectedInputsOf(recipe: unknown): DeclaredProtectedInput[] {
   }));
 }
 
-/** Names of the declared `text` / `file` inputs of a recipe. */
-export function protectedInputNamesOf(recipe: unknown): Set<string> {
-  return new Set(protectedInputsOf(recipe).map((i) => i.name));
-}
-
 function isSupplied(v: unknown): boolean {
   if (v === undefined || v === null) return false;
   if (typeof v === "string") return v.length > 0;

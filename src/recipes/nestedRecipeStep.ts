@@ -35,10 +35,6 @@ export interface NestedRecipeResult {
   childOutputs?: Record<string, unknown>;
 }
 
-export interface RecipeLoader {
-  loadRecipe(name: string): Promise<{ steps: unknown[] } | null>;
-}
-
 /** Resolve template variables against parent context */
 export function resolveNestedVars(
   vars: Record<string, string>,

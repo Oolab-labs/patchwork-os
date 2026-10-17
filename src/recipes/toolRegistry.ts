@@ -323,14 +323,6 @@ export function registerPluginTools(
 }
 
 /**
- * Returns true if the given tool id is a registered connector-backed tool.
- * Drives fixture-backed mocking decisions.
- */
-export function isConnectorTool(toolId: string): boolean {
-  return getTool(toolId)?.isConnector === true;
-}
-
-/**
  * Returns true if the given namespace has at least one registered connector tool.
  */
 export function isConnectorNamespace(namespace: string): boolean {

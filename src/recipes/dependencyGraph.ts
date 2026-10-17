@@ -142,14 +142,6 @@ export function buildDependencyGraph(
   };
 }
 
-/** Format cycle for error message */
-export function formatCycle(cycles: string[][]): string {
-  if (cycles.length === 0) return "No cycles detected";
-  return cycles
-    .map((cycle, i) => `  Cycle ${i + 1}: ${cycle.join(" → ")}`)
-    .join("\n");
-}
-
 /** Execute steps respecting dependencies with limited concurrency */
 export async function executeWithDependencies(
   graph: DependencyGraph,

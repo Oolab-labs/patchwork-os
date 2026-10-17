@@ -43,8 +43,6 @@ export const UNSUPPORTED_STEP_KEYS = [
   "branch",
 ] as const;
 
-export type UnsupportedStepKey = (typeof UNSUPPORTED_STEP_KEYS)[number];
-
 /**
  * Group-level keys `expandFlatParallel` knows how to carry down to children.
  * Anything else on a `parallel:` group is REJECTED rather than dropped — a
