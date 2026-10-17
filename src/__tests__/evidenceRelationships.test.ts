@@ -178,3 +178,46 @@ describe("integrity excludes what was never owed", () => {
     expect(rel("gate decision → run").integrity).toBeNull();
   });
 });
+
+// Audit M8 (2026-10-15). Orchestrator dispatches are not recipe runs, so their
+// boundary receipts carry no run reference by construction. The report scored
+// every rv>=1 receipt without one as a writer defect.
+describe("boundary receipt → run: orchestrator receipts are not defects (audit M8)", () => {
+  it("an orchestrator receipt is not-applicable; a recipe receipt without a run is still a defect", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { evidenceRelationships } = await import(
+      "../evidenceRelationships.js"
+    );
+    const d = mkdtempSync(join(tmpdir(), "evidence-m8-"));
+    try {
+      const base = {
+        rv: 2,
+        decision: "ALLOW",
+        classification: "internal",
+        destinationId: "remote-model",
+        destinationType: "remote",
+        reason: "cleared",
+      };
+      writeFileSync(
+        join(d, "boundary_receipts.jsonl"),
+        [
+          // orchestrator path: a channel-level default, no recipe, no run
+          { ...base, labelSource: "default" },
+          // recipe path that lost its run id: a genuine writer defect
+          { ...base, recipeName: "noisy-recipe", labelSource: "declared" },
+        ]
+          .map((r) => JSON.stringify(r))
+          .join("\n") + "\n",
+      );
+      const rel = evidenceRelationships(d).relationships.find(
+        (r) => r.name === "boundary receipt → run",
+      );
+      expect(rel?.notApplicable).toBe(1);
+      expect(rel?.defect).toBe(1);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
