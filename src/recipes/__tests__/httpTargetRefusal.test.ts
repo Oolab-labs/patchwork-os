@@ -215,6 +215,9 @@ async function runFlat(
     } as unknown as YamlRecipe,
     baseDeps(sandbox, {
       governance: governed(),
+      // The target is loopback: governed refuses a RECIPE's own allowPrivate,
+      // so the run grants it, as doctor acceptance does.
+      operatorAllowsPrivateNetwork: true,
       requireApprovalFn: approval.fn,
       ...depsExtra,
     }),
@@ -233,6 +236,9 @@ async function runChained(
   const built = buildChainedDeps(
     baseDeps(sandbox, {
       governance: governed(),
+      // The target is loopback: governed refuses a RECIPE's own allowPrivate,
+      // so the run grants it, as doctor acceptance does.
+      operatorAllowsPrivateNetwork: true,
       requireApprovalFn: approval.fn,
     }),
     undefined,

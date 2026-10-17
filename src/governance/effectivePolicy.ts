@@ -137,6 +137,12 @@ export interface EffectivePolicyInput {
    * passes the real values so the two cannot disagree about what is wired.
    */
   gate?: { approvalFnInjected: boolean; workerGateInjected: boolean };
+  /**
+   * For `http.post` only, display: whether a step's `allowPrivate: true` would
+   * be honoured, from `recipePrivateBypassHonoured`. Not a stage — it does not
+   * decide whether the step runs, only which hosts it may reach.
+   */
+  privateNetwork?: { recipeBypassHonoured: boolean };
 }
 
 export type StageVerdict = "ALLOW" | "APPROVAL" | "REFUSE" | "SKIP" | "N/A";
@@ -518,6 +524,17 @@ export function formatEffectivePolicy(
     `TOOL RISK: ${input.tool.tier.toUpperCase()}${input.tool.tierDeclared ? "" : " (inferred from name)"}${input.tool.isWrite ? " · WRITE" : ""}`,
   );
   if (input.worker) lines.push(`WORKER: ${input.worker.id}`);
+  if (input.tool.id === "http.post" && input.privateNetwork) {
+    lines.push(
+      `PRIVATE NETWORK: ${
+        input.privateNetwork.recipeBypassHonoured
+          ? "a step's allowPrivate: true is honoured (loopback / LAN reachable)"
+          : input.profile.privateNetworkBypass === "refuse"
+            ? "a step's allowPrivate: true is NOT honoured (governed)"
+            : "a step's allowPrivate: true is NOT honoured (block-recipe-allow-private)"
+      }`,
+    );
+  }
   lines.push("");
   for (const s of result.stages) {
     lines.push(`${s.stage.padEnd(22)} ${s.verdict.padEnd(9)} ${s.reason}`);
@@ -531,6 +548,21 @@ export function formatEffectivePolicy(
         : "REFUSED";
   lines.push(`FINAL RESULT: ${label}`);
   return lines.join("\n");
+}
+
+/**
+ * May a recipe's own `allowPrivate: true` skip the SSRF guard's private-range
+ * refusal? Governed: never. Compat: unless `block-recipe-allow-private` is on.
+ * Shared by `http.post`, `patchwork doctor` and `policy explain`, so the three
+ * cannot disagree. A run-level grant (`operatorAllowsPrivateNetwork`) is
+ * checked by the caller, because it belongs to the code building the run, not
+ * to the profile.
+ */
+export function recipePrivateBypassHonoured(
+  profile: GovernanceProfile,
+  blockFlagOn: boolean,
+): boolean {
+  return profile.privateNetworkBypass !== "refuse" && !blockFlagOn;
 }
 
 /**

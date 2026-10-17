@@ -942,6 +942,13 @@ export interface RunnerDeps {
    */
   replayOnly?: boolean;
   /**
+   * Run-level grant: `http.post` may honour a step's `allowPrivate: true` even
+   * where the profile refuses a recipe's own bypass (governed). Set only by
+   * code that BUILDS the run — `doctor acceptance` for its loopback target —
+   * never readable from a recipe or its params. Absent ⇒ the profile decides.
+   */
+  operatorAllowsPrivateNetwork?: boolean;
+  /**
    * `recipe test` boundary (see `replayBoundary.ts`, `TestModeRefusalError`).
    * When true the run is OFFLINE: `executeStep` refuses any tool that has no
    * entry in `mockConnectors` (except the read tools served wholly by injected
@@ -1092,11 +1099,14 @@ export type StepDeps = Required<
     // must never be a required field every test StepDeps has to fill.
     | "replayOnly"
     | "testOnly"
+    | "operatorAllowsPrivateNetwork"
   >
 > & {
   workdir: string;
   /** See `RunnerDeps.replayOnly`. Copied by `resolveStepDeps`. */
   replayOnly?: boolean;
+  /** See `RunnerDeps.operatorAllowsPrivateNetwork`. Copied by `resolveStepDeps`. */
+  operatorAllowsPrivateNetwork?: boolean;
   /** See `RunnerDeps.testOnly`. Copied by `resolveStepDeps`. */
   testOnly?: boolean;
   logDir?: string;
@@ -4705,6 +4715,9 @@ function resolveStepDeps(
     // loop's help. Only ever set by the replay entrypoints.
     ...(deps.replayOnly === true && { replayOnly: true }),
     ...(deps.testOnly === true && { testOnly: true }),
+    ...(deps.operatorAllowsPrivateNetwork === true && {
+      operatorAllowsPrivateNetwork: true,
+    }),
     // Ephemeral rollback — same disk-availability gating as writeEffectLedger
     // above (deliberately: both share the operator's --ledger-dir/--attempt
     // inputs). No in-memory fallback: rollback only makes sense as a

@@ -54,6 +54,7 @@ function:
 | `untrustedEnvelope` | agent prompt render | connector output wrapped in `<untrusted>` |
 | `recipeOptOutHonoured` | consult | a recipe cannot opt itself out |
 | `writeAcknowledgement` | `write_acknowledgement` stage, flat-runner dispatch check, `recipe doctor` (all via `writeAckEnforced`) | `enforce`: a write tool not named in the step's own recipe `allowWrites` (id or namespace) is REFUSED, at every chained depth; compat = `flag`, i.e. `FLAG_ENFORCE_ALLOWWRITES` decides as before. Added 2026-10-16 (audit M6): a reversible write does not queue for approval, so the declaration is the only place a recipe says it writes |
+| `privateNetworkBypass` | `http.post`, `patchwork doctor` (Private network), `policy explain` (all via `recipePrivateBypassHonoured`) | `refuse`: a step's own `allowPrivate: true` does not skip the SSRF guard's private-range refusal; only the code building the run can grant it (`RunnerDeps.operatorAllowsPrivateNetwork`, used by `doctor acceptance`); compat = `flag`, i.e. honoured unless `block-recipe-allow-private` is on, as before. Added 2026-10-17: a recipe must not opt itself out of a workspace guarantee, the same rule as `recipeOptOutHonoured` |
 
 The resolved profile is published once at bridge startup (`setActiveProfile`)
 and read everywhere else. `POST /settings` cannot lower `approvalGate` below

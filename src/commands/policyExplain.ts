@@ -19,7 +19,11 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
-import { FLAG_ENFORCE_ALLOWWRITES, isEnabled } from "../featureFlags.js";
+import {
+  FLAG_BLOCK_RECIPE_ALLOW_PRIVATE,
+  FLAG_ENFORCE_ALLOWWRITES,
+  isEnabled,
+} from "../featureFlags.js";
 import {
   computeEffectivePolicy,
   type EffectivePolicy,
@@ -27,6 +31,7 @@ import {
   formatEffectivePolicy,
   type PrivacyFacts,
   policyTriggerFor,
+  recipePrivateBypassHonoured,
   type TriggerKind,
   type WorkerFacts,
 } from "../governance/effectivePolicy.js";
@@ -319,6 +324,14 @@ export async function explainRecipePolicy(
           )
         : [],
       writeAckFlagOn: isEnabled(FLAG_ENFORCE_ALLOWWRITES),
+      ...(toolId === "http.post" && {
+        privateNetwork: {
+          recipeBypassHonoured: recipePrivateBypassHonoured(
+            profile,
+            isEnabled(FLAG_BLOCK_RECIPE_ALLOW_PRIVATE),
+          ),
+        },
+      }),
     };
     steps.push({
       stepId,

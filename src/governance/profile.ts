@@ -100,6 +100,16 @@ export interface GovernanceProfile {
    * decides, byte-identical to before.
    */
   writeAcknowledgement: "enforce" | "flag";
+  /**
+   * Whether a recipe's own `allowPrivate: true` on `http.post` may skip the
+   * SSRF guard's private-range refusal. Governed: `refuse` — a recipe cannot
+   * opt itself into loopback / LAN hosts, the same rule as
+   * `recipeOptOutHonoured`. Compat: `flag` — honoured unless the operator sets
+   * `block-recipe-allow-private`, byte-identical to before. Code that BUILDS a
+   * run (never a recipe) can still grant it via
+   * `RunnerDeps.operatorAllowsPrivateNetwork`.
+   */
+  privateNetworkBypass: "refuse" | "flag";
 }
 
 export interface ProfileConfigInput {
@@ -201,6 +211,7 @@ export function resolveProfile(
       untrustedEnvelope: false,
       recipeOptOutHonoured: true,
       writeAcknowledgement: "flag",
+      privateNetworkBypass: "flag",
     };
   }
   return {
@@ -218,6 +229,7 @@ export function resolveProfile(
     untrustedEnvelope: true,
     recipeOptOutHonoured: false,
     writeAcknowledgement: "enforce",
+    privateNetworkBypass: "refuse",
   };
 }
 

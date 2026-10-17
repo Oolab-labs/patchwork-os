@@ -13,10 +13,11 @@
  */
 
 import { readdirSync } from "node:fs";
-import { isEnabled } from "../featureFlags.js";
+import { FLAG_BLOCK_RECIPE_ALLOW_PRIVATE, isEnabled } from "../featureFlags.js";
 import { loadConfig } from "../patchworkConfig.js";
 import { patchworkPath } from "../patchworkHome.js";
 import { parseRegistry } from "../privacy/destinationRegistry.js";
+import { recipePrivateBypassHonoured } from "./effectivePolicy.js";
 import { readKillSwitch } from "./killSwitchPolicy.js";
 import {
   policyInputFromConfig,
@@ -286,6 +287,25 @@ export function governanceReport(
     label: "Secret redaction",
     value: `ACTIVE (key-based + ${n} value(s) registered${opts.live ? "" : " in this process"})`,
     status: "ok",
+  });
+
+  // 9b. A recipe's own allowPrivate on http.post.
+  const privateBypass = recipePrivateBypassHonoured(
+    profile,
+    isEnabled(FLAG_BLOCK_RECIPE_ALLOW_PRIVATE),
+  );
+  push({
+    key: "privateNetworkBypass",
+    label: "Private network",
+    value: privateBypass
+      ? "RECIPE MAY OPT IN (allowPrivate: true reaches loopback / LAN hosts)"
+      : profile.privateNetworkBypass === "refuse"
+        ? "REFUSED (a recipe's allowPrivate is not honoured)"
+        : "REFUSED (block-recipe-allow-private is on)",
+    status: privateBypass ? "fail" : "ok",
+    reason: privateBypass
+      ? "a recipe's allowPrivate: true lets http.post skip the SSRF guard's private-range refusal"
+      : undefined,
   });
 
   // 10. Untrusted envelope.
