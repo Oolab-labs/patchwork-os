@@ -24,6 +24,7 @@ import { attemptRevoke, type RevokeOutcome } from "./connectionChecks.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { oauthJsonRefusal } from "./oauthError.js";
 import { readSecret } from "./secrets.js";
+import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -660,6 +661,7 @@ async function doRefresh(
 
   const res = await fetch(tokenEndpoint, {
     method: "POST",
+    signal: tokenRefreshSignal(),
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",

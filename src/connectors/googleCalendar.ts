@@ -232,6 +232,7 @@ async function refreshAccessToken(
     );
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
+    signal: tokenRefreshSignal(),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       refresh_token: tokens.refresh_token,
@@ -303,6 +304,7 @@ async function revokeToken(token: string): Promise<RevokeOutcome> {
 
 import { patchworkPath } from "../patchworkHome.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
+import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 
 const pendingStates = createOAuthStateStore({ namespace: "googleCalendar" });
 

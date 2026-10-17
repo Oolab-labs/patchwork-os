@@ -25,6 +25,7 @@ import {
   type ConnectorStatus,
   type OAuthConfig,
 } from "./baseConnector.js";
+import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -250,6 +251,7 @@ export class AirtableConnector extends BaseConnector {
     try {
       response = await fetch(OAUTH_TOKEN_ENDPOINT, {
         method: "POST",
+        signal: tokenRefreshSignal(),
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           Authorization: `Basic ${basicCreds}`,

@@ -32,6 +32,7 @@ import {
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
 import { readSecret } from "./secrets.js";
+import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -387,6 +388,7 @@ async function refreshAccessToken(
     storedHost && isAllowedLoginHost(storedHost) ? storedHost : loginHost();
   const res = await fetch(`https://${host}/services/oauth2/token`, {
     method: "POST",
+    signal: tokenRefreshSignal(),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       refresh_token: tokens.refresh_token,

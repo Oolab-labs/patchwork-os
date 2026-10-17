@@ -18,6 +18,7 @@ import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
 import { readSecret } from "./secrets.js";
+import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -313,6 +314,7 @@ async function refreshAccessToken(tokens: MondayTokens): Promise<MondayTokens> {
     );
   const res = await fetch(MONDAY_TOKEN_URL, {
     method: "POST",
+    signal: tokenRefreshSignal(),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       refresh_token: tokens.refresh_token,
