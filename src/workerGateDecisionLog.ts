@@ -378,6 +378,13 @@ export class WorkerGateDecisionLog {
   private readonly now: () => number;
   /** Byte offset up to which `file` has been loaded (ADR-0007 tail-on-read). */
   private lastReadOffset = 0;
+  /**
+   * `iseq` of rows this instance wrote and already holds in memory. The tail
+   * reader skips exactly these when it reads the file back, instead of
+   * jumping the read offset past them — which also skipped any rows a
+   * sibling bridge had appended in between (audit M7).
+   */
+  private readonly ownIseqs = new Set<number>();
 
   constructor(private readonly opts: WorkerGateDecisionLogOptions) {
     this.file = path.join(opts.dir, "worker_gate_decisions.jsonl");
@@ -533,25 +540,26 @@ export class WorkerGateDecisionLog {
       // COUNT, because a coverage measure over a rotated file converges toward
       // 1.0 by deletion (ADR-0025) and a number nobody prints is a number
       // nobody reads.
-      appendChained(this.file, rec as unknown as Record<string, unknown>, {
-        mode: 0o600,
-        maxBytes: this.maxBytes,
-        rotateTarget: this.rotateTarget,
-        maxLines: MAX_PERSIST_LINES,
-        onRotate: ({ dropped, before }) => {
-          this.opts.logger?.warn?.(
-            `[gate-decision-log] rotate dropped ${dropped} of ${before} row(s) (oldest first) to get under ${this.rotateTarget} bytes — coverage figures computed over this file exclude them`,
-          );
+      const written = appendChained(
+        this.file,
+        rec as unknown as Record<string, unknown>,
+        {
+          mode: 0o600,
+          maxBytes: this.maxBytes,
+          rotateTarget: this.rotateTarget,
+          maxLines: MAX_PERSIST_LINES,
+          onRotate: ({ dropped, before }) => {
+            this.opts.logger?.warn?.(
+              `[gate-decision-log] rotate dropped ${dropped} of ${before} row(s) (oldest first) to get under ${this.rotateTarget} bytes — coverage figures computed over this file exclude them`,
+            );
+          },
         },
-      });
-      // Advance the tail offset past our own write so the next query() doesn't
-      // re-read this row (we already pushed it in `record`). If rotation ran the
-      // file shrank, and tailDisk()'s size<offset branch reloads it cleanly.
-      try {
-        this.lastReadOffset = statSync(this.file).size;
-      } catch {
-        /* the next tailDisk() reloads cleanly if this ever fails */
-      }
+      );
+      // Do NOT advance the read offset past our write: a sibling may have
+      // appended since our last read, and jumping to the end would skip its
+      // rows for good (audit M7). The next tail read skips our own row by
+      // iseq instead (we already pushed it in `record`).
+      if (written) this.ownIseqs.add(written.iseq);
     } catch (err) {
       this.opts.logger?.warn?.(
         `[gate-decision-log] append failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -593,9 +601,11 @@ export class WorkerGateDecisionLog {
     }
     if (size === this.lastReadOffset) return;
     if (size < this.lastReadOffset) {
-      // Rotated/truncated by a sibling — full reload.
+      // Rotated/truncated by a sibling — full reload. Every row comes back
+      // from disk, our own included, so nothing is skipped this time.
       this.records.length = 0;
       this.lastReadOffset = 0;
+      this.ownIseqs.clear();
       this.loadExisting();
       return;
     }
@@ -637,6 +647,8 @@ export class WorkerGateDecisionLog {
         ) {
           continue;
         }
+        const iseq = (parsed as unknown as { iseq?: unknown }).iseq;
+        if (typeof iseq === "number" && this.ownIseqs.delete(iseq)) continue;
         this.records.push(parsed);
         if (parsed.seq > this.seq) this.seq = parsed.seq;
       } catch {
