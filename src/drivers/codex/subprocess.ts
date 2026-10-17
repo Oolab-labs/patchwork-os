@@ -9,6 +9,7 @@ import {
 import { containmentFromInput } from "../claude/subprocess.js";
 import { exitCodeOf } from "../exitCode.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
+import { withSystemPreamble } from "../systemPreamble.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -122,7 +123,7 @@ export class CodexDriver implements ProviderDriver {
 
     const args = [
       "exec",
-      input.prompt,
+      withSystemPreamble(input.prompt, input.systemPrompt),
       "--json",
       "--sandbox",
       sandboxMode,
