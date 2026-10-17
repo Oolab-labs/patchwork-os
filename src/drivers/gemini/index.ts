@@ -18,6 +18,7 @@ import {
 } from "../claude/envSanitizer.js";
 import { splitLines } from "../claude/streamParser.js";
 import { containmentFromInput } from "../claude/subprocess.js";
+import { exitCodeOf } from "../exitCode.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
@@ -540,7 +541,9 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       let exitCode: number;
       try {
         exitCode = await new Promise<number>((resolve, reject) => {
-          child.on("close", (code) => resolve(code ?? 0));
+          child.on("close", (code, signal) =>
+            resolve(exitCodeOf(code, signal)),
+          );
           child.on("error", reject);
         });
       } catch (err) {
