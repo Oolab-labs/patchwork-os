@@ -490,22 +490,25 @@ export class AirtableConnector extends BaseConnector {
     tableIdOrName: string,
     fields: Record<string, unknown>,
   ): Promise<AirtableRecord> {
-    const result = await this.apiCall(async () => {
-      const url = `${BASE_URL}/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(tableIdOrName)}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ records: [{ fields }] }),
-      });
-      if (!res.ok) throw res;
-      const json = (await res.json()) as { records: AirtableRecord[] };
-      const first = json.records?.[0];
-      if (!first) throw new Error("Airtable returned no record in response");
-      return first;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const url = `${BASE_URL}/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(tableIdOrName)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ records: [{ fields }] }),
+        });
+        if (!res.ok) throw res;
+        const json = (await res.json()) as { records: AirtableRecord[] };
+        const first = json.records?.[0];
+        if (!first) throw new Error("Airtable returned no record in response");
+        return first;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as AirtableRecord;
   }
@@ -564,26 +567,32 @@ export class AirtableConnector extends BaseConnector {
       };
     },
   ): Promise<AirtableWebhookCreateResult> {
-    const result = await this.apiCall(async () => {
-      const url = `${BASE_URL}/v0/bases/${encodeURIComponent(baseId)}/webhooks`;
-      const body = {
-        notificationUrl,
-        specification: {
-          filters: specification?.filters ?? {
-            fromSources: ["client"],
-            dataTypes: ["tableData", "tableFields", "tableMetadata"],
-            changeTypes: ["add", "update", "remove"],
+    const result = await this.apiCall(
+      async () => {
+        const url = `${BASE_URL}/v0/bases/${encodeURIComponent(baseId)}/webhooks`;
+        const body = {
+          notificationUrl,
+          specification: {
+            filters: specification?.filters ?? {
+              fromSources: ["client"],
+              dataTypes: ["tableData", "tableFields", "tableMetadata"],
+              changeTypes: ["add", "update", "remove"],
+            },
           },
-        },
-      };
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { ...this.buildHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      return res.json() as Promise<AirtableWebhookCreateResult>;
-    });
+        };
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        return res.json() as Promise<AirtableWebhookCreateResult>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as AirtableWebhookCreateResult;
   }

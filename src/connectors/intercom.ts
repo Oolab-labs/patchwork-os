@@ -215,21 +215,24 @@ export class IntercomConnector extends BaseConnector {
     body: string,
     type: "comment" | "note" = "comment",
   ): Promise<IntercomConversation> {
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(
-        `${BASE_URL}/conversations/${conversationId}/reply`,
-        {
-          method: "POST",
-          headers: {
-            ...this.buildHeaders(token),
-            "Content-Type": "application/json",
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(
+          `${BASE_URL}/conversations/${conversationId}/reply`,
+          {
+            method: "POST",
+            headers: {
+              ...this.buildHeaders(token),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ type: "admin", message_type: type, body }),
           },
-          body: JSON.stringify({ type: "admin", message_type: type, body }),
-        },
-      );
-      if (!res.ok) throw res;
-      return res.json() as Promise<IntercomConversation>;
-    });
+        );
+        if (!res.ok) throw res;
+        return res.json() as Promise<IntercomConversation>;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as IntercomConversation;
@@ -238,21 +241,24 @@ export class IntercomConnector extends BaseConnector {
   async closeConversation(
     conversationId: string,
   ): Promise<IntercomConversation> {
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(
-        `${BASE_URL}/conversations/${conversationId}/parts`,
-        {
-          method: "POST",
-          headers: {
-            ...this.buildHeaders(token),
-            "Content-Type": "application/json",
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(
+          `${BASE_URL}/conversations/${conversationId}/parts`,
+          {
+            method: "POST",
+            headers: {
+              ...this.buildHeaders(token),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ type: "admin", message_type: "close" }),
           },
-          body: JSON.stringify({ type: "admin", message_type: "close" }),
-        },
-      );
-      if (!res.ok) throw res;
-      return res.json() as Promise<IntercomConversation>;
-    });
+        );
+        if (!res.ok) throw res;
+        return res.json() as Promise<IntercomConversation>;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as IntercomConversation;

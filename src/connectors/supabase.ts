@@ -366,21 +366,24 @@ export class SupabaseConnector extends BaseConnector {
     returning = true,
   ): Promise<SupabaseQueryResult<T>> {
     const tokens = this.getTokens();
-    const result = await this.apiCall(async () => {
-      const res = await fetch(`${tokens.url}/rest/v1/${table}`, {
-        method: "POST",
-        headers: this.buildHeaders({
-          Prefer: returning ? "return=representation" : "return=minimal",
-        }),
-        body: JSON.stringify(data),
-      });
-      await this.throwOnError(res);
-      if (!returning) return { data: [] as T[] };
-      const rows = (await res.json()) as T[];
-      return {
-        data: Array.isArray(rows) ? rows : [rows],
-      } as SupabaseQueryResult<T>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(`${tokens.url}/rest/v1/${table}`, {
+          method: "POST",
+          headers: this.buildHeaders({
+            Prefer: returning ? "return=representation" : "return=minimal",
+          }),
+          body: JSON.stringify(data),
+        });
+        await this.throwOnError(res);
+        if (!returning) return { data: [] as T[] };
+        const rows = (await res.json()) as T[];
+        return {
+          data: Array.isArray(rows) ? rows : [rows],
+        } as SupabaseQueryResult<T>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
   }
@@ -473,16 +476,19 @@ export class SupabaseConnector extends BaseConnector {
     params?: Record<string, unknown>,
   ): Promise<SupabaseRpcResult<T>> {
     const tokens = this.getTokens();
-    const result = await this.apiCall(async () => {
-      const res = await fetch(`${tokens.url}/rest/v1/rpc/${functionName}`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(params ?? {}),
-      });
-      await this.throwOnError(res);
-      const data = (await res.json()) as T;
-      return { data } as SupabaseRpcResult<T>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(`${tokens.url}/rest/v1/rpc/${functionName}`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify(params ?? {}),
+        });
+        await this.throwOnError(res);
+        const data = (await res.json()) as T;
+        return { data } as SupabaseRpcResult<T>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
   }
@@ -602,20 +608,23 @@ export class SupabaseConnector extends BaseConnector {
     headers?: Record<string, string>,
   ): Promise<T> {
     const tokens = this.getTokens();
-    const result = await this.apiCall(async () => {
-      const res = await fetch(`${tokens.url}/functions/v1/${functionName}`, {
-        method: "POST",
-        headers: {
-          apikey: tokens.serviceRoleKey,
-          Authorization: `Bearer ${tokens.serviceRoleKey}`,
-          "Content-Type": "application/json",
-          ...headers,
-        },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
-      await this.throwOnError(res);
-      return res.json() as Promise<T>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(`${tokens.url}/functions/v1/${functionName}`, {
+          method: "POST",
+          headers: {
+            apikey: tokens.serviceRoleKey,
+            Authorization: `Bearer ${tokens.serviceRoleKey}`,
+            "Content-Type": "application/json",
+            ...headers,
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        await this.throwOnError(res);
+        return res.json() as Promise<T>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
   }

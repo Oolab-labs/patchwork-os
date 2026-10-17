@@ -365,47 +365,52 @@ export class NotionConnector extends BaseConnector {
   // ---------------------------------------------------------------- write ops
 
   async createPage(params: CreatePageParams): Promise<NotionPage> {
-    const result = await this.apiCall(async (token) => {
-      const parent =
-        params.parentType === "database"
-          ? { database_id: normalizeId(params.parentId) }
-          : { page_id: normalizeId(params.parentId) };
+    const result = await this.apiCall(
+      async (token) => {
+        const parent =
+          params.parentType === "database"
+            ? { database_id: normalizeId(params.parentId) }
+            : { page_id: normalizeId(params.parentId) };
 
-      const properties: Record<string, unknown> = params.properties ?? {};
-      // Set title property — key is "title" for pages, "Name" for database rows
-      const titleKey = params.parentType === "database" ? "Name" : "title";
-      properties[titleKey] = {
-        title: [{ text: { content: params.title } }],
-      };
-
-      const body: Record<string, unknown> = { parent, properties };
-      if (params.content) {
-        body.children = [
-          {
-            object: "block",
-            type: "paragraph",
-            paragraph: {
-              rich_text: [{ type: "text", text: { content: params.content } }],
-            },
-          },
-        ];
-      }
-
-      const res = await fetch(`${NOTION_API}/pages`, {
-        method: "POST",
-        headers: this.buildHeaders(token),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as {
-          message?: string;
+        const properties: Record<string, unknown> = params.properties ?? {};
+        // Set title property — key is "title" for pages, "Name" for database rows
+        const titleKey = params.parentType === "database" ? "Name" : "title";
+        properties[titleKey] = {
+          title: [{ text: { content: params.title } }],
         };
-        throw Object.assign(new Error(err.message ?? `HTTP ${res.status}`), {
-          status: res.status,
+
+        const body: Record<string, unknown> = { parent, properties };
+        if (params.content) {
+          body.children = [
+            {
+              object: "block",
+              type: "paragraph",
+              paragraph: {
+                rich_text: [
+                  { type: "text", text: { content: params.content } },
+                ],
+              },
+            },
+          ];
+        }
+
+        const res = await fetch(`${NOTION_API}/pages`, {
+          method: "POST",
+          headers: this.buildHeaders(token),
+          body: JSON.stringify(body),
         });
-      }
-      return res.json() as Promise<NotionPage>;
-    });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          throw Object.assign(new Error(err.message ?? `HTTP ${res.status}`), {
+            status: res.status,
+          });
+        }
+        return res.json() as Promise<NotionPage>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
   }
@@ -413,33 +418,36 @@ export class NotionConnector extends BaseConnector {
   async appendBlock(
     params: AppendBlockParams,
   ): Promise<{ results: NotionBlock[] }> {
-    const result = await this.apiCall(async (token) => {
-      const type = params.blockType ?? "paragraph";
-      const richText = [{ type: "text", text: { content: params.content } }];
-      const block: Record<string, unknown> = {
-        object: "block",
-        type,
-        [type]: { rich_text: richText },
-      };
-
-      const res = await fetch(
-        `${NOTION_API}/blocks/${normalizeId(params.pageId)}/children`,
-        {
-          method: "PATCH",
-          headers: this.buildHeaders(token),
-          body: JSON.stringify({ children: [block] }),
-        },
-      );
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as {
-          message?: string;
+    const result = await this.apiCall(
+      async (token) => {
+        const type = params.blockType ?? "paragraph";
+        const richText = [{ type: "text", text: { content: params.content } }];
+        const block: Record<string, unknown> = {
+          object: "block",
+          type,
+          [type]: { rich_text: richText },
         };
-        throw Object.assign(new Error(err.message ?? `HTTP ${res.status}`), {
-          status: res.status,
-        });
-      }
-      return res.json() as Promise<{ results: NotionBlock[] }>;
-    });
+
+        const res = await fetch(
+          `${NOTION_API}/blocks/${normalizeId(params.pageId)}/children`,
+          {
+            method: "PATCH",
+            headers: this.buildHeaders(token),
+            body: JSON.stringify({ children: [block] }),
+          },
+        );
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          throw Object.assign(new Error(err.message ?? `HTTP ${res.status}`), {
+            status: res.status,
+          });
+        }
+        return res.json() as Promise<{ results: NotionBlock[] }>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data;
   }

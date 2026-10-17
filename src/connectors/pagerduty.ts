@@ -335,19 +335,22 @@ export class PagerDutyConnector extends BaseConnector {
     options: { content: string; fromEmail?: string },
   ): Promise<PagerDutyNote> {
     const fromEmail = resolveFromEmail(options.fromEmail);
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(
-        `${PAGERDUTY_BASE}/incidents/${incidentId}/notes`,
-        {
-          method: "POST",
-          headers: this.buildHeaders(token, fromEmail),
-          body: JSON.stringify({ note: { content: options.content } }),
-        },
-      );
-      if (!res.ok) throw res;
-      const data = (await res.json()) as { note: PagerDutyNote };
-      return data.note;
-    });
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(
+          `${PAGERDUTY_BASE}/incidents/${incidentId}/notes`,
+          {
+            method: "POST",
+            headers: this.buildHeaders(token, fromEmail),
+            body: JSON.stringify({ note: { content: options.content } }),
+          },
+        );
+        if (!res.ok) throw res;
+        const data = (await res.json()) as { note: PagerDutyNote };
+        return data.note;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PagerDutyNote;
@@ -365,26 +368,29 @@ export class PagerDutyConnector extends BaseConnector {
     const fromEmail = resolveFromEmail(params.fromEmail);
     const urgency = params.urgency ?? "high";
 
-    const result = await this.apiCall(async (token) => {
-      const incident: Record<string, unknown> = {
-        type: "incident",
-        title: params.title,
-        service: { id: params.serviceId, type: "service_reference" },
-        urgency,
-      };
-      if (params.body) {
-        incident.body = { type: "incident_body", details: params.body };
-      }
+    const result = await this.apiCall(
+      async (token) => {
+        const incident: Record<string, unknown> = {
+          type: "incident",
+          title: params.title,
+          service: { id: params.serviceId, type: "service_reference" },
+          urgency,
+        };
+        if (params.body) {
+          incident.body = { type: "incident_body", details: params.body };
+        }
 
-      const res = await fetch(`${PAGERDUTY_BASE}/incidents`, {
-        method: "POST",
-        headers: this.buildHeaders(token, fromEmail),
-        body: JSON.stringify({ incident }),
-      });
-      if (!res.ok) throw res;
-      const data = (await res.json()) as { incident: PagerDutyIncident };
-      return data.incident;
-    });
+        const res = await fetch(`${PAGERDUTY_BASE}/incidents`, {
+          method: "POST",
+          headers: this.buildHeaders(token, fromEmail),
+          body: JSON.stringify({ incident }),
+        });
+        if (!res.ok) throw res;
+        const data = (await res.json()) as { incident: PagerDutyIncident };
+        return data.incident;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PagerDutyIncident;

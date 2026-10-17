@@ -186,20 +186,23 @@ export class TelegramConnector extends BaseConnector {
     text: string;
     parseMode?: "Markdown" | "MarkdownV2" | "HTML";
   }): Promise<TelegramMessage> {
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(this.buildUrl(token, "sendMessage"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: params.chatId,
-          text: params.text,
-          ...(params.parseMode && { parse_mode: params.parseMode }),
-        }),
-      });
-      const body = (await res.json()) as TelegramApiResponse<TelegramMessage>;
-      if (!res.ok || !body.ok) throw { res, body };
-      return body.result as TelegramMessage;
-    });
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(this.buildUrl(token, "sendMessage"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: params.chatId,
+            text: params.text,
+            ...(params.parseMode && { parse_mode: params.parseMode }),
+          }),
+        });
+        const body = (await res.json()) as TelegramApiResponse<TelegramMessage>;
+        if (!res.ok || !body.ok) throw { res, body };
+        return body.result as TelegramMessage;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data;

@@ -195,22 +195,25 @@ export class PostHogConnector extends BaseConnector {
         "PostHog projectApiKey is required for event capture. Re-connect with a project API key.",
       );
     }
-    const result = await this.apiCall(async () => {
-      const body: Record<string, unknown> = {
-        api_key: tokens.projectApiKey,
-        distinct_id: distinctId,
-        event,
-      };
-      if (properties !== undefined) body.properties = properties;
-      if (timestamp !== undefined) body.timestamp = timestamp;
-      const res = await fetch(`${this.baseUrl()}/capture/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw res;
-      return res.json() as Promise<{ status: string }>;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const body: Record<string, unknown> = {
+          api_key: tokens.projectApiKey,
+          distinct_id: distinctId,
+          event,
+        };
+        if (properties !== undefined) body.properties = properties;
+        if (timestamp !== undefined) body.timestamp = timestamp;
+        const res = await fetch(`${this.baseUrl()}/capture/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw res;
+        return res.json() as Promise<{ status: string }>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as { status: string };
   }

@@ -359,3 +359,30 @@ describe("handleTelegramDisconnect", () => {
     expect(JSON.parse(result.body).ok).toBe(true);
   });
 });
+
+describe("sendMessage is not retried when it may have been delivered (audit M23 follow-up)", () => {
+  async function connWithFetch(fetchImpl: ReturnType<typeof vi.fn>) {
+    global.fetch = fetchImpl as unknown as typeof fetch;
+    vi.resetModules();
+    const { TelegramConnector } = await import("../telegram.js");
+    const conn = new TelegramConnector();
+    vi.spyOn(
+      conn as unknown as {
+        authenticate: () => Promise<{ token: string; scopes: string[] }>;
+      },
+      "authenticate",
+    ).mockResolvedValue({ token: "k", scopes: [] });
+    return conn;
+  }
+
+  it("a 503 sends exactly one request", async () => {
+    const fetchSpy = vi.fn(
+      async () => new Response('{"ok":false}', { status: 503 }),
+    );
+    const conn = await connWithFetch(fetchSpy);
+    await expect(
+      conn.sendMessage({ chatId: 555, text: "hello" }),
+    ).rejects.toThrow();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});

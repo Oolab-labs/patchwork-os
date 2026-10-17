@@ -227,26 +227,29 @@ export class PaystackConnector extends BaseConnector {
       metadata?: unknown;
     } = {},
   ): Promise<PaystackInitResult> {
-    const result = await this.apiCall(async () => {
-      const body: Record<string, unknown> = { email, amount: amountKobo };
-      if (params.currency) body.currency = params.currency;
-      if (params.reference) body.reference = params.reference;
-      if (params.callbackUrl) body.callback_url = params.callbackUrl;
-      if (params.metadata) body.metadata = params.metadata;
-      const res = await fetch(`${BASE_URL}/transaction/initialize`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) await this.throwFromPaystackResponse(res);
-      const json = (await res.json()) as {
-        status: boolean;
-        data: PaystackInitResult;
-        message?: string;
-      };
-      if (!json.status) throw new Error(json.message ?? "Paystack error");
-      return json.data;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const body: Record<string, unknown> = { email, amount: amountKobo };
+        if (params.currency) body.currency = params.currency;
+        if (params.reference) body.reference = params.reference;
+        if (params.callbackUrl) body.callback_url = params.callbackUrl;
+        if (params.metadata) body.metadata = params.metadata;
+        const res = await fetch(`${BASE_URL}/transaction/initialize`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) await this.throwFromPaystackResponse(res);
+        const json = (await res.json()) as {
+          status: boolean;
+          data: PaystackInitResult;
+          message?: string;
+        };
+        if (!json.status) throw new Error(json.message ?? "Paystack error");
+        return json.data;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PaystackInitResult;
   }
@@ -327,28 +330,34 @@ export class PaystackConnector extends BaseConnector {
     amountKobo: number,
     params: { currency?: string; reference?: string } = {},
   ): Promise<PaystackTransaction> {
-    const result = await this.apiCall(async () => {
-      const body: Record<string, unknown> = {
-        authorization_code: authorizationCode,
-        email,
-        amount: amountKobo,
-      };
-      if (params.currency) body.currency = params.currency;
-      if (params.reference) body.reference = params.reference;
-      const res = await fetch(`${BASE_URL}/transaction/charge_authorization`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) await this.throwFromPaystackResponse(res);
-      const json = (await res.json()) as {
-        status: boolean;
-        data: PaystackTransaction;
-        message?: string;
-      };
-      if (!json.status) throw new Error(json.message ?? "Paystack error");
-      return json.data;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const body: Record<string, unknown> = {
+          authorization_code: authorizationCode,
+          email,
+          amount: amountKobo,
+        };
+        if (params.currency) body.currency = params.currency;
+        if (params.reference) body.reference = params.reference;
+        const res = await fetch(
+          `${BASE_URL}/transaction/charge_authorization`,
+          {
+            method: "POST",
+            headers: this.buildHeaders(),
+            body: JSON.stringify(body),
+          },
+        );
+        if (!res.ok) await this.throwFromPaystackResponse(res);
+        const json = (await res.json()) as {
+          status: boolean;
+          data: PaystackTransaction;
+          message?: string;
+        };
+        if (!json.status) throw new Error(json.message ?? "Paystack error");
+        return json.data;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PaystackTransaction;
   }
@@ -359,25 +368,28 @@ export class PaystackConnector extends BaseConnector {
     email: string,
     params: { firstName?: string; lastName?: string; phone?: string } = {},
   ): Promise<PaystackCustomer> {
-    const result = await this.apiCall(async () => {
-      const body: Record<string, unknown> = { email };
-      if (params.firstName) body.first_name = params.firstName;
-      if (params.lastName) body.last_name = params.lastName;
-      if (params.phone) body.phone = params.phone;
-      const res = await fetch(`${BASE_URL}/customer`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) await this.throwFromPaystackResponse(res);
-      const json = (await res.json()) as {
-        status: boolean;
-        data: PaystackCustomer;
-        message?: string;
-      };
-      if (!json.status) throw new Error(json.message ?? "Paystack error");
-      return json.data;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const body: Record<string, unknown> = { email };
+        if (params.firstName) body.first_name = params.firstName;
+        if (params.lastName) body.last_name = params.lastName;
+        if (params.phone) body.phone = params.phone;
+        const res = await fetch(`${BASE_URL}/customer`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) await this.throwFromPaystackResponse(res);
+        const json = (await res.json()) as {
+          status: boolean;
+          data: PaystackCustomer;
+          message?: string;
+        };
+        if (!json.status) throw new Error(json.message ?? "Paystack error");
+        return json.data;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PaystackCustomer;
   }
@@ -433,27 +445,30 @@ export class PaystackConnector extends BaseConnector {
     bankCode: string,
     currency = "NGN",
   ): Promise<{ recipient_code: string; id: number }> {
-    const result = await this.apiCall(async () => {
-      const res = await fetch(`${BASE_URL}/transferrecipient`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify({
-          type,
-          name,
-          account_number: accountNumber,
-          bank_code: bankCode,
-          currency,
-        }),
-      });
-      if (!res.ok) await this.throwFromPaystackResponse(res);
-      const json = (await res.json()) as {
-        status: boolean;
-        data: { recipient_code: string; id: number };
-        message?: string;
-      };
-      if (!json.status) throw new Error(json.message ?? "Paystack error");
-      return json.data;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(`${BASE_URL}/transferrecipient`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify({
+            type,
+            name,
+            account_number: accountNumber,
+            bank_code: bankCode,
+            currency,
+          }),
+        });
+        if (!res.ok) await this.throwFromPaystackResponse(res);
+        const json = (await res.json()) as {
+          status: boolean;
+          data: { recipient_code: string; id: number };
+          message?: string;
+        };
+        if (!json.status) throw new Error(json.message ?? "Paystack error");
+        return json.data;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as { recipient_code: string; id: number };
   }
@@ -464,27 +479,30 @@ export class PaystackConnector extends BaseConnector {
     recipient: string,
     reason?: string,
   ): Promise<PaystackTransfer> {
-    const result = await this.apiCall(async () => {
-      const body: Record<string, unknown> = {
-        source,
-        amount: amountKobo,
-        recipient,
-      };
-      if (reason) body.reason = reason;
-      const res = await fetch(`${BASE_URL}/transfer`, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) await this.throwFromPaystackResponse(res);
-      const json = (await res.json()) as {
-        status: boolean;
-        data: PaystackTransfer;
-        message?: string;
-      };
-      if (!json.status) throw new Error(json.message ?? "Paystack error");
-      return json.data;
-    });
+    const result = await this.apiCall(
+      async () => {
+        const body: Record<string, unknown> = {
+          source,
+          amount: amountKobo,
+          recipient,
+        };
+        if (reason) body.reason = reason;
+        const res = await fetch(`${BASE_URL}/transfer`, {
+          method: "POST",
+          headers: this.buildHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) await this.throwFromPaystackResponse(res);
+        const json = (await res.json()) as {
+          status: boolean;
+          data: PaystackTransfer;
+          message?: string;
+        };
+        if (!json.status) throw new Error(json.message ?? "Paystack error");
+        return json.data;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as PaystackTransfer;
   }

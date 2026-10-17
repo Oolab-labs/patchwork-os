@@ -281,47 +281,50 @@ export class HubSpotConnector extends BaseConnector {
     contactId?: string,
     dealId?: string,
   ): Promise<HubSpotNote> {
-    const result = await this.apiCall(async (token) => {
-      const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/notes`, {
-        method: "POST",
-        headers: {
-          ...this.buildHeaders(token),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          properties: {
-            hs_note_body: body,
-            hs_timestamp: String(Date.now()),
+    const result = await this.apiCall(
+      async (token) => {
+        const res = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/notes`, {
+          method: "POST",
+          headers: {
+            ...this.buildHeaders(token),
+            "Content-Type": "application/json",
           },
-        }),
-      });
-      if (!res.ok) throw res;
-      const note = (await res.json()) as HubSpotNote;
+          body: JSON.stringify({
+            properties: {
+              hs_note_body: body,
+              hs_timestamp: String(Date.now()),
+            },
+          }),
+        });
+        if (!res.ok) throw res;
+        const note = (await res.json()) as HubSpotNote;
 
-      // Associate with contact if provided
-      if (contactId) {
-        await fetch(
-          `${HUBSPOT_BASE}/crm/v3/objects/notes/${note.id}/associations/contacts/${contactId}/note_to_contact`,
-          {
-            method: "PUT",
-            headers: this.buildHeaders(token),
-          },
-        );
-      }
+        // Associate with contact if provided
+        if (contactId) {
+          await fetch(
+            `${HUBSPOT_BASE}/crm/v3/objects/notes/${note.id}/associations/contacts/${contactId}/note_to_contact`,
+            {
+              method: "PUT",
+              headers: this.buildHeaders(token),
+            },
+          );
+        }
 
-      // Associate with deal if provided
-      if (dealId) {
-        await fetch(
-          `${HUBSPOT_BASE}/crm/v3/objects/notes/${note.id}/associations/deals/${dealId}/note_to_deal`,
-          {
-            method: "PUT",
-            headers: this.buildHeaders(token),
-          },
-        );
-      }
+        // Associate with deal if provided
+        if (dealId) {
+          await fetch(
+            `${HUBSPOT_BASE}/crm/v3/objects/notes/${note.id}/associations/deals/${dealId}/note_to_deal`,
+            {
+              method: "PUT",
+              headers: this.buildHeaders(token),
+            },
+          );
+        }
 
-      return note;
-    });
+        return note;
+      },
+      { nonIdempotent: true },
+    );
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as HubSpotNote;
