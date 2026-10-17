@@ -19,7 +19,10 @@ import {
   computeStats,
   computeWindowedStats,
 } from "./fp/activityAnalytics.js";
-import { redactKnownSecrets } from "./governance/secretValues.js";
+import {
+  redactKnownSecrets,
+  redactKnownSecretsDeep,
+} from "./governance/secretValues.js";
 import { writeFileAtomic } from "./writeFileAtomic.js";
 
 function escapeLabelValue(s: string): string {
@@ -258,7 +261,13 @@ export class ActivityLog {
       id: this.nextId++,
       timestamp: new Date().toISOString(),
       event,
-      metadata,
+      // Registered secret values replaced by value before the entry is
+      // stored, written to disk or handed to a listener (audit M3). Ids used
+      // for lookup (callId, sessionId) are not secrets and pass through.
+      metadata:
+        metadata === undefined
+          ? undefined
+          : (redactKnownSecretsDeep(metadata) as Record<string, unknown>),
     };
     this.lifecycleEntries.push(entry);
     this._appendToDisk("lifecycle", entry);

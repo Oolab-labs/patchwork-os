@@ -13,6 +13,7 @@ import {
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { withFileLockSync } from "./fileLockSync.js";
+import { redactKnownSecretsDeep } from "./governance/secretValues.js";
 import type { Logger } from "./logger.js";
 import type { OutputWithheld } from "./recipes/withheldOutputs.js";
 import {
@@ -421,6 +422,14 @@ function mergeStepResults(
  *  disk, instead of being silently bounded by DEFAULT_MEMORY_CAP. */
 export const MAX_PERSIST_LINES = 10_000;
 
+/** Registered secret values replaced by value; structure preserved. */
+function scrubRun<T extends RecipeRun | null>(run: T): T {
+  return run === null ? run : (redactKnownSecretsDeep(run) as T);
+}
+function scrubRuns(runs: RecipeRun[]): RecipeRun[] {
+  return redactKnownSecretsDeep(runs) as RecipeRun[];
+}
+
 export interface RunLogOptions {
   /** Directory holding runs.jsonl. Created if missing. */
   dir: string;
@@ -652,7 +661,7 @@ export class RecipeRunLog {
     // Newest first.
     out.sort((a, b) => b.seq - a.seq);
     const limit = Math.min(Math.max(q.limit ?? 100, 1), 500);
-    return out.slice(0, limit);
+    return scrubRuns(out.slice(0, limit));
   }
 
   /**
@@ -672,8 +681,8 @@ export class RecipeRunLog {
   getBySeq(seq: number): RecipeRun | null {
     this.syncFromDisk();
     const inMem = this.runs.find((r) => r.seq === seq);
-    if (inMem) return inMem;
-    return this.readFromDiskBySeq(seq);
+    if (inMem) return scrubRun(inMem);
+    return scrubRun(this.readFromDiskBySeq(seq));
   }
 
   /**
@@ -708,7 +717,7 @@ export class RecipeRunLog {
     // Memory wins over disk: it holds the live status of this process's own
     // runs, including any row not yet flushed.
     for (const r of this.runs) if (r.seq === seq) byTask.set(r.taskId, r);
-    return [...byTask.values()];
+    return scrubRuns([...byTask.values()]);
   }
 
   /**
@@ -719,7 +728,7 @@ export class RecipeRunLog {
   getByTaskId(taskId: string): RecipeRun | null {
     this.syncFromDisk();
     const inMem = this.runs.find((r) => r.taskId === taskId);
-    if (inMem) return inMem;
+    if (inMem) return scrubRun(inMem);
     let raw = "";
     try {
       raw = readFileSync(this.file, "utf-8");
@@ -737,7 +746,7 @@ export class RecipeRunLog {
         // skip malformed line — never let one bad row break lookup
       }
     }
-    return found;
+    return scrubRun(found);
   }
 
   /** Return seqs of all in-memory runs whose parentSeq matches this seq. */
@@ -806,7 +815,7 @@ export class RecipeRunLog {
         /* skip malformed */
       }
     }
-    return Array.from(byKey.values());
+    return scrubRuns(Array.from(byKey.values()));
   }
 
   /**
@@ -887,7 +896,7 @@ export class RecipeRunLog {
     const runs = matched.slice(0, limit);
     const last = runs[runs.length - 1];
     return {
-      runs,
+      runs: scrubRuns(runs),
       nextBefore:
         matched.length > limit && last ? encodeRunCursor(sortKey(last)) : null,
     };
@@ -1120,12 +1129,19 @@ export class RecipeRunLog {
           const code = (err as NodeJS.ErrnoException).code;
           if (code !== "ENOENT") throw err;
         }
-        appendFileSync(this.file, `${JSON.stringify(run)}\n`, { mode: 0o600 });
+        // Registered secret values (env blocks, connector tokens, the bridge
+        // token) are replaced by value before anything leaves the process:
+        // step outputs were scrubbed at capture, but the row's own text —
+        // errorMessage, outputTail, a step's error and haltReason — was not
+        // (audit M3). The in-memory row stays as-is; readers get scrubbed
+        // copies through the query methods.
+        const safe = scrubRun(run);
+        appendFileSync(this.file, `${JSON.stringify(safe)}\n`, { mode: 0o600 });
         // Mirror only after the authoritative write has succeeded. Mirroring
         // first would let a row exist in the copy that never reached the
         // source of truth — divergence manufactured by the tool meant to
         // measure it.
-        this.mirrorRow(run);
+        this.mirrorRow(safe);
       });
     } catch (err) {
       this.opts.logger?.warn?.(
