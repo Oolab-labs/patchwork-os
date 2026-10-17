@@ -20,6 +20,7 @@ import {
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
+import { connectorFetch } from "./connectorFetch.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -260,7 +261,7 @@ export class WooCommerceConnector extends BaseConnector {
   async healthCheck(): Promise<{ ok: boolean; error?: ConnectorError }> {
     try {
       const result = await this.apiCall(async () => {
-        const res = await fetch(this.baseUrl("/system_status"), {
+        const res = await connectorFetch(this.baseUrl("/system_status"), {
           headers: this.buildHeaders(),
         });
         if (!res.ok) throw res;
@@ -415,7 +416,7 @@ export class WooCommerceConnector extends BaseConnector {
     body?: unknown,
   ): Promise<T> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(this.baseUrl(path), {
+      const res = await connectorFetch(this.baseUrl(path), {
         method,
         headers: this.buildHeaders(),
         body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -696,9 +697,15 @@ export async function handleWooCommerceConnect(
     const basic = Buffer.from(`${consumerKey}:${consumerSecret}`).toString(
       "base64",
     );
-    const res = await fetch(`${storeUrl}/wp-json/wc/v3/system_status`, {
-      headers: { Authorization: `Basic ${basic}`, Accept: "application/json" },
-    });
+    const res = await connectorFetch(
+      `${storeUrl}/wp-json/wc/v3/system_status`,
+      {
+        headers: {
+          Authorization: `Basic ${basic}`,
+          Accept: "application/json",
+        },
+      },
+    );
     if (!res.ok) {
       return {
         status: 401,

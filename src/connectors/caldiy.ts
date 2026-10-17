@@ -28,6 +28,7 @@ import {
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
+import { connectorFetch } from "./connectorFetch.js";
 import { getSecretJsonSync, storeSecretJsonSync } from "./tokenStorage.js";
 
 const CALDIY_DEFAULT_BASE_URL = "https://api.cal.com/v2";
@@ -191,7 +192,7 @@ export class CalDiyConnector extends BaseConnector {
     try {
       const result = await this.apiCall(async (token) => {
         const baseUrl = this.baseUrl();
-        const res = await fetch(`${baseUrl}/me`, {
+        const res = await connectorFetch(`${baseUrl}/me`, {
           headers: this.buildHeaders(token),
         });
         if (!res.ok)
@@ -286,7 +287,7 @@ export class CalDiyConnector extends BaseConnector {
 
   private async get<T>(apiPath: string): Promise<T> {
     const result = await this.apiCall(async (token) => {
-      const res = await fetch(`${this.baseUrl()}${apiPath}`, {
+      const res = await connectorFetch(`${this.baseUrl()}${apiPath}`, {
         headers: this.buildHeaders(token),
       });
       if (!res.ok) {
@@ -306,7 +307,7 @@ export class CalDiyConnector extends BaseConnector {
   private async post<T>(apiPath: string, body: unknown): Promise<T> {
     const result = await this.apiCall(
       async (token) => {
-        const res = await fetch(`${this.baseUrl()}${apiPath}`, {
+        const res = await connectorFetch(`${this.baseUrl()}${apiPath}`, {
           method: "POST",
           headers: this.buildHeaders(token),
           body: JSON.stringify(body),
@@ -329,7 +330,7 @@ export class CalDiyConnector extends BaseConnector {
 
   private async del<T>(apiPath: string, body?: unknown): Promise<T> {
     const result = await this.apiCall(async (token) => {
-      const res = await fetch(`${this.baseUrl()}${apiPath}`, {
+      const res = await connectorFetch(`${this.baseUrl()}${apiPath}`, {
         method: "DELETE",
         headers: this.buildHeaders(token),
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -509,7 +510,7 @@ export async function handleCalDiyConnect(
   }
 
   try {
-    const res = await fetch(`${baseUrl}/me`, {
+    const res = await connectorFetch(`${baseUrl}/me`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "cal-api-version": CALDIY_API_VERSION,

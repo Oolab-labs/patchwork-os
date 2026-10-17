@@ -23,6 +23,7 @@ import {
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
+import { connectorFetch } from "./connectorFetch.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -111,7 +112,7 @@ export class GrafanaConnector extends BaseConnector {
   async healthCheck(): Promise<{ ok: boolean; error?: ConnectorError }> {
     try {
       const result = await this.apiCall(async () => {
-        const res = await fetch(`${this.baseUrl()}/api/org`, {
+        const res = await connectorFetch(`${this.baseUrl()}/api/org`, {
           headers: this.buildHeaders(),
         });
         if (!res.ok) throw res;
@@ -194,7 +195,7 @@ export class GrafanaConnector extends BaseConnector {
     const result = await this.apiCall(async () => {
       const qs = new URLSearchParams({ type: "dash-db", limit: String(limit) });
       if (query) qs.set("query", query);
-      const res = await fetch(`${this.baseUrl()}/api/search?${qs}`, {
+      const res = await connectorFetch(`${this.baseUrl()}/api/search?${qs}`, {
         headers: this.buildHeaders(),
       });
       if (!res.ok) throw res;
@@ -207,7 +208,7 @@ export class GrafanaConnector extends BaseConnector {
 
   async getDashboard(uid: string): Promise<GrafanaDashboard> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/dashboards/uid/${encodeURIComponent(uid)}`,
         { headers: this.buildHeaders() },
       );
@@ -235,7 +236,7 @@ export class GrafanaConnector extends BaseConnector {
     // (audit 2026-06-10 connectors-vendors-5).
     const cap = Math.max(1, Math.min(limit, 500));
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/v1/provisioning/alert-rules`,
         { headers: this.buildHeaders() },
       );
@@ -250,7 +251,7 @@ export class GrafanaConnector extends BaseConnector {
 
   async getAlertRule(uid: string): Promise<GrafanaAlertRule> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/v1/provisioning/alert-rules/${encodeURIComponent(uid)}`,
         { headers: this.buildHeaders() },
       );
@@ -283,7 +284,7 @@ export class GrafanaConnector extends BaseConnector {
         if (options.time !== undefined) body.time = options.time;
         if (options.timeEnd !== undefined) body.timeEnd = options.timeEnd;
 
-        const res = await fetch(`${this.baseUrl()}/api/annotations`, {
+        const res = await connectorFetch(`${this.baseUrl()}/api/annotations`, {
           method: "POST",
           headers: this.buildHeaders(),
           body: JSON.stringify(body),
@@ -313,7 +314,7 @@ export class GrafanaConnector extends BaseConnector {
       if (options.from !== undefined) qs.set("from", String(options.from));
       if (options.to !== undefined) qs.set("to", String(options.to));
 
-      const res = await fetch(
+      const res = await connectorFetch(
         `${this.baseUrl()}/api/annotations${qs.toString() ? `?${qs}` : ""}`,
         { headers: this.buildHeaders() },
       );
@@ -327,10 +328,13 @@ export class GrafanaConnector extends BaseConnector {
 
   async deleteAnnotation(id: number): Promise<{ message: string }> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${this.baseUrl()}/api/annotations/${id}`, {
-        method: "DELETE",
-        headers: this.buildHeaders(),
-      });
+      const res = await connectorFetch(
+        `${this.baseUrl()}/api/annotations/${id}`,
+        {
+          method: "DELETE",
+          headers: this.buildHeaders(),
+        },
+      );
       if (!res.ok) throw res;
       return res.json() as Promise<{ message: string }>;
     });
@@ -341,7 +345,7 @@ export class GrafanaConnector extends BaseConnector {
 
   async getDataSources(): Promise<GrafanaDataSource[]> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${this.baseUrl()}/api/datasources`, {
+      const res = await connectorFetch(`${this.baseUrl()}/api/datasources`, {
         headers: this.buildHeaders(),
       });
       if (!res.ok) throw res;
@@ -367,7 +371,7 @@ export class GrafanaConnector extends BaseConnector {
         from,
         to,
       };
-      const res = await fetch(`${this.baseUrl()}/api/ds/query`, {
+      const res = await connectorFetch(`${this.baseUrl()}/api/ds/query`, {
         method: "POST",
         headers: this.buildHeaders(),
         body: JSON.stringify(body),
@@ -382,7 +386,7 @@ export class GrafanaConnector extends BaseConnector {
 
   async getFolders(): Promise<GrafanaFolder[]> {
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${this.baseUrl()}/api/folders`, {
+      const res = await connectorFetch(`${this.baseUrl()}/api/folders`, {
         headers: this.buildHeaders(),
       });
       if (!res.ok) throw res;
@@ -582,7 +586,7 @@ export async function handleGrafanaConnect(
   }
 
   try {
-    const res = await fetch(`${baseUrl}/api/org`, {
+    const res = await connectorFetch(`${baseUrl}/api/org`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",

@@ -4,6 +4,16 @@ import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+/** HTTP header names are case-insensitive; the outbound guard lowercases them. */
+function lowerHeaders(h: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries((h ?? {}) as Record<string, string>).map(([k, v]) => [
+      k.toLowerCase(),
+      v,
+    ]),
+  );
+}
+
 const tmpDir = join(os.tmpdir(), `patchwork-supabase-${Date.now()}`);
 const homeDir = join(tmpDir, "home");
 const patchworkHome = join(homeDir, ".patchwork");
@@ -120,9 +130,9 @@ describe("select", () => {
     const init = (
       fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     )[1];
-    const headers = init.headers as Record<string, string>;
+    const headers = lowerHeaders(init.headers);
     expect(headers.apikey).toBe(SERVICE_ROLE_KEY);
-    expect(headers.Authorization).toBe(`Bearer ${SERVICE_ROLE_KEY}`);
+    expect(headers.authorization).toBe(`Bearer ${SERVICE_ROLE_KEY}`);
   });
 
   it("returns data array and count from content-range header", async () => {
@@ -160,9 +170,9 @@ describe("insert", () => {
     const init = (
       fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     )[1];
-    const headers = init.headers as Record<string, string>;
+    const headers = lowerHeaders(init.headers);
     expect(init.method).toBe("POST");
-    expect(headers.Prefer).toBe("return=representation");
+    expect(headers.prefer).toBe("return=representation");
     expect(result.data[0]).toMatchObject({ id: 99, name: "Bob" });
   });
 
@@ -179,8 +189,8 @@ describe("insert", () => {
     const init = (
       fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     )[1];
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Prefer).toBe("return=minimal");
+    const headers = lowerHeaders(init.headers);
+    expect(headers.prefer).toBe("return=minimal");
   });
 });
 
@@ -225,8 +235,8 @@ describe("upsert", () => {
       RequestInit,
     ];
     expect(init.method).toBe("POST");
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Prefer).toContain("resolution=merge-duplicates");
+    const headers = lowerHeaders(init.headers);
+    expect(headers.prefer).toContain("resolution=merge-duplicates");
     expect(url).toContain("on_conflict=id");
   });
 });
@@ -250,8 +260,8 @@ describe("delete", () => {
     ];
     expect(init.method).toBe("DELETE");
     expect(url).toContain("id=eq.5");
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Prefer).toBe("return=representation");
+    const headers = lowerHeaders(init.headers);
+    expect(headers.prefer).toBe("return=representation");
   });
 });
 
@@ -314,8 +324,8 @@ describe("invokeEdgeFunction", () => {
     ];
     expect(url).toBe(`${SUPABASE_URL}/functions/v1/send-email`);
     expect(init.method).toBe("POST");
-    const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe(`Bearer ${SERVICE_ROLE_KEY}`);
+    const headers = lowerHeaders(init.headers);
+    expect(headers.authorization).toBe(`Bearer ${SERVICE_ROLE_KEY}`);
     expect(headers.apikey).toBe(SERVICE_ROLE_KEY);
     expect(result).toMatchObject({ message: "ok" });
   });
@@ -333,8 +343,8 @@ describe("invokeEdgeFunction", () => {
     const init = (
       fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     )[1];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["X-Custom"]).toBe("value");
+    const headers = lowerHeaders(init.headers);
+    expect(headers["x-custom"]).toBe("value");
   });
 });
 

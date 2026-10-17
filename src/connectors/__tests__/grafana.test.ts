@@ -4,6 +4,16 @@ import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+/** HTTP header names are case-insensitive; the outbound guard lowercases them. */
+function lowerHeaders(h: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries((h ?? {}) as Record<string, string>).map(([k, v]) => [
+      k.toLowerCase(),
+      v,
+    ]),
+  );
+}
+
 // ── Fetch mock helper ──────────────────────────────────────────────────────
 
 type FetchCall = { url: string; init?: RequestInit };
@@ -128,8 +138,8 @@ describe("getDashboards", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toContain("/api/search");
     expect(calls[0]!.url).toContain("type=dash-db");
-    const headers = calls[0]!.init?.headers as Record<string, string>;
-    expect(headers.Authorization).toBe("Bearer glsa_test_key");
+    const headers = lowerHeaders(calls[0]!.init?.headers);
+    expect(headers.authorization).toBe("Bearer glsa_test_key");
     expect(result).toHaveLength(1);
     expect(result[0]!.uid).toBe("abc123");
   });
@@ -445,8 +455,8 @@ describe("handleGrafanaConnect", () => {
 
     expect(r.status).toBe(200);
     expect(calls[0]!.url).toBe("https://grafana.example.com/api/org");
-    const headers = calls[0]!.init?.headers as Record<string, string>;
-    expect(headers.Authorization).toBe("Bearer glsa_abc123");
+    const headers = lowerHeaders(calls[0]!.init?.headers);
+    expect(headers.authorization).toBe("Bearer glsa_abc123");
 
     const body = JSON.parse(r.body) as {
       ok: boolean;

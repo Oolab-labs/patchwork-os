@@ -36,6 +36,11 @@ process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL = "1";
 // PATCHWORK_TEST_ALLOW_LIVE=1 when the live call is the point.
 process.env.PATCHWORK_TEST_NO_LIVE_MODELS = "1";
 
+// Connectors whose base URL the operator supplies go through safeFetch, which
+// resolves DNS before every request. Their tests use invented hostnames; this
+// keeps them off real DNS (src/connectors/connectorFetch.ts).
+process.env.PATCHWORK_TEST_STUB_CONNECTOR_DNS = "1";
+
 // Clean up the temp dir when the worker exits.
 process.on("exit", () => {
   try {

@@ -19,6 +19,7 @@ import {
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
+import { connectorFetch } from "./connectorFetch.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -172,7 +173,7 @@ export class SupabaseConnector extends BaseConnector {
       }
       this.tokens = tokens;
       const result = await this.apiCall(async () => {
-        const res = await fetch(`${tokens.url}/rest/v1/`, {
+        const res = await connectorFetch(`${tokens.url}/rest/v1/`, {
           headers: this.buildHeaders(),
         });
         if (!res.ok) throw res;
@@ -343,7 +344,7 @@ export class SupabaseConnector extends BaseConnector {
     if (orderBy) qs.set("order", orderBy);
 
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${tokens.url}/rest/v1/${table}?${qs}`, {
+      const res = await connectorFetch(`${tokens.url}/rest/v1/${table}?${qs}`, {
         headers: this.buildHeaders({ Prefer: "count=exact" }),
       });
       await this.throwOnError(res);
@@ -368,7 +369,7 @@ export class SupabaseConnector extends BaseConnector {
     const tokens = this.getTokens();
     const result = await this.apiCall(
       async () => {
-        const res = await fetch(`${tokens.url}/rest/v1/${table}`, {
+        const res = await connectorFetch(`${tokens.url}/rest/v1/${table}`, {
           method: "POST",
           headers: this.buildHeaders({
             Prefer: returning ? "return=representation" : "return=minimal",
@@ -402,7 +403,7 @@ export class SupabaseConnector extends BaseConnector {
       }
     }
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${tokens.url}/rest/v1/${table}?${qs}`, {
+      const res = await connectorFetch(`${tokens.url}/rest/v1/${table}?${qs}`, {
         method: "PATCH",
         headers: this.buildHeaders({ Prefer: "return=representation" }),
         body: JSON.stringify(data),
@@ -429,7 +430,7 @@ export class SupabaseConnector extends BaseConnector {
 
     const result = await this.apiCall(async () => {
       const url = `${tokens.url}/rest/v1/${table}${qs.toString() ? `?${qs}` : ""}`;
-      const res = await fetch(url, {
+      const res = await connectorFetch(url, {
         method: "POST",
         headers: this.buildHeaders({ Prefer: prefer }),
         body: JSON.stringify(data),
@@ -457,7 +458,7 @@ export class SupabaseConnector extends BaseConnector {
       }
     }
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${tokens.url}/rest/v1/${table}?${qs}`, {
+      const res = await connectorFetch(`${tokens.url}/rest/v1/${table}?${qs}`, {
         method: "DELETE",
         headers: this.buildHeaders({ Prefer: "return=representation" }),
       });
@@ -478,11 +479,14 @@ export class SupabaseConnector extends BaseConnector {
     const tokens = this.getTokens();
     const result = await this.apiCall(
       async () => {
-        const res = await fetch(`${tokens.url}/rest/v1/rpc/${functionName}`, {
-          method: "POST",
-          headers: this.buildHeaders(),
-          body: JSON.stringify(params ?? {}),
-        });
+        const res = await connectorFetch(
+          `${tokens.url}/rest/v1/rpc/${functionName}`,
+          {
+            method: "POST",
+            headers: this.buildHeaders(),
+            body: JSON.stringify(params ?? {}),
+          },
+        );
         await this.throwOnError(res);
         const data = (await res.json()) as T;
         return { data } as SupabaseRpcResult<T>;
@@ -496,7 +500,7 @@ export class SupabaseConnector extends BaseConnector {
   async getSchema(): Promise<Record<string, unknown>> {
     const tokens = this.getTokens();
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${tokens.url}/rest/v1/`, {
+      const res = await connectorFetch(`${tokens.url}/rest/v1/`, {
         headers: this.buildHeaders(),
       });
       await this.throwOnError(res);
@@ -517,7 +521,7 @@ export class SupabaseConnector extends BaseConnector {
     const tokens = this.getTokens();
     const body = typeof file === "string" ? Buffer.from(file) : file;
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${tokens.url}/storage/v1/object/${bucket}/${path}`,
         {
           method: "POST",
@@ -539,7 +543,7 @@ export class SupabaseConnector extends BaseConnector {
   async downloadFile(bucket: string, path: string): Promise<Buffer> {
     const tokens = this.getTokens();
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${tokens.url}/storage/v1/object/${bucket}/${path}`,
         {
           headers: {
@@ -563,7 +567,7 @@ export class SupabaseConnector extends BaseConnector {
   ): Promise<SupabaseStorageObject[]> {
     const tokens = this.getTokens();
     const result = await this.apiCall(async () => {
-      const res = await fetch(
+      const res = await connectorFetch(
         `${tokens.url}/storage/v1/object/list/${bucket}`,
         {
           method: "POST",
@@ -588,11 +592,14 @@ export class SupabaseConnector extends BaseConnector {
   ): Promise<Record<string, unknown>[]> {
     const tokens = this.getTokens();
     const result = await this.apiCall(async () => {
-      const res = await fetch(`${tokens.url}/storage/v1/object/${bucket}`, {
-        method: "DELETE",
-        headers: this.buildHeaders(),
-        body: JSON.stringify({ prefixes: paths }),
-      });
+      const res = await connectorFetch(
+        `${tokens.url}/storage/v1/object/${bucket}`,
+        {
+          method: "DELETE",
+          headers: this.buildHeaders(),
+          body: JSON.stringify({ prefixes: paths }),
+        },
+      );
       await this.throwOnError(res);
       return res.json() as Promise<Record<string, unknown>[]>;
     });
@@ -610,16 +617,19 @@ export class SupabaseConnector extends BaseConnector {
     const tokens = this.getTokens();
     const result = await this.apiCall(
       async () => {
-        const res = await fetch(`${tokens.url}/functions/v1/${functionName}`, {
-          method: "POST",
-          headers: {
-            apikey: tokens.serviceRoleKey,
-            Authorization: `Bearer ${tokens.serviceRoleKey}`,
-            "Content-Type": "application/json",
-            ...headers,
+        const res = await connectorFetch(
+          `${tokens.url}/functions/v1/${functionName}`,
+          {
+            method: "POST",
+            headers: {
+              apikey: tokens.serviceRoleKey,
+              Authorization: `Bearer ${tokens.serviceRoleKey}`,
+              "Content-Type": "application/json",
+              ...headers,
+            },
+            body: body !== undefined ? JSON.stringify(body) : undefined,
           },
-          body: body !== undefined ? JSON.stringify(body) : undefined,
-        });
+        );
         await this.throwOnError(res);
         return res.json() as Promise<T>;
       },
@@ -739,7 +749,7 @@ export async function handleSupabaseConnect(
   }
 
   try {
-    const res = await fetch(`${url}/rest/v1/`, {
+    const res = await connectorFetch(`${url}/rest/v1/`, {
       headers: {
         apikey: serviceRoleKey,
         Authorization: `Bearer ${serviceRoleKey}`,
