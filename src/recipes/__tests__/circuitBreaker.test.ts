@@ -253,3 +253,91 @@ describe("buildChainedDeps — REGRESSION: recipeName threading (chained/nested 
     expect(realCalls).toBe(8);
   });
 });
+
+describe("chained recipes trip the breaker on a whole run, nested children included", () => {
+  // Pins what docs/guide/configuration.md says: the breaker covers chained
+  // recipes. An inventory (Private notes, 2026-10-17) read only the flag's
+  // read sites and concluded chained was uncovered; chained tool calls go
+  // through executeStep, where the check sits, keyed by the recipe name
+  // buildChainedDeps receives. This drives runChainedRecipe end to end.
+  afterEach(async () => {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../featureFlags.js"
+    );
+    setFlag(FLAG_CIRCUIT_BREAKER, false);
+    resetCircuitBreakerForTests();
+  });
+
+  async function runs(nested: boolean) {
+    const { setFlag, FLAG_CIRCUIT_BREAKER } = await import(
+      "../../featureFlags.js"
+    );
+    const { runChainedRecipe } = await import("../chainedRunner.js");
+    setFlag(FLAG_CIRCUIT_BREAKER, true);
+    let realCalls = 0;
+    const write = {
+      id: "write",
+      tool: "file.write",
+      path: path.join(TMP, "breaker-chained.md"),
+      content: "x",
+    };
+    const built = buildChainedDeps(
+      {
+        workdir: TMP,
+        testMode: true,
+        writeFile: () => {
+          realCalls++;
+          throw new Error("disk full");
+        },
+      },
+      undefined,
+      "breaker-chained",
+    );
+    const deps = nested
+      ? {
+          ...built,
+          loadNestedRecipe: async () => ({
+            recipe: {
+              name: "breaker-child",
+              allowWrites: ["file.write"],
+              steps: [write],
+            } as never,
+          }),
+        }
+      : built;
+    const errors: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const result = await runChainedRecipe(
+        {
+          name: "breaker-chained",
+          allowWrites: ["file.write"],
+          steps: nested ? [{ id: "sub", recipe: "breaker-child" }] : [write],
+        } as never,
+        { env: {}, maxConcurrency: 1, maxDepth: 3, dryRun: false },
+        deps,
+      );
+      expect(result.success).toBe(false);
+      const step = result.stepResults.get(nested ? "sub" : "write");
+      const e = step?.error as unknown;
+      errors.push(e instanceof Error ? e.message : String(e ?? "missing"));
+    }
+    return { realCalls, errors };
+  }
+
+  it("a top-level chained step: five real failures, then circuit_open", async () => {
+    const { realCalls, errors } = await runs(false);
+    expect(realCalls).toBe(5);
+    expect(errors[5]).toMatch(/circuit_open/);
+    expect(errors.slice(0, 5).join(" ")).not.toMatch(/circuit_open/);
+  });
+
+  it("a nested child's step: five real failures, then the sixth run never reaches the tool", async () => {
+    const { realCalls, errors } = await runs(true);
+    // Six runs, five real calls: the breaker opened inside the child. The
+    // parent step reports a generic "Step sub failed"; the child's own cause
+    // goes to the persisted run row's haltReason (pinned in
+    // httpTargetRefusal.test.ts), so the call count is the proof here.
+    expect(realCalls).toBe(5);
+    expect(errors).toHaveLength(6);
+  });
+});
