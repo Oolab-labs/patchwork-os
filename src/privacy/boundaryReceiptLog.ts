@@ -47,12 +47,16 @@ import type { LabelSource } from "./shadowLog.js";
  *
  * ## Field registry
  *
- * - `correlationId` (level 1) — **never legitimately absent.** Every receipt is
- *   written from inside a run: the flat write sites are inside `runYamlRecipe`,
- *   and all three chained dep-builders dispatch into `runChainedRecipe`, which
- *   always computes a `runTaskId`. So there is no "decided outside any run"
- *   state for this ledger to represent. Its absence at `rv >= 1` is a WRITER
- *   DEFECT, not a state.
+ * - `correlationId` (level 1) — absent ONLY on orchestrator receipts. A
+ *   recipe-step receipt is written from inside a run (the flat write sites
+ *   are inside `runYamlRecipe`, and all three chained dep-builders dispatch
+ *   into `runChainedRecipe`, which always computes a `runTaskId`), so there
+ *   its absence at `rv >= 1` is a WRITER DEFECT. An orchestrator dispatch
+ *   (`claudeOrchestrator.ts`) is a task, not a run: it writes no
+ *   `correlationId` and no `recipeName`, and is the only writer that stamps
+ *   `labelSource: "default"` — that is the registered not-applicable
+ *   condition (audit M8; this comment previously said "never legitimately
+ *   absent", contradicting that writer).
  *
  * ## What absence of `rv` means, and why it is never repaired
  *
@@ -92,7 +96,8 @@ export interface BoundaryReceipt {
    * so it collides across concurrent bridges (255 distinct over 272 rows when
    * measured on the gate ledger). A join key that collides is not a join key.
    *
-   * Registered as never legitimately absent at `rv >= 1`.
+   * Registered as absent at `rv >= 1` only on orchestrator receipts (no
+   * `recipeName`, `labelSource: "default"`); see the field registry above.
    */
   correlationId?: string;
   decision: BoundaryDecision;

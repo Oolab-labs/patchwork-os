@@ -235,15 +235,25 @@ export function evidenceRelationships(
   );
 
   // --- boundary receipts --------------------------------------------------
+  // Source-aware, like the shadow ledger below: an ORCHESTRATOR dispatch is a
+  // task, not a recipe run, and its receipt has no run by construction. It is
+  // the only writer that stamps `labelSource: "default"` (a channel-level
+  // classification) and it never sets `recipeName`. Counting those rows as
+  // writer defects (audit M8) made the number grow with legitimate traffic
+  // once orchestrator enforcement was opted into.
   rel.push(
     tally(
       "boundary receipt → run",
-      "receipts are written from a dispatch that always has a run id in scope",
+      "orchestrator dispatches legitimately have no run; every recipe-step receipt is expected to join",
       receipts.rows.map((r) =>
         toRun(
           r,
           "correlationId",
-          (num(r, "rv") ?? 0) >= 1 ? "yes" : "legacy",
+          (num(r, "rv") ?? 0) < 1
+            ? "legacy"
+            : !str(r, "recipeName") && str(r, "labelSource") === "default"
+              ? "notApplicable"
+              : "yes",
           runs,
         ),
       ),
