@@ -251,6 +251,10 @@ export async function runAcceptance(
       testMode: false,
       governance: profile,
       requireApprovalFn: approve,
+      // The http.post checks target a loopback server this command started.
+      // Governed refuses a RECIPE's own allowPrivate, so the grant comes from
+      // here — the code building the run — exactly as the runtime allows.
+      operatorAllowsPrivateNetwork: true,
     });
     type Recipe = Parameters<typeof runYamlRecipe>[0];
     // Each scenario declares the writes it performs. Under governed an
@@ -415,6 +419,7 @@ export async function runAcceptance(
             logDir: home,
             governance: profile,
             requireApprovalFn: approve,
+            operatorAllowsPrivateNetwork: true,
           },
         },
       });

@@ -165,6 +165,9 @@ async function runFlat(steps: Array<Record<string, unknown>>) {
     } as unknown as YamlRecipe,
     baseDeps(sandbox, {
       governance: governed(),
+      // The target is loopback: governed refuses a RECIPE's own allowPrivate,
+      // so the run grants it, as doctor acceptance does.
+      operatorAllowsPrivateNetwork: true,
       requireApprovalFn: approval.fn,
     }),
   );
@@ -179,6 +182,9 @@ async function runChained(
   const built = buildChainedDeps(
     baseDeps(sandbox, {
       governance: governed(),
+      // The target is loopback: governed refuses a RECIPE's own allowPrivate,
+      // so the run grants it, as doctor acceptance does.
+      operatorAllowsPrivateNetwork: true,
       requireApprovalFn: approval.fn,
     }),
     undefined,
@@ -380,6 +386,9 @@ describe("positive controls — the line is drawn at the sent boundary", () => {
     const built = buildChainedDeps(
       baseDeps(sandbox, {
         governance: governed(),
+        // The target is loopback: governed refuses a RECIPE's own allowPrivate,
+        // so the run grants it, as doctor acceptance does.
+        operatorAllowsPrivateNetwork: true,
         requireApprovalFn: approval.fn,
       }),
       undefined,

@@ -17,6 +17,8 @@ import {
   FLAG_BLOCK_RECIPE_ALLOW_PRIVATE,
   isEnabled,
 } from "../../featureFlags.js";
+import { recipePrivateBypassHonoured } from "../../governance/effectivePolicy.js";
+import { activeProfile } from "../../governance/profile.js";
 // Canonical SSRF guard — single source of truth. `isPrivateHost` is
 // re-exported below for the lexical unit tests; execution goes through
 // `safeFetch`, which ALSO resolves DNS and re-validates every redirect hop
@@ -151,7 +153,7 @@ registerTool({
   },
   riskDefault: "medium",
   isWrite: true,
-  execute: async ({ params }) => {
+  execute: async ({ params, deps }) => {
     assertWriteAllowed("http.post");
 
     const url = params.url as string;
@@ -171,11 +173,20 @@ registerTool({
       );
     }
 
-    // Operator kill-flag: when on, the per-step allowPrivate:true bypass is
-    // ignored so a (potentially marketplace-installed) recipe can never reach
-    // a private/loopback host.
-    const bypassDisabled = isEnabled(FLAG_BLOCK_RECIPE_ALLOW_PRIVATE);
-    const allowPrivate = !bypassDisabled && params.allowPrivate === true;
+    // The per-step allowPrivate:true bypass is a RECIPE asking to reach a
+    // private/loopback host. Governed never honours it (a recipe cannot opt
+    // itself out of a workspace guarantee); compat honours it unless the
+    // operator's kill-flag is on. Only the code that builds the run can grant
+    // it regardless, via deps.operatorAllowsPrivateNetwork (doctor acceptance
+    // uses this for its loopback target) — never anything in params.
+    const profile = activeProfile();
+    const recipeBypassHonoured =
+      deps.operatorAllowsPrivateNetwork === true ||
+      recipePrivateBypassHonoured(
+        profile,
+        isEnabled(FLAG_BLOCK_RECIPE_ALLOW_PRIVATE),
+      );
+    const allowPrivate = params.allowPrivate === true && recipeBypassHonoured;
 
     const method = ((params.method as string) ?? "POST").toUpperCase();
     if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
@@ -246,12 +257,16 @@ registerTool({
       redirects = result.redirects;
     } catch (err) {
       if (err instanceof OutboundHttpError) {
-        const hint =
-          (err.code === "private_host" ||
-            err.code === "private_host_after_dns") &&
-          !bypassDisabled
+        const isPrivate =
+          err.code === "private_host" || err.code === "private_host_after_dns";
+        const hint = !isPrivate
+          ? ""
+          : recipeBypassHonoured
             ? " — set allowPrivate: true to override"
-            : "";
+            : params.allowPrivate === true &&
+                profile.privateNetworkBypass === "refuse"
+              ? " — a recipe's allowPrivate is not honoured under the governed profile"
+              : "";
         throw new Error(
           `http.post: refusing to reach private/loopback host: ${err.message}${hint}`,
         );

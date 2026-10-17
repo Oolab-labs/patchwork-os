@@ -476,7 +476,10 @@ recipe `servers:` allowlisted via
 and inferred-tier writes queue, a write not declared in the recipe's own
 `allowWrites` is REFUSED (since 2026-10-16; compat still follows
 `FLAG_ENFORCE_ALLOWWRITES`), unregistered tools halt, a recipe's
-`requireApproval: false` is ignored, connector output is wrapped in an
+`requireApproval: false` is ignored, a recipe's `allowPrivate: true` on
+`http.post` is not honoured (since 2026-10-17; only the code BUILDING a run
+may grant it, via `RunnerDeps.operatorAllowsPrivateNetwork` — `doctor
+acceptance` does, for its loopback target), connector output is wrapped in an
 `<untrusted>` envelope in agent prompts.
 
 - **One calculation.** `computeEffectivePolicy` (`src/governance/effectivePolicy.ts`)
