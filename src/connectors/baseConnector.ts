@@ -388,12 +388,23 @@ export abstract class BaseConnector {
    * Never throws — returns `{ data }` on success or `{ error: ConnectorError }`
    * (already passed through `normalizeError`) on failure, including when
    * initial auth resolution itself fails.
+   *
+   * `nonIdempotent: true` marks a call that must not be repeated if the
+   * provider may already have acted on it — a send, a create. Only a failure
+   * that proves the provider did NOT act is then retried: `rate_limited`
+   * (429) and `auth_expired` (401). A 5xx or a network error after the
+   * request left is returned as-is: retrying it is how one email becomes
+   * three (audit M23).
    */
   protected async apiCall<T>(
     fn: (token: string) => Promise<T>,
-    options: { retries?: number; retryDelayMs?: number } = {},
+    options: {
+      retries?: number;
+      retryDelayMs?: number;
+      nonIdempotent?: boolean;
+    } = {},
   ): Promise<{ data: T } | { error: ConnectorError }> {
-    const { retries = 2, retryDelayMs = 1000 } = options;
+    const { retries = 2, retryDelayMs = 1000, nonIdempotent = false } = options;
 
     // Ensure auth - try refresh first, then fall back to full auth
     if (!this.auth || this.isTokenExpired()) {
@@ -460,6 +471,15 @@ export abstract class BaseConnector {
 
         // Don't retry non-retryable errors
         if (!normalized.retryable || attempt === retries) {
+          return { error: normalized };
+        }
+        // A write the provider may already have applied is retried only on
+        // a failure that proves it was not.
+        if (
+          nonIdempotent &&
+          normalized.code !== "rate_limited" &&
+          normalized.code !== "auth_expired"
+        ) {
           return { error: normalized };
         }
 

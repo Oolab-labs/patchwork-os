@@ -321,3 +321,50 @@ describe("getStatus", () => {
     expect(status.workspace).toMatch(/acme/);
   });
 });
+
+// ── A send is not resent after the provider may have acted (audit M23) ──────
+
+describe("send is not retried when it may already have been sent", () => {
+  it("a 503 sends exactly one request, not three", async () => {
+    const { getSendGridConnector, saveTokens } = await import("../sendgrid.js");
+    saveTokens({
+      apiKey: "SG.test",
+      fromEmail: "from@example.com",
+      connected_at: new Date().toISOString(),
+    });
+    const { calls } = installFetchMock(() =>
+      mockFetchResponse({ status: 503 }),
+    );
+    const c = getSendGridConnector();
+    await c["authenticate"]();
+    await expect(
+      c.send({ to: "a@b.com", subject: "hi", text: "hello" }),
+    ).rejects.toThrow();
+    // A 5xx after the POST may still have queued the email; a retry would
+    // send it again. SendGrid's mail/send takes no idempotency key.
+    expect(calls).toHaveLength(1);
+  });
+
+  it("a 429 is still retried: the provider did not act", async () => {
+    const { getSendGridConnector, saveTokens } = await import("../sendgrid.js");
+    saveTokens({
+      apiKey: "SG.test",
+      fromEmail: "from@example.com",
+      connected_at: new Date().toISOString(),
+    });
+    let n = 0;
+    const { calls } = installFetchMock(() =>
+      n++ === 0
+        ? mockFetchResponse({ status: 429 })
+        : mockFetchResponse({
+            status: 202,
+            headers: { "x-message-id": "msg-1" },
+          }),
+    );
+    const c = getSendGridConnector();
+    await c["authenticate"]();
+    const r = await c.send({ to: "a@b.com", subject: "hi", text: "hello" });
+    expect(r.messageId).toBe("msg-1");
+    expect(calls).toHaveLength(2);
+  });
+});

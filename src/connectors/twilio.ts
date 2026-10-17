@@ -276,21 +276,24 @@ export class TwilioConnector extends BaseConnector {
     formBody.set("From", from);
     formBody.set("Body", params.body);
 
-    const result = await this.apiCall(async () => {
-      const res = await fetch(
-        `${BASE_URL}/2010-04-01/Accounts/${tokens.accountSid}/Messages.json`,
-        {
-          method: "POST",
-          headers: {
-            ...this.buildHeaders(),
-            "Content-Type": "application/x-www-form-urlencoded",
+    const result = await this.apiCall(
+      async () => {
+        const res = await fetch(
+          `${BASE_URL}/2010-04-01/Accounts/${tokens.accountSid}/Messages.json`,
+          {
+            method: "POST",
+            headers: {
+              ...this.buildHeaders(),
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: formBody.toString(),
           },
-          body: formBody.toString(),
-        },
-      );
-      if (!res.ok) throw res;
-      return res.json() as Promise<TwilioMessage>;
-    });
+        );
+        if (!res.ok) throw res;
+        return res.json() as Promise<TwilioMessage>;
+      },
+      { nonIdempotent: true },
+    );
     if ("error" in result) throw new Error(result.error.message);
     return result.data as TwilioMessage;
   }
