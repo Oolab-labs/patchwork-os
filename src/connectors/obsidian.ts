@@ -9,7 +9,8 @@
  *         getActiveNote, openNote, executeCommand, listCommands
  *
  * The plugin runs at https://127.0.0.1:27124 with a self-signed certificate.
- * All fetch calls use an undici Agent with rejectUnauthorized: false.
+ * Certificate verification is skipped ONLY when the base URL is loopback,
+ * where that plugin lives; any other base URL is verified normally (audit M20).
  *
  * Extends BaseConnector for unified auth, retry, rate-limit, error handling.
  */
@@ -17,6 +18,7 @@
 import { unlinkSync } from "node:fs";
 import { Agent, fetch as undiciFetch } from "undici";
 import { patchworkPath } from "../patchworkHome.js";
+import { isLoopbackHost } from "../privateHost.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -28,7 +30,29 @@ import { getSecretJsonSync, storeSecretJsonSync } from "./tokenStorage.js";
 const DEFAULT_BASE_URL = "https://127.0.0.1:27124";
 
 // Reusable TLS agent that accepts the plugin's self-signed certificate.
-const tlsAgent = new Agent({ connect: { rejectUnauthorized: false } });
+const insecureLoopbackAgent = new Agent({
+  connect: { rejectUnauthorized: false },
+});
+const verifyingAgent = new Agent();
+
+/**
+ * True only for a loopback base URL — the Local REST API plugin's own
+ * self-signed endpoint. A remote base URL keeps certificate verification:
+ * skipping it there would make the API key readable to anyone on the path.
+ */
+export function tlsVerificationSkippedFor(baseUrl: string): boolean {
+  try {
+    return isLoopbackHost(new URL(baseUrl).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function agentFor(baseUrl: string): Agent {
+  return tlsVerificationSkippedFor(baseUrl)
+    ? insecureLoopbackAgent
+    : verifyingAgent;
+}
 
 export interface ObsidianTokens {
   apiKey: string;
@@ -108,7 +132,7 @@ export class ObsidianConnector extends BaseConnector {
         const tokens = this.cachedTokens ?? loadTokens();
         const baseUrl = tokens?.baseUrl ?? DEFAULT_BASE_URL;
         const res = await undiciFetch(`${baseUrl}/vault/`, {
-          dispatcher: tlsAgent,
+          dispatcher: agentFor(baseUrl),
           headers: buildHeaders(token),
         });
         if (!res.ok)
@@ -188,7 +212,7 @@ export class ObsidianConnector extends BaseConnector {
       const encoded = vaultPath ? encodeURIComponent(vaultPath) : "";
       const url = `${this.baseUrl()}/vault/${encoded ? `${encoded}/` : ""}`;
       const res = await undiciFetch(url, {
-        dispatcher: tlsAgent,
+        dispatcher: agentFor(this.baseUrl()),
         headers: buildHeaders(token),
       });
       if (!res.ok)
@@ -210,7 +234,7 @@ export class ObsidianConnector extends BaseConnector {
       const res = await undiciFetch(
         `${this.baseUrl()}/vault/${encodeURIComponent(notePath)}`,
         {
-          dispatcher: tlsAgent,
+          dispatcher: agentFor(this.baseUrl()),
           headers: buildHeaders(token),
         },
       );
@@ -235,7 +259,7 @@ export class ObsidianConnector extends BaseConnector {
         `${this.baseUrl()}/vault/${encodeURIComponent(notePath)}`,
         {
           method,
-          dispatcher: tlsAgent,
+          dispatcher: agentFor(this.baseUrl()),
           headers: {
             ...buildHeaders(token),
             "Content-Type": "text/markdown",
@@ -262,7 +286,7 @@ export class ObsidianConnector extends BaseConnector {
         `${this.baseUrl()}/vault/${encodeURIComponent(notePath)}`,
         {
           method: "DELETE",
-          dispatcher: tlsAgent,
+          dispatcher: agentFor(this.baseUrl()),
           headers: buildHeaders(token),
         },
       );
@@ -281,7 +305,7 @@ export class ObsidianConnector extends BaseConnector {
         `${this.baseUrl()}/search/simple/?query=${encodeURIComponent(query)}`,
         {
           method: "POST",
-          dispatcher: tlsAgent,
+          dispatcher: agentFor(this.baseUrl()),
           headers: buildHeaders(token),
         },
       );
@@ -298,7 +322,7 @@ export class ObsidianConnector extends BaseConnector {
   async getActiveNote(): Promise<string> {
     const result = await this.apiCall(async (token) => {
       const res = await undiciFetch(`${this.baseUrl()}/active/`, {
-        dispatcher: tlsAgent,
+        dispatcher: agentFor(this.baseUrl()),
         headers: buildHeaders(token),
       });
       if (!res.ok)
@@ -317,7 +341,7 @@ export class ObsidianConnector extends BaseConnector {
         `${this.baseUrl()}/open/${encodeURIComponent(notePath)}`,
         {
           method: "POST",
-          dispatcher: tlsAgent,
+          dispatcher: agentFor(this.baseUrl()),
           headers: buildHeaders(token),
         },
       );
@@ -333,7 +357,7 @@ export class ObsidianConnector extends BaseConnector {
   async listCommands(): Promise<ObsidianCommand[]> {
     const result = await this.apiCall(async (token) => {
       const res = await undiciFetch(`${this.baseUrl()}/commands/`, {
-        dispatcher: tlsAgent,
+        dispatcher: agentFor(this.baseUrl()),
         headers: buildHeaders(token),
       });
       if (!res.ok)
@@ -353,7 +377,7 @@ export class ObsidianConnector extends BaseConnector {
           `${this.baseUrl()}/commands/${encodeURIComponent(commandId)}/execute`,
           {
             method: "POST",
-            dispatcher: tlsAgent,
+            dispatcher: agentFor(this.baseUrl()),
             headers: buildHeaders(token),
           },
         );
@@ -440,7 +464,7 @@ export async function handleObsidianConnect(
 
   try {
     const res = await undiciFetch(`${baseUrl}/vault/`, {
-      dispatcher: tlsAgent,
+      dispatcher: agentFor(baseUrl),
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
