@@ -23,7 +23,9 @@ steps:
   - id: read_file
     tool: diagnostics.get
     uri: "{{file}}"
-    filter: error
+    # diagnostics.get takes only `uri` and returns every severity — the
+    # `filter: error` that stood here was never read. The prompt below says
+    # which entries to act on.
     into: errors
 
   - id: fix
@@ -37,7 +39,8 @@ steps:
       prompt: |
         A TypeScript file was just saved: {{file}}
 
-        Current errors reported by the language server:
+        Current diagnostics reported by the language server (errors AND warnings —
+        act only on entries whose severity is error):
         {{errors}}
 
         If there are NO errors (empty list above), output nothing (empty string) and stop.

@@ -367,7 +367,7 @@ if (
       `Recipes\n` +
       `  recipe new <name> [-i]                    Scaffold a recipe\n` +
       `  recipe list                               List installed recipes\n` +
-      `  recipe run <name> [--vars k=v]            Run a recipe by name\n` +
+      `  recipe run <name> [--var k=v]...          Run a recipe by name\n` +
       `  recipe install <source>                   Install from a path or GitHub source\n` +
       `  recipe --help                             Full recipe subcommand index\n\n` +
       `Connectors\n` +
@@ -412,7 +412,7 @@ if (
       `Daemon (no subcommand)\n` +
       `  --workspace <dir>                         Start the bridge in foreground\n` +
       `  --watch                                   Auto-restart supervisor\n` +
-      `  --slim                                    27 IDE-only tools (default: full)\n\n` +
+      `  --slim                                    IDE-only tools (default: full)\n\n` +
       `Other\n` +
       `  --version, -v                             Print package version\n` +
       `  shim                                      stdio↔WebSocket shim (used by MCP clients)\n` +
@@ -493,7 +493,7 @@ Options:
   --dashboard-port <N>  Dashboard port (default: 3200)
   --notify <topic>      Push notifications via ntfy.sh
   --vps <user@host>     SSH reverse tunnel for stable claude.ai URL
-  --slim                Slim mode (27 IDE-exclusive tools only — overrides default)
+  --slim                Slim mode (IDE-exclusive tools only — overrides default)
   --help, -h            Show this help
 
 This is a thin wrapper over \`start-all\`. For advanced flags see:
@@ -6548,6 +6548,8 @@ if (process.argv[2] === "privacy") {
         "Usage: patchwork privacy receipts [--since-days N] [--json]\n" +
           "       patchwork privacy shadow [--since-days N] [--json]\n" +
           "       patchwork privacy suggest [--json]\n" +
+          "       patchwork privacy destinations [--json]\n" +
+          "       patchwork privacy undeclared [--dir <path>] [--json]\n" +
           "\n" +
           "  Observes boundary decisions WITHOUT enforcing them. Configure a\n" +
           "  candidate policy under `privacy.shadow.destinations` in config.json;\n" +

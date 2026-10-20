@@ -11,7 +11,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOOL_CATEGORIES } from "../tools/index.js";
+import { SLIM_TOOL_NAMES, TOOL_CATEGORIES } from "../tools/index.js";
 
 // ---------------------------------------------------------------------------
 // Static description map for the most important tools.
@@ -442,25 +442,30 @@ export async function runToolsCommand(argv: string[]): Promise<void> {
   // `tools --json list` works identically to `tools list --json`.
   const sub = argv.find((a) => !a.startsWith("--"));
   const jsonFlag = argv.includes("--json");
+  const slimFlag = argv.includes("--slim");
 
   if (!sub || sub === "--help" || sub === "help") {
     process.stdout.write(`claude-ide-bridge tools — Browse and search tools (no bridge required)
 
 Usage:
-  claude-ide-bridge tools search <query> [--json]
-  claude-ide-bridge tools list [--json]
+  claude-ide-bridge tools search <query> [--slim] [--json]
+  claude-ide-bridge tools list [--slim] [--json]
 
 Subcommands:
   search <query>  Case-insensitive search on name, description, and category
   list            All tools grouped by category
 
 Options:
+  --slim          Only the tools a --slim bridge registers
   --json          Machine-readable JSON output
 `);
     process.exit(!sub ? 1 : 0);
   }
 
-  const catalog = buildToolCatalog();
+  // `--slim` was documented and accepted but ignored (Private/52 LOW).
+  const catalog = slimFlag
+    ? buildToolCatalog().filter((t) => SLIM_TOOL_NAMES.has(t.name))
+    : buildToolCatalog();
 
   if (sub === "search") {
     const query = argv
