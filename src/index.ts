@@ -1843,8 +1843,13 @@ if (process.argv[2] === "suggest") {
       for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === "--since-days") {
-          const next = args[i + 1];
-          if (next) sinceDays = Number.parseInt(next, 10);
+          const { parseSinceDays } = await import("./commands/sinceDays.js");
+          const parsed = parseSinceDays(args.slice(i, i + 2));
+          if (!parsed.ok) {
+            process.stderr.write(`patchwork suggest: ${parsed.error}\n`);
+            process.exit(2);
+          }
+          sinceDays = parsed.days;
           i++;
         } else if (a === "--help" || a === "-h") {
           process.stdout.write(
@@ -6529,11 +6534,15 @@ if (process.argv[2] === "privacy") {
       // one nothing in this repo could answer until now (ADR-0019:88-92).
       const { summariseBoundaryReceipts, formatBoundaryReceipts } =
         await import("./privacy/boundaryReceipts.js");
-      const i = args.indexOf("--since-days");
-      const n = i !== -1 ? Number(args[i + 1]) : undefined;
+      const { parseSinceDays } = await import("./commands/sinceDays.js");
+      const since = parseSinceDays(args);
+      if (!since.ok) {
+        process.stderr.write(`patchwork privacy receipts: ${since.error}\n`);
+        process.exit(2);
+      }
       const summary = summariseBoundaryReceipts(
-        n !== undefined && Number.isFinite(n) && n > 0
-          ? { since: Date.now() - n * 86_400_000 }
+        since.days !== undefined
+          ? { since: Date.now() - since.days * 86_400_000 }
           : {},
       );
       if (args.includes("--json")) {
@@ -6560,11 +6569,15 @@ if (process.argv[2] === "privacy") {
     const { summarisePrivacyShadow, formatPrivacyShadow } = await import(
       "./privacy/shadowLog.js"
     );
-    const idx = args.indexOf("--since-days");
-    const days = idx !== -1 ? Number(args[idx + 1]) : undefined;
+    const { parseSinceDays } = await import("./commands/sinceDays.js");
+    const since = parseSinceDays(args);
+    if (!since.ok) {
+      process.stderr.write(`patchwork privacy shadow: ${since.error}\n`);
+      process.exit(2);
+    }
     const summary = summarisePrivacyShadow(
-      days !== undefined && Number.isFinite(days) && days > 0
-        ? { since: Date.now() - days * 86_400_000 }
+      since.days !== undefined
+        ? { since: Date.now() - since.days * 86_400_000 }
         : {},
     );
     if (args.includes("--json")) {
