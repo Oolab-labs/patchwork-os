@@ -7,10 +7,11 @@
  * (nginx, Caddy) is known to set them.
  *
  * Without BRIDGE_TRUST_PROXY, all requests fall into the "unknown" bucket.
- * This is intentionally conservative for local / direct deployments. Note
- * that NO file under deploy/ sets the variable, so this is the shipped
- * default; the nginx configs there set the headers, and an operator who
- * wants per-IP lockout must set the variable as well.
+ * This is intentionally conservative for local / direct deployments.
+ * `deploy/deploy-dashboard.sh` sets it (since 2026-10-20), together with
+ * binding the app to 127.0.0.1 — trusting the header is only safe when the
+ * proxy is the sole way in. Any other deployment that sets it must keep the
+ * app unreachable except through a proxy that overwrites X-Real-IP.
  *
  * ## Which header, and which end of it
  *
