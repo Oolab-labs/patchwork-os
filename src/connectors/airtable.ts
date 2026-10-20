@@ -25,6 +25,7 @@ import {
   type ConnectorStatus,
   type OAuthConfig,
 } from "./baseConnector.js";
+import { readSecret } from "./secrets.js";
 import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 import {
   deleteSecretJsonSync,
@@ -161,11 +162,13 @@ export class AirtableConnector extends BaseConnector {
   private tokens: AirtableTokens | null = null;
 
   protected getOAuthConfig(): OAuthConfig | null {
-    const clientId = process.env.AIRTABLE_CLIENT_ID;
+    // Through readSecret (secrets file, then env) like every other connector
+    // since #1702 — env-only meant a rotated secrets file was never used.
+    const clientId = readSecret("AIRTABLE_CLIENT_ID");
     if (!clientId) return null;
     return {
       clientId,
-      clientSecret: process.env.AIRTABLE_CLIENT_SECRET,
+      clientSecret: readSecret("AIRTABLE_CLIENT_SECRET") || undefined,
       tokenEndpoint: OAUTH_TOKEN_ENDPOINT,
       scopes: OAUTH_SCOPES,
     };
@@ -239,8 +242,8 @@ export class AirtableConnector extends BaseConnector {
   private async _oauthRefresh(
     tokens: AirtableOAuthTokens,
   ): Promise<AirtableOAuthTokens | null> {
-    const clientId = process.env.AIRTABLE_CLIENT_ID ?? "";
-    const clientSecret = process.env.AIRTABLE_CLIENT_SECRET;
+    const clientId = readSecret("AIRTABLE_CLIENT_ID");
+    const clientSecret = readSecret("AIRTABLE_CLIENT_SECRET");
     if (!clientId || !clientSecret) return null;
 
     const basicCreds = Buffer.from(`${clientId}:${clientSecret}`).toString(
@@ -688,7 +691,7 @@ function isOAuthTokens(
  *   2. Stored token blob (may be PAT or OAuth)
  */
 export function loadRawTokens(): AirtableTokens | AirtableOAuthTokens | null {
-  const envKey = process.env.AIRTABLE_ACCESS_TOKEN;
+  const envKey = readSecret("AIRTABLE_ACCESS_TOKEN");
   if (envKey) {
     return {
       accessToken: envKey,
