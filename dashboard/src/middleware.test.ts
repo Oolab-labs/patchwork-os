@@ -79,5 +79,32 @@ describe("dashboard middleware session-gate matcher", () => {
     expect(matcherRunsOn("/api/relay/push")).toBe(false);
     expect(matcherRunsOn("/api/relay/halt")).toBe(false);
     expect(matcherRunsOn("/api/push/vapid-key")).toBe(false);
+    expect(matcherRunsOn("/marketplace/submit")).toBe(false);
+    expect(matcherRunsOn("/marketplace/some/recipe")).toBe(false);
+    // Next appends `.rsc` / `.segments/…` to a page path for its payloads.
+    expect(matcherRunsOn("/marketplace.rsc")).toBe(false);
+  });
+
+  // Private/52 LOW: the exemptions were bare prefixes, so ANY route whose
+  // name merely began with an exempt one was public — `marketplace` exempted
+  // `/marketplace-admin`, `api/login` exempted `/api/login-as`. None exists
+  // today; the next one added would have shipped unauthenticated with nothing
+  // to say so.
+  it("an exemption covers that path, not every path that starts with its name", () => {
+    for (const p of [
+      "/marketplaceadmin",
+      "/marketplace-admin",
+      "/api/login-as",
+      "/api/loginx",
+      "/api/relay/push-all",
+      "/api/relay/halted",
+      "/api/push/vapid-key-rotate",
+      "/sw.jsx",
+      "/manifest.json.bak",
+      "/robots.txt.old",
+      "/favicon.ico.html",
+    ]) {
+      expect(matcherRunsOn(p), p).toBe(true);
+    }
   });
 });
