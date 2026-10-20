@@ -78,7 +78,8 @@ echo "==> Deploying on VPS..."
 # shellcheck disable=SC2087
 ssh "$VPS" bash -s -- \
   "${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}" "${DASHBOARD_PASSWORD:-}" \
-  "$REMOTE_DIR" "$PM2_NAME" "$PORT" "$BRIDGE_URL" "$VAPID_SUBJECT" <<'REMOTE'
+  "$REMOTE_DIR" "$PM2_NAME" "$PORT" "$BRIDGE_URL" "$VAPID_SUBJECT" \
+  /tmp/patchwork-dashboard.tar.gz <<'REMOTE'
 set -euo pipefail
 # `${N:-}` so an empty/missing positional arg doesn't trip `set -u`.
 #
@@ -93,6 +94,7 @@ PM2_NAME="${4:-patchwork-dashboard}"
 PORT="${5:-3200}"
 BRIDGE_URL="${6:-https://your.tld}"
 VAPID_SUBJECT="${7:-mailto:admin@your.tld}"
+TARBALL="${8:-/tmp/patchwork-dashboard.tar.gz}"
 
 # Stop existing PM2 process if running
 if pm2 list | grep -q "$PM2_NAME"; then
@@ -121,8 +123,8 @@ if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
 fi
 
 # Extract
-tar -xzf /tmp/patchwork-dashboard.tar.gz -C "$REMOTE_DIR"
-rm /tmp/patchwork-dashboard.tar.gz
+tar -xzf "$TARBALL" -C "$REMOTE_DIR"
+rm "$TARBALL"
 
 # Copy static assets into standalone's expected location
 mkdir -p "$REMOTE_DIR/.next"
@@ -161,12 +163,24 @@ fi
 # Install PM2 if missing
 which pm2 || npm install -g pm2
 
-# Start with PM2
+# Start with PM2.
+#
+# HOSTNAME=127.0.0.1: Next's standalone server.js binds 0.0.0.0 unless told
+# otherwise, which made the app reachable on :$PORT from anywhere, around
+# nginx. Loopback-only means the ONLY way in is the proxy below.
+#
+# BRIDGE_TRUST_PROXY=true: the login lockout keys on the client address only
+# when this is set (dashboard/src/lib/clientIp.ts); without it every client
+# shared one bucket and anyone could lock everyone out. Trusting nginx's
+# X-Real-IP is safe ONLY because of the bind above — the two go together.
+# Passed in pm2's environment, not .env.local: an existing .env.local is
+# preserved across deploys, so a new key written there would never arrive.
 cd "$REMOTE_DIR"
-PORT="$PORT" pm2 start server.js --name "$PM2_NAME"
+HOSTNAME=127.0.0.1 BRIDGE_TRUST_PROXY=true PORT="$PORT" \
+  pm2 start server.js --name "$PM2_NAME"
 
 pm2 save
-echo "PM2 started: $PM2_NAME on port $PORT"
+echo "PM2 started: $PM2_NAME on 127.0.0.1:$PORT (reachable only via nginx)"
 REMOTE
 
 echo "==> Configuring nginx..."
