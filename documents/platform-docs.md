@@ -39,6 +39,7 @@
 - [Headless / CI Mode](#headless--ci-mode)
 - [Connectors](#connectors)
 - [Model Support](#model-support)
+- [Library Subpath Exports](#library-subpath-exports)
 
 ---
 
@@ -1032,3 +1033,24 @@ Open the served URL, enter your bridge URL, and click **Connect & Sign in**.
 - Use `--fixed-token` with a strong random value (`openssl rand -hex 32`) so the bridge token doesn't rotate on restart
 - Bearer tokens expire after 24 hours — clients must re-authorize
 - The bridge token entered on the authorization page is the single credential that gates all OAuth flows
+
+---
+
+## Library Subpath Exports
+
+Importing the package root (`patchwork-os`) runs the CLI, because `.` is also
+the `bin`. Code that wants the runtime's decisions as functions imports a
+subpath instead. Each is a pass-through re-export, pinned by a test that
+asserts reference identity with the source modules, so a consumer calls the
+same function the bridge does rather than re-deriving it.
+
+| Subpath | What it answers | Main exports |
+|---|---|---|
+| `patchwork-os/plugin` | Types for writing a plugin | `PluginContext` and the tool registration types — see [plugin-authoring.md](plugin-authoring.md) |
+| `patchwork-os/gate` | What may this worker **do**? | `decideWorkerAction`, `resolveGateOutcome`, `previewActions`, `classifyActionClass`, `parseForbidRules` / `isForbidden`, `parseWorker`, `loadWorkersFromDir`, `WorkerLevelStore`, `coversAction` |
+| `patchwork-os/privacy` | What may this destination **receive**? | `decideBoundary`, `narrowest`, `parseDataPolicy`, `parseRegistry`, `resolveDestination`, `describeDestinations`, `CLASSIFICATIONS` |
+
+The two decision barrels are separate on purpose: a gated action waits for a
+person, while a `LOCAL_ONLY` dispatch waits for a different destination, so a
+consumer must not show one under the other's heading. Neither exports anything
+that writes a ledger.

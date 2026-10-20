@@ -544,7 +544,7 @@ The `src/workers/` subsystem implements a trust-ramp-aware autonomy gate for rec
 - **Decision records**: every decision persists to `~/.patchwork/worker_gate_decisions.jsonl` with `gatePolicyVersion` (now `worker-ramp-v2`) and an optional `actor` — a *snapshot* (id + kind + display name as it was), never a roster reference, so a rename or role change cannot rewrite history. Absent on pre-attribution records and never backfilled: "nobody recorded this" must stay distinguishable from "we do not know".
 - **Durable trust evidence**: `src/workers/trustCheckpoint.ts`. The dial used to live only in `runs.jsonl`, so a worker was silently un-earned whenever its runs rotated out — `WorkerLevelStore.toJSONL()` existed but nothing in production called it. `loadWorkerTrustForRecipe` now seeds from a per-recipe checkpoint under `<patchworkDir>/worker_trust/` and folds only runs the checkpoint has not absorbed. Per-recipe (not global) because that entry replays one recipe's runs, so a shared watermark would starve every other recipe. Only **settled** runs (older than the 24h durability window) are checkpointed: the fold is time-dependent, and persisting a provisional success would pin the watermark past a run that must be re-evaluated once it becomes durable. Fail-soft — missing/corrupt checkpoint ⇒ replay-only, the previous behaviour.
 - **Feature flag**: `PATCHWORK_FLAG_WORKER_AUTONOMY` (default off). With the flag off, the gate is a no-op — byte-identical to pre-ramp behavior. Requires `--driver subprocess`.
-- **Dogfood templates**: `templates/workers/` — three reference workers (release-notes, dependency-bump, triage-failing-tests).
+- **Dogfood templates**: `templates/workers/` — four reference workers (`release-notes`, `dependency-upkeep`, `test-guardian`, `butler-errands`).
 - **Monitoring**: `patchwork workers shadow` replays logs and shows per-worker × action-class trust dial + ramp-vs-gate divergences. `patchwork workers backtest` calibrates cold-start without touching live gate behavior.
 - **Full reference**: [docs/worker-autonomy-policy-gate.md](docs/worker-autonomy-policy-gate.md), [docs/runbooks/worker-autonomy-dogfood.md](docs/runbooks/worker-autonomy-dogfood.md).
 
@@ -663,7 +663,7 @@ worker may DO; this answers what a destination may RECEIVE.
 
   **Observed in production 2026-08-31 — and the claim that it was not is the thing this file got most wrong.** Attribution has fired end to end: `approval_log.jsonl` holds **5 `attribution` rows**, each naming a real `memberId` with `kind: "human"`, against **105 `decision` rows** — so coverage is 5 of 105, not zero. The text that stood here said the roster held one member with no credential, so no `v2` session could be minted and zero attribution rows existed anywhere. A credential was set; the path works. It survived long enough to be quoted in a project assessment as a live blocker, which is the specific cost of a stale measurement in this file: **re-measure before scoping, never quote this paragraph.** The trap for anyone measuring is unchanged and still catches people: **50 of 280** rows in `worker_gate_decisions.jsonl` carry a non-null actor and ALL of them are `kind: "worker"` — the autonomous-allow attribution, not an approver. `MemberKind` is `"human" | "worker"`; there is no `"member"`. A non-null check will tell you attribution works.
 
-  **What is still true: authorisation is enforced NOWHERE.** `canApproveAction`, `capabilitiesFor`, `principalCan`, `roleGrants` have zero production call sites outside `src/identity/` and its tests. Six roles and eight capabilities currently grant nothing. The trap when that changes: the roster's fail-SOFT default (an implicit owner on a missing or malformed `members.json`) becomes privilege ESCALATION the moment anything consults it to permit an action. **Decided shape:** a pluggable auth seam resolving to `members.json`; Phase A per-member credentials via `crypto.scrypt` (no password-hash dep exists in the tree, and a native-compilation dep is a real cross-platform install risk here); Phase B OIDC mapped on `sub`, never `email` — **and Phase B is built in `patchwork-control-plane`, not here**: ADR-0019 reserves organisation identity (SSO/SCIM) for the non-MIT repo, the two ADRs were written in the same commit, and ADR-0020 originally cited ADR-0019 zero times. The SEAM and Phase A stay MIT here; federation does not. `src/identity/` as it stands is runtime and stays — the line is federation, not identity. The roster keeps its fail-SOFT default, and an unauthenticated principal stays UNATTRIBUTED. **Never default the actor to the implicit owner** — that writes a claim about a real person into an audit record on no evidence, which is worse than an absent `actor` (absence already means "nobody recorded this", and is never backfilled).
+  **What is still true: role-based authorisation is enforced nowhere.** `canApproveAction`, `capabilitiesFor`, `principalCan`, `roleGrants` have zero production call sites outside `src/identity/` and its tests. The one roster check that IS enforced is narrower: dashboard middleware refuses a `v2` session whose member is unknown or deactivated (`resolveSessionMember`, `dashboard/src/middleware.ts`) — identity, not capability. Six roles and eight capabilities currently grant nothing. The trap when that changes: the roster's fail-SOFT default (an implicit owner on a missing or malformed `members.json`) becomes privilege ESCALATION the moment anything consults it to permit an action. **Decided shape:** a pluggable auth seam resolving to `members.json`; Phase A per-member credentials via `crypto.scrypt` (no password-hash dep exists in the tree, and a native-compilation dep is a real cross-platform install risk here); Phase B OIDC mapped on `sub`, never `email` — **and Phase B is built in `patchwork-control-plane`, not here**: ADR-0019 reserves organisation identity (SSO/SCIM) for the non-MIT repo, the two ADRs were written in the same commit, and ADR-0020 originally cited ADR-0019 zero times. The SEAM and Phase A stay MIT here; federation does not. `src/identity/` as it stands is runtime and stays — the line is federation, not identity. The roster keeps its fail-SOFT default, and an unauthenticated principal stays UNATTRIBUTED. **Never default the actor to the implicit owner** — that writes a claim about a real person into an audit record on no evidence, which is worse than an absent `actor` (absence already means "nobody recorded this", and is never backfilled).
 
 ## Evidence Spine
 
@@ -719,35 +719,28 @@ Two corrections' worth of warning: this section was written from a survey, and
 both of its load-bearing claims went stale or were wrong within two days. Re-run
 the check before scoping against it.
 
-**`patchwork evidence` is that check.** It reports, per ledger, how many rows
-carry a `correlationId` out of how many rows exist, and how many runs appear in
-more than one — the denominators, not a reader. Re-measured **2026-08-31** on
-the reference machine: gate decisions **8 of 280**, boundary receipts **108 of
-264**, `privacy_shadow` **0 of 309**, `outcome-log` **0 of 99**, `approval_log`
-**0 of 215**, `butler/permission_exercises.jsonl` ABSENT. Runs reachable in BOTH
-joined ledgers: **1**. The two populations barely overlap by construction — gate
-rows are written for worker recipes under the autonomy flag, receipts for agent
-steps with a registered destination — so the join is sparse rather than merely
-young.
+**`patchwork evidence` is that check.** It now reports, per RELATIONSHIP
+(gate decision → run, boundary receipt → run, approval request → run, …), how
+many rows are connected, legacy (written before the field existed), not
+applicable, unresolved or a writer defect — denominators, not a reader.
+Re-measured **2026-10-20** on the reference machine: gate decision → run **58
+connected / 272 legacy**, boundary receipt → run **930 / 156** (22 unresolved),
+privacy shadow → run **827 / 311**, approval request → run **20 / 107** (39 n/a),
+approval decision → request **166 / 0**, attribution → request **12 / 0**.
 
-The figures five days earlier were gate **1 of 273**, receipts **14 of 170**,
-shared runs **zero**. Receipts went 8% → 41% because the writer landed and has
-been accruing since; the gate barely moved because its population barely moved.
-Quote the direction, not either snapshot, and **re-run the verb** — this
-paragraph has been stale twice already.
+The direction is the point, not either snapshot: on 2026-08-31 the same check
+read gate **8 of 280**, receipts **108 of 264**, `privacy_shadow` and
+`approval_log` **0**. Every joinable ledger now accrues connected rows; the
+legacy columns are fixed by the never-backfill rule and only shrink as a share.
+**Re-run the verb** — this paragraph has been stale three times.
 
-**`approval_log` at 0 of 215 is the one that matters commercially**, and it is
-not merely another unjoined ledger. It is the ledger an outside auditor asks for
-first ("who approved this, and under what rule"), and with no run reference no
-run in the entire history can be assembled into that answer. Stamping it is the
-smallest change that turns the spine from an internal property into something a
-third party can check — the same `rv` protocol, already proven twice.
-
-That zero is what keeps the evidence graph unbuilt, and it is why item 7 is not
-"unblocked by the sentinel shipping": the sentinel settled HOW to stamp, and
-there is still almost nothing stamped. The verb prints COUNTS ONLY — never a
-row, an id or any value, because a `correlationId` is a run's `taskId` — so its
-output is safe to quote where `runstore compare` and `privacy receipts` are not.
+**`approval_log` is the one that matters commercially** — it is the ledger an
+outside auditor asks for first ("who approved this, and under what rule").
+It was 0 joined until the approval join shipped (2026-08-31); approval requests
+are now stamped, so new approvals can be assembled into that answer and the
+107 legacy ones cannot. The verb prints COUNTS ONLY — never a row, an id or any
+value, because a `correlationId` is a run's `taskId` — so its output is safe to
+quote where `runstore compare` and `privacy receipts` are not.
 
 `ctxQueryTraces` reads four stores and none of those.
 
