@@ -12,7 +12,7 @@ Read from the lockfiles, so this is the set actually resolved rather than the
 set requested. `UNDECLARED` means the package publishes no `license` field —
 not that it is unlicensed; check the package itself before relying on it.
 
-**458 production packages** across 4 workspaces.
+**459 production packages** across 4 workspaces.
 
 ## Licences in use
 
@@ -27,6 +27,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | 0BSD | 2 |
 | Apache-2.0 AND LGPL-3.0-or-later AND MIT | 1 |
 | CC-BY-4.0 | 1 |
+| CC0-1.0 | 1 |
 | MPL-2.0 | 1 |
 | BlueOak-1.0.0 | 1 |
 | UNDECLARED | 1 |
@@ -38,7 +39,7 @@ not that it is unlicensed; check the package itself before relying on it.
 <details>
 <summary>Full inventory</summary>
 
-### dashboard — 194 packages
+### dashboard — 195 packages
 
 | Package | Version | Licence |
 |---|---|---|
@@ -214,6 +215,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | scheduler | 0.23.2 | MIT |
 | semver | 7.8.5 | ISC |
 | sharp | 0.35.5 | Apache-2.0 |
+| simple-icons | 13.21.0 | CC0-1.0 |
 | source-map-js | 1.2.2 | BSD-3-Clause |
 | space-separated-tokens | 2.0.2 | MIT |
 | stringify-entities | 4.0.4 | MIT |
