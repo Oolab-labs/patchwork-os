@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { appendChained } from "../ledgerChain.js";
+import { appendChained, isChainMarker } from "../ledgerChain.js";
 import { patchworkHome } from "../patchworkHome.js";
 import {
   type ActionRef,
@@ -193,8 +193,9 @@ function parseOutcomeLog(logPath: string): {
     // BY DESIGN, so they must be skipped BEFORE the unkeyable accounting —
     // otherwise every load reports a false defect on line 1 of a healthy
     // ledger, and the operator-facing "your ledger has holes" signal drowns.
-    const kind = (r as { kind?: unknown }).kind;
-    if (kind === "chain-start" || kind === "rotation") continue;
+    // One predicate for every reader, so a new marker kind cannot be
+    // counted as data here while other readers skip it.
+    if (isChainMarker(r)) continue;
     if (!r.disposition) {
       unkeyable.push({ line: i + 1, reason: "no-disposition", excerpt });
       continue;
