@@ -7,10 +7,9 @@
  * The value (full credential JSON) appears in `ps aux` for any local process
  * to read while the command runs.
  *
- * Fix: credential is passed via environment variable (PATCHWORK_KCV) to a
- * /bin/sh wrapper; the `security` binary is invoked as `$PATCHWORK_KCV`
- * expansion inside the shell — the bridge process and the shell subprocess
- * never have the credential in their args arrays.
+ * Fix (revised 2026-10-20): the first fix passed it via an env var to a
+ * /bin/sh wrapper that expanded it into `security`'s argv anyway. It is now
+ * written on stdin to `security -i`, hex-encoded.
  */
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -76,18 +75,19 @@ describe("macOS keychain write: credential not in process args (audit 2026-06-03
         ).not.toContain(secret);
       }
 
-      // The credential MUST appear in the env object of at least one call.
-      const envValues = vi
+      // It must not travel in an env var either: a shell wrapper that expands
+      // it into `security`'s argv put it back in `ps` one process down. It is
+      // delivered on STDIN (`security -i`, hex-encoded) — see
+      // tokenStorage.keychain-stdin.test.ts.
+      const hex = Buffer.from(secret, "utf8").toString("hex");
+      const inputs = vi
         .mocked(spawnSync)
-        .mock.calls.flatMap((call) =>
-          Object.values(
-            (call[2] as { env?: Record<string, string> } | undefined)?.env ??
-              {},
-          ),
+        .mock.calls.map(
+          (call) => (call[2] as { input?: string } | undefined)?.input ?? "",
         );
       expect(
-        envValues.some((v) => typeof v === "string" && v.includes(secret)),
-        "credential must be passed via an env var to the subprocess",
+        inputs.some((i) => i.includes(hex)),
+        "credential must be delivered on stdin, hex-encoded",
       ).toBe(true);
     },
   );

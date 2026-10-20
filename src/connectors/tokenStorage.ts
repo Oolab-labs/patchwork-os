@@ -737,31 +737,41 @@ function listLinuxSecrets(): string[] {
 }
 
 // Rename the platform-specific functions to avoid conflicts
+/**
+ * Longest value `security -i` is trusted to carry. Its command line is capped
+ * at about 4 KB and it STORES a truncated value rather than failing (measured
+ * 2026-10-20); hex doubles the length. Larger values are refused here, and the
+ * read-back below catches any cap this estimate gets wrong.
+ */
+const MACOS_KEYCHAIN_MAX_VALUE_BYTES = 1900;
+
 function setMacOSKeychainItemSync(key: string, value: string): boolean {
-  // Audit 2026-06-03 (HIGH #3): pass credential via env var, not as a -w
-  // argument. Process args appear in `ps aux` output and are readable by any
-  // local process for the duration of the spawnSync call. Environment variables
-  // require elevated access to inspect on macOS. The shell reads $PATCHWORK_KCV
-  // and expands it into security's -w argument; the bridge process itself never
-  // carries the credential in its own arg list.
+  // The secret must reach `security` without appearing in ANY process's argv.
+  // Audit 2026-06-03 (HIGH #3) moved it from the bridge's args into an env
+  // var — but a `/bin/sh -c '... -w "$VAR"'` wrapper expanded it straight
+  // back into the `security` child's argv, visible in `ps` (Private/52 LOW).
+  // `security -i` reads whole commands from STDIN; `-X <hex>` takes the
+  // password hex-encoded, so it needs no quoting. The prompt form (a trailing
+  // `-w`) is not usable: it is capped at 128 characters and truncates silently.
   if (!isValidKeychainKey(key)) return false;
+  if (Buffer.byteLength(value, "utf8") > MACOS_KEYCHAIN_MAX_VALUE_BYTES) {
+    return false;
+  }
   try {
-    const result = spawnSync(
-      "/bin/sh",
-      [
-        "-c",
-        'security add-generic-password -s "$1" -a "$2" -U -w "$PATCHWORK_KCV"',
-        "--",
-        key,
-        SERVICE_NAME,
-      ],
-      {
-        encoding: "utf-8",
-        timeout: 5000,
-        env: { ...process.env, PATCHWORK_KCV: value },
-      },
-    );
-    return result.status === 0;
+    const hex = Buffer.from(value, "utf8").toString("hex");
+    const result = spawnSync("security", ["-i"], {
+      encoding: "utf-8",
+      timeout: 5000,
+      input: `add-generic-password -s "${key}" -a "${SERVICE_NAME}" -U -X ${hex}\n`,
+    });
+    if (result.status !== 0) return false;
+    // Read back: `security -i` exits 0 having stored a truncated value, so a
+    // write is not trusted until the keychain returns exactly what was sent.
+    if (getMacOSKeychainItemSync(key) !== value) {
+      deleteMacOSKeychainItemSync(key);
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
