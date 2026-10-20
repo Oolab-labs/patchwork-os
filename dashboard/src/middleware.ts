@@ -275,11 +275,16 @@ export const config = {
     // the OAuth code/state from being dropped by a /login redirect.
     // See SESSION_GATE_MATCHER above for the full rationale.
     //
+    // Every exemption is BOUNDED (`$`, or `(?![\w-])` for a section, which
+    // still admits `/sub/page` and Next's `.rsc` / `.segments` suffixes): a bare
+    // prefix exempted any route whose name merely began with it, so a future
+    // `/marketplace-admin` or `/api/login-as` would have shipped public.
+    //
     // Root path (basePath bare) explicitly — the negative-lookahead
     // matcher below doesn't reliably catch `/` alone in Next.js, which
     // means the dashboard's overview page would otherwise be unprotected.
     "/",
-    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|api/relay/halt|sw\\.js|icons/|api/push/vapid-key|connections/[^/]+/callback|api/connections/[^/]+/callback).*)",
+    "/((?!_next/static/|_next/image|favicon\\.ico$|favicon\\.svg$|manifest\\.json$|robots\\.txt$|schema/|marketplace(?![\\w-])|api/login$|api/relay/push$|api/relay/halt$|sw\\.js$|icons/|api/push/vapid-key$|connections/[^/]+/callback$|api/connections/[^/]+/callback$).*)",
   ],
 };
 
