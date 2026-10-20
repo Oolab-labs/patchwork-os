@@ -20,6 +20,7 @@ import { splitLines } from "../claude/streamParser.js";
 import { containmentFromInput } from "../claude/subprocess.js";
 import { exitCodeOf } from "../exitCode.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
+import { writePromptToStdin } from "../promptStdin.js";
 import { withSystemPreamble } from "../systemPreamble.js";
 import type {
   ProviderDriver,
@@ -374,8 +375,10 @@ export class GeminiSubprocessDriver implements ProviderDriver {
 
     try {
       const args = [
+        // `-p` APPENDS its value to stdin, so it is given an empty one and
+        // the task goes on stdin (writePromptToStdin below), out of argv.
         "-p",
-        withSystemPreamble(input.prompt, input.systemPrompt),
+        "",
         "--output-format",
         "stream-json",
         "--approval-mode",
@@ -442,8 +445,12 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         // tool-processes spawned by Gemini are orphaned on abort/cancel.
         // Mirrors the Claude subprocess driver (src/drivers/claude/subprocess.ts).
         detached: true,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
       });
+      writePromptToStdin(
+        child,
+        withSystemPreamble(input.prompt, input.systemPrompt),
+      );
       // unref() so the bridge can exit without waiting for the subprocess.
       child.unref();
       // Tree-kill on abort: kills the immediate child AND its descendants.

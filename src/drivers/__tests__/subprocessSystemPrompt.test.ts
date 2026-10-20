@@ -12,8 +12,8 @@
  * GEMINI_SYSTEM_MD replaces its whole built-in prompt), so the instruction is
  * delivered as a delimited preamble ahead of the task.
  *
- * Real child processes that record their own argv, so what is checked is what
- * the CLI would actually receive.
+ * Real child processes that record their argv and stdin, so what is checked
+ * is what the CLI would actually receive.
  */
 
 import {
@@ -41,13 +41,16 @@ import type { ProviderDriver } from "../types.js";
 const posix = process.platform !== "win32";
 const dir = mkdtempSync(join(tmpdir(), "driver-system-prompt-"));
 const argvFile = join(dir, "argv.txt");
+const stdinFile = join(dir, "stdin.txt");
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 beforeEach(() => {
   vi.stubEnv("HOME", dir);
   vi.stubEnv("USERPROFILE", dir);
   vi.stubEnv("ARGV_FILE", argvFile);
+  vi.stubEnv("STDIN_FILE", stdinFile);
   writeFileSync(argvFile, "");
+  writeFileSync(stdinFile, "");
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -59,7 +62,7 @@ const recorder = (() => {
   const p = join(dir, "recorder.sh");
   writeFileSync(
     p,
-    '#!/bin/sh\nfor a in "$@"; do printf "%s\\0" "$a" >> "$ARGV_FILE"; done\nexit 0\n',
+    '#!/bin/sh\nfor a in "$@"; do printf "%s\\0" "$a" >> "$ARGV_FILE"; done\ncat > "$STDIN_FILE"\nexit 0\n',
   );
   chmodSync(p, 0o755);
   return p;
@@ -87,9 +90,12 @@ describe.skipIf(!posix)("CLI drivers deliver systemPrompt", () => {
         timeoutMs: 20_000,
         signal: new AbortController().signal,
       });
-      const argv = recordedArgv();
-      const carrier = argv.find((a) => a.includes("Summarise the notes."));
-      expect(carrier, `argv: ${JSON.stringify(argv)}`).toBeDefined();
+      // The task travels on stdin since the prompt left argv
+      // (subprocessPromptStdin.test.ts); the preamble travels with it.
+      const carrier = readFileSync(stdinFile, "utf8");
+      expect(carrier, `argv: ${JSON.stringify(recordedArgv())}`).toContain(
+        "Summarise the notes.",
+      );
       expect(carrier).toContain(SYSTEM);
       expect(carrier?.indexOf(SYSTEM)).toBeLessThan(
         carrier?.indexOf("Summarise the notes.") ?? -1,
@@ -103,7 +109,7 @@ describe.skipIf(!posix)("CLI drivers deliver systemPrompt", () => {
         timeoutMs: 20_000,
         signal: new AbortController().signal,
       });
-      expect(recordedArgv()).toContain("Summarise the notes.");
+      expect(readFileSync(stdinFile, "utf8")).toBe("Summarise the notes.");
     });
   }
 });

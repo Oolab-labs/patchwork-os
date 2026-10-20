@@ -8,6 +8,7 @@ import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
 import { exitCodeOf } from "../exitCode.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
+import { writePromptToStdin } from "../promptStdin.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -324,9 +325,10 @@ export class SubprocessDriver implements ProviderDriver {
     // Legacy: the sandbox branch keys off a non-empty allowlist, as before.
     const sandboxActive = contained || (sandbox && allowedTools.length > 0);
 
+    // The prompt goes on stdin (writePromptToStdin below), never in argv:
+    // `claude -p` with no prompt argument reads it from there.
     const args = [
       "-p",
-      input.prompt,
       // --strict-mcp-config: load only the MCP servers from --mcp-config (or
       // none at all when mcpAccess is off), never ~/.claude.json or
       // .mcp.json. The strict flag also prevents claude -p from opening a
@@ -419,10 +421,11 @@ export class SubprocessDriver implements ProviderDriver {
       cwd: input.workspace,
       env,
       signal: input.signal,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       // setsid() — prevents subprocess from opening /dev/tty for interactive prompts.
       detached: true,
     });
+    writePromptToStdin(child, input.prompt);
     // Node's `signal` option calls `child.kill()` on abort, which only signals
     // the immediate child. claude -p may itself spawn children (MCP shims,
     // tools); without tree-kill those orphan when the task is cancelled.
