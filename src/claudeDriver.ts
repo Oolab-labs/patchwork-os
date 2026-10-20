@@ -266,9 +266,9 @@ export class SubprocessDriver implements IClaudeDriver {
     // at a missing file and allowing hook loops to fire.
     this._writeSettings();
 
+    // The prompt goes on stdin (writePromptToStdin below), never in argv.
     const args = [
       "-p",
-      input.prompt,
       // Suppress .mcp.json auto-discovery — avoids MCP server init overhead and
       // prevents the subprocess from connecting back to the bridge that spawned it.
       "--strict-mcp-config",
@@ -344,9 +344,10 @@ export class SubprocessDriver implements IClaudeDriver {
       cwd: input.workspace,
       env,
       signal: input.signal,
-      // stdin must be 'ignore' (not 'pipe') — claude -p may block waiting for stdin to close
-      // if it detects a pipe on fd 0 in certain environments.
-      stdio: ["ignore", "pipe", "pipe"],
+      // stdin is a pipe that carries the prompt and is ENDED immediately
+      // (writePromptToStdin). claude -p blocks on an OPEN stdin pipe, which is
+      // why this used to be 'ignore'; an ended one is read and closed.
+      stdio: ["pipe", "pipe", "pipe"],
       // detached: true calls setsid() on POSIX, creating a new session with no controlling
       // terminal. Without this, the subprocess inherits the parent's terminal and can open
       // /dev/tty directly to display interactive prompts (session-selection, permission
@@ -355,6 +356,7 @@ export class SubprocessDriver implements IClaudeDriver {
       // waiting for input that never arrives. Detaching prevents /dev/tty access entirely.
       detached: true,
     });
+    writePromptToStdin(child, input.prompt);
 
     /**
      * Kill the entire process group, not just the direct child. Because we
@@ -779,4 +781,7 @@ export type {
   ProviderTaskOutcome,
   ProviderTaskResult,
 } from "./drivers/types.js";
+
+import { writePromptToStdin } from "./drivers/promptStdin.js";
+
 export { toProviderTaskOutcome } from "./drivers/types.js";

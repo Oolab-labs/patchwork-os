@@ -9,6 +9,7 @@ import {
 import { containmentFromInput } from "../claude/subprocess.js";
 import { exitCodeOf } from "../exitCode.js";
 import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
+import { writePromptToStdin } from "../promptStdin.js";
 import { withSystemPreamble } from "../systemPreamble.js";
 import type {
   ProviderDriver,
@@ -123,7 +124,9 @@ export class CodexDriver implements ProviderDriver {
 
     const args = [
       "exec",
-      withSystemPreamble(input.prompt, input.systemPrompt),
+      // `-`: read the prompt from stdin (writePromptToStdin below), so the
+      // task text never appears in argv.
+      "-",
       "--json",
       "--sandbox",
       sandboxMode,
@@ -156,11 +159,15 @@ export class CodexDriver implements ProviderDriver {
       cwd: input.workspace,
       env,
       signal: input.signal,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       // setsid() — prevents subprocess from opening /dev/tty for interactive
       // prompts, and makes it its own process-group leader for treeKill.
       detached: true,
     });
+    writePromptToStdin(
+      child,
+      withSystemPreamble(input.prompt, input.systemPrompt),
+    );
     // Node's `signal` option calls `child.kill()` on abort, which only
     // signals the immediate child — insufficient given Codex's confirmed
     // upstream orphaned-child-process bugs (see class doc comment).
