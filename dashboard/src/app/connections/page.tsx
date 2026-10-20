@@ -11,6 +11,7 @@ import { useToast } from "@/components/Toast";
 import type { ConnectorStatus } from "./types";
 import { recentlyUsedOrder, verificationSummary } from "./verificationSummary";
 import { CONNECTOR_SCOPES, SCOPE_TRANSLATIONS } from "@/lib/connectorScopes";
+import { connectorLogo } from "@/lib/connectorLogos";
 
 // ------------------------------------------------------------------ helpers
 
@@ -957,77 +958,12 @@ const PROVIDERS: {
   { id: "google-calendar", name: "Google Calendar", description: "View your schedule.",                                                                              icon: IconCalendar },
 ];
 
-// ------------------------------------------------------------------ logo URLs
-// simpleicons.org CDN (v16) for most; jsDelivr npm@13 for brands removed in newer versions.
-// monday.com has never been in Simple Icons — falls back to initials.
-
-const SI_CDN = "https://cdn.simpleicons.org";
-const SI_V13 = "https://cdn.jsdelivr.net/npm/simple-icons@13/icons";
-
-// Icons served from jsDelivr are raw black SVGs — need CSS invert(1) to appear white
-const NEEDS_INVERT = new Set(["slack", "salesforce", "twilio", "sendgrid"]);
-
-function logoUrl(id: string): string | null {
-  const cdnMap: Record<string, string> = {
-    jira:             `${SI_CDN}/jira/ffffff`,
-    notion:           `${SI_CDN}/notion/ffffff`,
-    pagerduty:        `${SI_CDN}/pagerduty/ffffff`,
-    telegram:         `${SI_CDN}/telegram/ffffff`,
-    drive:            `${SI_CDN}/googledrive/ffffff`,
-    docs:             `${SI_CDN}/googledocs/ffffff`,
-    confluence:       `${SI_CDN}/confluence/ffffff`,
-    linear:           `${SI_CDN}/linear/ffffff`,
-    slack:            `${SI_V13}/slack.svg`,
-    discord:          `${SI_CDN}/discord/ffffff`,
-    zendesk:          `${SI_CDN}/zendesk/ffffff`,
-    github:           `${SI_CDN}/github/ffffff`,
-    gitlab:           `${SI_CDN}/gitlab/ffffff`,
-    asana:            `${SI_CDN}/asana/ffffff`,
-    monday:           `https://monday.com/static/img/favicons/favicon-monday5-192.png`,
-    hubspot:          `${SI_CDN}/hubspot/ffffff`,
-    salesforce:       `${SI_V13}/salesforce.svg`,
-    intercom:         `${SI_CDN}/intercom/ffffff`,
-    gmail:            `${SI_CDN}/gmail/ffffff`,
-    "google-calendar":`${SI_CDN}/googlecalendar/ffffff`,
-    "google-drive":   `${SI_CDN}/googledrive/ffffff`,
-    datadog:          `${SI_CDN}/datadog/ffffff`,
-    stripe:           `${SI_CDN}/stripe/ffffff`,
-    sentry:           `${SI_CDN}/sentry/ffffff`,
-    figma:            `${SI_CDN}/figma/ffffff`,
-    airtable:         `${SI_CDN}/airtable/ffffff`,
-    webflow:          `${SI_CDN}/webflow/ffffff`,
-    shopify:          `${SI_CDN}/shopify/ffffff`,
-    twilio:           `${SI_V13}/twilio.svg`,
-    sendgrid:         `${SI_V13}/sendgrid.svg`,
-    snowflake:        `${SI_CDN}/snowflake/ffffff`,
-    postgres:         `${SI_CDN}/postgresql/ffffff`,
-    mongodb:          `${SI_CDN}/mongodb/ffffff`,
-    redis:            `${SI_CDN}/redis/ffffff`,
-    elasticsearch:    `${SI_CDN}/elasticsearch/ffffff`,
-    // Wave 4
-    resend:           `${SI_CDN}/resend/ffffff`,
-    obsidian:         `${SI_CDN}/obsidian/ffffff`,
-    todoist:          `${SI_CDN}/todoist/ffffff`,
-    vercel:           `${SI_CDN}/vercel/ffffff`,
-    // paystack: not in SimpleIcons — falls back to initials + brand color
-    // pipedrive: not in SimpleIcons — falls back to initials + brand color
-    caldiy:           `${SI_CDN}/caldotcom/ffffff`,
-    grafana:          `${SI_CDN}/grafana/ffffff`,
-    posthog:          `${SI_CDN}/posthog/ffffff`,
-    cloudflare:       `${SI_CDN}/cloudflare/ffffff`,
-    circleci:         `${SI_CDN}/circleci/ffffff`,
-    woocommerce:      `${SI_CDN}/woocommerce/ffffff`,
-    supabase:         `${SI_CDN}/supabase/ffffff`,
-  };
-  return cdnMap[id] ?? null;
-}
-
 // ------------------------------------------------------------------ logo tile
 
 function LogoTile({ def, size = 56 }: { def: ConnectorDef; size?: number }) {
-  const [imgFailed, setImgFailed] = useState(false);
   const radius = size >= 48 ? 12 : 8;
-  const url = logoUrl(def.id);
+  // Bundled, rendered inline: nothing is fetched (connectorLogos.ts).
+  const logo = connectorLogo(def.id);
   const iconSize = Math.round(size * 0.52);
 
   return (
@@ -1042,16 +978,18 @@ function LogoTile({ def, size = 56 }: { def: ConnectorDef; size?: number }) {
       }}
       aria-hidden="true"
     >
-      {url && !imgFailed ? (
-        <img
-          src={url}
+      {logo ? (
+        <svg
+          viewBox="0 0 24 24"
           width={iconSize}
           height={iconSize}
-          alt=""
-          onError={() => setImgFailed(true)}
+          fill="#ffffff"
           className="conn-logo-img"
-          style={NEEDS_INVERT.has(def.id) ? { filter: "invert(1)" } : undefined}
-        />
+          role="img"
+          aria-label={logo.title}
+        >
+          <path d={logo.path} />
+        </svg>
       ) : (
         def.initials
       )}
