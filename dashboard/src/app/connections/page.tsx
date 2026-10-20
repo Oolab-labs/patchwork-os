@@ -10,6 +10,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import type { ConnectorStatus } from "./types";
 import { recentlyUsedOrder, verificationSummary } from "./verificationSummary";
+import { CONNECTOR_SCOPES, SCOPE_TRANSLATIONS } from "@/lib/connectorScopes";
 
 // ------------------------------------------------------------------ helpers
 
@@ -102,70 +103,6 @@ const CATALOG: ConnectorDef[] = [
   { id: "telegram",         name: "Telegram",         initials: "TG", category: "Comms",      wave: 4, tools: 3,  bg: "#26A5E4" },
 ];
 
-
-// ------------------------------------------------------------------ OAuth scope hints (per connector — surface what we requested)
-
-const CONNECTOR_SCOPES: Record<string, string[]> = {
-  slack:            ["channels:read", "chat:write", "users:read"],
-  jira:             ["read:jira", "write:jira"],
-  confluence:       ["read:confluence", "write:confluence"],
-  github:           ["repo:read", "issues:read", "pulls:read"],
-  gitlab:           ["read_api", "read_repository"],
-  linear:           ["read", "write"],
-  asana:            ["tasks:read", "projects:read"],
-  notion:           ["read_content", "update_content"],
-  discord:          ["messages.read", "guilds.read"],
-  zendesk:          ["tickets:read", "users:read"],
-  intercom:         ["conversations:read", "users:read"],
-  hubspot:          ["contacts:read", "deals:read"],
-  pagerduty:        ["incidents:read", "services:read"],
-  datadog:          ["monitors_read", "events_read"],
-  stripe:           ["read_only"],
-  sentry:           ["event:read", "project:read"],
-  gmail:            ["gmail.readonly"],
-  "google-calendar":["calendar.readonly"],
-  "google-drive":   ["drive.readonly"],
-  telegram:         ["send_messages", "read_chats"],
-};
-
-// ------------------------------------------------------------------ plain-English translations for raw OAuth scope strings (chip labels)
-
-const SCOPE_TRANSLATIONS: Record<string, string> = {
-  "channels:read": "See channels",
-  "chat:write": "Send messages",
-  "users:read": "See user info",
-  "read:jira": "Read Jira issues",
-  "write:jira": "Write Jira issues",
-  "read:confluence": "Read Confluence pages",
-  "write:confluence": "Write Confluence pages",
-  "repo:read": "Read code & issues",
-  "issues:read": "Read issues",
-  "pulls:read": "Read pull requests",
-  "read_api": "Read repository data",
-  "read_repository": "Read repository data",
-  "read": "Read your data",
-  "write": "Write your data",
-  "tasks:read": "Read tasks",
-  "projects:read": "Read projects",
-  "read_content": "Read pages",
-  "update_content": "Edit pages",
-  "messages.read": "Read messages",
-  "guilds.read": "See servers",
-  "tickets:read": "Read tickets",
-  "conversations:read": "Read conversations",
-  "contacts:read": "Read contacts",
-  "deals:read": "Read deals",
-  "incidents:read": "Read incidents",
-  "services:read": "Read services",
-  "monitors_read": "Read monitors",
-  "events_read": "Read events",
-  "read_only": "Read-only access",
-  "event:read": "Read error events",
-  "project:read": "Read project info",
-  "gmail.readonly": "Read email",
-  "calendar.readonly": "Read calendar",
-  "drive.readonly": "Read files",
-};
 
 // ------------------------------------------------------------------ icon SVG components (kept for modals)
 
