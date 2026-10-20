@@ -9,7 +9,9 @@ describe("parseSchedule", () => {
     ["@every 30s", 30_000],
     ["@every 5m", 5 * 60_000],
     ["@every 2h", 2 * 60 * 60_000],
-    ["@every 250ms", 250],
+    // Milliseconds still parse at or above the 1-second floor; `@every 250ms`
+    // is refused (schedulerIntervalFloor.test.ts).
+    ["@every 1500ms", 1500],
     ["  @every 1m  ", 60_000],
   ])("parses %s → %d ms", (input, expected) => {
     const result = parseSchedule(input);

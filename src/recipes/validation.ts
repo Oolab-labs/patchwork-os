@@ -22,6 +22,7 @@ import {
   fileInputNamesOf,
   findFileInputsInIdentifiers,
 } from "./fileInputs.js";
+import { parseEveryInterval } from "./intervalSchedule.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
@@ -401,11 +402,17 @@ export function validateRecipeDefinition(
         // recipe and it never fires. Mirrors the parse path in
         // src/recipes/scheduler.ts:parseSchedule.
         const at = trigger.at.trim();
-        const isInterval = /^@every\s+[1-9]\d*\s*(ms|s|m|h)$/i.test(at);
+        const interval = parseEveryInterval(at);
+        const isInterval = interval.ok;
         // Accept 5-field and 6-field cron (M24: node-cron supports 6 fields
         // with a seconds column; reject only if fewer than 5 fields).
         const isCronExpr = /^\S+(?:\s+\S+){4,5}$/.test(at);
-        if (!isInterval && !isCronExpr) {
+        if (!interval.ok && interval.reason === "below_minimum") {
+          issues.push({
+            level: "error",
+            message: `trigger.at "${at}" is shorter than the 1-second minimum — the scheduler will not register it`,
+          });
+        } else if (!isInterval && !isCronExpr) {
           issues.push({
             level: "error",
             message: `trigger.at "${at}" is not a valid schedule — expected 5- or 6-field cron (e.g. "0 9 * * 1-5") or "@every Ns|Nm|Nh"`,

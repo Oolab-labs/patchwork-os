@@ -19,6 +19,7 @@ import {
   getConfigDisabledNames,
   isInstallDirDisabled,
 } from "./disabledMarkers.js";
+import { parseEveryInterval } from "./intervalSchedule.js";
 import {
   isReservedRecipeDirEntry,
   isTopLevelRecipeFile,
@@ -632,22 +633,12 @@ type ParsedSchedule =
 export function parseSchedule(schedule: string): ParsedSchedule | null {
   const trimmed = schedule.trim();
 
-  // @every Ns|Nm|Nh
-  const m = /^@every\s+(\d+)\s*(ms|s|m|h)$/i.exec(trimmed);
-  if (m) {
-    // biome-ignore lint/style/noNonNullAssertion: capture group 1 is guaranteed by the regex
-    const n = Number.parseInt(m[1]!, 10);
-    const unit = m[2]?.toLowerCase();
-    if (!Number.isFinite(n) || n <= 0) return null;
-    const multiplier =
-      unit === "ms"
-        ? 1
-        : unit === "s"
-          ? 1000
-          : unit === "m"
-            ? 60_000
-            : 60 * 60_000;
-    return { kind: "interval", intervalMs: n * multiplier };
+  // @every Ns|Nm|Nh — one parser, shared with `recipe lint`.
+  if (/^@every\b/i.test(trimmed)) {
+    const interval = parseEveryInterval(trimmed);
+    return interval.ok
+      ? { kind: "interval", intervalMs: interval.intervalMs }
+      : null;
   }
 
   // 5- or 6-field cron expression. node-cron accepts an optional leading
