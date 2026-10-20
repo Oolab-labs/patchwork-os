@@ -194,39 +194,10 @@ async function refreshAccessToken(tokens: DriveTokens): Promise<DriveTokens> {
     throw new Error(
       "Google Drive client credentials not available — reconnect the Google Drive connector",
     );
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    signal: tokenRefreshSignal(),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      refresh_token: tokens.refresh_token,
-      client_id: id,
-      client_secret: secret,
-      grant_type: "refresh_token",
-    }).toString(),
+  return refreshGoogleTokens(tokens, id, secret, {
+    save: saveTokens,
+    clear: deleteTokens,
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(
-      `Token refresh failed: ${res.status} (${safeOAuthErrorCode(body)})`,
-    );
-  }
-  const json = (await res.json()) as {
-    access_token: string;
-    expires_in?: number;
-    token_type?: string;
-  };
-  if (typeof json.access_token !== "string" || json.access_token.length === 0)
-    throw new Error("Token refresh returned no access_token");
-  const updated: DriveTokens = {
-    ...tokens,
-    access_token: json.access_token,
-    expiry_date: json.expires_in
-      ? Date.now() + json.expires_in * 1000
-      : tokens.expiry_date,
-  };
-  saveTokens(updated);
-  return updated;
 }
 
 /**
@@ -363,8 +334,8 @@ export async function fetchDocName(
 }
 
 import { patchworkPath } from "../patchworkHome.js";
+import { refreshGoogleTokens } from "./googleTokenRefresh.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
-import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 
 const pendingStates = createOAuthStateStore({ namespace: "googleDrive" });
 

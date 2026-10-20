@@ -218,41 +218,10 @@ async function refreshAccessToken(tokens: GmailTokens): Promise<GmailTokens> {
     throw new Error(
       "Gmail client credentials not available — reconnect the Gmail connector",
     );
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    signal: tokenRefreshSignal(),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      refresh_token: tokens.refresh_token,
-      client_id: id,
-      client_secret: secret,
-      grant_type: "refresh_token",
-    }).toString(),
+  return refreshGoogleTokens(tokens, id, secret, {
+    save: saveTokens,
+    clear: deleteTokens,
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    let code = "unknown";
-    try {
-      code = (JSON.parse(body) as { error?: string }).error ?? "unknown";
-    } catch {}
-    throw new Error(`Token refresh failed: ${res.status} (${code})`);
-  }
-  const json = (await res.json()) as {
-    access_token: string;
-    expires_in?: number;
-    token_type?: string;
-  };
-  if (typeof json.access_token !== "string" || json.access_token.length === 0)
-    throw new Error("Token refresh returned no access_token");
-  const updated: GmailTokens = {
-    ...tokens,
-    access_token: json.access_token,
-    expiry_date: json.expires_in
-      ? Date.now() + json.expires_in * 1000
-      : tokens.expiry_date,
-  };
-  saveTokens(updated);
-  return updated;
 }
 
 /**
@@ -303,8 +272,8 @@ async function fetchUserEmail(accessToken: string): Promise<string> {
 // ── State map (in-memory CSRF protection) ────────────────────────────────────
 
 import { patchworkPath } from "../patchworkHome.js";
+import { refreshGoogleTokens } from "./googleTokenRefresh.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
-import { tokenRefreshSignal } from "./tokenRefreshTimeout.js";
 
 const pendingStates = createOAuthStateStore({ namespace: "gmail" });
 

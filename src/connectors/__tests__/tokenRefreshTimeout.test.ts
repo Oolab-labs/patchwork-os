@@ -125,7 +125,9 @@ describe("every refresh-token request in src/connectors carries a timeout", () =
       const src = readFileSync(join(dir, f), "utf8");
       found += refreshFetchBlocks(src).length;
     }
-    expect(found).toBeGreaterThanOrEqual(9);
+    // 6 since 2026-10-20: the four Google connectors share one refresh
+    // (googleTokenRefresh.ts), which this guard still checks.
+    expect(found).toBeGreaterThanOrEqual(6);
   });
 
   for (const f of files) {
