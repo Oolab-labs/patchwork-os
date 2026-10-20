@@ -199,6 +199,9 @@ patchwork privacy destinations [--json]
 | `destinations` | Where prompts may go, and which destinations leave this machine. An empty registry is reported as **inert**. Names no retention or training claims, deliberately; put provider notes in an operator `note` with `noteReviewedOn`. |
 | `receipts [--since-days N]` | What the live boundary actually decided, from `boundary_receipts.jsonl`. Leads with the denominator; never a bare refusal count. |
 | `shadow [--since-days N]` | What the candidate policy under `privacy.shadow` would have stopped. An empty ledger reports "nothing observed". |
+
+`--since-days` takes a positive number of days (fractions allowed). Anything else — `abc`, `0`, `-3`, a missing value — exits 2 with a usage error rather than silently reporting the whole history. The same rule applies to `suggest`.
+
 | `undeclared [--dir <path>]` | Which agent steps carry no `data_policy`, and which tool outputs feed them. Suggests no classification, on purpose. |
 | `suggest` | A starter `privacy.shadow` block derived from the drivers your recipes declare. Emits the shadow key only, never the enforcing one. |
 
