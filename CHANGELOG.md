@@ -6,6 +6,67 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.5] — 2026-10-22
+
+### Security
+
+- **Outbound requests**: the private-range check closes its IPv6 gaps
+  (IPv4-compatible and NAT64 forms, all of fe80::/10 and fec0::/10) and
+  refuses a name it cannot resolve instead of sending it unpinned (#1741).
+  Base-URL connectors (#1749) and automation webhook fan-out (#1747) now go
+  through the same outbound guard; Obsidian skips certificate checks only for
+  its loopback plugin (#1748).
+- The governed profile no longer honours a recipe's own `allowPrivate`
+  (#1735), and agents may not edit the files that define governance (#1753).
+- Registered secrets never reach the run log or lifecycle events (#1752).
+- An unreadable privacy category list fails closed, and matching ignores case
+  (#1751).
+- The macOS keychain write keeps the secret out of every process's argv: it
+  is written on stdin and read back, and a value that would be truncated is
+  refused (#1768).
+- The CLI drivers pass the prompt on stdin, not in argv (#1778).
+- Dashboard: session-gate exemptions cover their own path, not every path
+  starting with its name (#1769); connector logos ship inside the dashboard
+  instead of loading from third-party hosts (#1777); `deploy-dashboard.sh`
+  binds the dashboard to loopback and trusts the proxy's client address, so
+  the login lockout is per client (#1771).
+- An agent cannot retract a Butler fact the user stated (#1763).
+
+### Fixed
+
+- Connector writes that create or send are not resent after a 5xx (#1744,
+  #1746); an OAuth token refresh times out instead of hanging (#1745); the
+  HTTP request timeout covers reading the body (#1743).
+- Google connectors keep a rotated refresh token and forget tokens on
+  `invalid_grant` (#1773); Airtable reads its credentials through the secrets
+  file like every other connector (#1774).
+- Drivers: a child killed by a signal is a failure, not exit 0 (#1742); the
+  gemini and codex CLI drivers deliver `systemPrompt` (#1765); an API driver
+  with no SDK installed resolves with an error instead of throwing (#1766).
+- Recipes: a required var is enforced on every run path (#1759); `recipe
+  test` gives chained recipes the same offline boundary as flat (#1758);
+  `recipe record` records a chained recipe with the chained runner (#1760);
+  an `@every` interval below one second is refused (#1772); lint warns that
+  `pre-push` runs after the push (#1761).
+- Evidence and sweep: the gate log keeps a sibling bridge's rows (#1754);
+  orchestrator receipts are not scored as writer defects (#1755); `sweep`
+  reports red-at-baseline and vanished gates, and an absent `pr_outcomes` is
+  not zero (#1757); `privacy destinations` reports unparseable entries and
+  the orchestrator path (#1756).
+- The control-boundary preview applies the reversibility ceiling (#1750).
+- Plugin hot reload replaces only the plugin's own tools, and plugin tool
+  descriptions get the 200-character cap (#1764).
+- `getTerminalOutput` and `waitForTerminalOutput` report the extension's own
+  reason (#1762); `--since-days` refuses a value it cannot use (#1775);
+  `tools --slim` filters as documented (#1767).
+- Dashboard connection cards say when a connector can write (#1770).
+
+### Changed
+
+- Every registered tool is documented in `documents/platform-docs.md`, and
+  the tool audit fails on an undocumented one (#1763); every feature flag and
+  environment variable is documented (#1736).
+
 ## [1.2.4] — 2026-10-17
 
 ### Security
