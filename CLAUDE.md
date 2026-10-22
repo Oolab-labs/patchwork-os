@@ -396,7 +396,7 @@ Before staging, run `npx biome check --write <files>` on changed files. Fix befo
 
 **Release channels:**
 - `latest` / `beta` — manual via `chore(release):` PRs, tagged `v*-beta*` → `publish-npm.yml`. Stable / human-curated.
-- `canary` — automatic on every green main merge via the `publish-canary` job in `publish-npm.yml` (`workflow_run` on CI). Version shape `<base>.canary.<runNumber>` (e.g. `0.2.0-beta.5.canary.42`). `npm install -g patchwork-os@canary` always tracks main. Use for dogfooding freshly-merged changes without waiting for the next release PR. Never default-installed.
+- `canary` — automatic on every green main merge via the `publish-canary` job in `publish-npm.yml` (`workflow_run` on CI). Version from `scripts/canary-version.mjs`: a stable base publishes the next patch's prerelease (`1.2.5` → `1.2.6-canary.<run>`), a prerelease base keeps `<base>.canary.<run>`. The old `<base>.canary.<run>` was invalid semver for a stable base, so no canary published from 1.2.0 (2026-10-15) until this was fixed. `npm install -g patchwork-os@canary` always tracks main. Use for dogfooding freshly-merged changes without waiting for the next release PR. Never default-installed.
 
 ## LSP Workflows
 
