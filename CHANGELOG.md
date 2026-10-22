@@ -10,6 +10,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Security
 
+- **Dashboard: Next.js 15.5.28** (#1783). Next.js up to 15.5.27 allowed
+  unauthenticated remote code execution through the Image Optimization API
+  with SVG files (GHSA-2464-fhr4-w9xw, critical; GHSA-p3m5-59mp-jv5r). Update
+  any dashboard you run.
 - **Outbound requests**: the private-range check closes its IPv6 gaps
   (IPv4-compatible and NAT64 forms, all of fe80::/10 and fec0::/10) and
   refuses a name it cannot resolve instead of sending it unpinned (#1741).
