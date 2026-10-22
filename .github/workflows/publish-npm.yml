@@ -318,7 +318,7 @@ jobs:
 
   publish-canary:
     # Fires after the CI workflow succeeds on a main push (a PR merge):
-    # publishes a <version>.canary.<run_number> build under the `canary`
+    # publishes a canary build (see scripts/canary-version.mjs) under the `canary`
     # dist-tag so `npm install -g patchwork-os@canary` tracks main.
     # `latest` / `beta` users are untouched. Consolidated from the former
     # publish-canary.yml — see the `on:` block above for why.
@@ -347,13 +347,15 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # Canary version shape: <current>.canary.<runNumber> — always sorts
-      # above the base version and below the next base bump.
+      # Canary version: computed by scripts/canary-version.mjs so it is valid
+      # semver for every base and always sorts above the base and below the
+      # next release — `1.2.0-beta.3` → `1.2.0-beta.3.canary.<run>`, a stable
+      # `1.2.5` → `1.2.6-canary.<run>`. The old inline `<base>.canary.<run>`
+      # was invalid for a stable base, so every canary failed from 1.2.0 on.
       - name: Compute canary version
         id: ver
         run: |
-          BASE=$(node -p "require('./package.json').version")
-          CANARY="${BASE}.canary.${{ github.run_number }}"
+          CANARY=$(node scripts/canary-version.mjs "${{ github.run_number }}")
           echo "version=$CANARY" >> "$GITHUB_OUTPUT"
           echo "Canary version: $CANARY"
 
