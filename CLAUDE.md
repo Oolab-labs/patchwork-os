@@ -574,7 +574,12 @@ worker may DO; this answers what a destination may RECEIVE.
   newly approvable and needs a decision rather than a patch.
 - **Five decisions**: `ALLOW` · `ALLOW_REDACTED` · `LOCAL_ONLY` ·
   `REQUIRE_APPROVAL` · `DENY`. Pure function of (declared classification,
-  destination policy) — no model in the loop. `narrowest()` enforces never-widen.
+  destination policy) — no model in the loop. **Never-widen holds by refusal,
+  not by `narrowest()`**: the cost router picks a driver first, the boundary
+  then judges that one destination, and a refusal is final — no later stage
+  reroutes it somewhere wider. `narrowest()` is exported (`patchwork-os/privacy`)
+  and has NO production caller (audit M12); the claim that it enforces the rule
+  was untrue.
 - **Inert until opted in.** No `privacy` block ⇒ no destinations ⇒ no decisions.
   Registering a destination is the opt-in; once opted in it fails CLOSED.
 - **`ALLOW_REDACTED` REFUSES, and field labels are DECLINED — [ADR-0024](docs/adr/0024-field-level-data-labels.md), 2026-08-30.** Not because the design is wrong: the shape is recorded there, including the point that makes it viable (removing a value the RENDERER placed is bookkeeping, not detection — `render()` is pure `{{key}}` substitution, so provenance is total at render time and gone one layer later). Declined because `ALLOW_REDACTED` has been returned **0 times in 254 recorded decisions**, so it would implement a branch that has never fired, and because its motivating population (58 undeclared steps) is now zero. **Trigger re-checked 2026-08-31: still 0, now of 264** (`ALLOW` 258, `LOCAL_ONLY` 6) — the decision stands, and the check is one `patchwork privacy receipts` away, so do it rather than assuming either direction. **Reopen on the ledger — a non-zero `ALLOW_REDACTED` count naming real operator recipes — never on the argument that redaction would be useful.** Purpose minimisation is declined separately, not by association: it asks about intent rather than provenance and does not follow from the design even if built.

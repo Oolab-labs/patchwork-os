@@ -14,7 +14,10 @@
 >   than defaulted: silently reading a typo as `internal` would leave an
 >   operator believing they had labelled something when they had not.
 > - **Phase 2 (the decision)** — built, all five values, pure and model-free.
->   `narrowest()` enforces the never-widen rule.
+>   Never-widen holds because a refusal is final and nothing reroutes it;
+>   `narrowest()` exists for composing stages but has no production caller
+>   (corrected 2026-10-23, audit M12 — this line used to say it enforced the
+>   rule).
 > - **Phase 3 (receipts)** — built. `src/privacy/boundaryReceiptLog.ts`
 >   persists to `boundary_receipts.jsonl` alongside the gate's decision
 >   record, same shape and same directory mode. It has NO FIELD FOR THE
