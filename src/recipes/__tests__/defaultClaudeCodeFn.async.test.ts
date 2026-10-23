@@ -23,7 +23,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { _setKillSwitchReaderForTesting } from "../../governance/killSwitchPolicy.js";
 import {
   _resetSecretValuesForTesting,
@@ -35,27 +35,19 @@ const posix = process.platform !== "win32";
 
 let workspace: string;
 let binDir: string;
-let saved: Record<string, string | undefined>;
 
 beforeEach(() => {
   workspace = mkdtempSync(path.join(os.tmpdir(), "pw-m26-ws-"));
   execSync("git init -q -b main", { cwd: workspace });
   binDir = mkdtempSync(path.join(os.tmpdir(), "pw-m26-bin-"));
-  saved = {
-    PATCHWORK_CLAUDE_BINARY: process.env.PATCHWORK_CLAUDE_BINARY,
-    PATCHWORK_WORKSPACE: process.env.PATCHWORK_WORKSPACE,
-  };
-  process.env.PATCHWORK_WORKSPACE = workspace;
+  vi.stubEnv("PATCHWORK_WORKSPACE", workspace);
   _setKillSwitchReaderForTesting(() => false);
 });
 
 afterEach(() => {
   _setKillSwitchReaderForTesting(null);
   _resetSecretValuesForTesting();
-  for (const [k, v] of Object.entries(saved)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
+  vi.unstubAllEnvs();
   rmSync(workspace, { recursive: true, force: true });
   rmSync(binDir, { recursive: true, force: true });
 });
@@ -65,7 +57,7 @@ function fakeClaude(script: string): void {
   const p = path.join(binDir, "claude");
   writeFileSync(p, `#!/bin/sh\n${script}\n`);
   chmodSync(p, 0o755);
-  process.env.PATCHWORK_CLAUDE_BINARY = p;
+  vi.stubEnv("PATCHWORK_CLAUDE_BINARY", p);
 }
 
 const pidFile = () => path.join(binDir, "pid");
@@ -176,7 +168,7 @@ describe.skipIf(!posix)("defaultClaudeCodeFn (M26)", () => {
   });
 
   it("a missing binary still reports the configured path", async () => {
-    process.env.PATCHWORK_CLAUDE_BINARY = path.join(binDir, "nope");
+    vi.stubEnv("PATCHWORK_CLAUDE_BINARY", path.join(binDir, "nope"));
     const out = await defaultClaudeCodeFn("p");
     expect(out).toContain("claude CLI not found");
     expect(out).toContain(path.join(binDir, "nope"));
