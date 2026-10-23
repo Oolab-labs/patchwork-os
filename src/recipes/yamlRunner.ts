@@ -24,7 +24,7 @@
  *   git_hook, on_file_save — also runnable manually; trigger context injected
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -46,11 +46,13 @@ import { allowlistEnv, sanitizeEnv } from "../drivers/claude/envSanitizer.js";
 import {
   CLAUDE_PROVIDER_ENV_KEYS,
   containedPermissionArgs,
+  scrubSecrets,
 } from "../drivers/claude/subprocess.js";
 import {
   createSubprocessSettings,
   readWorkspaceDenies,
 } from "../drivers/claude/subprocessSettings.js";
+import { writePromptToStdin } from "../drivers/promptStdin.js";
 import {
   FLAG_CIRCUIT_BREAKER,
   FLAG_ENFORCE_ALLOWWRITES,
@@ -62,7 +64,10 @@ import {
   policyTriggerFor,
   writeAckEnforced,
 } from "../governance/effectivePolicy.js";
-import { readKillSwitch } from "../governance/killSwitchPolicy.js";
+import {
+  killSwitchMessage,
+  readKillSwitch,
+} from "../governance/killSwitchPolicy.js";
 import {
   activeProfile,
   COMPAT_PROFILE,
@@ -84,6 +89,7 @@ import {
 } from "../governance/untrustedContent.js";
 import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
+import { treeKill } from "../processTree.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import { classifyTool } from "../riskTier.js";
 import type { RecipeRunLog, RunTrigger } from "../runLog.js";
@@ -797,6 +803,8 @@ export interface RunnerDeps {
        * return value (src/recipes/withheldOutputs.ts). Absent otherwise.
        */
       withholdOutput?: boolean;
+      /** The run's cancellation signal; aborting it stops the agent (M26). */
+      signal?: AbortSignal;
     },
   ) => Promise<string | AgentResult>;
   /** Optional local LLM caller (Ollama / LM Studio) for agent steps with driver: local or model: local. */
@@ -2189,6 +2197,7 @@ async function runYamlRecipeHeld(
         runTaskId,
         currentAgentStepId,
         withholdOutputs,
+        effectiveRunSignal,
       ),
     );
     runBudget.reconcile(
@@ -2302,6 +2311,7 @@ async function runYamlRecipeHeld(
         runTaskId,
         currentAgentStepId,
         withholdOutputs,
+        effectiveRunSignal,
       ),
     );
     runBudget.reconcile(
@@ -3184,6 +3194,7 @@ async function runYamlRecipeHeld(
               runTaskId,
               stepId,
               withholdOutputs,
+              effectiveRunSignal,
             ),
           );
           agentResult = agentReturn.text;
@@ -4818,6 +4829,8 @@ function buildAgentExecutorDeps(
       readOnlyDirs?: string[];
       /** See `RunnerDeps.claudeCodeFn`. */
       withholdOutput?: boolean;
+      /** The run's cancellation signal; aborting it stops the agent (M26). */
+      signal?: AbortSignal;
     },
   ) => Promise<string | AgentResult>,
   /**
@@ -4842,6 +4855,11 @@ function buildAgentExecutorDeps(
    * keeps a marker instead of the answer. Other drivers write no task row.
    */
   withholdOutput?: boolean,
+  /**
+   * The run's cancellation signal, handed to the Claude CLI caller so a
+   * cancelled run stops its agent instead of waiting it out (audit M26).
+   */
+  signal?: AbortSignal,
 ): AgentExecutorDeps {
   // Replay boundary (replayBoundary.ts, layer 3) — the single place agent
   // executor deps are built for every dispatch site in this runner, so a
@@ -5019,9 +5037,12 @@ function buildAgentExecutorDeps(
           prompt,
           // Only a protected run adds the key, so every other call keeps its
           // exact shape (src/recipes/withheldOutputs.ts).
-          withholdOutput === true
-            ? { ...(mapped ?? {}), withholdOutput: true }
-            : mapped,
+          withSignal(
+            withholdOutput === true
+              ? { ...(mapped ?? {}), withholdOutput: true }
+              : mapped,
+            signal,
+          ),
         ),
       );
     },
@@ -5120,8 +5141,27 @@ export function defaultClaudeCodeFn(
     containment?: import("../governance/profile.js").AgentContainment;
     /** Extra READ-only directories for the agent (`--add-dir`); fileInputs.ts. */
     readOnlyDirs?: string[];
+    /**
+     * The run's cancellation signal. Aborting it kills the agent's process
+     * tree and resolves at once, instead of the run waiting out the agent.
+     */
+    signal?: AbortSignal;
   },
 ): Promise<string> {
+  // Checked before anything is resolved or written: a cancelled run or an
+  // engaged write kill switch must not start an agent at all. Same reading
+  // and wording the orchestrator uses at its pending→running transition.
+  if (opts?.signal?.aborted) {
+    return Promise.resolve(
+      "[agent step failed: aborted — the run was cancelled]",
+    );
+  }
+  const ks = readKillSwitch();
+  if (ks.engaged) {
+    return Promise.resolve(
+      `[agent step failed: ${killSwitchMessage(ks, "claude CLI agent step")}]`,
+    );
+  }
   const binary = resolveClaudeBinary();
   // Resolve a workspace cwd so the spawned `claude -p` doesn't inherit the
   // bridge LaunchAgent's `$HOME` (P2 from the 2026-05-20 research run).
@@ -5187,8 +5227,9 @@ export function defaultClaudeCodeFn(
     containedSettingsPath = settings.path;
   }
   const localArgs = [
+    // The prompt goes on stdin (writePromptToStdin below), never in argv,
+    // where any local process can read it with `ps` for the life of the run.
     "-p",
-    prompt,
     // --strict-mcp-config: never load ~/.claude.json or .mcp.json. Recipes
     // are sandboxed by default (mcpAccess defaults to false above). This
     // also prevents accidental session attachment when the parent process
@@ -5232,8 +5273,11 @@ export function defaultClaudeCodeFn(
       localArgs.push("--add-dir", d);
     }
   }
-  try {
-    const result = spawnSync(binary, localArgs, {
+  return runClaudeCli(
+    binary,
+    localArgs,
+    prompt,
+    {
       cwd: workspace.path,
       // sanitizeEnv strips CLAUDECODE / CLAUDE_CODE_* / MCP_* from the
       // child so the spawn doesn't re-authenticate as, or nest under,
@@ -5244,30 +5288,149 @@ export function defaultClaudeCodeFn(
       env: containment?.envAllowlist
         ? allowlistEnv(process.env, { providerKeys: CLAUDE_PROVIDER_ENV_KEYS })
         : sanitizeEnv(process.env),
-      encoding: "utf-8",
-      timeout: 600_000,
-      maxBuffer: 10 * 1024 * 1024,
+    },
+    opts?.signal,
+  );
+}
+
+const CLAUDE_CLI_TIMEOUT_MS = 600_000;
+const CLAUDE_CLI_STDOUT_CAP = 10 * 1024 * 1024;
+/** How often a running agent re-reads the write kill switch. */
+const CLAUDE_CLI_KILL_SWITCH_POLL_MS = 1_000;
+
+/**
+ * Run `claude -p` asynchronously (audit M26). It was `spawnSync`: for up to
+ * 600 s the bridge's event loop was blocked, and neither a run cancel nor the
+ * kill switch could stop the agent, because nothing else ran until it
+ * returned.
+ *
+ * Every way out resolves with the same `[agent step failed: …]` string shape
+ * the callers already treat as a failed step; it never rejects. The process
+ * is spawned as its own group and stopped with `treeKill`, because `claude -p`
+ * starts children of its own (tools, MCP shims) that would otherwise outlive
+ * it. stderr is scrubbed by pattern and by registered secret VALUE before it
+ * can reach the run log.
+ */
+function runClaudeCli(
+  binary: string,
+  args: string[],
+  prompt: string,
+  spawnOpts: { cwd: string; env: NodeJS.ProcessEnv },
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  return new Promise<string>((resolve) => {
+    let stdout = "";
+    let stdoutBytes = 0;
+    let stderr = "";
+    let stopReason: string | undefined;
+    let settled = false;
+
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(binary, args, {
+        ...spawnOpts,
+        stdio: ["pipe", "pipe", "pipe"],
+        // Own process group, so treeKill reaches the agent's children.
+        detached: true,
+      });
+    } catch (err) {
+      resolve(
+        `[agent step failed: ${scrubStderr(err instanceof Error ? err.message : String(err))}]`,
+      );
+      return;
+    }
+
+    const stop = (reason: string) => {
+      if (stopReason !== undefined) return;
+      stopReason = reason;
+      treeKill(child);
+    };
+    const onAbort = () =>
+      stop("[agent step failed: aborted — the run was cancelled]");
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const timer = setTimeout(
+      () =>
+        stop(
+          `[agent step failed: claude timed out after ${CLAUDE_CLI_TIMEOUT_MS / 1000}s]`,
+        ),
+      CLAUDE_CLI_TIMEOUT_MS,
+    );
+    const poll = setInterval(() => {
+      const ks = readKillSwitch();
+      if (ks.engaged) {
+        stop(
+          `[agent step failed: ${killSwitchMessage(ks, "claude CLI agent step")}]`,
+        );
+      }
+    }, CLAUDE_CLI_KILL_SWITCH_POLL_MS);
+
+    const finish = (text: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearInterval(poll);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(text);
+    };
+
+    child.stdout?.setEncoding("utf-8");
+    child.stdout?.on("data", (chunk: string) => {
+      if (stdoutBytes >= CLAUDE_CLI_STDOUT_CAP) return;
+      stdout += chunk;
+      stdoutBytes += Buffer.byteLength(chunk, "utf8");
+      if (stdoutBytes >= CLAUDE_CLI_STDOUT_CAP) {
+        stop(
+          `[agent step failed: claude output exceeded ${CLAUDE_CLI_STDOUT_CAP} bytes]`,
+        );
+      }
     });
-    if (result.error) {
+    child.stderr?.setEncoding("utf-8");
+    child.stderr?.on("data", (chunk: string) => {
+      // Only the head is ever reported; keep a little more than that.
+      if (stderr.length < 4096) stderr += chunk;
+    });
+
+    child.on("error", () => {
       // Surface the configured binary path in the error so users diagnosing
       // ENOENT can see whether resolveClaudeBinary picked up their override.
       // Hint includes the env var + config field names so the fix is one
       // click away.
-      return Promise.resolve(
+      finish(
         `[agent step failed: claude CLI not found at "${binary}" — install Claude Code, set PATCHWORK_CLAUDE_BINARY, or set ANTHROPIC_API_KEY]`,
       );
-    }
-    if (result.status !== 0) {
-      return Promise.resolve(
-        `[agent step failed: claude exited ${result.status}: ${result.stderr?.slice(0, 200) ?? ""}]`,
-      );
-    }
-    return Promise.resolve((result.stdout ?? "").trim());
-  } catch (err) {
-    return Promise.resolve(
-      `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`,
-    );
-  }
+    });
+    child.on("close", (code, sig) => {
+      if (stopReason !== undefined) {
+        finish(stopReason);
+        return;
+      }
+      if (code !== 0) {
+        const status = code ?? `by signal ${sig ?? "unknown"}`;
+        finish(
+          `[agent step failed: claude exited ${status}: ${scrubStderr(stderr).slice(0, 200)}]`,
+        );
+        return;
+      }
+      finish(stdout.trim());
+    });
+
+    writePromptToStdin(child, prompt);
+  });
+}
+
+/**
+ * Add the run's signal to a Claude CLI caller's options without changing the
+ * shape of a call that has none: an absent signal adds no key.
+ */
+function withSignal<T extends object>(
+  opts: T | undefined,
+  signal: AbortSignal | undefined,
+): T | (T & { signal: AbortSignal }) | undefined {
+  return signal === undefined ? opts : { ...(opts ?? ({} as T)), signal };
+}
+
+function scrubStderr(text: string): string {
+  return redactKnownSecrets(scrubSecrets(text));
 }
 
 /**
@@ -5651,6 +5814,8 @@ export function buildChainedDeps(
       readOnlyDirs?: string[];
       /** See `RunnerDeps.claudeCodeFn`. */
       withholdOutput?: boolean;
+      /** The run's cancellation signal; aborting it stops the agent (M26). */
+      signal?: AbortSignal;
     },
   ) => Promise<string | AgentResult>,
   /**
@@ -5774,6 +5939,8 @@ export function buildChainedDeps(
       stepId?: string;
       /** The run used a text or file input — see `withheldOutputs.ts`. */
       withholdOutput?: boolean;
+      /** The run's cancellation signal (M26); stops a Claude CLI agent. */
+      signal?: AbortSignal;
     },
   ): Promise<AgentResult> => {
     // Surface the FULL AgentResult (text + usage + servedBy) so the chained
@@ -5826,6 +5993,7 @@ export function buildChainedDeps(
         // Set by the chained runner per dispatch when the run used a text or
         // file input (src/recipes/withheldOutputs.ts).
         opts?.withholdOutput === true,
+        opts?.signal,
       ),
     );
   };

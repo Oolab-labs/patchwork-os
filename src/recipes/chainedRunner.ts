@@ -417,6 +417,11 @@ export type AgentExecutor = (
      * answer out of any task record (src/recipes/withheldOutputs.ts).
      */
     withholdOutput?: boolean;
+    /**
+     * The run's cancellation signal. The race below only stops WAITING for a
+     * cancelled step; this lets the dispatcher stop the agent itself (M26).
+     */
+    signal?: AbortSignal;
   },
 ) => Promise<string | AgentResult>;
 
@@ -1361,6 +1366,7 @@ export async function executeChainedStep(
                 readOnlyDirs: [...options.agentReadDirs],
               }),
             ...(options.withholdOutputs === true && { withholdOutput: true }),
+            ...(options.signal !== undefined && { signal: options.signal }),
           }),
           step.timeout_ms,
           step.id,

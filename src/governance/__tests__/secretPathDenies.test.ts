@@ -211,7 +211,15 @@ describe("subprocess driver (flat runner, chained runner, orchestrator)", () => 
 describe.skipIf(!POSIX)("recipe run --local (defaultClaudeCodeFn)", () => {
   let binDir: string;
   let argvFile: string;
-  beforeEach(() => {
+  beforeEach(async () => {
+    // `defaultClaudeCodeFn` spawns asynchronously (M26), so it now reaches the
+    // `spawn` this file mocks for the driver tests. Give its one call the real
+    // `spawn`: these tests read the argv a real process received.
+    const real =
+      await vi.importActual<typeof import("node:child_process")>(
+        "node:child_process",
+      );
+    spawnMock.mockImplementationOnce(real.spawn);
     binDir = mkdtempSync(path.join(os.tmpdir(), "pw-secret-bin-"));
     argvFile = path.join(binDir, "argv.txt");
     const fake = path.join(binDir, "claude");
