@@ -6,6 +6,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.6] — 2026-10-26
+
+### Security
+
+- **undici 6.29.1** (bridge) and **body-parser 1.20.9** (push relay) close
+  two high denial-of-service advisories: unbounded memory in undici's
+  EventSource parser (GHSA-4qv8-2p9j-2685, GHSA-xjj6-f33q-929c) and trailing
+  bytes after a compressed request body in body-parser (GHSA-27r3-jxmh-p828)
+  (#1788).
+
+### Fixed
+
+- **Local Claude agent steps no longer block the bridge** (#1786, audit M26).
+  The `claude -p` call used by `recipe run --local`, and by the bridge when no
+  subprocess driver is injected, ran synchronously for up to 600 s: no
+  request, cron tick or approval was served meanwhile, and nothing could stop
+  it. It now runs asynchronously in its own process group:
+  - a cancelled run kills the agent, and an already-cancelled run never
+    starts it;
+  - the write kill switch is checked before start and re-read every second
+    while the agent runs; engaging it stops the agent (`kill_switch_blocked`);
+  - a failing CLI's stderr is scrubbed of secrets before it reaches the run
+    log;
+  - the prompt goes on stdin, not in argv.
+  Both runners now pass the run's cancel signal to the agent call.
+- **Canary versions are valid semver after a stable release** (#1784). A
+  stable base now publishes the next patch's prerelease (`1.2.6-canary.<run>`
+  after `1.2.5`); the previous `<base>.canary.<run>` form was rejected by npm,
+  so no canary had published since 1.2.0.
+
+### Changed
+
+- vite 8.3.4 in the bridge (#1779) and 8.3.5 in the dashboard, extension and
+  push relay (#1780, #1781, #1785).
+- Docs: CLAUDE.md and ADR-0021 no longer claim `narrowest()` enforces
+  never-widen; it has no production caller, and never-widen holds because a
+  boundary refusal is final (audit M12, #1786).
+
+---
+
 ## [1.2.5] — 2026-10-22
 
 ### Security
