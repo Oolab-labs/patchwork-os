@@ -260,13 +260,13 @@ not that it is unlicensed; check the package itself before relying on it.
 | balanced-match | 4.0.4 | MIT |
 | brace-expansion | 5.0.12 | MIT |
 | fast-deep-equal | 3.1.3 | MIT |
-| fast-uri | 3.1.8 | BSD-3-Clause |
+| fast-uri | 3.1.9 | BSD-3-Clause |
 | ipaddr.js | 2.3.0 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
 | minimatch | 10.2.4 | BlueOak-1.0.0 |
 | node-cron | 4.6.0 | ISC |
 | require-from-string | 2.0.2 | MIT |
-| undici | 6.29.0 | MIT |
+| undici | 6.29.1 | MIT |
 | ws | 8.21.0 | MIT |
 | yaml | 2.8.3 | ISC |
 
@@ -330,7 +330,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | asynckit | 0.4.0 | MIT |
 | base64-js | 1.5.1 | MIT |
 | bignumber.js | 9.3.1 | MIT |
-| body-parser | 1.20.8 | MIT |
+| body-parser | 1.20.9 | MIT |
 | body-parser/node_modules/debug | 2.6.9 | MIT |
 | buffer-equal-constant-time | 1.0.1 | BSD-3-Clause |
 | bytes | 3.1.2 | MIT |
@@ -408,7 +408,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | https-proxy-agent | 7.0.6 | MIT |
 | iconv-lite | 0.4.24 | MIT |
 | inherits | 2.0.4 | ISC |
-| ip-address | 10.7.2 | MIT |
+| ip-address | 10.7.5 | MIT |
 | ipaddr.js | 1.9.1 | MIT |
 | is-fullwidth-code-point | 3.0.0 | MIT |
 | is-stream | 2.0.1 | MIT |
