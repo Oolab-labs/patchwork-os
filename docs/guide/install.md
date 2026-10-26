@@ -12,9 +12,9 @@ Install globally rather than with `npx`: `npx` does not persist the binary, so t
 |---|---|---|
 | `beta` | `npm install -g patchwork-os@beta` | The current supported line, cut by hand from release pull requests. Recommended. |
 | `latest` | `npm install -g patchwork-os` | Currently points at the same build as `beta`; a separate stable line has not been cut. |
-| `canary` | `npm install -g patchwork-os@canary` | Published automatically on every green merge to `main`, versioned as the next patch's prerelease (`1.2.6-canary.<run>` after `1.2.5`; `<base>.canary.<run>` on a beta line). Tracks `main`; untriaged and unsupported, for trying freshly merged changes. |
+| `canary` | `npm install -g patchwork-os@canary` | Published automatically on every green merge to `main`, versioned as the next patch's prerelease (`1.2.7-canary.<run>` after `1.2.6`; `<base>.canary.<run>` on a beta line). Tracks `main`; untriaged and unsupported, for trying freshly merged changes. |
 
-Pin an exact version (`patchwork-os@1.2.5`) if reproducibility matters more than fast updates. Channel support status is maintained in [SECURITY.md](../../SECURITY.md).
+Pin an exact version (`patchwork-os@1.2.6`) if reproducibility matters more than fast updates. Channel support status is maintained in [SECURITY.md](../../SECURITY.md).
 
 ```bash
 npm install -g patchwork-os@beta
