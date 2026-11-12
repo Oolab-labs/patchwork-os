@@ -39,7 +39,7 @@ The bridge runs without any flags. Add `--automation --driver subprocess` to ena
 
 **Step 1 — Install this extension.**
 
-The extension detects whether `claude-ide-bridge` is installed globally, installs or upgrades it if needed, then starts it in the background for your workspace.
+The extension checks whether `claude-ide-bridge` is installed globally, then starts it in the background for your workspace. If no bridge is installed, it installs the latest release from npm (`patchwork-os`). If the installed bridge is older than the extension needs, it upgrades it to the latest release. It never replaces a bridge with an older version, and if it cannot read the installed version it leaves the bridge as it is and says so in the output channel.
 
 **Step 2 — Connect Claude Code.**
 
@@ -134,7 +134,7 @@ The extension contributes a **Claude Bridge** panel in the VS Code activity bar.
 |---|---|---|
 | `claudeIdeBridge.autoConnect` | `true` | Connect automatically on startup |
 | `claudeIdeBridge.autoStartBridge` | `true` | Auto-start the bridge process on extension activation |
-| `claudeIdeBridge.autoInstallBridge` | `true` | Auto-install/upgrade the bridge via npm if not found or outdated |
+| `claudeIdeBridge.autoInstallBridge` | `true` | Install the latest bridge from npm when none is installed, and upgrade it when it is older than the extension needs. Never installs an older version over a newer one. Set to `false` to install and upgrade the bridge yourself. |
 | `claudeIdeBridge.logLevel` | `info` | Log verbosity: `info`, `debug`, or `warn` |
 | `claudeIdeBridge.lockFileDir` | _(empty)_ | Override lock file directory (default: `~/.claude/ide/`). Useful for multi-bridge setups. |
 | `claudeIdeBridge.port` | `0` | Port for the bridge to listen on. `0` = auto-select. Set a fixed port ≥ 1024 (e.g. `55000`) when running multiple IDEs simultaneously. |

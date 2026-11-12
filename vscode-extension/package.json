@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "MCP bridge between Claude Code and your IDE. 177 tools — diagnostics, LSP, debugger, terminal, git. Optional Patchwork OS layer adds recipes, oversight, and approval queue.",
-  "version": "1.4.25",
+  "version": "1.4.26",
   "extensionKind": [
     "workspace"
   ],
@@ -137,7 +137,7 @@
         "claudeIdeBridge.autoInstallBridge": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically install or upgrade claude-ide-bridge via npm when a newer version is bundled with the extension."
+          "description": "Install the bridge (the patchwork-os npm package) when none is installed, and upgrade it when it is older than this extension needs. Always takes the latest release from npm, never replaces a bridge with an older version, and leaves the bridge alone when its version cannot be read. Disable to install and upgrade the bridge yourself."
         },
         "claudeIdeBridge.port": {
           "type": "integer",

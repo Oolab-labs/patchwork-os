@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const BRIDGE_BIN =
   process.platform === "win32" ? "claude-ide-bridge.cmd" : "claude-ide-bridge";
+const NPM_BIN = process.platform === "win32" ? "npm.cmd" : "npm";
 
 // Mock vscode
 vi.mock("vscode", () => ({
@@ -26,24 +27,15 @@ vi.mock("node:child_process", async (importOriginal) => {
   };
 });
 
-// Inject BRIDGE_VERSION global before importing BridgeInstaller
-(globalThis as Record<string, unknown>).BRIDGE_VERSION = "2.0.1";
+// The installer reads MIN_BRIDGE_VERSION as a free identifier: esbuild inlines
+// it in a real build, and here it is a global. Set before the import below.
+(globalThis as Record<string, unknown>).MIN_BRIDGE_VERSION = "2.0.1";
 
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { BridgeInstaller } from "../bridgeInstaller";
+import { BridgeInstaller, compareVersions } from "../bridgeInstaller";
 
 const mockedExecFile = execFile as unknown as ReturnType<typeof vi.fn>;
-
-// Helper: make execFile call its callback with stdout
-function mockExec(stdout: string, stderr = "", code = 0) {
-  mockedExecFile.mockImplementationOnce(
-    (_bin: string, _args: string[], _opts: unknown, cb: Function) => {
-      if (code === 0) cb(null, { stdout, stderr });
-      else cb(new Error(stderr || "exec failed"), { stdout: "", stderr });
-    },
-  );
-}
 
 let output: { appendLine: ReturnType<typeof vi.fn> };
 let installer: BridgeInstaller;
@@ -60,89 +52,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("BridgeInstaller.getInstalledVersion", () => {
-  it("returns semver from claude-ide-bridge --version output", async () => {
-    mockExec("claude-ide-bridge 2.0.0\n");
-    const v = await installer.getInstalledVersion();
-    expect(v).toBe("2.0.0");
-  });
-
-  it("returns null when binary not found", async () => {
-    mockedExecFile.mockImplementationOnce(
-      (_bin: string, _args: string[], _opts: unknown, cb: Function) => {
-        cb(new Error("ENOENT"));
-      },
-    );
-    const v = await installer.getInstalledVersion();
-    expect(v).toBeNull();
-  });
-});
-
-describe("BridgeInstaller.getRequiredVersion", () => {
-  it("returns the injected BRIDGE_VERSION", () => {
-    expect(installer.getRequiredVersion()).toBe("2.0.1");
-  });
-});
-
-describe("BridgeInstaller.ensureInstalled", () => {
-  it("is a no-op when installed version matches required", async () => {
-    // getInstalledVersion returns 2.0.1 (matches BRIDGE_VERSION)
-    mockExec("2.0.1\n");
-    await installer.ensureInstalled();
-    // npm install should NOT have been called
-    expect(mockedExecFile).toHaveBeenCalledTimes(1);
-    expect(mockedExecFile.mock.calls[0][0]).toBe(BRIDGE_BIN);
-  });
-
-  it("calls npm install when bridge is not installed", async () => {
-    // getInstalledVersion → null (not found)
-    mockedExecFile.mockImplementationOnce(
-      (_bin: string, _args: string[], _opts: unknown, cb: Function) => {
-        cb(new Error("ENOENT"));
-      },
-    );
-    // npm install succeeds
-    mockExec("", "", 0);
-
-    await installer.ensureInstalled();
-
-    expect(mockedExecFile).toHaveBeenCalledTimes(2);
-    const npmCall = mockedExecFile.mock.calls[1];
-    expect(npmCall[0]).toMatch(/npm/);
-    expect(npmCall[1]).toContain("install");
-    expect(npmCall[1]).toContain("-g");
-    expect(npmCall[1].some((a: string) => a.includes("2.0.1"))).toBe(true);
-  });
-
-  it("calls npm install when installed version is outdated", async () => {
-    mockExec("1.9.0\n"); // outdated
-    mockExec("", "", 0); // npm install succeeds
-
-    await installer.ensureInstalled();
-
-    expect(mockedExecFile).toHaveBeenCalledTimes(2);
-  });
-
-  it("shows warning when npm is not found", async () => {
-    // getInstalledVersion → null
-    mockedExecFile.mockImplementationOnce(
-      (_bin: string, _args: string[], _opts: unknown, cb: Function) => {
-        cb(new Error("ENOENT"));
-      },
-    );
-    // npm install → ENOENT
-    mockedExecFile.mockImplementationOnce(
-      (_bin: string, _args: string[], _opts: unknown, cb: Function) => {
-        const err = new Error("ENOENT: npm not found");
-        cb(err, { stdout: "", stderr: "" });
-      },
-    );
-
-    await expect(installer.ensureInstalled()).rejects.toThrow();
-    expect(vscode.window.showWarningMessage).toHaveBeenCalled();
-  });
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 // The installer must never leave a machine with an older bridge than it found.
 //
@@ -151,8 +60,6 @@ describe("BridgeInstaller.ensureInstalled", () => {
 // even when the installer's own version check cannot read it, and then look at
 // what is installed afterwards.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const NPM_BIN = process.platform === "win32" ? "npm.cmd" : "npm";
 
 /** How `claude-ide-bridge --version` behaves when a binary IS on PATH. */
 type CheckBehaviour =
@@ -182,6 +89,8 @@ interface Machine {
   list: "ok" | "garbage";
   /** What the registry's `latest` tag points at; null = registry unreachable. */
   latest: string | null;
+  /** If set, `latest` moves here right after it has been looked up. */
+  latestAfterLookup?: string;
   npmInstalled: boolean;
   /** The copy on PATH is npm's copy (the usual case). */
   npmBinOnPath: boolean;
@@ -310,7 +219,9 @@ function npm(m: Machine, bin: string, args: string[]): Output | Error {
     if (m.latest === null) {
       return exitError(bin, args, 1, "", "npm error code ENOTFOUND");
     }
-    return { stdout: `${m.latest}\n`, stderr: "" };
+    const answer = { stdout: `${m.latest}\n`, stderr: "" };
+    if (m.latestAfterLookup !== undefined) m.latest = m.latestAfterLookup;
+    return answer;
   }
   if (command === "install") {
     const prefix = "patchwork-os@";
@@ -353,9 +264,12 @@ function runOn(m: Machine): Machine {
   return m;
 }
 
-function setBuiltInVersion(version: string): void {
-  (globalThis as Record<string, unknown>).BRIDGE_VERSION = version;
+function setBuiltInVersion(version: string | undefined): void {
+  (globalThis as Record<string, unknown>).MIN_BRIDGE_VERSION = version;
 }
+
+const statusBar = () =>
+  vscode.window.setStatusBarMessage as ReturnType<typeof vi.fn>;
 
 function logged(): string {
   return output.appendLine.mock.calls.map((c) => String(c[0])).join("\n");
@@ -400,6 +314,28 @@ describe("BridgeInstaller: a failed version check is not a missing bridge", () =
     expect(m.installs).toEqual([]);
     expect(m.onPath).toBe("3.0.0");
     expect(m.unexpected).toEqual([]);
+  });
+
+  it.each([
+    "timeout",
+    "exit-1",
+    "no-version",
+    "eacces",
+    "einval",
+  ] as const)("stops at a check that fails with %s, even when npm knows of no copy", async (check) => {
+    // This bridge came from somewhere npm's global directory does not cover,
+    // so asking npm would not have revealed it. The failed check alone has to
+    // be enough to stop.
+    const m = runOn(
+      machine({ onPath: "3.0.0", inNpm: null, npmBinOnPath: false, check }),
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.commands).toEqual([`${BRIDGE_BIN} --version`]);
+    expect(m.installs).toEqual([]);
+    expect(statusBar()).toHaveBeenCalledTimes(1);
+    expect(statusBar().mock.calls[0][0]).toMatch(/could not check/);
   });
 });
 
@@ -557,4 +493,367 @@ describe("BridgeInstaller: no install lowers what is installed", () => {
     expect(machines).toBeGreaterThan(10_000);
     expect(installsSeen).toBeGreaterThan(100);
   }, 60_000);
+});
+
+describe("BridgeInstaller.probeInstalled", () => {
+  it("reads the version the binary prints", async () => {
+    const m = runOn(machineWith("2.0.0"));
+
+    expect(await installer.probeInstalled()).toEqual({
+      kind: "installed",
+      version: "2.0.0",
+    });
+    expect(m.commands).toEqual([`${BRIDGE_BIN} --version`]);
+  });
+
+  it("keeps a pre-release version whole", async () => {
+    runOn(machineWith("1.2.8-canary.1015"));
+
+    expect(await installer.probeInstalled()).toEqual({
+      kind: "installed",
+      version: "1.2.8-canary.1015",
+    });
+  });
+
+  it("reports a binary that is not on PATH as missing", async () => {
+    runOn(machine({ onPath: null }));
+
+    expect(await installer.probeInstalled()).toEqual({ kind: "missing" });
+  });
+
+  it.each([
+    "timeout",
+    "exit-1",
+    "no-version",
+    "eacces",
+    "einval",
+  ] as const)("reports a check that fails with %s as unknown, never missing", async (check) => {
+    runOn(machineWith("3.0.0", { check }));
+
+    const found = await installer.probeInstalled();
+
+    expect(found.kind).toBe("unknown");
+    expect(found).toHaveProperty("reason");
+  });
+
+  it("goes by the error code, not by a message that says ENOENT", async () => {
+    // A bare Error whose text is "ENOENT" and which carries no code — the
+    // shape these tests used to pass off as "binary not found". Node never
+    // reports a missing binary this way.
+    mockedExecFile.mockImplementationOnce(
+      (_bin: string, _args: string[], _opts: unknown, cb: ExecCallback) =>
+        cb(new Error("ENOENT")),
+    );
+
+    expect((await installer.probeInstalled()).kind).toBe("unknown");
+  });
+});
+
+describe("BridgeInstaller.getMinimumVersion", () => {
+  afterEach(() => setBuiltInVersion("2.0.1"));
+
+  it("returns the version the extension was built against", () => {
+    expect(installer.getMinimumVersion()).toBe("2.0.1");
+  });
+
+  it("is 0.0.0 when the build constant is absent (a development run)", () => {
+    setBuiltInVersion(undefined);
+
+    expect(installer.getMinimumVersion()).toBe("0.0.0");
+  });
+
+  it("is 0.0.0 when the build constant is not a version", () => {
+    setBuiltInVersion("not-a-version");
+
+    expect(installer.getMinimumVersion()).toBe("0.0.0");
+  });
+});
+
+describe("BridgeInstaller: when there is nothing to do", () => {
+  afterEach(() => setBuiltInVersion("2.0.1"));
+
+  it("runs the version check and nothing else when the minimum is met", async () => {
+    const m = runOn(machineWith("2.0.1"));
+
+    await installer.ensureInstalled();
+
+    expect(m.commands).toEqual([`${BRIDGE_BIN} --version`]);
+    expect(vscode.window.withProgress).not.toHaveBeenCalled();
+    expect(statusBar()).not.toHaveBeenCalled();
+  });
+
+  it("leaves a bridge that is newer than npm's latest alone", async () => {
+    const m = runOn(machineWith("3.0.0", { latest: "2.4.0" }));
+
+    await installer.ensureInstalled();
+
+    expect(m.commands).toEqual([`${BRIDGE_BIN} --version`]);
+    expect(m.onPath).toBe("3.0.0");
+  });
+
+  it("with no build constant, leaves any installed bridge alone", async () => {
+    setBuiltInVersion(undefined);
+    const m = runOn(machineWith("0.0.1", { latest: "2.4.0" }));
+
+    await installer.ensureInstalled();
+
+    expect(m.installs).toEqual([]);
+  });
+});
+
+describe("BridgeInstaller: what npm holds counts as much as what PATH finds", () => {
+  afterEach(() => setBuiltInVersion("2.0.1"));
+
+  it("does not install over a newer copy that is simply not on PATH", async () => {
+    // The binary is missing from this editor's PATH, but npm's global
+    // directory holds 3.0.0. `npm install -g patchwork-os@latest` would
+    // replace it with 2.4.0.
+    const m = runOn(machine({ onPath: null, inNpm: "3.0.0", latest: "2.4.0" }));
+
+    await installer.ensureInstalled();
+
+    expect(m.installs).toEqual([]);
+    expect(m.inNpm).toBe("3.0.0");
+    expect(logged()).toMatch(/not on this editor's PATH/);
+    expect(statusBar()).toHaveBeenCalledTimes(1);
+  });
+
+  it("upgrades a copy below the minimum that PATH does not find", async () => {
+    const m = runOn(machine({ onPath: null, inNpm: "1.9.0", latest: "2.4.0" }));
+
+    await installer.ensureInstalled();
+
+    expect(m.installs.map((i) => i.resolved)).toEqual(["2.4.0"]);
+    expect(m.inNpm).toBe("2.4.0");
+  });
+
+  it("does not touch npm's newer copy when an older one comes first on PATH", async () => {
+    const m = runOn(
+      machine({
+        onPath: "1.9.0",
+        inNpm: "3.0.0",
+        npmBinOnPath: false,
+        latest: "2.4.0",
+      }),
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.installs).toEqual([]);
+    expect(m.inNpm).toBe("3.0.0");
+    expect(logged()).toMatch(/comes first on this editor's PATH/);
+  });
+
+  it("installs nothing when npm's package list cannot be read", async () => {
+    const m = runOn(machine({ onPath: null, inNpm: "3.0.0", list: "garbage" }));
+
+    await installer.ensureInstalled();
+
+    expect(m.installs).toEqual([]);
+    expect(m.inNpm).toBe("3.0.0");
+    expect(statusBar()).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads an untidy global tree as a tree, not as a failure", async () => {
+    // npm exits 1 and adds an ELSPROBLEMS error when unrelated global
+    // packages are broken. The listing is still complete.
+    const m = runOn(machine({ onPath: null, inNpm: null, latest: "2.4.0" }));
+    const usual = mockedExecFile.getMockImplementation();
+    mockedExecFile.mockImplementation(
+      (bin: string, args: string[], opts: unknown, cb: ExecCallback) => {
+        if (bin === NPM_BIN && args[0] === "ls") {
+          m.commands.push([bin, ...args].join(" "));
+          const tree = {
+            error: {
+              code: "ELSPROBLEMS",
+              summary: "extraneous: example-package@1.0.0",
+            },
+            name: "lib",
+            problems: ["extraneous: example-package@1.0.0"],
+          };
+          return cb(exitError(bin, args, 1, JSON.stringify(tree)));
+        }
+        return usual?.(bin, args, opts, cb);
+      },
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.installs.map((i) => i.spec)).toEqual(["latest"]);
+  });
+
+  it("installs nothing when npm reports any other error instead of a tree", async () => {
+    const m = runOn(machine({ onPath: null, inNpm: "3.0.0" }));
+    const usual = mockedExecFile.getMockImplementation();
+    mockedExecFile.mockImplementation(
+      (bin: string, args: string[], opts: unknown, cb: ExecCallback) => {
+        if (bin === NPM_BIN && args[0] === "ls") {
+          const tree = {
+            error: { code: "EACCES", summary: "permission denied" },
+          };
+          return cb(exitError(bin, args, 243, JSON.stringify(tree)));
+        }
+        return usual?.(bin, args, opts, cb);
+      },
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.installs).toEqual([]);
+  });
+});
+
+describe("BridgeInstaller: an upgrade installs the release it compared", () => {
+  afterEach(() => setBuiltInVersion("2.0.1"));
+
+  it("asks npm for the exact version the registry reported", async () => {
+    const m = runOn(machineWith("1.9.0", { latest: "2.4.0" }));
+
+    await installer.ensureInstalled();
+
+    expect(m.commands).toEqual([
+      `${BRIDGE_BIN} --version`,
+      `${NPM_BIN} ls -g patchwork-os --depth=0 --json`,
+      `${NPM_BIN} view patchwork-os@latest version`,
+      `${NPM_BIN} install -g patchwork-os@2.4.0`,
+    ]);
+  });
+
+  it("is not lowered when `latest` moves between the lookup and the install", async () => {
+    // 2.0.0 is below the minimum and `latest` says 2.4.0, so an upgrade is
+    // right. Then the tag is moved back to 1.9.0. An install of
+    // `patchwork-os@latest` would now fetch 1.9.0.
+    const m = runOn(
+      machineWith("2.0.0", { latest: "2.4.0", latestAfterLookup: "1.9.0" }),
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.onPath).toBe("2.4.0");
+  });
+
+  it("installs nothing when the latest release cannot be read", async () => {
+    const m = runOn(machineWith("1.9.0", { latest: null }));
+
+    await expect(installer.ensureInstalled()).resolves.toBeUndefined();
+
+    expect(m.installs).toEqual([]);
+    expect(m.commands.some((c) => c.includes(" install "))).toBe(false);
+    expect(statusBar()).toHaveBeenCalledTimes(1);
+  });
+
+  it("installs nothing when npm's latest is what is already installed", async () => {
+    const m = runOn(machineWith("2.0.0", { latest: "2.0.0" }));
+
+    await installer.ensureInstalled();
+
+    expect(m.installs).toEqual([]);
+    expect(m.commands.some((c) => c.includes(" install "))).toBe(false);
+  });
+
+  it("installs nothing when the registry's answer is not a version", async () => {
+    // Whatever comes back becomes part of an npm argument, so anything that
+    // is not exactly a version is dropped.
+    const m = runOn(machineWith("1.9.0", { latest: "2.4.0 --registry=x" }));
+
+    await installer.ensureInstalled();
+
+    expect(m.commands.some((c) => c.includes(" install "))).toBe(false);
+    // It is dropped where it is read: not compared, not repeated in the log.
+    expect(logged()).toMatch(/could not be read from the npm registry/);
+    expect(logged()).not.toContain("--registry=x");
+  });
+
+  it("accepts a quoted version, as npm prints it in JSON mode", async () => {
+    const m = runOn(machineWith("1.9.0", { latest: '"2.4.0"' }));
+
+    await installer.ensureInstalled();
+
+    expect(m.commands.at(-1)).toBe(`${NPM_BIN} install -g patchwork-os@2.4.0`);
+  });
+});
+
+describe("BridgeInstaller: when npm cannot do it", () => {
+  it("warns once, with the manual command, when npm is not installed", async () => {
+    const m = runOn(machine({ onPath: null, npmInstalled: false }));
+
+    await expect(installer.ensureInstalled()).rejects.toThrow(/npm not found/);
+
+    expect(vscode.window.showWarningMessage).toHaveBeenCalledTimes(1);
+    expect(
+      (vscode.window.showWarningMessage as ReturnType<typeof vi.fn>).mock
+        .calls[0][0],
+    ).toContain("npm install -g patchwork-os");
+    expect(m.installs).toEqual([]);
+  });
+
+  it("reports a failed install as an error for the caller to log", async () => {
+    runOn(machine({ onPath: null, installFails: true }));
+
+    await expect(installer.ensureInstalled()).rejects.toThrow(
+      /npm install failed/,
+    );
+    // npm was found, so this is not the "npm is required" case.
+    expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+  });
+
+  it("shows progress in the status bar while an install runs", async () => {
+    runOn(machine({ onPath: null }));
+
+    await installer.ensureInstalled();
+
+    expect(vscode.window.withProgress).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("compareVersions", () => {
+  // Ascending, including the ordering the SemVer specification gives as its
+  // own example for pre-releases.
+  const ASCENDING = [
+    "0.9.9",
+    "1.0.0-alpha",
+    "1.0.0-alpha.1",
+    "1.0.0-alpha.beta",
+    "1.0.0-beta",
+    "1.0.0-beta.2",
+    "1.0.0-beta.11",
+    "1.0.0-rc.1",
+    "1.0.0",
+    "1.0.1",
+    "1.2.0-canary.5",
+    "1.2.0-canary.1015",
+    "1.2.0",
+    "1.10.0",
+    "2.0.0",
+  ];
+
+  it("orders every pair the way the list is written", () => {
+    for (let i = 0; i < ASCENDING.length; i++) {
+      for (let j = 0; j < ASCENDING.length; j++) {
+        const a = ASCENDING[i] as string;
+        const b = ASCENDING[j] as string;
+        const order = compareVersions(a, b);
+        expect({ a, b, order }).toEqual({ a, b, order: Math.sign(i - j) });
+      }
+    }
+  });
+
+  it("ignores build metadata", () => {
+    expect(compareVersions("1.2.3+build.5", "1.2.3")).toBe(0);
+    expect(compareVersions("1.2.3-rc.1+build.5", "1.2.3-rc.1")).toBe(0);
+  });
+
+  it.each([
+    "",
+    "latest",
+    "1.2",
+    "1.2.3.4",
+    "v1.2.3",
+    "1.2.3 --registry=x",
+    "1.2.3-",
+    `1.2.3-${"a".repeat(80)}`,
+  ])("cannot tell when a side is not a version: %j", (notAVersion) => {
+    expect(compareVersions(notAVersion, "1.2.3")).toBeNull();
+    expect(compareVersions("1.2.3", notAVersion)).toBeNull();
+  });
 });
