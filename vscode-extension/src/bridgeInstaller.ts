@@ -17,7 +17,10 @@ declare const MIN_BRIDGE_VERSION: string;
 const PACKAGE = "patchwork-os";
 
 const VERSION_CHECK_TIMEOUT_MS = 10_000;
-const NPM_QUERY_TIMEOUT_MS = 30_000;
+const NPM_LIST_TIMEOUT_MS = 30_000;
+// Shorter than the others: this one needs the network, the extension waits
+// for it before starting the bridge, and offline it would use all of it.
+const NPM_VIEW_TIMEOUT_MS = 15_000;
 const NPM_INSTALL_TIMEOUT_MS = 120_000;
 const NOTICE_MS = 10_000;
 
@@ -105,7 +108,15 @@ function findVersion(output: string): string | null {
 export type Found =
   | { kind: "installed"; version: string }
   | { kind: "missing" }
-  | { kind: "unknown"; reason: string };
+  | {
+      kind: "unknown";
+      reason: string;
+      /**
+       * Node would not start the file at all (EINVAL). Unlike a timeout or a
+       * crash, that is a property of the system and repeats on every start.
+       */
+      refused?: true;
+    };
 
 interface ExecFailure {
   code?: unknown;
@@ -206,6 +217,12 @@ export class BridgeInstaller {
     // Node's execFile does NOT auto-resolve `.cmd` shims on Windows, so a
     // bare name ENOENTs there even when the bridge is installed — which would
     // read as "missing" and start an install.
+    //
+    // Naming the shim does not make the check work, though. Node refuses to
+    // start any `.cmd` file without a shell (EINVAL), whether or not the file
+    // exists, so on Windows this always comes back `unknown` and the
+    // extension installs nothing there. Tests in
+    // __tests__/bridgeInstaller.spawn.test.ts pin that.
     const binary =
       process.platform === "win32"
         ? "claude-ide-bridge.cmd"
@@ -221,8 +238,12 @@ export class BridgeInstaller {
     } catch (err: unknown) {
       // The error CODE, not the message: a bridge that starts and then fails
       // to open a file also says "ENOENT", and it is installed.
-      if (asFailure(err).code === "ENOENT") return { kind: "missing" };
-      return { kind: "unknown", reason: describeFailure(err) };
+      const code = asFailure(err).code;
+      if (code === "ENOENT") return { kind: "missing" };
+      const reason = describeFailure(err);
+      return code === "EINVAL"
+        ? { kind: "unknown", reason, refused: true }
+        : { kind: "unknown", reason };
     }
   }
 
@@ -256,7 +277,7 @@ export class BridgeInstaller {
     try {
       ({ stdout } = await this.npm(
         ["ls", "-g", PACKAGE, "--depth=0", "--json"],
-        NPM_QUERY_TIMEOUT_MS,
+        NPM_LIST_TIMEOUT_MS,
       ));
     } catch (err: unknown) {
       if (err instanceof NpmNotFoundError) throw err;
@@ -304,7 +325,7 @@ export class BridgeInstaller {
     try {
       const { stdout } = await this.npm(
         ["view", `${PACKAGE}@latest`, "version"],
-        NPM_QUERY_TIMEOUT_MS,
+        NPM_VIEW_TIMEOUT_MS,
       );
       // Quoted when the user's npm is configured for JSON output.
       const answer = stdout.trim().replace(/^"|"$/g, "");
@@ -379,6 +400,15 @@ export class BridgeInstaller {
     const onPath = await this.probeInstalled();
 
     if (onPath.kind === "unknown") {
+      if (onPath.refused) {
+        // Logged, not announced. Where Node will not start the binary this is
+        // the answer on every start, with or without a bridge installed, and
+        // a notice each time would tell the user nothing they can act on.
+        this.log(
+          `The bridge version cannot be checked on this system (${onPath.reason}). Node does not start a .cmd file without a shell, which is how npm installs global commands on Windows, so the extension can neither install nor upgrade the bridge here. To do it yourself: npm install -g ${PACKAGE}@latest. Nothing was installed or replaced.`,
+        );
+        return;
+      }
       this.leaveAsIs(
         `The bridge version check failed (${onPath.reason}). A check that fails is not treated as "not installed". To install or upgrade by hand: npm install -g ${PACKAGE}@latest.`,
         "could not check the installed bridge version — left as is",

@@ -160,6 +160,7 @@ describe.runIf(isWindows)("probeInstalled on Windows", () => {
     expect(await new BridgeInstaller(output).probeInstalled()).toEqual({
       kind: "unknown",
       reason: "it could not be started (EINVAL)",
+      refused: true,
     });
   });
 
@@ -169,6 +170,7 @@ describe.runIf(isWindows)("probeInstalled on Windows", () => {
     expect(await new BridgeInstaller(output).probeInstalled()).toEqual({
       kind: "unknown",
       reason: "it could not be started (EINVAL)",
+      refused: true,
     });
   });
 });

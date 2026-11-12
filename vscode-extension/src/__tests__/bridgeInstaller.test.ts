@@ -321,7 +321,6 @@ describe("BridgeInstaller: a failed version check is not a missing bridge", () =
     "exit-1",
     "no-version",
     "eacces",
-    "einval",
   ] as const)("stops at a check that fails with %s, even when npm knows of no copy", async (check) => {
     // This bridge came from somewhere npm's global directory does not cover,
     // so asking npm would not have revealed it. The failed check alone has to
@@ -336,6 +335,29 @@ describe("BridgeInstaller: a failed version check is not a missing bridge", () =
     expect(m.installs).toEqual([]);
     expect(statusBar()).toHaveBeenCalledTimes(1);
     expect(statusBar().mock.calls[0][0]).toMatch(/could not check/);
+  });
+
+  it("stops at a check Node refuses to start, and logs it without a notice", async () => {
+    // EINVAL is what every check gets on Windows, installed or not. It will
+    // be the same on the next start, so it belongs in the log and nowhere
+    // more visible.
+    const m = runOn(
+      machine({
+        onPath: "3.0.0",
+        inNpm: null,
+        npmBinOnPath: false,
+        check: "einval",
+      }),
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.commands).toEqual([`${BRIDGE_BIN} --version`]);
+    expect(m.installs).toEqual([]);
+    expect(logged()).toMatch(/cannot be checked on this system/);
+    expect(logged()).toContain("npm install -g patchwork-os@latest");
+    expect(statusBar()).not.toHaveBeenCalled();
+    expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -534,6 +556,8 @@ describe("BridgeInstaller.probeInstalled", () => {
 
     expect(found.kind).toBe("unknown");
     expect(found).toHaveProperty("reason");
+    // Only a spawn Node refuses outright is marked as one that will repeat.
+    expect("refused" in found).toBe(check === "einval");
   });
 
   it("goes by the error code, not by a message that says ENOENT", async () => {

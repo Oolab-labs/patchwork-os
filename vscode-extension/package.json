@@ -137,7 +137,7 @@
         "claudeIdeBridge.autoInstallBridge": {
           "type": "boolean",
           "default": true,
-          "description": "Install the bridge (the patchwork-os npm package) when none is installed, and upgrade it when it is older than this extension needs. Always takes the latest release from npm, never replaces a bridge with an older version, and leaves the bridge alone when its version cannot be read. Disable to install and upgrade the bridge yourself."
+          "description": "Install the bridge (the patchwork-os npm package) when none is installed, and upgrade it when it is older than this extension needs. Always takes the latest release from npm, never replaces a bridge with an older version, and leaves the bridge alone when its version cannot be read. Has no effect on Windows yet: install the bridge there with npm install -g patchwork-os. Disable to install and upgrade the bridge yourself."
         },
         "claudeIdeBridge.port": {
           "type": "integer",

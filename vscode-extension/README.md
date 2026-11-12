@@ -41,6 +41,8 @@ The bridge runs without any flags. Add `--automation --driver subprocess` to ena
 
 The extension checks whether `claude-ide-bridge` is installed globally, then starts it in the background for your workspace. If no bridge is installed, it installs the latest release from npm (`patchwork-os`). If the installed bridge is older than the extension needs, it upgrades it to the latest release. It never replaces a bridge with an older version, and if it cannot read the installed version it leaves the bridge as it is and says so in the output channel.
 
+On Windows the extension cannot install or upgrade the bridge yet. Install it with `npm install -g patchwork-os`, and run the same command to upgrade.
+
 **Step 2 — Connect Claude Code.**
 
 Add the connection flag to your shell profile once (`~/.zshrc` or `~/.bashrc`):
@@ -134,7 +136,7 @@ The extension contributes a **Claude Bridge** panel in the VS Code activity bar.
 |---|---|---|
 | `claudeIdeBridge.autoConnect` | `true` | Connect automatically on startup |
 | `claudeIdeBridge.autoStartBridge` | `true` | Auto-start the bridge process on extension activation |
-| `claudeIdeBridge.autoInstallBridge` | `true` | Install the latest bridge from npm when none is installed, and upgrade it when it is older than the extension needs. Never installs an older version over a newer one. Set to `false` to install and upgrade the bridge yourself. |
+| `claudeIdeBridge.autoInstallBridge` | `true` | Install the latest bridge from npm when none is installed, and upgrade it when it is older than the extension needs. Never installs an older version over a newer one. Has no effect on Windows yet. Set to `false` to install and upgrade the bridge yourself. |
 | `claudeIdeBridge.logLevel` | `info` | Log verbosity: `info`, `debug`, or `warn` |
 | `claudeIdeBridge.lockFileDir` | _(empty)_ | Override lock file directory (default: `~/.claude/ide/`). Useful for multi-bridge setups. |
 | `claudeIdeBridge.port` | `0` | Port for the bridge to listen on. `0` = auto-select. Set a fixed port ≥ 1024 (e.g. `55000`) when running multiple IDEs simultaneously. |
