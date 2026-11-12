@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-11-12 `docs/install-path-stable-channel` — install instructions, one deploy script and the plugin's launch config point at the stable `latest` channel instead of the frozen `beta`/`alpha` tags and the pre-rename package; release-channel text matched to `publish-npm.yml`. Docs and config only. — Claude Code (worktree session)
+
 
 
 

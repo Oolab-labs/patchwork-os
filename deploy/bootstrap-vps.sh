@@ -43,7 +43,7 @@ chown "${BRIDGE_USER}:${BRIDGE_USER}" "${BRIDGE_HOME}"
 
 # ── 4. Install bridge globally ────────────────────────────────────────────────
 info "Installing patchwork-os from npm..."
-npm install -g patchwork-os@alpha 2>&1 | tail -5
+npm install -g patchwork-os 2>&1 | tail -5
 # `patchwork-os` ships three bin aliases: `patchwork` (preferred),
 # `patchwork-os`, and the legacy `claude-ide-bridge`. Use the canonical
 # `patchwork` name for the systemd unit + nginx config below.
