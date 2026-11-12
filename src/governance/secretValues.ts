@@ -365,6 +365,10 @@ export function registerEnvBlock(
  * Register a recipe's `vars:` — only values under sensitive key names, since
  * ordinary vars (`repo`, `channel`) are not secrets and redacting them would
  * hollow out the run log.
+ *
+ * Called by both runners on the seed they are handed (declared defaults and
+ * caller-supplied values alike). Had no caller until 2026-11: the function
+ * existed and the wiring did not, so nothing failed and nothing was redacted.
  */
 export function registerSensitiveVars(vars: Record<string, unknown>): void {
   registerSecretValues(vars, "vars");

@@ -20,6 +20,7 @@ import {
   COMPAT_PROFILE,
   resolveAgentContainment,
 } from "../governance/profile.js";
+import { registerSensitiveVars } from "../governance/secretValues.js";
 import { toolFactsFor } from "../governance/toolFacts.js";
 import {
   isConnectorSource,
@@ -1857,6 +1858,11 @@ export async function runChainedRecipe(
   // (they inherit `options`); a child declaring its own such input sets it
   // for its own dispatches. Decided on the values as SUPPLIED (an upload
   // name), before file resolution — presence is what matters.
+  // Variables reach a chained run through `options.env` — the top-level seed
+  // and, at depth > 0, a nested step's resolved `vars:`. Registered at EVERY
+  // depth, so a credential-named value handed to a child is covered too
+  // (parity with the flat runner; ordinary variables are left alone).
+  registerSensitiveVars(options.env);
   if (
     options.withholdOutputs !== true &&
     runWithholdsOutputs(recipe, options.env)
