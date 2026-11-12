@@ -1,6 +1,6 @@
 # Install
 
-Patchwork OS is one npm package, `patchwork-os`, which installs three binaries that all run the same code: `patchwork` (the runtime CLI), `patchwork-os` (the same CLI under the package's own name) and `claude-ide-bridge` (named for its original role as an IDE bridge). Every command in this guide is written as `patchwork …`; the other two names accept the same arguments, with one exception: `claude-ide-bridge init` runs the older IDE-bridge installer, not the setup described in step 2.
+Patchwork OS is one npm package, `patchwork-os`, which installs three binaries that all run the same code: `patchwork` (the runtime CLI), `patchwork-os` (the same CLI under the package's own name) and `claude-ide-bridge` (named for its original role as an IDE bridge). Every command in this guide is written as `patchwork …`. The other two names accept the same arguments, with two exceptions where `claude-ide-bridge` keeps its original behaviour: `claude-ide-bridge init` runs the older IDE-bridge installer rather than the setup in step 2, and `claude-ide-bridge` with no arguments starts the bridge rather than opening the terminal dashboard.
 
 **Prerequisites:** Node 22.5 or newer. macOS, Linux and native Windows (no WSL) are supported. If you intend to run recipes with the Claude CLI as the model driver, `claude` must be on your `PATH`.
 
