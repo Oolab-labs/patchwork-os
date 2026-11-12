@@ -12,13 +12,13 @@ Read from the lockfiles, so this is the set actually resolved rather than the
 set requested. `UNDECLARED` means the package publishes no `license` field —
 not that it is unlicensed; check the package itself before relying on it.
 
-**459 production packages** across 4 workspaces.
+**461 production packages** across 4 workspaces.
 
 ## Licences in use
 
 | Licence | Packages |
 |---|---|
-| MIT | 341 |
+| MIT | 343 |
 | Apache-2.0 | 61 |
 | ISC | 19 |
 | BSD-3-Clause | 15 |
@@ -270,7 +270,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | ws | 8.21.0 | MIT |
 | yaml | 2.8.3 | ISC |
 
-### services/push-relay — 237 packages
+### services/push-relay — 239 packages
 
 | Package | Version | Licence |
 |---|---|---|
@@ -293,7 +293,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | @grpc/grpc-js/node_modules/@grpc/proto-loader | 0.8.0 | Apache-2.0 |
 | @grpc/proto-loader | 0.7.15 | Apache-2.0 |
 | @js-sdsl/ordered-map | 4.4.2 | MIT |
-| @nodable/entities | 2.1.0 | MIT |
+| @nodable/entities | 3.1.0 | MIT |
 | @opentelemetry/api | 1.9.1 | Apache-2.0 |
 | @parse/node-apn | 8.1.0 | MIT |
 | @protobufjs/aspromise | 1.1.2 | BSD-3-Clause |
@@ -323,6 +323,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | accepts | 1.3.8 | MIT |
 | agent-base | 7.1.4 | MIT |
 | ansi-regex | 5.0.1 | MIT |
+| anynum | 1.0.1 | MIT |
 | array-flatten | 1.1.1 | MIT |
 | arrify | 2.0.1 | MIT |
 | assert-plus | 1.0.0 | MIT |
@@ -373,8 +374,8 @@ not that it is unlicensed; check the package itself before relying on it.
 | extsprintf | 1.4.1 | MIT |
 | farmhash-modern | 1.1.0 | MIT |
 | fast-deep-equal | 3.1.3 | MIT |
-| fast-xml-builder | 1.2.0 | MIT |
-| fast-xml-parser | 5.7.1 | MIT |
+| fast-xml-builder | 1.3.1 | MIT |
+| fast-xml-parser | 5.12.0 | MIT |
 | faye-websocket | 0.11.4 | Apache-2.0 |
 | finalhandler | 1.3.2 | MIT |
 | finalhandler/node_modules/debug | 2.6.9 | MIT |
@@ -412,6 +413,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | ipaddr.js | 1.9.1 | MIT |
 | is-fullwidth-code-point | 3.0.0 | MIT |
 | is-stream | 2.0.1 | MIT |
+| is-unsafe | 2.0.3 | MIT |
 | jose | 4.15.9 | MIT |
 | json-bigint | 1.0.0 | MIT |
 | jsonwebtoken | 9.0.3 | MIT |
@@ -449,7 +451,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | once | 1.4.0 | ISC |
 | p-limit | 3.1.0 | MIT |
 | parseurl | 1.3.3 | MIT |
-| path-expression-matcher | 1.5.0 | MIT |
+| path-expression-matcher | 1.6.2 | MIT |
 | path-to-regexp | 0.1.13 | MIT |
 | proto3-json-serializer | 2.0.2 | Apache-2.0 |
 | protobufjs | 7.6.5 | BSD-3-Clause |
@@ -482,7 +484,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | string_decoder | 1.3.0 | MIT |
 | string-width | 4.2.3 | MIT |
 | strip-ansi | 6.0.1 | MIT |
-| strnum | 2.2.3 | MIT |
+| strnum | 2.5.1 | MIT |
 | stubs | 3.0.0 | MIT |
 | teeny-request | 9.0.0 | Apache-2.0 |
 | teeny-request/node_modules/agent-base | 6.0.2 | MIT |
@@ -505,7 +507,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | wrap-ansi | 7.0.0 | MIT |
 | wrap-ansi/node_modules/ansi-styles | 4.3.0 | MIT |
 | wrappy | 1.0.2 | ISC |
-| xml-naming | 0.1.0 | MIT |
+| xml-naming | 0.3.0 | MIT |
 | y18n | 5.0.8 | ISC |
 | yallist | 4.0.0 | ISC |
 | yargs | 17.7.2 | MIT |
