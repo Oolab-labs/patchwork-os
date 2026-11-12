@@ -18,6 +18,11 @@ import { EventEmitter } from "node:events";
 import type http from "node:http";
 import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
+import {
+  type ApprovalChannelSettings,
+  approvalNotifyChannels,
+  enqueueApprovalWithDispatch,
+} from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { Config } from "./config.js";
 import type { ExtensionClient } from "./extensionClient.js";
@@ -475,6 +480,21 @@ export class StreamableHttpHandler {
       recipeRunLog?: import("./runLog.js").RecipeRunLog;
       decisionTraceLog?: import("./decisionTraceLog.js").DecisionTraceLog;
     } = {},
+    /**
+     * Where an approval queued by this transport is announced: the bridge's
+     * live channel settings (structurally its `Server` — webhook, Web Push,
+     * ntfy). Held by reference and read per approval, because `POST
+     * /settings` changes them on a running bridge.
+     *
+     * Null ⇒ approvals from HTTP sessions are queued and nobody is told. The
+     * bridge always passes its server; this handler was not given the
+     * settings at all until 2026-11-12, which is half of why a remote
+     * client's gated call waited in silence. Optional only so the many
+     * handlers built in tests need not supply one —
+     * `streamableHttpApprovalNotifies.test.ts` starts a real `Bridge` to pin
+     * the wiring the compiler cannot.
+     */
+    private approvalChannels: ApprovalChannelSettings | null = null,
   ) {
     // Prune idle sessions every 2 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
@@ -976,14 +996,31 @@ export class StreamableHttpHandler {
           workspace: this.config.workspace,
         });
         if (gate.decision === "bypass") return "bypass";
-        const queue = getApprovalQueue();
-        const { promise, callId, approvedActionIdentity } = queue.request({
-          toolName,
-          params,
-          tier: gate.tier,
-          sessionId: sessionId ?? undefined,
-          riskSignals: gate.riskSignals,
-        });
+        // `enqueueApprovalWithDispatch`, NOT `queue.request` — the same call,
+        // with the same request, as the WebSocket gate in bridge.ts. The
+        // second queues silently; only the first announces the approval on
+        // the configured channels (webhook, Web Push, ntfy).
+        //
+        // This transport called `queue.request` directly until 2026-11-12:
+        // the same tool behind the same gate told a person when it arrived
+        // over WebSocket and waited in silence when it arrived here, until
+        // the approval expired and the remote client's call failed.
+        const { promise, callId, approvedActionIdentity } =
+          enqueueApprovalWithDispatch(
+            {
+              queue: getApprovalQueue(),
+              // Read HERE, per approval — the handler handed to
+              // `setApprovalGate` outlives any settings change.
+              ...approvalNotifyChannels(this.approvalChannels),
+            },
+            {
+              toolName,
+              params,
+              tier: gate.tier,
+              sessionId: sessionId ?? undefined,
+              riskSignals: gate.riskSignals,
+            },
+          );
         onPending?.(callId);
         const decision = await promise;
         return decision === "approved"
