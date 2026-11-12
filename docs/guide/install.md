@@ -12,7 +12,7 @@ Install globally rather than with `npx`: `npx` does not persist the binary, so t
 |---|---|---|
 | `latest` | `npm install -g patchwork-os` | The supported stable line, 1.2.x. Releases are cut by hand from release pull requests and published from a `vX.Y.Z` tag. Recommended. |
 | `canary` | `npm install -g patchwork-os@canary` | Published automatically on every green merge to `main`, versioned as the next patch's prerelease (`1.2.8-canary.<run>` after `1.2.7`; `<base>.canary.<run>` on a beta line). Tracks `main`; untriaged and unsupported, for trying freshly merged changes. |
-| `beta` | Do not install | A frozen pre-release channel, superseded by 1.2.x. It receives no fixes. If you installed from it, move to `latest` with the command below. |
+| `beta` | Do not install | A frozen pre-release channel, superseded by 1.2.x. Its tag does not track new releases. If you installed from it, move to `latest` with the command below. |
 
 Pin an exact version (`patchwork-os@1.2.7`) if reproducibility matters more than fast updates. Channel support status, including the older frozen tags, is maintained in [SECURITY.md](../../SECURITY.md).
 
