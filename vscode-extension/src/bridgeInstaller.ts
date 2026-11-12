@@ -19,10 +19,9 @@ declare const MIN_BRIDGE_VERSION: string;
 const PACKAGE = "patchwork-os";
 
 const VERSION_CHECK_TIMEOUT_MS = 10_000;
-const NPM_LIST_TIMEOUT_MS = 30_000;
-// Shorter than the others: this one needs the network, the extension waits
-// for it before starting the bridge, and offline it would use all of it.
-const NPM_VIEW_TIMEOUT_MS = 15_000;
+// For `npm root -g` and `npm view`. Kept short: the extension waits for these
+// before it starts the bridge, and offline the second would use all of it.
+const NPM_QUERY_TIMEOUT_MS = 15_000;
 const NPM_INSTALL_TIMEOUT_MS = 120_000;
 const NOTICE_MS = 10_000;
 
@@ -123,7 +122,6 @@ export type Found =
 interface ExecFailure {
   code?: unknown;
   killed?: unknown;
-  stdout?: unknown;
   message?: unknown;
 }
 
@@ -271,79 +269,65 @@ export class BridgeInstaller {
   }
 
   /**
-   * Ask npm what its global directory holds. That copy is the one
-   * `npm install -g` writes over, and it is not always the one on PATH.
+   * Read the copy that `npm install -g` would write over: the package's own
+   * manifest in npm's global directory. It is not always the copy on PATH.
+   *
+   * npm is asked only where that directory is (`npm root -g`); the version is
+   * then read from disk. `npm ls -g` is deliberately not used: it prints an
+   * empty tree for a directory it may not list, and an error object for one
+   * that does not exist yet, and neither of those is "nothing is installed".
    */
   async probeNpmGlobal(): Promise<Found> {
-    let stdout: string;
+    let root: string;
     try {
-      ({ stdout } = await this.npm(
-        ["ls", "-g", PACKAGE, "--depth=0", "--json"],
-        NPM_LIST_TIMEOUT_MS,
-      ));
+      const { stdout } = await this.npm(["root", "-g"], NPM_QUERY_TIMEOUT_MS);
+      // Quoted when the user's npm is configured for JSON output.
+      root = stdout.trim().replace(/^"|"$/g, "");
     } catch (err: unknown) {
       if (err instanceof NpmNotFoundError) throw err;
-      // `npm ls` exits 1 when the package is absent and still prints the
-      // tree, so an exit code alone is not a failure. Anything else is.
-      const failure = asFailure(err);
-      if (typeof failure.code !== "number" || failure.killed === true) {
-        return { kind: "unknown", reason: describeFailure(err) };
+      return {
+        kind: "unknown",
+        reason: `npm root -g failed: ${describeFailure(err)}`,
+      };
+    }
+    if (!path.isAbsolute(root)) {
+      return {
+        kind: "unknown",
+        reason: "npm did not name its global directory",
+      };
+    }
+
+    let manifest: string;
+    try {
+      manifest = await fs.promises.readFile(
+        path.join(root, PACKAGE, "package.json"),
+        "utf8",
+      );
+    } catch (err: unknown) {
+      const code = asFailure(err).code;
+      // No manifest at that path: no copy is there for an install to lower.
+      // This is also the answer for a global directory that does not exist
+      // yet, and for a leftover folder from an install that never finished.
+      if (code === "ENOENT" || code === "ENOTDIR") return { kind: "missing" };
+      // Anything else (a directory that may not be entered, for one) means
+      // the copy, if there is one, could not be read.
+      return {
+        kind: "unknown",
+        reason: `the installed package could not be read (${String(code)})`,
+      };
+    }
+    try {
+      const { version } = JSON.parse(manifest) as { version?: unknown };
+      if (typeof version === "string" && parseVersion(version)) {
+        return { kind: "installed", version };
       }
-      stdout = typeof failure.stdout === "string" ? failure.stdout : "";
-    }
-
-    let tree: unknown;
-    try {
-      tree = JSON.parse(stdout);
     } catch {
-      return { kind: "unknown", reason: "npm did not print a package tree" };
+      // Not JSON: handled below, with a manifest that names no version.
     }
-    if (typeof tree !== "object" || tree === null) {
-      return { kind: "unknown", reason: "npm did not print a package tree" };
-    }
-    const { dependencies, error } = tree as {
-      dependencies?: Record<string, { version?: unknown } | undefined>;
-      error?: { code?: unknown };
+    return {
+      kind: "unknown",
+      reason: "the installed package's manifest has no readable version",
     };
-    const entry =
-      dependencies && Object.hasOwn(dependencies, PACKAGE)
-        ? dependencies[PACKAGE]
-        : undefined;
-    if (entry) {
-      return typeof entry.version === "string" && parseVersion(entry.version)
-        ? { kind: "installed", version: entry.version }
-        : { kind: "unknown", reason: `npm lists ${PACKAGE} with no version` };
-    }
-    // ELSPROBLEMS is npm reporting an untidy global tree; the listing itself
-    // is complete.
-    if (!error || error.code === "ELSPROBLEMS") return { kind: "missing" };
-    // ENOENT is what npm says when its global directory does not exist yet,
-    // which is the state of a prefix that has never had a global package. No
-    // copy can be in a directory that is not there. That is checked on disk
-    // rather than read off the error: an install follows from this answer.
-    if (
-      error.code === "ENOENT" &&
-      (await this.npmGlobalRootExists()) === false
-    ) {
-      return { kind: "missing" };
-    }
-    // Any other error means the tree was not read.
-    return { kind: "unknown", reason: `npm reported ${String(error.code)}` };
-  }
-
-  /**
-   * Whether the directory npm installs global packages into exists. Null when
-   * that cannot be established.
-   */
-  private async npmGlobalRootExists(): Promise<boolean | null> {
-    try {
-      const { stdout } = await this.npm(["root", "-g"], NPM_LIST_TIMEOUT_MS);
-      const root = stdout.trim();
-      return path.isAbsolute(root) ? fs.existsSync(root) : null;
-    } catch (err: unknown) {
-      if (err instanceof NpmNotFoundError) throw err;
-      return null;
-    }
   }
 
   /** The version the registry's `latest` tag points at, or null if unreadable. */
@@ -351,7 +335,7 @@ export class BridgeInstaller {
     try {
       const { stdout } = await this.npm(
         ["view", `${PACKAGE}@latest`, "version"],
-        NPM_VIEW_TIMEOUT_MS,
+        NPM_QUERY_TIMEOUT_MS,
       );
       // Quoted when the user's npm is configured for JSON output.
       const answer = stdout.trim().replace(/^"|"$/g, "");
@@ -454,8 +438,8 @@ export class BridgeInstaller {
     const inNpm = await this.probeNpmGlobal();
     if (inNpm.kind === "unknown") {
       this.leaveAsIs(
-        `Could not read npm's global packages (${inNpm.reason}), so it is not known what an install would replace.`,
-        "could not check npm's global packages — bridge left as is",
+        `Could not read the copy in npm's global directory (${inNpm.reason}), so it is not known what an install would replace.`,
+        "could not check npm's global directory — bridge left as is",
       );
       return;
     }

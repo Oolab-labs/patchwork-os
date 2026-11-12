@@ -137,9 +137,9 @@ describe.skipIf(isWindows)("probeNpmGlobal against the real npm", () => {
   }
 
   it("reports missing for a prefix that has never held a global package", async () => {
-    // No `lib` directory at all. Real npm does not print an empty tree here:
-    // it fails with an ENOENT error object. Read as "cannot tell", that would
-    // mean a machine like this never gets its first install.
+    // No `lib` directory at all. `npm ls -g` fails here with an ENOENT error
+    // object instead of printing an empty tree; an installer that read that
+    // as "cannot tell" would never make a first install on such a machine.
     useDirAsNpmPrefix();
 
     expect(await new BridgeInstaller(output).probeNpmGlobal()).toEqual({
@@ -156,13 +156,22 @@ describe.skipIf(isWindows)("probeNpmGlobal against the real npm", () => {
     });
   }, 45_000);
 
-  it("reads the version of a copy in npm's global directory", async () => {
+  /** Put a copy of the package, at `version`, in the scratch prefix. */
+  function installCopy(version: string): string {
     const pkg = path.join(dir, "lib", "node_modules", "patchwork-os");
     fs.mkdirSync(pkg, { recursive: true });
     fs.writeFileSync(
       path.join(pkg, "package.json"),
-      JSON.stringify({ name: "patchwork-os", version: "9.8.7" }),
+      JSON.stringify({ name: "patchwork-os", version }),
     );
+    return pkg;
+  }
+
+  // Permission bits mean nothing to root, so these two cannot be staged.
+  const isRoot = process.getuid?.() === 0;
+
+  it("reads the version of a copy in npm's global directory", async () => {
+    installCopy("9.8.7");
     useDirAsNpmPrefix();
 
     expect(await new BridgeInstaller(output).probeNpmGlobal()).toEqual({
@@ -170,6 +179,57 @@ describe.skipIf(isWindows)("probeNpmGlobal against the real npm", () => {
       version: "9.8.7",
     });
   }, 45_000);
+
+  it("reports missing for a leftover folder with no manifest in it", async () => {
+    // What an install that was stopped half-way leaves behind.
+    fs.rmSync(path.join(installCopy("9.8.7"), "package.json"));
+    useDirAsNpmPrefix();
+
+    expect(await new BridgeInstaller(output).probeNpmGlobal()).toEqual({
+      kind: "missing",
+    });
+  }, 45_000);
+
+  it.skipIf(isRoot)(
+    "reads a copy in a directory npm may write to but not list",
+    async () => {
+      // `npm ls -g` prints an empty tree for this directory, as if nothing
+      // were installed, and an install into it would succeed. The manifest
+      // is still readable by its path, and that is what is read.
+      installCopy("9.9.9");
+      const nodeModules = path.join(dir, "lib", "node_modules");
+      fs.chmodSync(nodeModules, 0o300);
+      useDirAsNpmPrefix();
+      try {
+        expect(await new BridgeInstaller(output).probeNpmGlobal()).toEqual({
+          kind: "installed",
+          version: "9.9.9",
+        });
+      } finally {
+        fs.chmodSync(nodeModules, 0o700);
+      }
+    },
+    45_000,
+  );
+
+  it.skipIf(isRoot)(
+    "reports unknown, not missing, for a copy it may not reach",
+    async () => {
+      installCopy("9.9.9");
+      const lib = path.join(dir, "lib");
+      fs.chmodSync(lib, 0o000);
+      useDirAsNpmPrefix();
+      try {
+        expect(await new BridgeInstaller(output).probeNpmGlobal()).toEqual({
+          kind: "unknown",
+          reason: "the installed package could not be read (EACCES)",
+        });
+      } finally {
+        fs.chmodSync(lib, 0o700);
+      }
+    },
+    45_000,
+  );
 
   it("can read what npm really prints, whether or not a bridge is installed", async () => {
     // The machine running this may or may not have the bridge installed

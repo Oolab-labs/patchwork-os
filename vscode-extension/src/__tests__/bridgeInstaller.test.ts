@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 const BRIDGE_BIN =
   process.platform === "win32" ? "claude-ide-bridge.cmd" : "claude-ide-bridge";
@@ -32,6 +40,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 (globalThis as Record<string, unknown>).MIN_BRIDGE_VERSION = "2.0.1";
 
 import { execFile } from "node:child_process";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
@@ -88,12 +97,14 @@ interface Machine {
   /** Version in npm's global directory; null when npm holds no copy. */
   inNpm: string | null;
   /**
-   * How `npm ls -g` answers. "no-global-dir" is what real npm does when its
-   * global directory does not exist: exit 254 and an ENOENT error object.
+   * What is on disk in npm's global directory. "plain": the manifest of the
+   * copy `inNpm` names, or nothing when there is none. "garbled": a manifest
+   * that cannot be parsed. "no-answer": npm will not say where the directory
+   * is.
    */
-  list: "ok" | "garbage" | "no-global-dir";
-  /** What `npm root -g` prints. */
-  npmRoot: string;
+  disk: "plain" | "garbled" | "no-answer";
+  /** Overrides what `npm root -g` prints. */
+  npmRoot?: string;
   /** What the registry's `latest` tag points at; null = registry unreachable. */
   latest: string | null;
   /** If set, `latest` moves here right after it has been looked up. */
@@ -107,21 +118,52 @@ interface Machine {
   unexpected: string[];
 }
 
-/** An absolute path that does not exist on any machine these tests run on. */
-const NO_SUCH_DIR = path.join(
-  os.tmpdir(),
-  "no-such-npm-root",
-  "lib",
-  "node_modules",
-);
+// The installer reads the copy in npm's global directory from disk, so the
+// stand-in needs real directories behind `npm root -g`: one per version, one
+// that is empty, one whose manifest is not a manifest.
+const ROOTS = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-installer-roots-"));
+
+afterAll(() => {
+  fs.rmSync(ROOTS, { recursive: true, force: true });
+});
+
+/** A global directory that does not exist: npm has never installed there. */
+const NO_SUCH_DIR = path.join(ROOTS, "never-created", "lib", "node_modules");
+
+function writeManifest(root: string, text: string): string {
+  fs.mkdirSync(path.join(root, "patchwork-os"), { recursive: true });
+  fs.writeFileSync(path.join(root, "patchwork-os", "package.json"), text);
+  return root;
+}
+
+const roots = new Map<string, string>();
+
+/** A real directory holding exactly what this machine says npm has. */
+function rootFor(m: Machine): string {
+  const key = m.disk === "garbled" ? "garbled" : (m.inNpm ?? "empty");
+  let root = roots.get(key);
+  if (root === undefined) {
+    root = path.join(ROOTS, `root-${roots.size}`);
+    fs.mkdirSync(root, { recursive: true });
+    if (m.disk === "garbled") {
+      writeManifest(root, "{ this is not a manifest");
+    } else if (m.inNpm !== null) {
+      writeManifest(
+        root,
+        JSON.stringify({ name: "patchwork-os", version: m.inNpm }),
+      );
+    }
+    roots.set(key, root);
+  }
+  return root;
+}
 
 function machine(overrides: Partial<Machine> = {}): Machine {
   return {
     onPath: null,
     check: "ok",
     inNpm: null,
-    list: "ok",
-    npmRoot: NO_SUCH_DIR,
+    disk: "plain",
     latest: "2.4.0",
     npmInstalled: true,
     npmBinOnPath: true,
@@ -212,37 +254,17 @@ function versionCheck(m: Machine, bin: string, args: string[]): Output | Error {
 function npm(m: Machine, bin: string, args: string[]): Output | Error {
   if (!m.npmInstalled) return spawnError("ENOENT", bin);
   const command = args[0];
-  if (command === "ls") {
-    if (m.list === "garbage") {
-      return { stdout: "npm warn config something\n", stderr: "" };
-    }
-    if (m.list === "no-global-dir") {
-      const report = {
-        error: {
-          code: "ENOENT",
-          summary: "ENOENT: no such file or directory, lstat '/prefix/lib'",
-          detail: "This is related to npm not being able to find a file.",
-        },
-      };
-      return exitError(bin, args, 254, `${JSON.stringify(report, null, 2)}\n`);
-    }
-    if (m.inNpm === null) {
-      // Real npm: exit code 1 and a tree with no dependencies.
+  if (command === "root") {
+    if (m.disk === "no-answer") {
       return exitError(
         bin,
         args,
         1,
-        `${JSON.stringify({ name: "lib" }, null, 2)}\n`,
+        "",
+        "npm error code ENOENT\nnpm error syscall uv_cwd",
       );
     }
-    const tree = {
-      name: "lib",
-      dependencies: { "patchwork-os": { version: m.inNpm, overridden: false } },
-    };
-    return { stdout: `${JSON.stringify(tree, null, 2)}\n`, stderr: "" };
-  }
-  if (command === "root") {
-    return { stdout: `${m.npmRoot}\n`, stderr: "" };
+    return { stdout: `${m.npmRoot ?? rootFor(m)}\n`, stderr: "" };
   }
   if (command === "view") {
     if (m.latest === null) {
@@ -469,7 +491,7 @@ describe("BridgeInstaller: no install lowers what is installed", () => {
       for (const onPath of [null, ...LADDER]) {
         for (const check of onPath === null ? (["ok"] as const) : CHECKS) {
           for (const inNpm of [null, ...LADDER]) {
-            for (const list of ["ok", "garbage"] as const) {
+            for (const disk of ["plain", "garbled", "no-answer"] as const) {
               for (const latest of [null, ...LADDER]) {
                 for (const npmBinOnPath of [true, false]) {
                   const m = runOn(
@@ -477,7 +499,7 @@ describe("BridgeInstaller: no install lowers what is installed", () => {
                       onPath,
                       check,
                       inNpm,
-                      list,
+                      disk,
                       latest,
                       npmBinOnPath,
                     }),
@@ -697,8 +719,8 @@ describe("BridgeInstaller: what npm holds counts as much as what PATH finds", ()
     expect(logged()).toMatch(/comes first on this editor's PATH/);
   });
 
-  it("installs nothing when npm's package list cannot be read", async () => {
-    const m = runOn(machine({ onPath: null, inNpm: "3.0.0", list: "garbage" }));
+  it("installs nothing when the copy in npm's directory cannot be read", async () => {
+    const m = runOn(machine({ onPath: null, inNpm: "3.0.0", disk: "garbled" }));
 
     await installer.ensureInstalled();
 
@@ -707,63 +729,9 @@ describe("BridgeInstaller: what npm holds counts as much as what PATH finds", ()
     expect(statusBar()).toHaveBeenCalledTimes(1);
   });
 
-  it("reads an untidy global tree as a tree, not as a failure", async () => {
-    // npm exits 1 and adds an ELSPROBLEMS error when unrelated global
-    // packages are broken. The listing is still complete.
-    const m = runOn(machine({ onPath: null, inNpm: null, latest: "2.4.0" }));
-    const usual = mockedExecFile.getMockImplementation();
-    mockedExecFile.mockImplementation(
-      (bin: string, args: string[], opts: unknown, cb: ExecCallback) => {
-        if (bin === NPM_BIN && args[0] === "ls") {
-          m.commands.push([bin, ...args].join(" "));
-          const tree = {
-            error: {
-              code: "ELSPROBLEMS",
-              summary: "extraneous: example-package@1.0.0",
-            },
-            name: "lib",
-            problems: ["extraneous: example-package@1.0.0"],
-          };
-          return cb(exitError(bin, args, 1, JSON.stringify(tree)));
-        }
-        return usual?.(bin, args, opts, cb);
-      },
-    );
-
-    await installer.ensureInstalled();
-
-    expect(m.installs.map((i) => i.spec)).toEqual(["latest"]);
-  });
-
-  it("installs when npm has never held a global package", async () => {
-    // A prefix that has never had a global install has no directory for npm
-    // to list, and npm says ENOENT instead of printing an empty tree. Nothing
-    // is installed there, so this is a first install like any other.
+  it("installs nothing when npm will not say where its global directory is", async () => {
     const m = runOn(
-      machine({ onPath: null, inNpm: null, list: "no-global-dir" }),
-    );
-
-    await installer.ensureInstalled();
-
-    expect(m.commands).toEqual([
-      `${BRIDGE_BIN} --version`,
-      `${NPM_BIN} ls -g patchwork-os --depth=0 --json`,
-      `${NPM_BIN} root -g`,
-      `${NPM_BIN} install -g patchwork-os@latest`,
-    ]);
-    expect(m.onPath).toBe("2.4.0");
-  });
-
-  it("installs nothing when npm says ENOENT but its global directory is there", async () => {
-    // The directory exists, so the error is about something else and the
-    // listing was not read. A copy could be in it.
-    const m = runOn(
-      machine({
-        onPath: null,
-        inNpm: "3.0.0",
-        list: "no-global-dir",
-        npmRoot: os.tmpdir(),
-      }),
+      machine({ onPath: null, inNpm: "3.0.0", disk: "no-answer" }),
     );
 
     await installer.ensureInstalled();
@@ -772,19 +740,41 @@ describe("BridgeInstaller: what npm holds counts as much as what PATH finds", ()
     expect(m.inNpm).toBe("3.0.0");
   });
 
-  it("installs nothing when npm reports any other error instead of a tree", async () => {
-    const m = runOn(machine({ onPath: null, inNpm: "3.0.0" }));
-    const usual = mockedExecFile.getMockImplementation();
-    mockedExecFile.mockImplementation(
-      (bin: string, args: string[], opts: unknown, cb: ExecCallback) => {
-        if (bin === NPM_BIN && args[0] === "ls") {
-          const tree = {
-            error: { code: "EACCES", summary: "permission denied" },
-          };
-          return cb(exitError(bin, args, 243, JSON.stringify(tree)));
-        }
-        return usual?.(bin, args, opts, cb);
-      },
+  it("installs when npm has never held a global package", async () => {
+    // A prefix that has never had a global install has no directory at all.
+    // Nothing is installed there, so this is a first install like any other.
+    const m = runOn(
+      machine({ onPath: null, inNpm: null, npmRoot: NO_SUCH_DIR }),
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.commands).toEqual([
+      `${BRIDGE_BIN} --version`,
+      `${NPM_BIN} root -g`,
+      `${NPM_BIN} install -g patchwork-os@latest`,
+    ]);
+    expect(m.onPath).toBe("2.4.0");
+    expect(m.unexpected).toEqual([]);
+  });
+
+  it("installs over a leftover folder that has no manifest", async () => {
+    // What an install that was stopped half-way leaves behind. It is not a
+    // copy: there is no version in it to lower, and installing repairs it.
+    const leftover = path.join(ROOTS, "leftover");
+    fs.mkdirSync(path.join(leftover, "patchwork-os", "dist"), {
+      recursive: true,
+    });
+    const m = runOn(machine({ onPath: null, inNpm: null, npmRoot: leftover }));
+
+    await installer.ensureInstalled();
+
+    expect(m.installs.map((i) => i.spec)).toEqual(["latest"]);
+  });
+
+  it("installs nothing when npm names a directory that is not a full path", async () => {
+    const m = runOn(
+      machine({ onPath: null, inNpm: "3.0.0", npmRoot: "node_modules" }),
     );
 
     await installer.ensureInstalled();
@@ -803,7 +793,7 @@ describe("BridgeInstaller: an upgrade installs the release it compared", () => {
 
     expect(m.commands).toEqual([
       `${BRIDGE_BIN} --version`,
-      `${NPM_BIN} ls -g patchwork-os --depth=0 --json`,
+      `${NPM_BIN} root -g`,
       `${NPM_BIN} view patchwork-os@latest version`,
       `${NPM_BIN} install -g patchwork-os@2.4.0`,
     ]);
