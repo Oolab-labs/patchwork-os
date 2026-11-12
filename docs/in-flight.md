@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-11-12 `fix/approval-notify-all-queue-paths` — the worker-gate branch (`buildWorkerAutonomyGate`) and the Streamable HTTP `tools/call` gate queue an approval without notifying any channel; route both through `enqueueApprovalWithDispatch`. Touches `src/approvalHttp.ts`, `src/recipeOrchestration.ts`, `src/streamableHttp.ts`, `src/bridge.ts`.
+
 
 
 
