@@ -6,6 +6,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.7] — 2026-11-12
+
+### Security
+
+- **Recipe variables named like credentials are redacted in the ledgers**
+  (#1792). A variable whose name marks it as a credential (`api_key`,
+  `token`, `password` and similar) is now recorded as `[REDACTED:vars]` in the
+  run log, step results and approval payloads, the same way a declared `env`
+  value already was. Before this release such a value was recorded as written,
+  whether it came from a declared default, `--var` or a nested step's `vars:`.
+  - Tools still receive the raw value; ordinary variables are recorded as
+    written.
+  - Names match by substring, so a variable such as `session_name` is redacted
+    too when its value is 8 characters or longer.
+  - Agent prompts are unchanged: a credential-named variable interpolated into
+    a prompt is delivered as before. Use a declared `env` block for a value
+    that must not reach a prompt.
+  - Existing run logs are not rewritten. If a credential was passed as a
+    variable on an earlier version, rotate it.
+- **Dependency advisories cleared in all four workspaces** (#1793):
+  node-forge 1.4.3 and qs 6.16.2 in the push relay, minimatch 11.0.8 in the
+  bridge and the dashboard's lint tooling, vitest 4.1.12 throughout.
+
+### Changed
+
+- **minimatch 11** (#1793), a major version. Its Node requirement
+  (`20 || >=22`) is inside this package's (`>=22.5.0`), and no source change
+  was needed where policy and automation hooks match globs.
+- fast-xml-parser 5.12.0 in the push relay (#1791) and undici 7.30.1 in the
+  dashboard (#1789).
+
+---
+
 ## [1.2.6] — 2026-10-26
 
 ### Security
