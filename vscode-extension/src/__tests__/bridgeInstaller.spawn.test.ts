@@ -252,7 +252,8 @@ describe.skipIf(isWindows)("probeNpmGlobal against the real npm", () => {
 // means the extension does not install the bridge on Windows.
 //
 // Whoever makes the check work on Windows should expect both of these to
-// fail, and replace them with the expectations of the block above.
+// fail, and replace them with the expectations of the first block in this
+// file ("probeInstalled against real processes").
 describe.runIf(isWindows)("probeInstalled on Windows", () => {
   it("cannot read the version through the .cmd shim, and says unknown", async () => {
     fs.writeFileSync(
