@@ -12,7 +12,7 @@ Read from the lockfiles, so this is the set actually resolved rather than the
 set requested. `UNDECLARED` means the package publishes no `license` field —
 not that it is unlicensed; check the package itself before relying on it.
 
-**461 production packages** across 4 workspaces.
+**462 production packages** across 4 workspaces.
 
 ## Licences in use
 
@@ -25,11 +25,11 @@ not that it is unlicensed; check the package itself before relying on it.
 | LGPL-3.0-or-later | 10 |
 | Apache-2.0 AND LGPL-3.0-or-later | 3 |
 | 0BSD | 2 |
+| BlueOak-1.0.0 | 2 |
 | Apache-2.0 AND LGPL-3.0-or-later AND MIT | 1 |
 | CC-BY-4.0 | 1 |
 | CC0-1.0 | 1 |
 | MPL-2.0 | 1 |
-| BlueOak-1.0.0 | 1 |
 | UNDECLARED | 1 |
 | (BSD-3-Clause OR GPL-2.0) | 1 |
 | BSD-2-Clause | 1 |
@@ -239,10 +239,11 @@ not that it is unlicensed; check the package itself before relying on it.
 | yaml | 2.8.4 | ISC |
 | zwitch | 2.0.4 | MIT |
 
-### (root) — 26 packages
+### (root) — 27 packages
 
 | Package | Version | Licence |
 |---|---|---|
+| @isaacs/nonrecursive-glob-match | 1.1.0 | BlueOak-1.0.0 |
 | @opentelemetry/api | 1.9.0 | Apache-2.0 |
 | @opentelemetry/api-logs | 0.219.0 | Apache-2.0 |
 | @opentelemetry/context-async-hooks | 2.8.0 | Apache-2.0 |
@@ -263,7 +264,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | fast-uri | 3.1.9 | BSD-3-Clause |
 | ipaddr.js | 2.3.0 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
-| minimatch | 10.2.4 | BlueOak-1.0.0 |
+| minimatch | 11.0.8 | BlueOak-1.0.0 |
 | node-cron | 4.6.0 | ISC |
 | require-from-string | 2.0.2 | MIT |
 | undici | 6.29.1 | MIT |
@@ -444,7 +445,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | ms | 2.0.0 | MIT |
 | negotiator | 0.6.3 | MIT |
 | node-fetch | 2.7.0 | MIT |
-| node-forge | 1.4.0 | (BSD-3-Clause OR GPL-2.0) |
+| node-forge | 1.4.3 | (BSD-3-Clause OR GPL-2.0) |
 | object-hash | 3.0.0 | MIT |
 | object-inspect | 1.13.4 | MIT |
 | on-finished | 2.4.1 | MIT |
@@ -456,7 +457,7 @@ not that it is unlicensed; check the package itself before relying on it.
 | proto3-json-serializer | 2.0.2 | Apache-2.0 |
 | protobufjs | 7.6.5 | BSD-3-Clause |
 | proxy-addr | 2.0.8 | MIT |
-| qs | 6.16.0 | BSD-3-Clause |
+| qs | 6.16.2 | BSD-3-Clause |
 | range-parser | 1.2.1 | MIT |
 | raw-body | 2.5.3 | MIT |
 | readable-stream | 3.6.2 | MIT |
