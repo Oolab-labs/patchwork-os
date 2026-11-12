@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-11-12 `docs/address-placeholder` — a personal address and a real channel name in four documents replaced with placeholders. Docs only. — Claude Code (worktree session)
+
 
 
 

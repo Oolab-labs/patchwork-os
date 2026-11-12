@@ -79,8 +79,8 @@ Read tools + writes confined to `~/.patchwork/`, workspace, or `/tmp`.
 
 ### WRITE-EXTERNAL (3) — DO NOT DOGFOOD WITHOUT APPROVAL
 - `~/.patchwork/recipes/google-meet-debrief.yaml` — posts to Slack + creates Linear issues
-- `~/.patchwork/recipes/morning-brief-slack.yaml` — posts to `all-massappealdesigns` daily 08:00
-- `~/.patchwork/recipes/triage-brief.yaml` — posts to `all-massappealdesigns`
+- `~/.patchwork/recipes/morning-brief-slack.yaml` — posts to `all-example` daily 08:00
+- `~/.patchwork/recipes/triage-brief.yaml` — posts to `all-example`
 - `examples/recipes/google-meet-debrief.yaml` — same external footprint as the user copy
 
 ### BROKEN-LIKELY (21)
@@ -124,14 +124,14 @@ Recipes I'd actually fire (SAFE-READ + WRITE-LOCAL only):
 | `debug-env`, `debug-flatten` | Diagnostics only; both write to `/tmp`. Useful when triaging env-var or meeting-flatten regressions. |
 
 Skip these without explicit user approval (WRITE-EXTERNAL):
-- `morning-brief-slack` — posts to `all-massappealdesigns` (real channel).
+- `morning-brief-slack` — posts to `all-example` (a real channel; the name here is a placeholder).
 - `triage-brief` — same channel.
 - both `google-meet-debrief` recipes — create Linear issues + Slack post.
 
 ## 4. Anything weird
 
 - **Hardcoded Slack channel ID in bundled example**: [examples/recipes/google-meet-debrief.yaml](../../examples/recipes/google-meet-debrief.yaml) lines 60-62 use literal `C0AUZEY8Y0Y` for all three team channels (Sales/Marketing/Engineering all routed to the same id). The user copy at `~/.patchwork/recipes/google-meet-debrief.yaml` correctly reads from env vars. Bundled example should be templated.
-- **Bare channel name in user recipes**: `morning-brief-slack` and `triage-brief` post to `channel: all-massappealdesigns` literal. Hardcoded org/channel in user-owned files is fine, but if either is the canonical example, scrub before publishing.
+- **Bare channel name in user recipes**: `morning-brief-slack` and `triage-brief` post to `channel: all-example` literal. Hardcoded org/channel in user-owned files is fine, but if either is the canonical example, scrub before publishing.
 - **`notify.push` used by user-installed recipe but not registered**: `~/.patchwork/recipes/google-meet-debrief.yaml` step `notify` calls `notify.push` — same gap as the bundled examples. Step will likely no-op or error. Consider stripping or replacing with a `file.append` to inbox.
 - **`drive.fetchDoc` referenced but not declared as a step tool**: [google-meet-debrief-single.yaml](../../examples/recipes/google-meet-debrief-single.yaml) declares `tools: [drive.fetchDoc]` *under an agent step* — the agent is expected to call it. `drive.fetchDoc` IS in the registry, so this works only if the agent driver supports per-step tool grants. Worth confirming this code path is wired.
 - **Cron at 04:30 UTC**: `morning-inbox-triage` at `30 4 * * *` is fine if user is in a -5 to -8 timezone, but on a UTC server it fires at 4:30am UTC. Sanity-check before scheduling.
