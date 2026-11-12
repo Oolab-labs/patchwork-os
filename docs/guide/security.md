@@ -54,7 +54,7 @@ Every agent the bridge spawns — recipe steps on every path, orchestrator tasks
 
 ## Secrets in the ledgers
 
-Values registered as secrets — declared `env` blocks, connector tokens, the bridge bearer — are redacted **by value** from the run log, approval queue, activity log and decision traces, including URL-encoded, base64 and JSON-escaped forms. Orchestrator prompts persist as a hash, a preview and ciphertext, never clear text. Boundary receipts carry no payload field at all. None of that makes the ledgers public: they still hold real task titles and third-party record ids, which is why every reader that prints rows is marked as operator data in the [CLI reference](cli.md).
+Values registered as secrets — declared `env` blocks, connector tokens, the bridge bearer, and recipe variables whose name marks them as a credential (`api_key`, `token`, `password` and similar) — are redacted **by value** from the run log, approval queue, activity log and decision traces, including URL-encoded, base64 and JSON-escaped forms. Orchestrator prompts persist as a hash, a preview and ciphertext, never clear text. An ordinary variable is recorded as written, so pass a credential through an `env` block, or under a credential-like variable name, never under a neutral one. Boundary receipts carry no payload field at all. None of that makes the ledgers public: they still hold real task titles and third-party record ids, which is why every reader that prints rows is marked as operator data in the [CLI reference](cli.md).
 
 ## Telemetry
 

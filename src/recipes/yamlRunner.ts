@@ -77,6 +77,7 @@ import { secretPathDenyRules } from "../governance/secretPathDenies.js";
 import {
   redactKnownSecrets,
   registerEnvBlock,
+  registerSensitiveVars,
 } from "../governance/secretValues.js";
 import { toolFactsFor } from "../governance/toolFacts.js";
 import {
@@ -1577,6 +1578,11 @@ export async function runYamlRecipe(
   const files = resolveFileInputs(recipe, seedContext);
   if (!files.ok) throw new Error(files.error);
   const resolvedSeed = files.values as RunContext;
+  // Variables arrive here — declared defaults and caller-supplied values,
+  // merged by every caller into the seed. One under a credential-like name
+  // (`api_key`, `cli_token`) is held to the same rule as a declared env
+  // value: ledgers record `[REDACTED:vars]`, tools still get the raw value.
+  registerSensitiveVars(resolvedSeed);
   // `type: text` inputs are held by the value-redaction layer for exactly the
   // life of the run, so no ledger written during it records the prose
   // (src/recipes/textInputs.ts). File inputs' paths likewise, as
