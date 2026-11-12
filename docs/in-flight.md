@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-11-12 `fix/extension-installer-never-downgrades` — editor extension's bridge installer: the built-in version becomes a minimum instead of the version to install, a first install takes `patchwork-os@latest`, and nothing is installed over a version the check could not read or one that is already higher — Claude Code session (worktree `vigorous-jepsen-5b04d4`)
+
 
 
 
