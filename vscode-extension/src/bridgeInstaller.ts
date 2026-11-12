@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { promisify } from "node:util";
 import * as vscode from "vscode";
 
@@ -313,11 +315,35 @@ export class BridgeInstaller {
         : { kind: "unknown", reason: `npm lists ${PACKAGE} with no version` };
     }
     // ELSPROBLEMS is npm reporting an untidy global tree; the listing itself
-    // is complete. Any other error means the tree was not read.
-    if (error && error.code !== "ELSPROBLEMS") {
-      return { kind: "unknown", reason: `npm reported ${String(error.code)}` };
+    // is complete.
+    if (!error || error.code === "ELSPROBLEMS") return { kind: "missing" };
+    // ENOENT is what npm says when its global directory does not exist yet,
+    // which is the state of a prefix that has never had a global package. No
+    // copy can be in a directory that is not there. That is checked on disk
+    // rather than read off the error: an install follows from this answer.
+    if (
+      error.code === "ENOENT" &&
+      (await this.npmGlobalRootExists()) === false
+    ) {
+      return { kind: "missing" };
     }
-    return { kind: "missing" };
+    // Any other error means the tree was not read.
+    return { kind: "unknown", reason: `npm reported ${String(error.code)}` };
+  }
+
+  /**
+   * Whether the directory npm installs global packages into exists. Null when
+   * that cannot be established.
+   */
+  private async npmGlobalRootExists(): Promise<boolean | null> {
+    try {
+      const { stdout } = await this.npm(["root", "-g"], NPM_LIST_TIMEOUT_MS);
+      const root = stdout.trim();
+      return path.isAbsolute(root) ? fs.existsSync(root) : null;
+    } catch (err: unknown) {
+      if (err instanceof NpmNotFoundError) throw err;
+      return null;
+    }
   }
 
   /** The version the registry's `latest` tag points at, or null if unreadable. */

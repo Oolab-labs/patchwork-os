@@ -20,6 +20,7 @@ const output = {
 
 let dir: string;
 let savedPath: string | undefined;
+let savedPrefix: string | undefined;
 
 beforeEach(() => {
   // realpath: the temp directory is a symlink on macOS and can be an 8.3
@@ -28,11 +29,14 @@ beforeEach(() => {
     fs.mkdtempSync(path.join(os.tmpdir(), "bridge-probe-")),
   );
   savedPath = process.env.PATH;
+  savedPrefix = process.env.npm_config_prefix;
 });
 
 afterEach(() => {
   if (savedPath === undefined) delete process.env.PATH;
   else process.env.PATH = savedPath;
+  if (savedPrefix === undefined) delete process.env.npm_config_prefix;
+  else process.env.npm_config_prefix = savedPrefix;
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -127,6 +131,46 @@ describe.skipIf(isWindows)("probeInstalled against real processes", () => {
 });
 
 describe.skipIf(isWindows)("probeNpmGlobal against the real npm", () => {
+  /** Make the npm that the installer runs use `dir` as its global prefix. */
+  function useDirAsNpmPrefix(): void {
+    process.env.npm_config_prefix = dir;
+  }
+
+  it("reports missing for a prefix that has never held a global package", async () => {
+    // No `lib` directory at all. Real npm does not print an empty tree here:
+    // it fails with an ENOENT error object. Read as "cannot tell", that would
+    // mean a machine like this never gets its first install.
+    useDirAsNpmPrefix();
+
+    expect(await new BridgeInstaller(output).probeNpmGlobal()).toEqual({
+      kind: "missing",
+    });
+  }, 45_000);
+
+  it("reports missing for a global directory that is there and empty", async () => {
+    fs.mkdirSync(path.join(dir, "lib", "node_modules"), { recursive: true });
+    useDirAsNpmPrefix();
+
+    expect(await new BridgeInstaller(output).probeNpmGlobal()).toEqual({
+      kind: "missing",
+    });
+  }, 45_000);
+
+  it("reads the version of a copy in npm's global directory", async () => {
+    const pkg = path.join(dir, "lib", "node_modules", "patchwork-os");
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(
+      path.join(pkg, "package.json"),
+      JSON.stringify({ name: "patchwork-os", version: "9.8.7" }),
+    );
+    useDirAsNpmPrefix();
+
+    expect(await new BridgeInstaller(output).probeNpmGlobal()).toEqual({
+      kind: "installed",
+      version: "9.8.7",
+    });
+  }, 45_000);
+
   it("can read what npm really prints, whether or not a bridge is installed", async () => {
     // The machine running this may or may not have the bridge installed
     // globally, so the answer is not fixed. What must hold is that npm's

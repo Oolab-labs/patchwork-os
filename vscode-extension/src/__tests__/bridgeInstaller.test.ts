@@ -32,6 +32,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 (globalThis as Record<string, unknown>).MIN_BRIDGE_VERSION = "2.0.1";
 
 import { execFile } from "node:child_process";
+import * as os from "node:os";
+import * as path from "node:path";
 import * as vscode from "vscode";
 import { BridgeInstaller, compareVersions } from "../bridgeInstaller";
 
@@ -85,8 +87,13 @@ interface Machine {
   check: CheckBehaviour;
   /** Version in npm's global directory; null when npm holds no copy. */
   inNpm: string | null;
-  /** Whether `npm ls -g` gives a readable answer. */
-  list: "ok" | "garbage";
+  /**
+   * How `npm ls -g` answers. "no-global-dir" is what real npm does when its
+   * global directory does not exist: exit 254 and an ENOENT error object.
+   */
+  list: "ok" | "garbage" | "no-global-dir";
+  /** What `npm root -g` prints. */
+  npmRoot: string;
   /** What the registry's `latest` tag points at; null = registry unreachable. */
   latest: string | null;
   /** If set, `latest` moves here right after it has been looked up. */
@@ -100,12 +107,21 @@ interface Machine {
   unexpected: string[];
 }
 
+/** An absolute path that does not exist on any machine these tests run on. */
+const NO_SUCH_DIR = path.join(
+  os.tmpdir(),
+  "no-such-npm-root",
+  "lib",
+  "node_modules",
+);
+
 function machine(overrides: Partial<Machine> = {}): Machine {
   return {
     onPath: null,
     check: "ok",
     inNpm: null,
     list: "ok",
+    npmRoot: NO_SUCH_DIR,
     latest: "2.4.0",
     npmInstalled: true,
     npmBinOnPath: true,
@@ -200,6 +216,16 @@ function npm(m: Machine, bin: string, args: string[]): Output | Error {
     if (m.list === "garbage") {
       return { stdout: "npm warn config something\n", stderr: "" };
     }
+    if (m.list === "no-global-dir") {
+      const report = {
+        error: {
+          code: "ENOENT",
+          summary: "ENOENT: no such file or directory, lstat '/prefix/lib'",
+          detail: "This is related to npm not being able to find a file.",
+        },
+      };
+      return exitError(bin, args, 254, `${JSON.stringify(report, null, 2)}\n`);
+    }
     if (m.inNpm === null) {
       // Real npm: exit code 1 and a tree with no dependencies.
       return exitError(
@@ -214,6 +240,9 @@ function npm(m: Machine, bin: string, args: string[]): Output | Error {
       dependencies: { "patchwork-os": { version: m.inNpm, overridden: false } },
     };
     return { stdout: `${JSON.stringify(tree, null, 2)}\n`, stderr: "" };
+  }
+  if (command === "root") {
+    return { stdout: `${m.npmRoot}\n`, stderr: "" };
   }
   if (command === "view") {
     if (m.latest === null) {
@@ -704,6 +733,43 @@ describe("BridgeInstaller: what npm holds counts as much as what PATH finds", ()
     await installer.ensureInstalled();
 
     expect(m.installs.map((i) => i.spec)).toEqual(["latest"]);
+  });
+
+  it("installs when npm has never held a global package", async () => {
+    // A prefix that has never had a global install has no directory for npm
+    // to list, and npm says ENOENT instead of printing an empty tree. Nothing
+    // is installed there, so this is a first install like any other.
+    const m = runOn(
+      machine({ onPath: null, inNpm: null, list: "no-global-dir" }),
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.commands).toEqual([
+      `${BRIDGE_BIN} --version`,
+      `${NPM_BIN} ls -g patchwork-os --depth=0 --json`,
+      `${NPM_BIN} root -g`,
+      `${NPM_BIN} install -g patchwork-os@latest`,
+    ]);
+    expect(m.onPath).toBe("2.4.0");
+  });
+
+  it("installs nothing when npm says ENOENT but its global directory is there", async () => {
+    // The directory exists, so the error is about something else and the
+    // listing was not read. A copy could be in it.
+    const m = runOn(
+      machine({
+        onPath: null,
+        inNpm: "3.0.0",
+        list: "no-global-dir",
+        npmRoot: os.tmpdir(),
+      }),
+    );
+
+    await installer.ensureInstalled();
+
+    expect(m.installs).toEqual([]);
+    expect(m.inNpm).toBe("3.0.0");
   });
 
   it("installs nothing when npm reports any other error instead of a tree", async () => {
