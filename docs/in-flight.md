@@ -52,8 +52,6 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- 2026-11-12 `fix/extension-installer-never-downgrades` — editor extension's bridge installer: the built-in version becomes a minimum instead of the version to install, a first install takes `patchwork-os@latest`, and nothing is installed over a version the check could not read or one that is already higher — Claude Code session (worktree `vigorous-jepsen-5b04d4`)
-
 
 
 
@@ -61,6 +59,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-11-12 `fix/extension-installer-never-downgrades` (#1796) — editor extension's bridge installer: the built-in version is a minimum (`MIN_BRIDGE_VERSION`), not what gets installed; a missing bridge installs `patchwork-os@latest`; a bridge below the minimum is upgraded to the registry's latest only when that is strictly newer than every copy found on PATH and in npm's global directory; a version check that fails installs nothing; versions compared by SemVer precedence. Extension 1.4.26.
 - 2026-11-12 `fix/dependency-alerts-2026-11` (#1793) — node-forge 1.4.3 and qs 6.16.2 in push-relay, minimatch 11 at root and under the dashboard lint chain, vitest 4.1.12 everywhere; two `overrides` entries to remove once upstream ranges move.
 - 2026-11-12 `fix/redact-sensitive-recipe-vars` (#1792) — both runners call `registerSensitiveVars` on the seed they are handed (chained at every depth), so a credential-named variable is recorded as `[REDACTED:vars]`; tools still get the raw value, ordinary variables and agent prompts unchanged.
 - 2026-10-17 `fix/dashboard-basepath-headers-empty-states` — full-page navigations go through `appHref` and SW icons are scope-relative (M29); one shared `securityHeadersFor` on every proxy that mirrors an upstream content type, plus nosniff on the binary and SSE branches (M30; OAuth callback deliberately excluded); DecisionReceipt reports a failed request as an error, Data boundary page handles an older bridge and a partial body, and its coverage copy and label sources match the runtime (M31).
