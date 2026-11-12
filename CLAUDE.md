@@ -824,6 +824,7 @@ So: **design the sentinel, then stamp.** Never the other way round, and never
 - **Tools**: factory pattern `createXxxTool(deps)` returning `{ schema, handler }`. Register in `src/tools/index.ts`.
 - **Extension handlers**: standalone async functions in `handlers` map. Register in `vscode-extension/src/handlers/index.ts`.
 - **WebSocket safety**: all `ws.send()` calls must use `safeSend()` or readyState check + try-catch.
+- **Approvals**: queue through `enqueueApprovalWithDispatch` (`src/approvalHttp.ts`), never `ApprovalQueue.request()` directly. The second queues and tells nobody — the run or tool call halts, the approval expires, and the failure looks like something that broke. Four callers have been fixed for exactly this (CLI gate, recipe tier gate, worker gate, Streamable HTTP gate); `approvalQueueRequestCallers.test.ts` fails on a fifth. Hand it the channel settings with `approvalNotifyChannels(server)`: every channel field is optional, so a caller that omits them type-checks, queues correctly and is silent — pin a new path with a test that drives its real entry point, as `workerGateApprovalNotifies.test.ts` and `streamableHttpApprovalNotifies.test.ts` do.
 - **Extension dependency**: tools requiring extension must set `extensionRequired: true` in schema.
 - **Tool names**: must match `/^[a-zA-Z0-9_]+$/`.
 - **IDE/LSP tool surface is FROZEN** (decided 2026-10-15): no new editor tools, no removals, tests stay green; revisit only on an explicit user request.
