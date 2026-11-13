@@ -6,9 +6,12 @@ import * as esbuild from "esbuild";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// Read the version from the root package.json (bridge + extension share a version)
+// The bridge version this extension is built against, read from the root
+// package.json. (The extension has its own version in ./package.json.)
+// bridgeInstaller.ts reads it as the OLDEST bridge the extension needs: a
+// minimum to compare against, never the version to install.
 const rootPkg = require(path.join(__dirname, "../package.json"));
-const BRIDGE_VERSION = rootPkg.version;
+const MIN_BRIDGE_VERSION = rootPkg.version;
 
 const watch = process.argv.includes("--watch");
 
@@ -22,7 +25,7 @@ const ctx = await esbuild.context({
   sourcemap: true,
   minify: !watch,
   define: {
-    BRIDGE_VERSION: JSON.stringify(BRIDGE_VERSION),
+    MIN_BRIDGE_VERSION: JSON.stringify(MIN_BRIDGE_VERSION),
   },
 });
 
@@ -55,5 +58,21 @@ if (watch) {
 } else {
   await ctx.rebuild();
   await ctx.dispose();
+
+  // `define` replaces every MIN_BRIDGE_VERSION in the bundle. If its name ever
+  // drifts from the one bridgeInstaller.ts declares, nothing is replaced, the
+  // installer quietly falls back to "no minimum", and the build still
+  // succeeds. So look at the bundle rather than trust the configuration.
+  const bundle = fs.readFileSync(
+    path.join(__dirname, "out/extension.js"),
+    "utf8",
+  );
+  if (bundle.includes("MIN_BRIDGE_VERSION")) {
+    console.error(
+      "Build failed: MIN_BRIDGE_VERSION was not inlined into out/extension.js.",
+    );
+    process.exit(1);
+  }
+
   console.log("Build complete.");
 }
