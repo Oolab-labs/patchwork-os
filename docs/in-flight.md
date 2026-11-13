@@ -52,6 +52,8 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
+- 2026-11-13 `fix/http-approval-level` — Streamable HTTP `tools/call` gate reads the server's live approval level (governed floor, `POST /settings`) instead of `config.approvalGate`; HTTP sessions also get `workerGateDecisionLog`. Touches `src/streamableHttp.ts`, `src/bridge.ts`.
+
 
 
 
