@@ -944,6 +944,68 @@ export interface ApprovalNotifyDeps {
   ntfyHmacSecret?: string;
 }
 
+/** The channel half of `ApprovalNotifyDeps`: everything but the queue. */
+export type ApprovalNotifyChannels = Omit<ApprovalNotifyDeps, "queue">;
+
+/**
+ * Where the notification channels are configured — structurally the bridge's
+ * `Server`, named by its own field names.
+ *
+ * A caller holds THIS OBJECT and reads it when an approval is queued; it does
+ * not copy the values out at construction. The settings are live: `POST
+ * /settings` rewrites them on a running bridge, and a snapshot taken when a
+ * session opened or a run started would keep announcing to the old channels,
+ * or to none.
+ */
+export interface ApprovalChannelSettings {
+  approvalWebhookUrl?: string | undefined;
+  pushServiceUrl?: string | undefined;
+  pushServiceToken?: string | undefined;
+  pushServiceBaseUrl?: string | undefined;
+  pushServiceAllowPrivate?: boolean | undefined;
+  ntfyTopic?: string | undefined;
+  ntfyServer?: string | undefined;
+}
+
+/**
+ * The channels to announce a queued approval on, read from the live settings
+ * at the moment of the call.
+ *
+ * One definition of "which settings are channels", for the callers that are
+ * handed the settings object rather than building `ApprovalNotifyDeps` field
+ * by field. The list has been spelled out separately at each call site, and a
+ * list spelled out per call site is one a new caller can get wrong without
+ * any test noticing: every field here is optional on the receiving side, so a
+ * missing one type-checks, queues correctly and announces nothing.
+ *
+ * Absent settings ⇒ no channels. That is a correct answer for a caller with
+ * nowhere to announce (a bridge with nothing configured), never an error.
+ */
+export function approvalNotifyChannels(
+  settings: ApprovalChannelSettings | null | undefined,
+): ApprovalNotifyChannels {
+  if (!settings) return {};
+  return {
+    ...(settings.approvalWebhookUrl && {
+      webhookUrl: settings.approvalWebhookUrl,
+    }),
+    ...(settings.pushServiceUrl && {
+      pushServiceUrl: settings.pushServiceUrl,
+    }),
+    ...(settings.pushServiceToken && {
+      pushServiceToken: settings.pushServiceToken,
+    }),
+    ...(settings.pushServiceBaseUrl && {
+      pushServiceBaseUrl: settings.pushServiceBaseUrl,
+    }),
+    ...(settings.pushServiceAllowPrivate !== undefined && {
+      pushServiceAllowPrivate: settings.pushServiceAllowPrivate,
+    }),
+    ...(settings.ntfyTopic && { ntfyTopic: settings.ntfyTopic }),
+    ...(settings.ntfyServer && { ntfyServer: settings.ntfyServer }),
+  };
+}
+
 /**
  * Queue an approval and fan out every configured notification channel
  * (webhook, Web Push, ntfy) identically. Extracted so both the HTTP
@@ -954,6 +1016,13 @@ export interface ApprovalNotifyDeps {
  * silently enqueued with NO notification of any kind, since the CLI gate
  * called `queue.request()` directly and never touched the dispatch* helpers
  * below.
+ *
+ * This is the ONLY production caller of `queue.request()`, and it has to stay
+ * that way: the same defect has now been found and fixed on four separate
+ * callers (the CLI gate, the recipe tier gate, the worker gate and the
+ * Streamable HTTP gate), each time because a path that needed a person queued
+ * directly and so told nobody. `approvalQueueRequestCallers.test.ts` fails on
+ * a fifth.
  */
 export function enqueueApprovalWithDispatch(
   deps: ApprovalNotifyDeps,
@@ -966,10 +1035,11 @@ export function enqueueApprovalWithDispatch(
     sessionId?: string;
     personalSignals?: ReturnType<typeof computePersonalSignals>;
     /**
-     * The run this approval belongs to (ADR-0025). Set by the recipe tier
-     * gate, which is the only caller of this helper that has one; the HTTP
-     * route and the CLI PreToolUse gate are client-session tool calls with no
-     * run, and omit it. Absence is a state here, not a gap.
+     * The run this approval belongs to (ADR-0025). Set by the two recipe
+     * gates — tier and worker — which are the only callers of this helper
+     * that have one; the HTTP route and the two in-process MCP gates
+     * (WebSocket, Streamable HTTP) are client-session tool calls with no run,
+     * and omit it. Absence is a state here, not a gap.
      */
     correlationId?: string;
     recipeName?: string;

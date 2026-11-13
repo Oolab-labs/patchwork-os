@@ -356,6 +356,18 @@ export async function buildWorkerAutonomyGate(
      * action. Must return a grant on approval (the runner revalidates it).
      */
     askHuman?: ApprovalFn;
+    /**
+     * Where a QUEUED approval is announced: the bridge's live channel settings
+     * (structurally its `Server` — webhook, Web Push, ntfy). Held by reference
+     * and read when an approval is queued, because `POST /settings` changes
+     * them on a running bridge.
+     *
+     * Absent ⇒ the approval is queued and nobody is told. That is right only
+     * for a caller that has no channels; the bridge always passes its server.
+     * Until 2026-11-12 this gate was not handed the settings at all, so a
+     * worker's gated action waited in silence until it expired.
+     */
+    approvalChannels?: import("./approvalHttp.js").ApprovalChannelSettings;
   },
 ): Promise<ApprovalFn | null> {
   try {
@@ -395,6 +407,8 @@ export async function buildWorkerAutonomyGate(
       permissionStore = undefined;
     }
     const { getApprovalQueue } = await import("./approvalQueue.js");
+    const { approvalNotifyChannels, enqueueApprovalWithDispatch } =
+      await import("./approvalHttp.js");
     // Not opened when a caller answers gated actions itself (`askHuman`).
     const queue = ctxOpts?.askHuman ? undefined : getApprovalQueue();
     const { worker, store } = trust;
@@ -605,34 +619,61 @@ export async function buildWorkerAutonomyGate(
         });
       }
       if (!queue) return { approved: false, refusal: "rejected" };
-      const { promise, callId, approvedActionIdentity } = queue.request(
-        {
-          toolName: input.toolId,
-          params: input.params ?? {},
-          tier: input.tier,
-          // "recipe", NOT `worker:<id>`: sessionId is part of the approved-action
-          // identity, and the runner revalidates with "recipe". A worker label
-          // here made every worker-approved action unmatchable once a grant was
-          // returned. The worker is still named by the Decision Record
-          // (`workerId`), the summary below, and `recipeName` + `correlationId`.
-          sessionId: "recipe",
-          summary: `${worker.name} (${decision.classKey}): ${decision.reason}`,
-          // recipeName propagates to the ActivityLog decision row so the shadow
-          // observer can distinguish worker-gate approvals from plain Claude-
-          // session MCP tool approvals (same event type, different source).
-          recipeName,
-          // ADR-0025 — same key, same `input`, as the Decision Record written
-          // above. A gated action and the approval it waits on must be
-          // reachable from each other, or the queue is evidence of nothing.
-          correlationId: input.runTaskId,
-        },
-        {
-          signal: input.signal, // L1: cancel the wait when the run aborts
-          ...(input.proposedActionIdentity !== undefined && {
-            proposedActionIdentity: input.proposedActionIdentity,
-          }),
-        },
-      );
+      // Goes through `enqueueApprovalWithDispatch`, NOT `queue.request` — the
+      // same rule, for the same reason, as `makeRecipeApprovalFn` above. The
+      // second queues silently; only the first announces the approval on the
+      // configured channels (webhook, Web Push, ntfy).
+      //
+      // This branch called `queue.request` directly until 2026-11-12, and was
+      // not handed the channel settings either. It is the branch that runs
+      // whenever worker autonomy is on, so under the governed profile a
+      // worker's gated action halted the run, told nobody, and expired. The
+      // 2026-08-28 fix for the tier gate is in this same file and did not
+      // reach it.
+      //
+      // The request is what it was — every field below carries the value it
+      // always did, plus an explicit empty `riskSignals` the helper requires —
+      // so the approved-action identity, the dedup key and the durable request
+      // row are unchanged. Only who hears about it differs.
+      const { promise, callId, approvedActionIdentity } =
+        enqueueApprovalWithDispatch(
+          {
+            queue,
+            // Read HERE, per approval, from the live settings — not captured
+            // when the gate was built. See `ApprovalChannelSettings`.
+            ...approvalNotifyChannels(ctxOpts?.approvalChannels),
+          },
+          {
+            toolName: input.toolId,
+            params: input.params ?? {},
+            tier: input.tier,
+            // "recipe", NOT `worker:<id>`: sessionId is part of the approved-action
+            // identity, and the runner revalidates with "recipe". A worker label
+            // here made every worker-approved action unmatchable once a grant was
+            // returned. The worker is still named by the Decision Record
+            // (`workerId`), the summary below, and `recipeName` + `correlationId`.
+            sessionId: "recipe",
+            // No risk signals on this path — the worker gate computes none,
+            // and inventing some to fill the shape would put fabricated
+            // evidence into a notification. Same as the tier gate.
+            riskSignals: [],
+            summary: `${worker.name} (${decision.classKey}): ${decision.reason}`,
+            // recipeName propagates to the ActivityLog decision row so the shadow
+            // observer can distinguish worker-gate approvals from plain Claude-
+            // session MCP tool approvals (same event type, different source).
+            recipeName,
+            // ADR-0025 — same key, same `input`, as the Decision Record written
+            // above. A gated action and the approval it waits on must be
+            // reachable from each other, or the queue is evidence of nothing.
+            correlationId: input.runTaskId,
+          },
+          {
+            signal: input.signal, // L1: cancel the wait when the run aborts
+            ...(input.proposedActionIdentity !== undefined && {
+              proposedActionIdentity: input.proposedActionIdentity,
+            }),
+          },
+        );
       // `decision` is already the worker-gate decision in this scope.
       const queueDecision = await promise;
       // Return a GRANT, never a bare approval. Without one the runner's identity
@@ -2061,6 +2102,13 @@ export class RecipeOrchestration {
       // persist every decision to the Decision Record (fail-soft).
       {
         workdir: this.deps.workdir,
+        // The server, so a gated action is announced on the channels it holds.
+        // `approvalChannels` is optional, as `server` is on
+        // `makeRecipeApprovalFn`, so the compiler says nothing if this line
+        // goes — and without it every channel is undefined and the worker
+        // gate is silent again. `workerGateApprovalNotifies.test.ts` drives
+        // this call site for that reason.
+        approvalChannels: this.deps.server,
         ...(gateDecisionLog && {
           recordGateDecision: (rec) => {
             try {

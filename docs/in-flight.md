@@ -59,6 +59,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-11-12 `fix/approval-notify-all-queue-paths` (#1797) — the worker gate (`buildWorkerAutonomyGate`) and the Streamable HTTP `tools/call` gate queue an approval through `enqueueApprovalWithDispatch`, so both announce it on the configured channels (webhook, Web Push, ntfy) as the CLI gate and the tier gate already did; `approvalNotifyChannels` reads the channels from the live server settings per approval; `approvalQueueRequestCallers.test.ts` holds that the helper is the only production use of the queue's `request`.
 - 2026-11-12 `docs/install-path-stable-channel` (#1795) — install instructions, one deploy script and the plugin's launch config name the stable `latest` channel instead of the frozen `beta`/`alpha` tags and the pre-rename package; release-channel text matched to `publish-npm.yml`. Docs and config only.
 - 2026-11-12 `docs/address-placeholder` (#1798) — a personal address and a real channel name in four documents replaced with placeholders. Docs only.
 - 2026-11-12 `fix/dependency-alerts-2026-11` (#1793) — node-forge 1.4.3 and qs 6.16.2 in push-relay, minimatch 11 at root and under the dashboard lint chain, vitest 4.1.12 everywhere; two `overrides` entries to remove once upstream ranges move.
