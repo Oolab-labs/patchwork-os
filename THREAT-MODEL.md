@@ -347,7 +347,8 @@ this a first-class risk, not a theoretical one.
   compromised transitive package runs code at install time on every developer
   and CI machine.
 - **No provenance or signature verification** on installed packages, and no SBOM
-  is published.
+  is published. (This is about dependencies. Patchwork's own npm releases are
+  published with SLSA build provenance.)
 - **The vendoring path is manual.** `patchwork-multitenant` copies this repo's
   `src/` verbatim into its tenant image; there is no automated check that the
   copy matches, so a fix here can silently fail to reach the image.
