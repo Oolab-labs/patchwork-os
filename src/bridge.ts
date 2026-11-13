@@ -2309,6 +2309,10 @@ export class Bridge {
       // The parameter is optional, so nothing but a test notices if this line
       // goes — see `streamableHttpApprovalNotifies.test.ts`.
       this.server,
+      // The live approval level, read per call — the value the WebSocket gate
+      // reads, including the governed floor and `POST /settings` changes.
+      // Pinned by `streamableHttpApprovalLevel.test.ts`.
+      () => this.server.approvalGate,
     );
     this.server.httpMcpHandler = (req, res) =>
       this.httpMcpHandler?.handle(req, res) ?? Promise.resolve();
