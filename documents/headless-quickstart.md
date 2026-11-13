@@ -240,7 +240,7 @@ If you only need git and shell tools, skip the probe installs — the bridge sta
 ```yaml
 - name: Start bridge (minimal)
   run: |
-    npx claude-ide-bridge --workspace . &
+    npx patchwork-os --workspace . &
     sleep 2
 ```
 

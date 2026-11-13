@@ -9,7 +9,7 @@ The current release line is **1.2.x** (`patchwork-os@1.2.7`), published under th
 | Channel | Status | Get fixes? |
 |---|---|---|
 | `latest` 1.2.x (current) | Active | Yes |
-| `beta` | Frozen at `1.2.0-beta.3`, superseded by 1.2.x | Upgrade to 1.2.x |
+| `beta` | Frozen: the last beta was `1.2.0-beta.3`, superseded by 1.2.x. The `beta` tag does not track new releases | Upgrade to 1.2.x |
 | `canary` | Auto-published on every green merge to `main`. Untriaged and unsupported — for dogfooding only | Only as a side effect of tracking `main` |
 | `alpha` | Frozen at `0.2.0-alpha.37` | Critical only, case-by-case |
 | Older `claude-ide-bridge` v2.x | End-of-life after the rename to Patchwork OS | No |

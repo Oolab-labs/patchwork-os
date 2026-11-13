@@ -395,7 +395,8 @@ npm run package        # create .vsix
 Before staging, run `npx biome check --write <files>` on changed files. Fix before stage — don't wait for hook to fail.
 
 **Release channels:**
-- `latest` / `beta` — manual via `chore(release):` PRs, tagged `v*-beta*` → `publish-npm.yml`. Stable / human-curated.
+- `latest` — the stable line, human-curated: a `chore(release):` PR, then a `vX.Y.Z` tag on its merge commit → the `publish-stable-tag` job in `publish-npm.yml`. That job runs `npm publish` with no `--tag`, so npm sets `latest` itself; there is no manual `npm dist-tag` step for a stable release.
+- `beta` — frozen pre-release channel, superseded by 1.2.x (status in `SECURITY.md`). The `v*-beta*` tag → `publish-beta` path still exists; it publishes under `--tag beta` only and never moves `latest`. Moving a dist-tag by hand is the one manual step left, because OIDC trusted publishing covers `npm publish` and not `npm dist-tag`.
 - `canary` — automatic on every green main merge via the `publish-canary` job in `publish-npm.yml` (`workflow_run` on CI). Version from `scripts/canary-version.mjs`: a stable base publishes the next patch's prerelease (`1.2.5` → `1.2.6-canary.<run>`), a prerelease base keeps `<base>.canary.<run>`. The old `<base>.canary.<run>` was invalid semver for a stable base, so no canary published from 1.2.0 (2026-10-15) until this was fixed. `npm install -g patchwork-os@canary` always tracks main. Use for dogfooding freshly-merged changes without waiting for the next release PR. Never default-installed.
 
 ## LSP Workflows

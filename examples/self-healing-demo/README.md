@@ -16,7 +16,7 @@ This is the "save a broken file → Claude fixes it" demo. The primitives (autom
 
 ## Prereqs
 
-1. `claude-ide-bridge` ≥ 2.42.1 installed globally (`npm i -g claude-ide-bridge`).
+1. `patchwork-os` installed globally (`npm i -g patchwork-os`). It provides the `claude-ide-bridge` command used below.
 2. `claude` CLI on PATH (the bridge spawns it as a subprocess).
 3. The bridge's VS Code companion extension installed in the IDE you open this folder with — LSP needs an extension to drive diagnostics.
 

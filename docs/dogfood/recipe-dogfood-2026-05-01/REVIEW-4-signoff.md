@@ -145,7 +145,7 @@ Read the dogfood reports skimming for things flagged by NO review.
 PLAN-MASTER:163 says "12 PRs, 6 weeks, sequential phases. Phases 3-6 contain parallelizable sub-PRs." None of R1, R2, R3 challenges this:
 
 - Recent merge cadence (per memory note `project_2026-04-28_merged_prs.md`): 3 PRs in one day on 2026-04-28.
-- This is **one developer** (the user, info@massappealdesigns.co.ke). PLAN-MASTER does not say "single dev sequential" vs "3 devs parallel per phase". With one dev + 2 PRs/day cadence, 12 PRs at conservative 1 PR/day = ~12 working days, not 6 weeks. With 1 PR/2 days (review burden), ~24 working days = 5 weeks.
+- This is **one developer** (the user, maintainer@example.test). PLAN-MASTER does not say "single dev sequential" vs "3 devs parallel per phase". With one dev + 2 PRs/day cadence, 12 PRs at conservative 1 PR/day = ~12 working days, not 6 weeks. With 1 PR/2 days (review burden), ~24 working days = 5 weeks.
 - **6 weeks is conservative IF single-dev**. R3 implicitly assumes one dev (R3:222 "Realistic estimate: 1 senior week"). Pin the assumption explicitly in PLAN-MASTER.
 
 ### M-2 — No `runlogVersion: 2` rollout plan beyond the "additive schema" claim

@@ -106,7 +106,7 @@ Legitimate paths containing rejected characters will be blocked. This is intenti
 ## Recommendations
 
 ### For Users
-1. Update to latest beta version immediately
+1. Update to the latest release immediately (`npm install -g patchwork-os`)
 2. Review any custom `BRIDGE` environment variable settings
 3. Ensure bridge binary paths don't contain special characters
 

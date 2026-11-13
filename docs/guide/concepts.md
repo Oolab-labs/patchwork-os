@@ -92,7 +92,7 @@ Read more: [docs/worker-autonomy-policy-gate.md](../worker-autonomy-policy-gate.
 
 It adds no new mechanism — it is one setting feeding primitives that all still exist individually. `patchwork init` writes `governed` for a new install only; `patchwork profile governed` opts an existing one in and needs a bridge restart. `patchwork policy explain <recipe>` walks every gate in runtime order using the same decision functions the runner uses, so the explanation cannot describe a posture the runtime is not applying. `patchwork doctor` ends with `STATUS: GOVERNED` or `NOT GOVERNED` and the reasons.
 
-Read more: [ADR-0026](../adr/0026-governed-profile.md) · the profile table in the [README](../../README.md#status-beta).
+Read more: [ADR-0026](../adr/0026-governed-profile.md) · the profile table in the [README](../../README.md#status-stable-12).
 
 ## The information boundary
 

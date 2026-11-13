@@ -8,10 +8,10 @@ a tag honest, and the two things that are manual.
 
 | Channel | How it is cut | Who installs it |
 |---|---|---|
-| `latest` | Manual: `npm dist-tag add` after a stable version is on npm. | Default `npm install -g patchwork-os`. |
-| `beta` | A `chore(release):` PR bumps the version; after merge, a `v*-beta*` tag on the merge commit triggers the publish workflow. The active channel. | Operators who want the curated line. |
-| `alpha` | Same shape with a `v*-alpha*` tag. | Early testers. |
-| `canary` | **Automatic** on every green `main` merge. Version shape `<base>.canary.<runNumber>`. | `npm install -g patchwork-os@canary` tracks `main`. Never default-installed. |
+| `latest` | A `chore(release):` PR bumps the version; after merge, a `vX.Y.Z` tag on the merge commit triggers the publish workflow, which publishes to `latest` itself. The supported stable line. | Default `npm install -g patchwork-os`. |
+| `beta` | Same shape with a `v*-beta*` tag. Frozen: superseded by the stable line. | Nobody new. Status is in [SECURITY.md](../../SECURITY.md). |
+| `alpha` | Same shape with a `v*-alpha*` tag. Frozen. | Nobody new. |
+| `canary` | **Automatic** on every green `main` merge. Version from `scripts/canary-version.mjs`: the next patch's prerelease on a stable base (`1.2.6-canary.<run>` after `1.2.5`), `<base>.canary.<run>` on a prerelease base. | `npm install -g patchwork-os@canary` tracks `main`. Never default-installed. |
 
 `package.json` is the single source of truth for the version, and
 `scripts/audit-version-drift.mjs` fails CI when a reader-facing document
@@ -22,23 +22,28 @@ quotes a version line that no longer agrees with it.
 Everything publishes from **one** file, `.github/workflows/publish-npm.yml`,
 because npm trusted publishing allows a single trusted-publisher entry per
 package, matched by exact workflow filename. It has three triggers — a tag push
-matching `v*-alpha*` or `v*-beta*`, a `workflow_run` completion of the `CI`
-workflow on `main`, and a manual `workflow_dispatch` with a bump type — and
-four jobs:
+matching `v*-alpha*`, `v*-beta*` or an exact `vX.Y.Z`, a `workflow_run`
+completion of the `CI` workflow on `main`, and a manual `workflow_dispatch`
+with a bump type — and five jobs:
 
 | Job | Runs when | Publishes |
 |---|---|---|
 | `publish-alpha` | tag contains `-alpha` | `npm publish --tag alpha` |
 | `publish-beta` | tag contains `-beta` | `npm publish --tag beta` |
-| `publish` | `workflow_dispatch` only | stable `npm publish` plus a GitHub Release with generated notes. Guarded so an alpha tag cannot reach it. |
-| `publish-canary` | `workflow_run` of CI, conclusion `success`, head branch `main` | checks out the CI run's `head_sha`, rewrites `package.json` to `<base>.canary.<run_number>`, `npm publish --tag canary` |
+| `publish-stable-tag` | tag starts with `v` and contains no `-` | refuses unless the tag equals `package.json`'s version and that version is not a prerelease; then `npm publish` with no `--tag`, which sets `latest`, plus a GitHub Release whose notes are that version's `CHANGELOG.md` section |
+| `publish` | `workflow_dispatch` only | bumps the version itself and pushes the bump commit and its tag to `main`, then stable `npm publish` plus a GitHub Release with generated notes. It cannot publish a version a release PR already set. Guarded so an alpha tag cannot reach it. |
+| `publish-canary` | `workflow_run` of CI, conclusion `success`, head branch `main` | checks out the CI run's `head_sha`, rewrites `package.json` to the version `scripts/canary-version.mjs` computes, `npm publish --tag canary` |
 
 Every job first asks npm whether that exact version already exists and skips
 the publish if so, so a retry cannot fail with a conflict. `prepublishOnly`
 runs the tracked-files pack gate, the build, a `--help` smoke, schema
 publishing and the fresh-install smoke before anything leaves the machine.
 
-## The sequence for a `beta` release
+## The sequence for a release
+
+The steps are the same for every channel; only the version and the tag differ.
+A stable release tags `vX.Y.Z`. A prerelease carries its suffix in both the
+version and the tag (`1.2.3-beta.4`, tag `v1.2.3-beta.4`).
 
 1. **Bump the version in `package.json` only**, with a targeted edit, and
    let `npm install` update `package-lock.json`. Do not run a tool that
@@ -74,24 +79,30 @@ publishing and the fresh-install smoke before anything leaves the machine.
 6. **Tag the merge commit and push the tag.**
 
    ```bash
-   git tag v1.2.3-beta.4 && git push origin v1.2.3-beta.4
+   git tag v1.2.3 && git push origin v1.2.3
    ```
 
 7. Watch the `Publish to npm` run. When it finishes, confirm the version is on
-   npm under the `beta` dist-tag.
+   npm under the dist-tag the tag implies: `latest` for `vX.Y.Z`, `beta` or
+   `alpha` for a prerelease tag.
+
+   ```bash
+   npm view patchwork-os dist-tags
+   ```
 
 Never install a release from a feature branch, and never push to `main`
 directly — the release PR is the review.
 
 ## What is manual
 
-**`latest` is a manual dist-tag.** Trusted publishing covers `npm publish`; it
-does not cover `npm dist-tag`. Moving `latest` requires a maintainer with 2FA
-on the package:
-
-```bash
-npm dist-tag add patchwork-os@1.2.3 latest
-```
+**Moving a dist-tag by hand.** A stable release needs no manual step:
+`publish-stable-tag` runs `npm publish` with no `--tag`, and npm then sets
+`latest` itself. A prerelease publish sets only its own tag (`beta` or `alpha`)
+and never moves `latest`. Trusted publishing covers `npm publish`; it does not
+cover `npm dist-tag`, so any other move (re-pointing or removing a frozen tag,
+for instance) requires a maintainer with 2FA on the package, using
+`npm dist-tag add patchwork-os@<version> <tag>` or
+`npm dist-tag rm patchwork-os <tag>`.
 
 **The extension has its own version and its own rule.** VS Code forks cache a
 `.vsix` by its version number and silently reuse the old bundle if the number
