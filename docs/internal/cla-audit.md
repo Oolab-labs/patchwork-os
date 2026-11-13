@@ -30,7 +30,7 @@ Full history, all branches reachable from `main`, as of 2026-08-07.
 | Author | Email | Commits | Status |
 |---|---|---|---|
 | `kungfuk3nnyyy` / `Oolab` | `116789549+kungfuk3nnyyy@users.noreply.github.com` | 2,025 | Maintainer and copyright holder |
-| `Oolab` / `root` | `info@massappealdesigns.co.ke` | 102 | Same person, second identity (VPS/root commits) |
+| `Oolab` / `root` | `maintainer@example.test` | 102 | Same person, second identity (VPS/root commits) |
 | `dependabot[bot]` | `49699333+dependabot[bot]@users.noreply.github.com` | 38 | Bot |
 | `github-actions[bot]` | `github-actions[bot]@users.noreply.github.com` | 11 | Bot |
 
@@ -44,7 +44,7 @@ No author outside those four identities appears anywhere in history:
 
 ```bash
 git log --format='%ae' | sort -u \
-  | grep -viE "kungfuk3nnyyy|massappealdesigns|dependabot|github-actions"
+  | grep -viE "kungfuk3nnyyy|example\.test|dependabot|github-actions"
 # (no output)
 ```
 
@@ -58,7 +58,7 @@ close to zero:
 | Identity | Commits with `Signed-off-by` | Total |
 |---|---|---|
 | `116789549+kungfuk3nnyyy@…` | 0 | 2,025 |
-| `info@massappealdesigns.co.ke` | 1 | 102 |
+| `maintainer@example.test` | 1 | 102 |
 
 (41 commits contain the string somewhere in the body, mostly inside squashed
 multi-commit PR descriptions rather than as a trailer on the commit itself.)

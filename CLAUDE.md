@@ -395,7 +395,8 @@ npm run package        # create .vsix
 Before staging, run `npx biome check --write <files>` on changed files. Fix before stage — don't wait for hook to fail.
 
 **Release channels:**
-- `latest` / `beta` — manual via `chore(release):` PRs, tagged `v*-beta*` → `publish-npm.yml`. Stable / human-curated.
+- `latest` — the stable line, human-curated: a `chore(release):` PR, then a `vX.Y.Z` tag on its merge commit → the `publish-stable-tag` job in `publish-npm.yml`. That job runs `npm publish` with no `--tag`, so npm sets `latest` itself; there is no manual `npm dist-tag` step for a stable release.
+- `beta` — frozen pre-release channel, superseded by 1.2.x (status in `SECURITY.md`). The `v*-beta*` tag → `publish-beta` path still exists; it publishes under `--tag beta` only and never moves `latest`. Moving a dist-tag by hand is the one manual step left, because OIDC trusted publishing covers `npm publish` and not `npm dist-tag`.
 - `canary` — automatic on every green main merge via the `publish-canary` job in `publish-npm.yml` (`workflow_run` on CI). Version from `scripts/canary-version.mjs`: a stable base publishes the next patch's prerelease (`1.2.5` → `1.2.6-canary.<run>`), a prerelease base keeps `<base>.canary.<run>`. The old `<base>.canary.<run>` was invalid semver for a stable base, so no canary published from 1.2.0 (2026-10-15) until this was fixed. `npm install -g patchwork-os@canary` always tracks main. Use for dogfooding freshly-merged changes without waiting for the next release PR. Never default-installed.
 
 ## LSP Workflows
@@ -824,6 +825,7 @@ So: **design the sentinel, then stamp.** Never the other way round, and never
 - **Tools**: factory pattern `createXxxTool(deps)` returning `{ schema, handler }`. Register in `src/tools/index.ts`.
 - **Extension handlers**: standalone async functions in `handlers` map. Register in `vscode-extension/src/handlers/index.ts`.
 - **WebSocket safety**: all `ws.send()` calls must use `safeSend()` or readyState check + try-catch.
+- **Approvals**: queue through `enqueueApprovalWithDispatch` (`src/approvalHttp.ts`), never `ApprovalQueue.request()` directly. The second queues and tells nobody — the run or tool call halts, the approval expires, and the failure looks like something that broke. Four callers have been fixed for exactly this (CLI gate, recipe tier gate, worker gate, Streamable HTTP gate); `approvalQueueRequestCallers.test.ts` fails on a fifth. Hand it the channel settings with `approvalNotifyChannels(server)`: every channel field is optional, so a caller that omits them type-checks, queues correctly and is silent — pin a new path with a test that drives its real entry point, as `workerGateApprovalNotifies.test.ts` and `streamableHttpApprovalNotifies.test.ts` do.
 - **Extension dependency**: tools requiring extension must set `extensionRequired: true` in schema.
 - **Tool names**: must match `/^[a-zA-Z0-9_]+$/`.
 - **IDE/LSP tool surface is FROZEN** (decided 2026-10-15): no new editor tools, no removals, tests stay green; revisit only on an explicit user request.

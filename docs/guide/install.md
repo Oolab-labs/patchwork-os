@@ -1,6 +1,6 @@
 # Install
 
-Patchwork OS is one npm package, `patchwork-os`, which installs two binaries: `patchwork` (the runtime CLI) and `claude-ide-bridge` (the same code, named for its original role as an IDE bridge). Every command in this guide is written as `patchwork …`; the other name accepts the same arguments.
+Patchwork OS is one npm package, `patchwork-os`, which installs three binaries that all run the same code: `patchwork` (the runtime CLI), `patchwork-os` (the same CLI under the package's own name) and `claude-ide-bridge` (named for its original role as an IDE bridge). Every command in this guide is written as `patchwork …`. The other two names accept the same arguments, with two exceptions where `claude-ide-bridge` keeps its original behaviour: `claude-ide-bridge init` runs the older IDE-bridge installer rather than the setup in step 2, and `claude-ide-bridge` with no arguments starts the bridge rather than opening the terminal dashboard.
 
 **Prerequisites:** Node 22.5 or newer. macOS, Linux and native Windows (no WSL) are supported. If you intend to run recipes with the Claude CLI as the model driver, `claude` must be on your `PATH`.
 
@@ -10,14 +10,14 @@ Install globally rather than with `npx`: `npx` does not persist the binary, so t
 
 | Channel | Install | What you get |
 |---|---|---|
-| `beta` | `npm install -g patchwork-os@beta` | The current supported line, cut by hand from release pull requests. Recommended. |
-| `latest` | `npm install -g patchwork-os` | Currently points at the same build as `beta`; a separate stable line has not been cut. |
+| `latest` | `npm install -g patchwork-os` | The supported stable line, 1.2.x. Releases are cut by hand from release pull requests and published from a `vX.Y.Z` tag. Recommended. |
 | `canary` | `npm install -g patchwork-os@canary` | Published automatically on every green merge to `main`, versioned as the next patch's prerelease (`1.2.8-canary.<run>` after `1.2.7`; `<base>.canary.<run>` on a beta line). Tracks `main`; untriaged and unsupported, for trying freshly merged changes. |
+| `beta` | Do not install | A frozen pre-release channel, superseded by 1.2.x. Its tag does not track new releases. If you installed from it, move to `latest` with the command below. |
 
-Pin an exact version (`patchwork-os@1.2.7`) if reproducibility matters more than fast updates. Channel support status is maintained in [SECURITY.md](../../SECURITY.md).
+Pin an exact version (`patchwork-os@1.2.7`) if reproducibility matters more than fast updates. Channel support status, including the older frozen tags, is maintained in [SECURITY.md](../../SECURITY.md).
 
 ```bash
-npm install -g patchwork-os@beta
+npm install -g patchwork-os
 ```
 
 ## 2. Initialise `~/.patchwork`

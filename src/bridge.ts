@@ -2304,6 +2304,11 @@ export class Bridge {
           workerGateDecisionLog: this.workerGateDecisionLog,
         }),
       },
+      // The server, so an approval queued for a Streamable-HTTP session is
+      // announced on the same channels the WebSocket gate above announces on.
+      // The parameter is optional, so nothing but a test notices if this line
+      // goes — see `streamableHttpApprovalNotifies.test.ts`.
+      this.server,
     );
     this.server.httpMcpHandler = (req, res) =>
       this.httpMcpHandler?.handle(req, res) ?? Promise.resolve();

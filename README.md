@@ -1,6 +1,6 @@
 # Patchwork OS
 
-[![npm beta](https://img.shields.io/npm/v/patchwork-os/beta.svg?label=npm%20%40beta)](https://www.npmjs.com/package/patchwork-os)
+[![npm version](https://img.shields.io/npm/v/patchwork-os.svg)](https://www.npmjs.com/package/patchwork-os)
 [![CI](https://github.com/Oolab-labs/patchwork-os/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/patchwork-os/actions/workflows/ci.yml)
 [![npm downloads](https://img.shields.io/npm/dm/patchwork-os.svg)](https://www.npmjs.com/package/patchwork-os)
 [![license](https://img.shields.io/npm/l/patchwork-os.svg)](LICENSE)
@@ -66,7 +66,7 @@ trigger → recipe/worker → reversible?           → runs
 ## Install
 
 ```bash
-npm install -g patchwork-os@beta
+npm install -g patchwork-os
 patchwork-os init
 ```
 
