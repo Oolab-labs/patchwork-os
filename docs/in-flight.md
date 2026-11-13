@@ -52,7 +52,6 @@ verified (which is how this line came to be written).
 
 _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
-- 2026-11-13 `fix/http-approval-level` — Streamable HTTP `tools/call` gate reads the server's live approval level (governed floor, `POST /settings`) instead of `config.approvalGate`; HTTP sessions also get `workerGateDecisionLog`. Touches `src/streamableHttp.ts`, `src/bridge.ts`.
 
 
 
@@ -63,6 +62,7 @@ _Empty is a legitimate state. See "Retire your own entry before merging" above._
 
 - 2026-11-12 `docs/install-path-stable-channel` (#1795) — install instructions, one deploy script and the plugin's launch config name the stable `latest` channel instead of the frozen `beta`/`alpha` tags and the pre-rename package; release-channel text matched to `publish-npm.yml`. Docs and config only.
 - 2026-11-12 `docs/address-placeholder` (#1798) — a personal address and a real channel name in four documents replaced with placeholders. Docs only.
+- 2026-11-13 `fix/http-approval-level` — the Streamable HTTP `tools/call` gate reads the server's live approval level per call (the governed floor and `POST /settings` changes), matching the WebSocket gate; HTTP sessions receive `workerGateDecisionLog` so `ctxQueryTraces` sees gate decisions; `streamableHttpApprovalLevel.test.ts` pins both transports against a real `Bridge`.
 - 2026-11-12 `fix/approval-notify-all-queue-paths` (#1797) — the worker gate (`buildWorkerAutonomyGate`) and the Streamable HTTP `tools/call` gate queue an approval through `enqueueApprovalWithDispatch`, so both announce it on the configured channels (webhook, Web Push, ntfy) as the CLI gate and the tier gate already did; `approvalNotifyChannels` reads the channels from the live server settings per approval; `approvalQueueRequestCallers.test.ts` holds that the helper is the only production use of the queue's `request`.
 - 2026-11-12 `fix/dependency-alerts-2026-11` (#1793) — node-forge 1.4.3 and qs 6.16.2 in push-relay, minimatch 11 at root and under the dashboard lint chain, vitest 4.1.12 everywhere; two `overrides` entries to remove once upstream ranges move.
 - 2026-11-12 `fix/redact-sensitive-recipe-vars` (#1792) — both runners call `registerSensitiveVars` on the seed they are handed (chained at every depth), so a credential-named variable is recorded as `[REDACTED:vars]`; tools still get the raw value, ordinary variables and agent prompts unchanged.
