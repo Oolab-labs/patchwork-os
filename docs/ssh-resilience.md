@@ -37,10 +37,10 @@ For environments with longer disconnections, increase the grace period:
 
 ```bash
 # CLI flag
-npx claude-ide-bridge --grace-period 120000  # 2 minutes
+claude-ide-bridge --grace-period 120000  # 2 minutes
 
 # Environment variable
-CLAUDE_IDE_BRIDGE_GRACE_PERIOD=300000 npx claude-ide-bridge  # 5 minutes
+CLAUDE_IDE_BRIDGE_GRACE_PERIOD=300000 claude-ide-bridge  # 5 minutes
 ```
 
 Range: 5,000–600,000 ms (5 seconds to 10 minutes).

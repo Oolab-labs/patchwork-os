@@ -9,7 +9,7 @@ There are three states, not two: **merged → installed → running**. A merge i
 From an npm install:
 
 ```bash
-npm install -g patchwork-os@beta
+npm install -g patchwork-os
 ```
 
 From a repository clone, always from `main`, never from a feature branch:
