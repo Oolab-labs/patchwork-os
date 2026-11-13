@@ -479,6 +479,8 @@ export class StreamableHttpHandler {
       commitIssueLinkLog?: import("./commitIssueLinkLog.js").CommitIssueLinkLog;
       recipeRunLog?: import("./runLog.js").RecipeRunLog;
       decisionTraceLog?: import("./decisionTraceLog.js").DecisionTraceLog;
+      /** So `ctxQueryTraces` over HTTP sees gate decisions, as it does over WS. */
+      workerGateDecisionLog?: import("./workerGateDecisionLog.js").WorkerGateDecisionLog;
     } = {},
     /**
      * Where an approval queued by this transport is announced: the bridge's
@@ -495,6 +497,17 @@ export class StreamableHttpHandler {
      * the wiring the compiler cannot.
      */
     private approvalChannels: ApprovalChannelSettings | null = null,
+    /**
+     * The bridge's LIVE approval level — `server.approvalGate`, the value the
+     * WebSocket gate reads. It is not the configured `config.approvalGate`:
+     * the governed profile raises it to at least "high" at startup, and
+     * `POST /settings` changes it on a running bridge. Called per tool call.
+     *
+     * Null ⇒ `config.approvalGate`, for handlers built in tests. The bridge
+     * always passes it; `streamableHttpApprovalLevel.test.ts` starts a real
+     * `Bridge` to pin that wiring.
+     */
+    private getApprovalGate: (() => Config["approvalGate"]) | null = null,
   ) {
     // Prune idle sessions every 2 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
@@ -992,7 +1005,11 @@ export class StreamableHttpHandler {
         const gate = evaluateInProcessGate({
           toolName,
           params,
-          gate: this.config.approvalGate,
+          // Read per call, from the bridge's live level — the same value the
+          // WebSocket gate reads. Until 2026-11-13 this read
+          // `config.approvalGate`, so the governed floor and any level set
+          // through `POST /settings` never reached HTTP sessions.
+          gate: this.getApprovalGate?.() ?? this.config.approvalGate,
           workspace: this.config.workspace,
         });
         if (gate.decision === "bypass") return "bypass";
@@ -1087,6 +1104,7 @@ export class StreamableHttpHandler {
         this.toolDeps.commitIssueLinkLog,
         this.toolDeps.recipeRunLog,
         this.toolDeps.decisionTraceLog,
+        this.toolDeps.workerGateDecisionLog,
       );
 
       transport.attach(adapter as unknown as import("ws").WebSocket);

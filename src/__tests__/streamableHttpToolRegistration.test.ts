@@ -131,6 +131,7 @@ describe("StreamableHttpHandler — registerAllTools arg parity", () => {
     const sentinelCommitLog = { kind: "commitIssueLinkLog" } as never;
     const sentinelRunLog = { kind: "recipeRunLog" } as never;
     const sentinelDecisionLog = { kind: "decisionTraceLog" } as never;
+    const sentinelGateLog = { kind: "workerGateDecisionLog" } as never;
     const sentinelDisconnect = () => ({
       at: "2026-04-29T00:00:00Z",
       code: 1006,
@@ -160,6 +161,7 @@ describe("StreamableHttpHandler — registerAllTools arg parity", () => {
         commitIssueLinkLog: sentinelCommitLog,
         recipeRunLog: sentinelRunLog,
         decisionTraceLog: sentinelDecisionLog,
+        workerGateDecisionLog: sentinelGateLog,
       },
     );
 
@@ -203,7 +205,10 @@ describe("StreamableHttpHandler — registerAllTools arg parity", () => {
     // 16 commitIssueLinkLog         ← was missing
     // 17 recipeRunLog               ← was missing
     // 18 decisionTraceLog           ← was missing
-    expect(args.length).toBe(19);
+    // 19 workerGateDecisionLog      ← missing until 2026-11-13: bridge.ts
+    //    passed it in toolDeps, the handler dropped it, so ctxQueryTraces
+    //    over Streamable HTTP showed no gate decisions
+    expect(args.length).toBe(20);
     expect(args[12]).toBe(sentinelAutomation);
     expect(args[13]).toBe(sentinelDisconnect);
     expect(args[14]).toBe(sentinelCacheUpdated);
@@ -211,6 +216,7 @@ describe("StreamableHttpHandler — registerAllTools arg parity", () => {
     expect(args[16]).toBe(sentinelCommitLog);
     expect(args[17]).toBe(sentinelRunLog);
     expect(args[18]).toBe(sentinelDecisionLog);
+    expect(args[19]).toBe(sentinelGateLog);
   });
 
   it("passes undefined for tail-end deps when toolDeps is omitted (back-compat)", async () => {
@@ -245,9 +251,9 @@ describe("StreamableHttpHandler — registerAllTools arg parity", () => {
 
     expect(registerCalls).toHaveLength(1);
     const args = registerCalls[0]!;
-    // Still 19 args — the trailing positions are explicitly undefined.
-    expect(args.length).toBe(19);
-    for (let i = 12; i <= 18; i++) {
+    // Still 20 args — the trailing positions are explicitly undefined.
+    expect(args.length).toBe(20);
+    for (let i = 12; i <= 19; i++) {
       expect(args[i]).toBeUndefined();
     }
   });
