@@ -46,7 +46,7 @@ The shared password produces an **unattributed** (v1) session. A member of the w
 patchwork members set-password <memberId>
 ```
 
-— logs in to an **attributed** (v2) session that names them, and only such a session can approve a gated action, because an approval needs a subject to record. The roster lives in `members.json`; `patchwork members` lists who holds a credential. The design is in [ADR-0020](../adr/0020-per-member-authentication.md).
+— logs in to an **attributed** (v2) session that names them, and their approvals are recorded against them. A session from the shared `DASHBOARD_PASSWORD` can still approve a gated action today; that approval is recorded with no approver. Refusing it is decided and **not yet enforced**, so give every approver a personal credential when the record must name who approved. The roster lives in `members.json`; `patchwork members` lists who holds a credential. The design is in [ADR-0020](../adr/0020-per-member-authentication.md).
 
 ## Secret stores and agents
 
