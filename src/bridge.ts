@@ -1992,6 +1992,29 @@ export class Bridge {
         approvalGate: this.config.approvalGate ?? pwCfg.approvalGate,
       });
       setActiveProfile(profile);
+      // ADR-0020 separation of duties, part 2. Here, after the profile is
+      // published — earlier in start() it still reads as compat. Only under
+      // the governed profile, only when named sessions can be verified (a
+      // resolver exists only with a session secret), and only once a member
+      // can actually sign in: requiring a named approver with no login would
+      // leave nobody able to approve.
+      if (profile.mode === "governed" && this.server.resolveApprover) {
+        const { loadCredentials } = await import(
+          "./identity/credentialStore.js"
+        );
+        const { memberLoginsExist } = await import(
+          "./identity/namedApproval.js"
+        );
+        this.server.requireNamedApprover = memberLoginsExist(
+          this.server.roster,
+          loadCredentials(),
+        );
+        this.logger.info(
+          this.server.requireNamedApprover
+            ? "[patchwork] named approvals REQUIRED — the shared dashboard password and phone buttons cannot approve; sign in as a member"
+            : "[patchwork] named approvals not required — no member has a login yet",
+        );
+      }
       if (profile.mode === "governed") {
         const { FLAG_ENFORCE_POLICY, FLAG_WORKER_AUTONOMY, setFlag } =
           await import("./featureFlags.js");

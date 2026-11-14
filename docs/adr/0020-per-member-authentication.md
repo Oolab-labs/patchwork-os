@@ -297,3 +297,41 @@ and the bridge logs `approval attribution ON — a verified dashboard session
 will name the approver` in place of the implicit-owner warning. Attribution is
 reachable and now has somebody to name; a member still needs a credential
 before a session can be attributed to them.
+
+## Amendment — 2026-11-14: separation of duties, enforced
+
+Two rules now apply on the approve route. Both are checked BEFORE
+`queue.approve()` runs, so a refused approval never takes effect. Both live in
+`src/identity/namedApproval.ts`.
+
+1. **No self-approval.** When a verified member starts a run from "Run now",
+   the dashboard forwards their session and the bridge verifies it. The
+   member's id is stamped as `preparedBy` on every approval request the run
+   raises, by both the tier gate and the worker gate, and is persisted with the
+   request. That member's own approval is refused with `self_approval`. A run
+   started any other way (cron, webhook, CLI, an unnamed session) carries no
+   `preparedBy`, so no check applies to it. `preparedBy` is not part of the
+   approved-action identity, because who started a run does not change what the
+   action is.
+
+2. **Named approval, where it can be honoured.** The 2026-08-25 decision says
+   an unattributed session may not approve. It is enforced only when all three
+   of these hold:
+   - the governed profile is on;
+   - a session secret exists, so named sessions can be verified;
+   - at least one active human member has a login.
+
+   In that case an approval naming nobody is refused with
+   `named_approver_required`: a v1 session, no session, or the phone token
+   path. Without a login the rule would leave nobody able to approve, which is
+   this ADR's reason 1 for not narrowing an install that has no roster. So
+   every other install keeps today's behaviour exactly. The bridge decides this
+   once at startup and logs which way it went.
+
+Rejection is never restricted. Refusing an action is the safe direction, and
+blocking it would leave an operator unable to stop a run.
+
+**Not done here:** roles still grant nothing (`canApproveAction`'s
+`not_an_approver` check is not applied), and the phone path cannot name a
+member. Under the governed profile with logins, phone approve buttons
+therefore stop approving, and that is the intended consequence.

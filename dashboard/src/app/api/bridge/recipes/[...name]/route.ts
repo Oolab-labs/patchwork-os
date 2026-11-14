@@ -7,6 +7,7 @@ import {
   bodyTooLargeResponse,
   readBodyWithCap,
 } from "@/lib/readBodyWithCap";
+import { SESSION_COOKIE_NAME } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,10 +33,20 @@ export async function POST(
   const recipeName = joinPathSegments(name.slice(0, -1));
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.run);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.run);
+  // ADR-0020 separation of duties: forward the member's OWN session so the
+  // bridge can record who started this run and refuse that member's approval
+  // of its gated steps. Same rule as the approve/reject forwarding in the
+  // generic proxy: read from `req.cookies`, never a client-settable header,
+  // and the bridge VERIFIES it rather than trusting an id.
+  const headers: Record<string, string> = {
+    "content-type": req.headers.get("content-type") ?? "application/json",
+  };
+  const session = req.cookies?.get(SESSION_COOKIE_NAME)?.value;
+  if (session) headers["x-patchwork-session"] = session;
   try {
     const res = await bridgeFetch(`/recipes/${recipeName}/run`, {
       method: "POST",
-      headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
+      headers,
       body: read.body || undefined,
     });
     const text = await res.text();

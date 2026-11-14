@@ -168,6 +168,12 @@ async function governedSystemPrompt(): Promise<{ systemPrompt?: string }> {
 export async function makeRecipeApprovalFn(
   gate: "high" | "all",
   server?: Server,
+  /**
+   * ADR-0020: member id of the named person who started this run. Stamped on
+   * every approval request the run raises, so the approve route can refuse
+   * that member's own approval. Absent for scheduled, webhook and unnamed runs.
+   */
+  runOpts: { preparedBy?: string } = {},
 ): Promise<ApprovalFn> {
   const { getApprovalQueue } = await import("./approvalQueue.js");
   const { enqueueApprovalWithDispatch } = await import("./approvalHttp.js");
@@ -233,6 +239,9 @@ export async function makeRecipeApprovalFn(
             recipeName: input.recipeName,
           }),
           ...(input.summary !== undefined && { summary: input.summary }),
+          ...(runOpts.preparedBy !== undefined && {
+            preparedBy: runOpts.preparedBy,
+          }),
         },
         // L1: abort the wait if the run is cancelled (→ "cancelled" → halt)
         // instead of blocking for the full approval TTL.
@@ -368,6 +377,11 @@ export async function buildWorkerAutonomyGate(
      * worker's gated action waited in silence until it expired.
      */
     approvalChannels?: import("./approvalHttp.js").ApprovalChannelSettings;
+    /**
+     * ADR-0020: member id of the named person who started this run, stamped
+     * on each queued approval so they cannot approve their own run's step.
+     */
+    preparedBy?: string;
   },
 ): Promise<ApprovalFn | null> {
   try {
@@ -666,6 +680,9 @@ export async function buildWorkerAutonomyGate(
             // above. A gated action and the approval it waits on must be
             // reachable from each other, or the queue is evidence of nothing.
             correlationId: input.runTaskId,
+            ...(ctxOpts?.preparedBy !== undefined && {
+              preparedBy: ctxOpts.preparedBy,
+            }),
           },
           {
             signal: input.signal, // L1: cancel the wait when the run aborts
@@ -1479,7 +1496,11 @@ export class RecipeOrchestration {
     server.runRecipeFn = async (
       name: string,
       vars?: Record<string, string>,
-      attempt?: { cronSlotEpochMs?: number; startSource?: RunStartSource },
+      attempt?: {
+        cronSlotEpochMs?: number;
+        startSource?: RunStartSource;
+        startedBy?: string;
+      },
     ) => {
       // #605: kill-switch gate. Recipe execution is the largest write
       // surface the bridge exposes (Claude subprocess + tool calls);
@@ -1632,6 +1653,9 @@ export class RecipeOrchestration {
         startSource:
           attempt?.startSource ??
           (attempt?.cronSlotEpochMs !== undefined ? "cron" : "manual"),
+        ...(attempt?.startedBy !== undefined && {
+          startedBy: attempt.startedBy,
+        }),
       });
     };
   }
@@ -1971,6 +1995,11 @@ export class RecipeOrchestration {
      * Absent ⇒ the runners derive it from the recipe as before.
      */
     startSource?: RunStartSource;
+    /**
+     * ADR-0020: member id of the verified dashboard session that started this
+     * run. Absent for every other start (cron, webhook, CLI, unnamed session).
+     */
+    startedBy?: string;
   }): Promise<{ ok: boolean; taskId?: string; name?: string; error?: string }> {
     if (!this.deps.recipeOrchestrator) {
       return { ok: false, error: "recipe orchestrator unavailable" };
@@ -2086,7 +2115,11 @@ export class RecipeOrchestration {
     const tierApprovalFn =
       approvalGate === "off" || (tierOptOut && profile.recipeOptOutHonoured)
         ? undefined
-        : await makeRecipeApprovalFn(approvalGate, this.deps.server);
+        : await makeRecipeApprovalFn(approvalGate, this.deps.server, {
+            ...(opts.startedBy !== undefined && {
+              preparedBy: opts.startedBy,
+            }),
+          });
     // worker.autonomy flip (flag-gated, default off). When a worker owns this
     // recipe and the flag is on, the worker-aware fn wraps the tier fn (FLOOR
     // composition — it can only ADD gating, never drop tier-policy protection)
@@ -2109,6 +2142,7 @@ export class RecipeOrchestration {
         // gate is silent again. `workerGateApprovalNotifies.test.ts` drives
         // this call site for that reason.
         approvalChannels: this.deps.server,
+        ...(opts.startedBy !== undefined && { preparedBy: opts.startedBy }),
         ...(gateDecisionLog && {
           recordGateDecision: (rec) => {
             try {

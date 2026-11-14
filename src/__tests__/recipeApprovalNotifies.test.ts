@@ -63,7 +63,9 @@ describe("recipe approvals are wired to the notifying path", () => {
     // and all the other tests still passed, because `server` is an optional
     // parameter so the compiler says nothing either.
     expect(orchestration).toMatch(
-      /makeRecipeApprovalFn\(\s*approvalGate\s*,\s*this\.deps\.server\s*\)/,
+      // The server must be the SECOND argument; a third (the run's
+      // `preparedBy`, ADR-0020) may follow.
+      /makeRecipeApprovalFn\(\s*approvalGate\s*,\s*this\.deps\.server\s*[,)]/,
     );
   });
 

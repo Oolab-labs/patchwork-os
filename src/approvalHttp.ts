@@ -13,6 +13,10 @@ import {
   loadCcPermissions,
   loadCcPermissionsAttributed,
 } from "./ccPermissions.js";
+import {
+  checkApprovalAuthority,
+  describeApprovalAuthorityRefusal,
+} from "./identity/namedApproval.js";
 import { pinnedSend } from "./pinnedSend.js";
 import { captureForRunlog } from "./recipes/stepObservation.js";
 import { computeRiskSignals } from "./riskSignals.js";
@@ -77,6 +81,15 @@ export interface ApprovalHttpDeps {
   ) => Promise<
     { id: string; kind: "human" | "worker"; displayName: string } | undefined
   >;
+  /**
+   * ADR-0020 separation of duties: refuse an approval that names nobody (a
+   * shared-password session, no session, the phone token path). Set by the
+   * bridge at startup only when it can be honoured — governed profile, a
+   * session secret, and at least one member with a login
+   * (`identity/namedApproval.ts`). Absent or false ⇒ unnamed approvals work
+   * exactly as before. Never applies to rejection.
+   */
+  requireNamedApprover?: boolean;
   /** Optional webhook URL — POST notification dispatched when approval is queued. */
   webhookUrl?: string;
   /** Gate tier — "off" bypasses all queueing; "high" only queues high-tier tools; "all" queues everything. */
@@ -363,6 +376,35 @@ export async function routeApprovalRequest(
     const approveToolName = approveEntry?.toolName;
     const approveRequestedAt = approveEntry?.requestedAt;
     const approveRecipeName = approveEntry?.recipeName;
+    // ADR-0020 separation of duties. Checked BEFORE `queue.approve()` so a
+    // refused approval never takes effect. Only when a rule can apply — a
+    // request someone named prepared, or a workspace that requires a named
+    // approver — is the session resolved early; otherwise the decision path
+    // is exactly what it was, and attribution below still cannot block it.
+    const preparedBy = approveEntry?.preparedBy;
+    const requireNamedApprover = deps.requireNamedApprover === true;
+    if (preparedBy !== undefined || requireNamedApprover) {
+      let early: Awaited<ReturnType<NonNullable<typeof deps.resolveApprover>>>;
+      try {
+        early = await deps.resolveApprover?.(req.sessionCookie);
+      } catch {
+        early = undefined;
+      }
+      const authority = checkApprovalAuthority({
+        preparedBy,
+        approver: early,
+        requireNamedApprover,
+      });
+      if (!authority.ok) {
+        return {
+          status: 403,
+          body: {
+            error: authority.refusal,
+            message: describeApprovalAuthorityRefusal(authority.refusal),
+          },
+        };
+      }
+    }
     const ok = deps.queue.approve(callId);
     if (ok) {
       // ADR-0020 Phase A. Resolved AFTER the decision lands, never before:
@@ -1043,6 +1085,12 @@ export function enqueueApprovalWithDispatch(
      */
     correlationId?: string;
     recipeName?: string;
+    /**
+     * Member id of the named person who started the run (ADR-0020). Set by
+     * the two recipe gates when a verified dashboard session started it; the
+     * approve route refuses that member's own approval.
+     */
+    preparedBy?: string;
   },
   /**
    * Forwarded to `queue.request`. The recipe runner cancels its wait when the
@@ -1078,6 +1126,9 @@ export function enqueueApprovalWithDispatch(
         }),
         ...(request.personalSignals !== undefined && {
           personalSignals: request.personalSignals,
+        }),
+        ...(request.preparedBy !== undefined && {
+          preparedBy: request.preparedBy,
         }),
       },
       {

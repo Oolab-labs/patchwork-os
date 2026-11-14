@@ -960,9 +960,21 @@ export interface RecipeRouteDeps {
     | ((
         name: string,
         vars?: Record<string, string>,
-        attempt?: { cronSlotEpochMs?: number },
+        attempt?: { cronSlotEpochMs?: number; startedBy?: string },
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null;
+  /**
+   * ADR-0020: verifies the dashboard session forwarded on a "Run now" request
+   * (`x-patchwork-session`) and returns the member behind it, so the run's
+   * approval requests can carry `preparedBy` and that member cannot approve
+   * them. The same verifier the approve route uses — never an asserted id.
+   * Absent, or resolving to undefined, means the run is started unnamed.
+   */
+  resolveRunStarter?:
+    | ((
+        sessionCookie?: string,
+      ) => Promise<{ id: string; kind: string } | undefined>)
+    | undefined;
   /**
    * Best-effort notification that the on-disk recipe set just changed
    * (install, save, delete, archive, …). The bridge wires this to
@@ -1115,6 +1127,31 @@ function withNextRunAt(
   };
 }
 
+/**
+ * ADR-0020: who started this run, for separation of duties. Reads the
+ * dashboard session the dashboard proxy forwards on "Run now" and VERIFIES it
+ * through `resolveRunStarter` — the same verifier as the approve route, so
+ * holding the bridge token is not enough to name a person. Returns no attempt
+ * (an operator start, exactly as before) when nothing verifies, and never
+ * throws: a failed lookup must not stop a run from starting.
+ */
+async function runStarterAttempt(
+  req: IncomingMessage,
+  deps: RecipeRouteDeps,
+): Promise<{ startedBy: string } | undefined> {
+  const raw = req.headers?.["x-patchwork-session"];
+  const cookie = Array.isArray(raw) ? raw[0] : raw;
+  if (!cookie || !deps.resolveRunStarter) return undefined;
+  try {
+    const member = await deps.resolveRunStarter(cookie);
+    return member && member.kind === "human"
+      ? { startedBy: member.id }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function tryHandleRecipeRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1169,7 +1206,11 @@ export function tryHandleRecipeRoute(
           );
           return;
         }
-        const result = await deps.runRecipeFn(nameFromPath, vars);
+        const result = await deps.runRecipeFn(
+          nameFromPath,
+          vars,
+          await runStarterAttempt(req, deps),
+        );
         res.writeHead(result.ok ? 200 : runFailureStatus(result.error), {
           "Content-Type": "application/json",
         });
@@ -1233,7 +1274,11 @@ export function tryHandleRecipeRoute(
           );
           return;
         }
-        const result = await deps.runRecipeFn(name, vars);
+        const result = await deps.runRecipeFn(
+          name,
+          vars,
+          await runStarterAttempt(req, deps),
+        );
         res.writeHead(result.ok ? 200 : runFailureStatus(result.error), {
           "Content-Type": "application/json",
         });

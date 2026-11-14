@@ -315,6 +315,7 @@ async function fireUntilWaitingOnAPerson(
   mode: Mode,
   channels: Record<string, unknown> = CHANNELS,
   fixture: Fixture = WORKER_OWNED,
+  startedBy?: string,
 ) {
   bridgeStartup(mode);
   const file = writeFixtures(fixture);
@@ -364,6 +365,7 @@ async function fireUntilWaitingOnAPerson(
     taskIdPrefix: "notify",
     triggerSourceSuffix: "notify",
     logLabel: RECIPE,
+    ...(startedBy !== undefined && { startedBy }),
   });
   // `owned`: created by a live caller in this process, i.e. by this run.
   const pending = await until(
@@ -554,6 +556,59 @@ describe.each(MODES)("a worker's gated action — $label", (mode) => {
     if (pending) queue.cancel(pending.callId);
     await run;
     expect(gatedExec).not.toHaveBeenCalled();
+  });
+});
+
+// ADR-0020 separation of duties: the member who started a run is stamped on
+// every approval request that run raises, by BOTH gates, so the approve route
+// can refuse that member's own approval. Driven through the bridge's own
+// dispatch, because the stamp is threaded through four layers and a unit test
+// of any one of them would pass with the next one dropping it.
+describe("who started the run reaches the approval request", () => {
+  it("the tier gate stamps preparedBy", async () => {
+    const { run, queue, pending } = await fireUntilWaitingOnAPerson(
+      TIER_ONLY,
+      CHANNELS,
+      NOBODYS,
+      "ada",
+    );
+    try {
+      expect(pending?.preparedBy).toBe("ada");
+    } finally {
+      if (pending) queue.reject(pending.callId);
+      await run;
+    }
+  });
+
+  it("the worker gate stamps preparedBy", async () => {
+    const { run, queue, pending } = await fireUntilWaitingOnAPerson(
+      MODES[0] as Mode,
+      CHANNELS,
+      WORKER_OWNED,
+      "ada",
+    );
+    try {
+      expect(pending, "the worker gate queued nothing").toBeDefined();
+      expect(pending?.preparedBy).toBe("ada");
+    } finally {
+      if (pending) queue.reject(pending.callId);
+      await run;
+    }
+  });
+
+  it("a run started by nobody named carries no preparedBy", async () => {
+    const { run, queue, pending } = await fireUntilWaitingOnAPerson(
+      TIER_ONLY,
+      CHANNELS,
+      NOBODYS,
+    );
+    try {
+      expect(pending).toBeDefined();
+      expect(pending?.preparedBy).toBeUndefined();
+    } finally {
+      if (pending) queue.reject(pending.callId);
+      await run;
+    }
   });
 });
 

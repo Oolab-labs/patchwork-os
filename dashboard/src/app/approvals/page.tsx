@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
-import { approvalDecisionPath } from "@/lib/approvalDecisionPath";
+import { approvalDecisionPath, decisionFailureText } from "@/lib/approvalDecisionPath";
 import { BlastBadge, CodeBlock, EmptyState, HintCard, KeyChip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
@@ -909,8 +909,7 @@ function ApprovalsContent() {
           removeWithFade(callId);
           return;
         }
-        const text = await res.text().catch(() => res.statusText);
-        throw new Error(`${decision} failed: ${text || res.status}`);
+        throw new Error(await decisionFailureText(res));
       }
       removeWithFade(callId);
     },
