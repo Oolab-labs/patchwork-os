@@ -182,3 +182,142 @@ describe("formatEvidenceVerify", () => {
     expect(out).not.toMatch(/\b0 rows\b/);
   });
 });
+
+// Pinned after a mutation run (Stryker, 2026-11-14). Checked by hand against
+// the existing suite: the operator-facing report text (the mismatch and
+// pending notes, the PENDING word, the legacy-only vs break status line, the
+// break iseq, the missing count) could each be removed with no test failing.
+// The verdict logic itself was already covered; the literal file list below is
+// a second, local pin on what each ledger's own test already checks.
+describe("what a mutation run showed was unpinned", () => {
+  it("verifies exactly these nine files — a ledger cannot silently drop out", () => {
+    expect(VERIFIED_LEDGERS.map((l) => l.file).sort()).toEqual(
+      [
+        "approval_log.jsonl",
+        "boundary_receipts.jsonl",
+        "butler_outcome_shadow.jsonl",
+        "outcome-log.jsonl",
+        "butler/permission_exercises.jsonl",
+        "pr_outcomes.jsonl",
+        "privacy_shadow.jsonl",
+        "run_steps.jsonl",
+        "worker_gate_decisions.jsonl",
+      ].sort(),
+    );
+    expect(VERIFIED_LEDGERS.every((l) => l.key.length > 0)).toBe(true);
+  });
+
+  for (const file of [
+    "butler_outcome_shadow.jsonl",
+    "run_steps.jsonl",
+    "pr_outcomes.jsonl",
+  ]) {
+    it(`a tampered ${file} (a non-spine ledger) makes the whole verdict NOT ok`, () => {
+      const f = ledger(file);
+      appendChained(f, { at: 1, v: "a" });
+      appendChained(f, { at: 2, v: "b" });
+      writeFileSync(f, readFileSync(f, "utf-8").replace('"v":"a"', '"v":"c"'));
+      const r = verifyEvidenceChains(dir);
+      expect(r.ok).toBe(false);
+      expect(r.ledgers.find((l) => l.file === file)?.ok).toBe(false);
+    });
+  }
+
+  it("--expect-chained over fully chained ledgers IS intact", () => {
+    appendChained(ledger("run_steps.jsonl"), { seq: 1, at: 1 });
+    appendChained(ledger("approval_log.jsonl"), { seq: 1, at: 1 });
+    const r = verifyEvidenceChains(dir, { expectChained: true });
+    expect(r.unchained).toBe(0);
+    expect(r.verified).toBe(2);
+    expect(r.ok).toBe(true);
+    expect(formatEvidenceVerify(r)).toContain("STATUS: INTACT");
+  });
+
+  it("counts an absent ledger as absent, a chained one as neither absent nor unchained", () => {
+    appendChained(ledger("run_steps.jsonl"), { seq: 1, at: 1 });
+    writeFileSync(ledger("outcome-log.jsonl"), '{"seq":1}\n');
+    const r = verifyEvidenceChains(dir);
+    expect(r).toMatchObject({
+      verified: 1,
+      unchained: 1,
+      absent: VERIFIED_LEDGERS.length - 2,
+      missingWithHead: 0,
+    });
+  });
+
+  it("names the legacy-only reason in the status line under --expect-chained", () => {
+    writeFileSync(ledger("outcome-log.jsonl"), '{"seq":1}\n');
+    appendChained(ledger("run_steps.jsonl"), { seq: 1, at: 1 });
+    const out = formatEvidenceVerify(
+      verifyEvidenceChains(dir, { expectChained: true }),
+    );
+    expect(out).toContain(
+      "--expect-chained and a ledger carries legacy rows only",
+    );
+    expect(out).toContain(", 1 unchained");
+  });
+
+  it("a real break under --expect-chained is reported as a break, not as legacy-only", () => {
+    writeFileSync(ledger("outcome-log.jsonl"), '{"seq":1}\n');
+    const f = ledger("run_steps.jsonl");
+    appendChained(f, { seq: 1, v: "a" });
+    appendChained(f, { seq: 2, v: "b" });
+    writeFileSync(f, readFileSync(f, "utf-8").replace('"v":"a"', '"v":"c"'));
+    const out = formatEvidenceVerify(
+      verifyEvidenceChains(dir, { expectChained: true }),
+    );
+    expect(out).not.toContain("legacy rows only");
+    expect(out).toContain("a break, a mismatch");
+  });
+
+  it("a pending write failure shows PENDING and says the appends are not yet sealed", () => {
+    const f = ledger("privacy_shadow.jsonl");
+    appendChained(f, { at: 1 });
+    recordWriteFailure(f, "EACCES");
+    const out = formatEvidenceVerify(verifyEvidenceChains(dir));
+    expect(out).toMatch(/PENDING\s+privacy_shadow\.jsonl/);
+    expect(out).toContain("1 append(s) failed since the last row landed");
+    expect(out).toContain("STATUS: NOT INTACT");
+  });
+
+  it("an edited legacy row under a chain-start commitment is a mismatch, and says so", () => {
+    const f = ledger("approval_log.jsonl");
+    writeFileSync(f, '{"seq":1,"kind":"request","r":"aaaa"}\n');
+    appendChained(f, { seq: 2, kind: "request" });
+    writeFileSync(
+      f,
+      readFileSync(f, "utf-8").replace('"r":"aaaa"', '"r":"bbbb"'),
+    );
+    const r = verifyEvidenceChains(dir);
+    const l = r.ledgers.find((x) => x.file === "approval_log.jsonl");
+    expect(l?.legacyPrefix).toBe("mismatch");
+    expect(r.ok).toBe(false);
+    expect(formatEvidenceVerify(r)).toContain(
+      "legacy prefix does not match the chain-start commitment",
+    );
+  });
+
+  it("prints the break's iseq, and the OK and INTACT words only for an intact ledger", () => {
+    const f = ledger("worker_gate_decisions.jsonl");
+    appendChained(f, { seq: 1, a: "x" });
+    const good = formatEvidenceVerify(verifyEvidenceChains(dir));
+    expect(good).toMatch(
+      /\bOK\s+worker_gate_decisions\.jsonl\s+1 chained row\(s\)/,
+    );
+    appendChained(f, { seq: 2, a: "y" });
+    writeFileSync(f, readFileSync(f, "utf-8").replace('"a":"x"', '"a":"z"'));
+    const bad = formatEvidenceVerify(verifyEvidenceChains(dir));
+    expect(bad).toMatch(/hash break at line \d+ \(iseq 2\)/);
+    expect(bad).not.toMatch(/\bOK\s+worker_gate_decisions/);
+  });
+
+  it("states the missing count in the status line when a file is gone but its sidecar remains", () => {
+    const f = ledger("approval_log.jsonl");
+    appendChained(f, { seq: 1, kind: "request" });
+    rmSync(f);
+    appendChained(ledger("run_steps.jsonl"), { seq: 1, at: 1 });
+    expect(formatEvidenceVerify(verifyEvidenceChains(dir))).toContain(
+      ", 1 missing",
+    );
+  });
+});
