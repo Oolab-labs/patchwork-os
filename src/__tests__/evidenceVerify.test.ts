@@ -183,10 +183,12 @@ describe("formatEvidenceVerify", () => {
   });
 });
 
-// Mutation testing (Stryker, 2026-11-14) found the cases below unpinned: each
-// could be broken without any test failing. The first is the one that matters
-// most — the set of verified files was only compared with ITSELF, so a ledger
-// could drop out of verification and every test would stay green.
+// Pinned after a mutation run (Stryker, 2026-11-14). Checked by hand against
+// the existing suite: the operator-facing report text (the mismatch and
+// pending notes, the PENDING word, the legacy-only vs break status line, the
+// break iseq, the missing count) could each be removed with no test failing.
+// The verdict logic itself was already covered; the literal file list below is
+// a second, local pin on what each ledger's own test already checks.
 describe("what a mutation run showed was unpinned", () => {
   it("verifies exactly these nine files — a ledger cannot silently drop out", () => {
     expect(VERIFIED_LEDGERS.map((l) => l.file).sort()).toEqual(
