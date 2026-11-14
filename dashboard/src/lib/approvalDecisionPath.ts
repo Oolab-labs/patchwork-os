@@ -22,3 +22,27 @@ export function approvalDecisionPath(
 ): string {
   return `/api/bridge/${decision}/${encodeURIComponent(callId)}`;
 }
+
+/**
+ * What to tell a person whose decision the bridge refused. The bridge answers
+ * a separation-of-duties refusal (ADR-0020) with `{ error, message }`, where
+ * `message` is written for the person ("You started this run, so another
+ * member must approve this step."). Show that when present; otherwise fall
+ * back to the response text, then the status code, so nothing is ever blank.
+ */
+export async function decisionFailureText(res: Response): Promise<string> {
+  let text = "";
+  try {
+    text = await res.text();
+  } catch {
+    /* fall through to the status */
+  }
+  try {
+    const body = JSON.parse(text) as { message?: unknown; error?: unknown };
+    if (typeof body.message === "string" && body.message) return body.message;
+    if (typeof body.error === "string" && body.error) return body.error;
+  } catch {
+    /* not JSON */
+  }
+  return (text || `HTTP ${res.status}`).slice(0, 200);
+}

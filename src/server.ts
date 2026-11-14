@@ -502,6 +502,8 @@ export class Server extends EventEmitter<ServerEvents> {
         attempt?: {
           cronSlotEpochMs?: number;
           startSource?: import("./runLog.js").RunStartSource;
+          /** ADR-0020: verified member id of whoever clicked "Run now". */
+          startedBy?: string;
         },
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null = null;
@@ -584,6 +586,13 @@ export class Server extends EventEmitter<ServerEvents> {
         | undefined
       >)
     | undefined = undefined;
+  /**
+   * ADR-0020 separation of duties: refuse approvals that name nobody. Set once
+   * at bridge startup (`bridge.ts`) and only when it can be honoured — the
+   * governed profile, a session secret, and a member with a login — so an
+   * install without member logins keeps approving exactly as before.
+   */
+  public requireNamedApprover = false;
   /**
    * Patchwork: activity log handle, used by approvalHttp to compute
    * passive risk personalization signals (`src/approvalSignals.ts`).
@@ -1927,6 +1936,7 @@ export class Server extends EventEmitter<ServerEvents> {
           runDetailByTaskFn: this.runDetailByTaskFn,
           runRecipeFn: this.runRecipeFn,
           onRecipesChangedFn: this.onRecipesChangedFn,
+          resolveRunStarter: this.resolveApprover,
         })
       ) {
         return;
@@ -3345,6 +3355,7 @@ export class Server extends EventEmitter<ServerEvents> {
               managedSettingsPath: this.managedSettingsPath,
               onDecision: this.onApprovalDecision,
               resolveApprover: this.resolveApprover,
+              requireNamedApprover: this.requireNamedApprover,
               webhookUrl: this.approvalWebhookUrl,
               approvalGate: this.approvalGate,
               pushServiceUrl: this.pushServiceUrl,

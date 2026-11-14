@@ -92,6 +92,18 @@ export interface PendingApproval {
   correlationId?: string;
   recipeName?: string;
   /**
+   * The member id of the named person who STARTED the run this approval
+   * belongs to — set only when a verified dashboard session clicked "Run
+   * now" (ADR-0020, separation of duties). That member may not approve it.
+   *
+   * Absent for scheduled, webhook and client-session approvals, for a run
+   * started without a named session, and on rows written before 2026-11-14.
+   * Every absence means the same thing to the approve route: no self-approval
+   * check applies. Deliberately NOT part of the approved-action identity or
+   * the in-flight key: who started a run does not change what the action is.
+   */
+  preparedBy?: string;
+  /**
    * `false` for an entry restored from the durable log on restart (ADR-0018):
    * no caller is waiting on it, so an approve/reject records a decision but
    * performs nothing — the originating run must be re-run to act on it. Every
@@ -377,6 +389,7 @@ export class ApprovalQueue {
         ...(req.correlationId !== undefined && {
           correlationId: req.correlationId,
         }),
+        ...(req.preparedBy !== undefined && { preparedBy: req.preparedBy }),
         owned: false,
         resolve: () => {
           /* nobody is awaiting a restored entry — see class doc comment */
@@ -697,6 +710,9 @@ export class ApprovalQueue {
         // It reached disk and the restored entry but never this projection, so
         // no reader has ever seen it. Found by the field round-trip guard.
         recipeName: e.recipeName,
+        // Read by the approve route's self-approval check, and shown so a
+        // second member can see who started the run they are approving.
+        preparedBy: e.preparedBy,
         owned: e.owned,
         // approvalToken intentionally omitted from list — never expose to untrusted callers
       });

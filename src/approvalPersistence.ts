@@ -117,6 +117,13 @@ export interface ApprovalRequestEvent extends ChainedRowFields {
    * absence is therefore a writer defect. Do not copy that doc comment here.
    */
   correlationId?: string;
+  /**
+   * Member id of the named person who started the run (ADR-0020 separation
+   * of duties). Additive, so `rv` is NOT bumped (see `APPROVAL_LOG_RV`): an
+   * absent value means no self-approval check applies, whether the row
+   * predates the field or no named member started the run.
+   */
+  preparedBy?: string;
 }
 
 export interface ApprovalDecisionEvent extends ChainedRowFields {
@@ -260,6 +267,7 @@ export class ApprovalPersistence {
       ...(entry.correlationId !== undefined && {
         correlationId: entry.correlationId,
       }),
+      ...(entry.preparedBy !== undefined && { preparedBy: entry.preparedBy }),
     };
     this.append(event);
   }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiPath } from '@/lib/api';
-import { approvalDecisionPath } from '@/lib/approvalDecisionPath';
+import { approvalDecisionPath, decisionFailureText } from '@/lib/approvalDecisionPath';
 import { BackLink, RelationStrip } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -176,13 +176,7 @@ export default function ApprovalDetailPage() {
         method: "POST",
       });
       if (!res.ok) {
-        let detail = "";
-        try {
-          detail = (await res.text()).slice(0, 200);
-        } catch {}
-        setDecideErr(
-          `${choice} failed: ${res.status}${detail ? ` — ${detail}` : ""}`,
-        );
+        setDecideErr(await decisionFailureText(res));
         return;
       }
       router.push("/approvals");

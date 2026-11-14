@@ -170,6 +170,7 @@ describe("approval request — every field reaches disk and comes back", () => {
     approvalToken: "sentinel-token",
     correlationId: "yaml:sentinel:1756600000001",
     recipeName: "sentinel-recipe",
+    preparedBy: "sentinel-member",
   };
 
   /**

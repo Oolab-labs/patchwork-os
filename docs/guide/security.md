@@ -46,7 +46,7 @@ The shared password produces an **unattributed** (v1) session. A member of the w
 patchwork members set-password <memberId>
 ```
 
-— logs in to an **attributed** (v2) session that names them, and their approvals are recorded against them. A session from the shared `DASHBOARD_PASSWORD` can still approve a gated action today; that approval is recorded with no approver. Refusing it is decided and **not yet enforced**, so give every approver a personal credential when the record must name who approved. The roster lives in `members.json`; `patchwork members` lists who holds a credential. The design is in [ADR-0020](../adr/0020-per-member-authentication.md).
+— logs in to an **attributed** (v2) session that names them, and their approvals are recorded against them. Two separation-of-duties rules apply to approvals. **A member cannot approve a step of a run they started themselves** from "Run now"; another member must. And under the **governed profile, once at least one member has a credential**, an approval that names nobody is refused: a session from the shared `DASHBOARD_PASSWORD`, no session, and the phone approve buttons. Outside that case a shared-password session can still approve, and the approval is recorded with no approver, so give every approver a personal credential when the record must name who approved. Rejecting is never restricted. The bridge logs at startup whether named approvals are required. The roster lives in `members.json`; `patchwork members` lists who holds a credential. The design is in [ADR-0020](../adr/0020-per-member-authentication.md).
 
 ## Secret stores and agents
 
