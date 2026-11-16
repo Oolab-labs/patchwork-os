@@ -50,6 +50,10 @@ import { loadConfig } from "../patchworkConfig.js";
 import { patchworkPath } from "../patchworkHome.js";
 import { stepSandboxRequest } from "../recipes/agentExecutor.js";
 import {
+  fanOutChildReversibilityCeiling,
+  fanOutChildToolId,
+} from "../recipes/fanOutChild.js";
+import {
   explainRollbackability,
   reversibilityCeilingFor,
 } from "../recipes/fileWriteRollbackability.js";
@@ -61,7 +65,14 @@ export interface ExplainStep {
   stepId: string;
   /** Position of the step in the recipe's `steps:` list (0-based). */
   index: number;
+  /** The tool the step is GATED as: for a `fan_out`, its per-item child. */
   toolId: string;
+  /**
+   * Present only when the step dispatches a different tool from the one it is
+   * gated as — today, `fan_out`. The runners gate a fan_out as its child
+   * (`fanOutChild.ts`); the explanation follows them, and names both.
+   */
+  dispatchedToolId?: string;
   input: EffectivePolicyInput;
   result: EffectivePolicy;
 }
@@ -213,7 +224,13 @@ export async function explainRecipePolicy(
     const index = n;
     n++;
     if (!toolId) continue; // compound / nested steps are governed by their children
-    if (opts.tool && opts.tool !== toolId) continue;
+    // Gate a fan_out as the tool it runs per item, exactly as both runners do
+    // (yamlRunner / chainedRunner via fanOutChild.ts). Explaining it as
+    // `fan_out` itself said "tool does not write" and ALLOWED for a step the
+    // runner held for a human.
+    const fanOutChild = agent ? undefined : fanOutChildToolId(step);
+    const gateToolId = fanOutChild ?? toolId;
+    if (opts.tool && opts.tool !== toolId && opts.tool !== gateToolId) continue;
 
     const containment = agent
       ? resolveAgentContainment(
@@ -236,9 +253,11 @@ export async function explainRecipePolicy(
       : undefined;
     // INV-1: same instance ceiling the runner applies (no run ⇒ no rollback
     // log ⇒ an fs write is not reversible).
-    const ceiling = reversibilityCeilingFor(explainRollbackability(toolId));
+    const ceiling = fanOutChild
+      ? fanOutChildReversibilityCeiling(fanOutChild)
+      : reversibilityCeilingFor(explainRollbackability(toolId));
     const tool = toolFactsFor(
-      toolId,
+      gateToolId,
       containment ? { containment } : undefined,
       ceiling ? { reversibilityCeiling: ceiling } : undefined,
     );
@@ -247,7 +266,7 @@ export async function explainRecipePolicy(
     if (workerCtx && workerId) {
       const decision = decideWorkerAction(
         workerCtx.worker,
-        toolId,
+        gateToolId,
         undefined,
         workerCtx.store,
         workerCtx.forbidRules.length > 0 || ceiling
@@ -336,7 +355,8 @@ export async function explainRecipePolicy(
     steps.push({
       stepId,
       index,
-      toolId,
+      toolId: gateToolId,
+      ...(fanOutChild && { dispatchedToolId: toolId }),
       input,
       result: computeEffectivePolicy(input),
     });
@@ -372,7 +392,17 @@ export function formatExplainReport(r: ExplainReport): string {
   }
   for (const s of r.steps) {
     out.push(`STEP: ${s.stepId}`);
-    out.push(formatEffectivePolicy(s.input, s.result));
+    const block = formatEffectivePolicy(s.input, s.result);
+    // Name both tools for a fan_out: the step dispatches `fan_out`, and is
+    // judged as the child it runs once per item.
+    out.push(
+      s.dispatchedToolId
+        ? block.replace(
+            `\nTOOL: ${s.toolId}\n`,
+            `\nTOOL: ${s.dispatchedToolId} → ${s.toolId} (once per item)\n`,
+          )
+        : block,
+    );
     out.push("");
   }
   return out.join("\n").trimEnd();
