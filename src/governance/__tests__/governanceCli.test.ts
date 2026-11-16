@@ -249,6 +249,66 @@ steps:
       }),
     ).rejects.toThrow(/not found/);
   });
+
+  // The runners gate a fan_out step as the tool it runs per item
+  // (fanOutChild.ts, fanOutChildGate.test.ts). The explanation must too:
+  // it used to classify the step as `fan_out` itself — "tool does not
+  // write", ALLOWED — while the runner asked a human for the same step.
+  const batch = (allowWrites: string) => `name: close-batch
+trigger: { type: cron, schedule: "0 9 * * 1" }
+allowWrites: [${allowWrites}]
+steps:
+  - id: close
+    tool: fan_out
+    items: "[1, 2]"
+    as: tid
+    do:
+      tool: zendesk.updateStatus
+      ticketId: "{{tid}}"
+      status: solved
+`;
+  it("a fan_out step is explained as its child tool, as the runner gates it", async () => {
+    writeFileSync(
+      path.join(home, "recipes", "close-batch.yaml"),
+      batch("zendesk.updateStatus"),
+    );
+    writeConfig({ profile: "governed" });
+    const opts = {
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+      config: loadConfig(configPath),
+    };
+    const r = await explainRecipePolicy("close-batch", opts);
+    expect(r.steps).toHaveLength(1);
+    const step = r.steps[0];
+    expect(step?.result.final).toBe("HUMAN_APPROVAL_REQUIRED");
+    expect(step?.input.tool.id).toBe("zendesk.updateStatus");
+    expect(
+      step?.result.stages.find((s) => s.stage === "write_acknowledgement")
+        ?.verdict,
+    ).toBe("ALLOW");
+    expect(formatExplainReport(r)).toMatch(
+      /TOOL: fan_out → zendesk\.updateStatus/,
+    );
+    // Filtering by the child tool finds the batch step; by `fan_out` too.
+    for (const tool of ["zendesk.updateStatus", "fan_out"]) {
+      const only = await explainRecipePolicy("close-batch", { ...opts, tool });
+      expect(only.steps, tool).toHaveLength(1);
+    }
+  });
+  it("a fan_out whose child write is undeclared explains as REFUSED under governed", async () => {
+    writeFileSync(
+      path.join(home, "recipes", "close-batch.yaml"),
+      batch("slack.post_message"),
+    );
+    writeConfig({ profile: "governed" });
+    const r = await explainRecipePolicy("close-batch", {
+      recipesDir: path.join(home, "recipes"),
+      workersDir: path.join(home, "workers"),
+      config: loadConfig(configPath),
+    });
+    expect(r.steps[0]?.result.final).toBe("REFUSED");
+  });
 });
 
 describe("recipe run --local under the governed profile", () => {
